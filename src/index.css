@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 🆕 Pull-to-Refresh: نعطّل السحب-للتحديث الأصلي للمتصفح (يظهر افتراضياً في
+   Chrome على أندرويد عند سحب أعلى الصفحة) حتى لا يتعارض بصرياً مع مؤشرنا
+   المخصص في components/PullToRefresh.tsx — هذا الأخير هو الوحيد الذي يتحكم
+   بإعادة الجلب الفعلي الآن. */
+html, body {
+  overscroll-behavior-y: contain;
+}
+
+/* دعم تفضيلات تقليل الحركة للمستخدمين الذين يحتاجونها (مثل من يعانون من
+   الدوار أو الحساسية للحركة). تُقلَّص مدد الانتقال والحركة إلى قيمة ضئيلة
+   جداً (0.01ms) بحيث تصبح فورية تقريباً، مع الاحتفاظ بتأثيرات
+   التلاشي/الظهور الأساسية لتجنب انقطاع مفاجئ. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

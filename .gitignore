@@ -1,0 +1,26 @@
+# التبعيات
+node_modules
+
+# مخرجات البناء
+dist
+dist-ssr
+
+# النشر
+.vercel
+
+# متغيرات البيئة (لا تُرفع أبداً)
+.env
+.env.*
+!.env.example
+
+# مفاتيح حساب الخدمة (Firebase Admin) — سرّية ولا تُرفع أبداً
+serviceAccountKey.json
+
+# ملفات النظام والمحرر
+.DS_Store
+*.local
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea
+.env*

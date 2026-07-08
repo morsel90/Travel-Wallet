@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/verifyTripPin",
+      "destination": "https://us-central1-travelapp-87206.cloudfunctions.net/verifyTripPin"
+    }
+  ]
+}

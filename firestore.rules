@@ -1,0 +1,225 @@
+rules_version = '2';
+
+// ─── قواعد أمان Firestore — لوحة مصاريف السفر (دعم رحلات متعددة) ───────────
+// انشرها عبر: Firebase Console › Firestore › Rules (الصق هذا الملف)
+//   أو عبر Firebase CLI: firebase deploy --only firestore:rules
+// ⚠️ يجب نشر دالة verifyTripPin أيضاً (firebase deploy --only functions) وإلا
+//   فلن يتمكن أي مستخدم من الحصول على Custom Claim الـ trips، وستمنعه هذه
+//   القواعد من القراءة أو الإنشاء. انظر functions/index.js للتفاصيل.
+// ⚠️ 🆕 دعم رحلات متعددة: المسار أصبح مُعمَّماً (/artifacts/{appId}/...) بدل
+//   معرّف رحلة واحد مكتوب حرفياً (travelapp-87206). لكل رحلة جديدة، أنشئ
+//   مستنداتها عبر scripts/create-trip.mjs (trips/{tripId} + tripSecrets/{tripId})
+//   — لا حاجة لأي تعديل على هذا الملف أو إعادة نشره عند إضافة رحلة جديدة.
+// ⚠️ هام عند النشر لأول مرة بعد هذا التحديث: عضوية المستخدمين القديمة (Custom
+//   Claim بصيغة member:true) لم تعد صالحة (استُبدلت بخريطة trips لكل رحلة) —
+//   أعضاء الرحلة الحاليون سيُطلب منهم إعادة إدخال رمز الرحلة مرة واحدة فقط بعد
+//   النشر، وهذا متوقع وطبيعي. تأكد أيضاً من تشغيل scripts/create-trip.mjs
+//   للرحلة الافتراضية الحالية (travelapp-87206) بنفس رمزها الحالي *قبل* نشر
+//   هذه القواعد، وإلا سيُرفض تحقق الجميع من رمز الرحلة الحالية بعد النشر.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // ⚠️ يجب أن يطابق هذا البريد ADMIN_EMAILS في src/constants.ts
+    // ملاحظة: المسؤول عالمي (يدير كل الرحلات)، وليس خاصاً برحلة واحدة — لم
+    // يُطلب فصله لكل رحلة في هذا التحديث.
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.email in [
+          'mostqbel.morsel@gmail.com'
+        ];
+    }
+
+    // 🔒 عضوية رحلة محددة (appId): تُمنح فقط بعد التحقق من رمز تلك الرحلة
+    // تحديداً عبر Cloud Function باسم verifyTripPin (انظر functions/index.js)،
+    // والتي تمنح Custom Claim باسم trips (خريطة { [tripId]: true }) على حساب
+    // المستخدم (ولو كان مجهولاً/Anonymous).
+    // 🆕 هذا استبدال لعلم member العالمي القديم — عضو تحقق من رحلة A فقط لا
+    // يُعتبر عضواً في رحلة B إطلاقاً، حتى لو كانتا بنفس مشروع Firebase هذا.
+    // بدون هذا الفصل، تعميم المسار (/artifacts/{appId}/...) كان سيسمح لأي
+    // عضو في أي رحلة بقراءة/كتابة بيانات كل الرحلات الأخرى — وهذا بالضبط ما
+    // يمنعه isMember(appId) بالتحقق من مفتاح appId تحديداً داخل خريطة trips.
+    function isMember(appId) {
+      return isSignedIn()
+        && ('trips' in request.auth.token)
+        && (appId in request.auth.token.trips)
+        && request.auth.token.trips[appId] == true;
+    }
+
+    // التحقّق من بنية المصروف — تم السماح بحقل deletedAt الاختياري كـ number (Unix timestamp)
+    // وحقل createdByUid الاختياري (uid صاحب المصروف) — انظر isExpenseOwner أدناه
+    // وحقل category الاختياري (فئة المصروف — للرسم البياني في src/components/charts/)
+    // وحقل shares الاختياري (تقسيم غير متساوٍ — انظر isValidShares أدناه)
+    function isValidExpense(d) {
+      return d.keys().hasOnly([
+               'date', 'description', 'amount', 'originalAmount',
+               'currency', 'exchangeRate', 'participants', 'createdAt', 'deletedAt', 'createdByUid', 'category', 'shares'
+             ])
+        && d.date is string           && d.date.size() <= 10
+        && d.description is string     && d.description.size() > 0 && d.description.size() <= 200
+        && d.amount is number          && d.amount >= 0
+        && d.originalAmount is number  && d.originalAmount >= 0
+        && d.currency is string        && d.currency.size() <= 5
+        && d.exchangeRate is number    && d.exchangeRate > 0
+        && d.participants is list      && d.participants.size() > 0 && d.participants.size() <= 50
+        && d.createdAt is number
+        && (!('deletedAt' in d) || d.deletedAt == null || d.deletedAt is number)
+        && (!('createdByUid' in d) || d.createdByUid is string)
+        && (!('category' in d) || (d.category is string && d.category.size() <= 50))
+        && (!('shares' in d) || isValidShares(d.shares, d.participants));
+    }
+
+    // 🆕 تقسيم غير متساوٍ (اختياري): خريطة { [participantId]: وزن } لا يجب أن
+    // تحوي مفاتيح أكثر من عدد المشاركين أنفسهم (يمنع نمو خريطة غير محدود).
+    // ⚠️ لا نتحقق هنا من نوع/مدى كل قيمة وزن فردياً على حدة (لا وسيلة بسيطة
+    // وموثوقة للتكرار على قيم خريطة في لغة القواعد لكل الإصدارات) — بدلاً من
+    // ذلك، splitByShares في utils/calculations.ts (المُستخدَمة من كل من يقرأ
+    // هذا المصروف) تتعامل دفاعياً مع أي وزن غير صالح (سالب/صفر/غير رقم) بمعاملته
+    // كوزن 1 عادي، فلا يمكن لقيمة تالفة أو مُتلاعَب بها أن تُنتج نتيجة حساب فعلية خاطئة.
+    function isValidShares(shares, participants) {
+      return shares is map
+        && shares.size() > 0
+        && shares.size() <= participants.size();
+    }
+
+    // صاحب المصروف: نفس uid الجلسة/الجهاز اللي أضافه أصلاً (يشمل الأعضاء
+    // المجهولين بعد التحقق من رمز الرحلة). يُستخدم للسماح بتعديل/حذف فوري
+    // لخطأ الشخص بنفسه دون انتظار المسؤول. المصاريف القديمة بدون هذا الحقل
+    // تبقى قابلة للتعديل من المسؤول فقط (لا يوجد مالك مسجّل لها).
+    // 🆕 appId يُمرَّر صراحةً الآن (بدل الاعتماد على isMember() بلا معاملات)
+    function isExpenseOwner(existing, appId) {
+      return isMember(appId)
+        && 'createdByUid' in existing.data
+        && existing.data.createdByUid == request.auth.uid;
+    }
+
+    // التحقّق من بنية المسافر — تم السماح بحقل deletedAt الاختياري كـ number (Unix timestamp)
+    function isValidTraveler(d) {
+      return d.keys().hasOnly(['id', 'name', 'shortName', 'deposited', 'deletedAt'])
+        && d.id is int
+        && d.name is string       && d.name.size() > 0 && d.name.size() <= 100
+        && d.shortName is string   && d.shortName.size() > 0 && d.shortName.size() <= 50
+        && d.deposited is number   && d.deposited >= 0
+        && (!('deletedAt' in d) || d.deletedAt == null || d.deletedAt is number);
+    }
+
+    // التحقّق من بنية سجل تدقيق تعديل الرصيد — غير قابل للتعديل أو الحذف
+    // (immutable). changedByUid يجب أن يطابق مُنشئ الطلب الفعلي لمنع انتحال هوية.
+    function isValidDepositLog(d) {
+      return d.keys().hasOnly([
+               'travelerId', 'previousDeposited', 'newDeposited', 'delta',
+               'mode', 'reason', 'changedByEmail', 'changedByUid', 'createdAt'
+             ])
+        && d.travelerId is int
+        && d.previousDeposited is number
+        && d.newDeposited is number
+        && d.delta is number
+        && d.mode in ['add', 'subtract', 'set']
+        && (d.reason == null || (d.reason is string && d.reason.size() <= 300))
+        && d.changedByEmail is string
+        && d.changedByUid is string  && d.changedByUid == request.auth.uid
+        && d.createdAt is number;
+    }
+
+    // Rate Limiting (حد: مصروف واحد كل ثانية لكل عضو، غير المسؤول) ──────────
+    // مستند rateLimits/{uid} (ضمن مسار كل رحلة على حدة) يخزّن "آخر وقت إنشاء
+    // مصروف" لنفس المستخدم *في هذه الرحلة تحديداً*، ويُحدَّث بذرّية (writeBatch
+    // من العميل — انظر hooks/useExpenseActions.ts) مع كل مصروف جديد.
+    // withinExpenseRateLimit تقرأ القيمة السابقة عبر get() — وهي تعكس حالة
+    // قاعدة البيانات *قبل* هذه العملية (حتى لو كانت ضمن نفس الـ batch)، فتُقارَن
+    // بأمان مع request.time الحالي دون أن يرى الفحص القيمة الجديدة المكتوبة
+    // بنفس العملية. 🆕 appId يُمرَّر صراحةً الآن لبناء المسار الصحيح لكل رحلة.
+    function withinExpenseRateLimit(appId) {
+      let rl = /databases/$(database)/documents/artifacts/$(appId)/public/data/rateLimits/$(request.auth.uid);
+      return !exists(rl)
+        || request.time.toMillis() - get(rl).data.lastExpenseCreatedAt >= 1000;
+    }
+
+    // ⚠️ نعتمد على ساعة العميل (Date.now() من hooks/useExpenseActions.ts، بنفس
+    // نمط createdAt في isValidExpense) لا serverTimestamp — لذا نتحقق أن القيمة
+    // المكتوبة قريبة من request.time الفعلي (تفاوت ±5 ثوانٍ) لمنع عميل خبيث من
+    // كتابة قيمة قديمة/مزيّفة عمداً للتحايل على withinExpenseRateLimit لاحقاً.
+    // هذا يحدّ من أثر أي تلاعب بساعة الجهاز لنافذة صغيرة، ولا يمنحه تحايلاً كاملاً.
+    function isValidRateLimitWrite(d) {
+      return d.keys().hasOnly(['lastExpenseCreatedAt'])
+        && d.lastExpenseCreatedAt is number
+        && d.lastExpenseCreatedAt <= request.time.toMillis() + 5000
+        && d.lastExpenseCreatedAt >= request.time.toMillis() - 5000;
+    }
+
+    // 🆕 {appId} بدل معرّف رحلة واحد ثابت — appId متاح كمتغيّر مسار داخل هذا
+    // الـ match بالكامل (بما فيه الـ matches المتداخلة أدناه)، ويُمرَّر صراحةً
+    // لأي دالة خارجية تحتاجه (isMember/isExpenseOwner/withinExpenseRateLimit).
+    match /artifacts/{appId}/public/data {
+
+      match /expenses/{expenseId} {
+        allow read:   if isMember(appId) || isAdmin();
+        // المسؤول معفى من حد المعدّل (قد يحتاج إدخال عدة مصاريف دفعة واحدة
+        // بعد الرحلة)؛ الأعضاء محدودون بمصروف واحد كل ثانية — انظر withinExpenseRateLimit
+        allow create: if isValidExpense(request.resource.data)
+                        && (
+                             isAdmin()
+                             || (isMember(appId) && withinExpenseRateLimit(appId))
+                           );
+        // يُسمح بالتعديل (ويشمل الحذف اللين عبر تحديث deletedAt) للمسؤول دائماً،
+        // أو لصاحب المصروف نفسه بشرط عدم تغيير هوية المالك (createdByUid) في العملية
+        allow update: if isValidExpense(request.resource.data)
+                        && (
+                             isAdmin()
+                             || (
+                                  isExpenseOwner(resource, appId)
+                                  && request.resource.data.createdByUid == resource.data.createdByUid
+                                )
+                           );
+        allow delete: if false; // 🚫 حظر الحذف الصلب نهائياً لإجبار استخدام الـ Soft Delete
+      }
+
+      match /travelers/{travelerId} {
+        allow read:   if isMember(appId) || isAdmin();
+        allow create: if (isMember(appId) || isAdmin()) && isValidTraveler(request.resource.data);
+        allow update: if isAdmin()    && isValidTraveler(request.resource.data);
+        allow delete: if false; // 🚫 حظر الحذف الصلب نهائياً لحماية سجل الأرصدة التراكمي
+
+        // سجل تدقيق تعديلات الرصيد — مرئي للمسؤول فقط، وغير قابل للتعديل أو
+        // الحذف نهائياً بعد إنشائه (سجل تدقيق حقيقي لا يمكن التلاعب به لاحقاً)
+        match /depositLogs/{logId} {
+          allow read:          if isAdmin();
+          allow create:        if isAdmin() && isValidDepositLog(request.resource.data);
+          allow update, delete: if false;
+        }
+      }
+
+      // مستند تتبّع حد المعدّل (Rate Limiting) لكل مستخدم في هذه الرحلة — لا
+      // يُقرأ من العميل مباشرة (يُستخدم داخلياً عبر get() في
+      // withinExpenseRateLimit فقط)، ويُكتب فقط من صاحبه (request.auth.uid ==
+      // uid) بقيمة قريبة من الوقت الفعلي (انظر isValidRateLimitWrite).
+      match /rateLimits/{uid} {
+        allow read:            if false;
+        allow create, update:  if isMember(appId) && request.auth.uid == uid && isValidRateLimitWrite(request.resource.data);
+        allow delete:          if false;
+      }
+    }
+
+    // 🆕 إعدادات كل رحلة (الاسم + تفاصيل الحساب البنكي) — انظر
+    // src/hooks/useTripConfig.ts. تُقرأ فقط بعد التحقق من عضوية *نفس* الرحلة
+    // (tripId هنا == appId أعلاه، لأن كلا المسارين يستخدمان نفس المعرّف). لا
+    // كتابة من العميل إطلاقاً — تُدار حصراً عبر scripts/create-trip.mjs
+    // بصلاحيات Admin SDK (يتجاوز هذه القواعد أصلاً، فلا يحتاج allow write).
+    match /trips/{tripId} {
+      allow read:  if isMember(tripId) || isAdmin();
+      allow write: if false;
+    }
+
+    // 🆕 هاش رمز PIN الخاص بكل رحلة (salt + pinHash) — لا يُقرأ ولا يُكتب من
+    // العميل إطلاقاً تحت أي ظرف. الوصول الوحيد له عبر Cloud Function
+    // verifyTripPin بصلاحيات Admin SDK، والتي تتجاوز هذه القواعد بالكامل بغض
+    // النظر عمّا هو مكتوب هنا — allow false هنا فقط يمنع أي وصول مباشر من تطبيق العميل.
+    match /tripSecrets/{tripId} {
+      allow read, write: if false;
+    }
+  }
+}
