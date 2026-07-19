@@ -24,14 +24,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // ⚠️ يجب أن يطابق هذا البريد ADMIN_EMAILS في src/constants.ts
-    // ملاحظة: المسؤول عالمي (يدير كل الرحلات)، وليس خاصاً برحلة واحدة — لم
-    // يُطلب فصله لكل رحلة في هذا التحديث.
+    // المسؤول يُحدَّد عبر Custom Claim باسم `admin: true` (وليس بمطابقة البريد
+    // بعد الآن). يُمنح هذا الـ Claim حصراً بتشغيل scripts/set-admin.mjs بصلاحيات
+    // Admin SDK. المسؤول عالمي (يدير كل الرحلات)، وليس خاصاً برحلة واحدة.
     function isAdmin() {
-      return isSignedIn()
-        && request.auth.token.email in [
-          'mostqbel.morsel@gmail.com'
-        ];
+      return isSignedIn() && request.auth.token.admin == true;
     }
 
     // 🔒 عضوية رحلة محددة (appId): تُمنح فقط بعد التحقق من رمز تلك الرحلة
@@ -219,6 +216,12 @@ service cloud.firestore {
     // verifyTripPin بصلاحيات Admin SDK، والتي تتجاوز هذه القواعد بالكامل بغض
     // النظر عمّا هو مكتوب هنا — allow false هنا فقط يمنع أي وصول مباشر من تطبيق العميل.
     match /tripSecrets/{tripId} {
+      allow read, write: if false;
+    }
+
+    // 🆕 Rate Limits لـ verifyTripPin (حماية من تخمين الرمز)
+    // لا يُقرأ ولا يُكتب من العميل — للـ Cloud Functions فقط
+    match /rateLimits/{doc} {
       allow read, write: if false;
     }
   }

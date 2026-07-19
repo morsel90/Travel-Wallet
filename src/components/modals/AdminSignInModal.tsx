@@ -56,7 +56,7 @@ const AdminSignInModal = ({
         )}
       </button>
       {authError && <p className="text-xs text-rose-500 mb-2 text-center font-bold">{authError}</p>}
-      <button type="submit" className="w-full bg-teal-600 text-white py-2.5 rounded-xl font-bold">تفعيل</button>
+      <button type="submit" className="w-full bg-teal-600 text-white py-2.5 rounded-xl font-bold">دخول</button>
     </form>
   </Modal>
 )

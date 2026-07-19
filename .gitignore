@@ -23,4 +23,3 @@ serviceAccountKey.json
 .vscode/*
 !.vscode/extensions.json
 .idea
-.env*

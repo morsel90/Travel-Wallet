@@ -132,7 +132,7 @@ export interface SpendingTrendPoint {
 
 export type SortOrder = 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc'
 
-export type ToastType = 'new' | 'edit' | 'success'
+export type ToastType = 'new' | 'edit' | 'success' | 'error'
 
 export interface ToastMessage {
   text: string
@@ -143,4 +143,9 @@ export interface ToastMessage {
   // ثوانٍ) دون الحاجة لفتح سلة المهملات. دالة client-only بحتة — لا تُخزَّن
   // ولا تُقارَن مع أي حالة، فقط تُستدعى عند الضغط.
   onUndo?: () => void
+  // 🆕 عند وجودها، يعرض مكوّن Toast زر "إعادة المحاولة" بجانب الرسالة — يُستخدم
+  // عند فشل حفظ المصروف (غالباً انقطاع الشبكة) لإعادة استدعاء نفس عملية الكتابة
+  // (انظر handleAddExpense/handleQuickAddExpense في hooks/useExpenseActions.ts).
+  // client-only بحتة كـ onUndo — لا تُخزَّن ولا تُقارَن، فقط تُستدعى عند الضغط.
+  onRetry?: () => void
 }

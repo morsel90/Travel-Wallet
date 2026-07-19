@@ -11,6 +11,32 @@ export default defineConfig({
   resolve: {
     extensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
   },
+  
+  // ★ إعدادات البناء الجديدة: تقسيم الحزم (Code Splitting) لحل تحذير الـ 500kb
+build: {
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            // تجميع كل ما يخص فايربيس في ملف منفصل
+            if (id.includes('firebase') || id.includes('@firebase')) {
+              return 'firebase-sdk';
+            }
+            // تجميع أساسيات ريأكت
+            if (id.includes('react') || id.includes('react-dom')) {
+              return 'react-vendor';
+            }
+            // تجميع مكتبات الواجهة والحركات
+            if (id.includes('framer-motion') || id.includes('lucide-react') || id.includes('react-virtuoso')) {
+              return 'ui-vendor';
+            }
+          }
+        }
+      }
+    }
+  },
+
   plugins: [
     react(),
     VitePWA({

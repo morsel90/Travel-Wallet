@@ -9,11 +9,9 @@
 
 const pulse = 'animate-pulse bg-slate-200 rounded'
 
-// ⚠️ StatBoxSkeleton أُزيلت من هنا (وكذلك StatBox.tsx نفسه لم يعد مستورَداً في
-// أي مكان) — انظر تعليق "تصغير StatBox" في App.tsx/components/Header.tsx:
-// شبكة الإحصائيات المستقلة أُلغيت واندمجت الأرقام (بنبضات pulse خاصة بها عند
-// التحميل) داخل الهيدر نفسه. يمكن حذف src/components/StatBox.tsx يدوياً إن رغبت
-// (لم أستطع حذفه تلقائياً — لا أملك صلاحية حذف الملفات على جهازك، فقط كتابتها).
+// ملاحظة تاريخية: StatBoxSkeleton وStatBox.tsx حُذفا بالكامل — شبكة الإحصائيات
+// المستقلة أُلغيت واندمجت الأرقام (بنبضات pulse خاصة بها) داخل الهيدر نفسه
+// (انظر HeaderStats/renderPillSkeleton في components/Header.tsx).
 
 // 🆕 حُشوة/أبعاد مطابقة للبطاقة الفعلية المضغوطة بعد "تحسين بطاقات المسافرين"
 // (p-3 sm:p-4 + أفتار دائري) — كانت أوسع مما يلزم قبل هذا التعديل فتُسبّب قفزة
@@ -53,11 +51,10 @@ export function ExpenseListItemSkeleton() {
   )
 }
 
-// 🆕 هيكل ثابت لقسم الرسوم البيانية (ChartsSection) أثناء تحميل حزمة Recharts
-// (lazy-loaded — تبعية كبيرة نسبياً) — يحاكي التخطيط الفعلي (عنوان + تبويبات +
-// مساحة الرسم بنفس ارتفاع h-64 المستخدَم فعلياً) بدل سبينر عام مجرّد، لتفادي أي
-// قفزة في التخطيط (Layout Shift) عند اكتمال التحميل الفعلي. يُستخدم كـ
-// fallback لـ <Suspense> حول <ChartsSection> في App.tsx.
+// 🆕 هيكل ثابت لقسم "ملخص وإحصائيات الرحلة" (ChartsSection، lazy-loaded) أثناء
+// تحميل الـ chunk — يحاكي التخطيط الفعلي (عنوان + تبويبات + مساحة بنفس ارتفاع
+// h-64) بدل سبينر عام مجرّد، لتفادي أي قفزة في التخطيط (Layout Shift) عند
+// اكتمال التحميل. يُستخدم كـ fallback لـ <Suspense> حول <ChartsSection> في App.tsx.
 export function ChartsSectionSkeleton() {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">

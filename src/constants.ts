@@ -1,11 +1,4 @@
-import type { Traveler, CurrencyMap } from './types'
-
-export const INITIAL_TRAVELERS: Traveler[] = [
-  { id: 1, name: 'محمد العاثم',        shortName: 'محمد',       deposited: 214  },
-  { id: 2, name: 'عيسى آل شبير',      shortName: 'عيسى',       deposited: 314  },
-  { id: 3, name: 'عبدالمجيد الدبيخي', shortName: 'عبدالمجيد',  deposited: 1214 },
-  { id: 4, name: 'فرحان الملا',        shortName: 'فرحان',      deposited: 1214 },
-]
+import type { CurrencyMap } from './types'
 
 export const BANK_DETAILS = {
   bankName:    'البنك السعودي للاستثمار (SAIB)',
@@ -13,11 +6,9 @@ export const BANK_DETAILS = {
   iban:        'SA3265000005555459829001',
 } as const
 
-// ⚠️ يجب أن يطابق هذا البريد تماماً:
-//   1) المستخدم المنشأ في Firebase Console › Authentication › Users
-//   2) البريد الوارد في دالة isAdmin() داخل Firestore Security Rules
-export const ADMIN_EMAILS: string[] = ['mostqbel.morsel@gmail.com']
-
+// أسعار احتياطية (مقابل الريال) تُستخدم قبل وصول الأسعار الحية ومع انقطاع الشبكة.
+// مقصورة على العملات الأكثر تداولاً للمسافر — عند تعذّر جلب الأسعار الحية تظهر
+// هذه فقط (لأن عرض 160 عملة بأسعار غير معروفة يُنتج تحويلات خاطئة).
 export const FALLBACK_RATES: Record<string, number> = {
   SAR: 1, USD: 3.75, PLN: 0.97, AED: 1.02,
   BHD: 9.95, KWD: 12.20, EUR: 4.10, GBP: 4.80, TRY: 0.12,
@@ -30,23 +21,187 @@ export const EXPENSE_CATEGORIES: string[] = [
   'مواصلات', 'طعام وشراب', 'إقامة', 'أنشطة وترفيه', 'تسوق', 'أخرى',
 ]
 
+// 🆕 أسماء العملات بالعربية لكامل مجموعة ISO 4217 التي يوفّرها مزوّد الأسعار
+// (open.er-api.com). الصيغة: "الاسم العربي (CODE)" — الكود بين قوسين ليظهر
+// للمستخدم وليُستخدم أيضاً في الفرز عند تطابق الأسماء. الاسم مُفصَّل عمداً
+// (مثلاً "دولار أمريكي" لا "دولار") للتمييز بين العشرات من الدولارات/الدنانير/
+// الريالات/الفرنكات المتشابهة الآن بعد توسعة القائمة.
 export const CURRENCY_LABELS: Record<string, string> = {
-  SAR: 'ريال (SAR)',
-  USD: 'دولار (USD)',
-  PLN: 'زلوتي بولندي (zł)',
-  AED: 'درهم (AED)',
-  BHD: 'دينار بحريني (BHD)',
-  KWD: 'دينار كويتي (KWD)',
+  SAR: 'ريال سعودي (SAR)',
+  USD: 'دولار أمريكي (USD)',
   EUR: 'يورو (EUR)',
-  GBP: 'جنيه (GBP)',
+  AED: 'درهم إماراتي (AED)',
+  GBP: 'جنيه إسترليني (GBP)',
+  AFN: 'أفغاني أفغانستاني (AFN)',
+  ALL: 'ليك ألباني (ALL)',
+  AMD: 'درام أرميني (AMD)',
+  ANG: 'غيلدر أنتيلي هولندي (ANG)',
+  AOA: 'كوانزا أنغولي (AOA)',
+  ARS: 'بيزو أرجنتيني (ARS)',
+  AUD: 'دولار أسترالي (AUD)',
+  AWG: 'فلورين أروبي (AWG)',
+  AZN: 'مانات أذربيجاني (AZN)',
+  BAM: 'مارك بوسني قابل للتحويل (BAM)',
+  BBD: 'دولار بربادوسي (BBD)',
+  BDT: 'تاكا بنغلاديشي (BDT)',
+  BGN: 'ليف بلغاري (BGN)',
+  BHD: 'دينار بحريني (BHD)',
+  BIF: 'فرنك بوروندي (BIF)',
+  BMD: 'دولار برمودي (BMD)',
+  BND: 'دولار بروناي (BND)',
+  BOB: 'بوليفيانو بوليفي (BOB)',
+  BRL: 'ريال برازيلي (BRL)',
+  BSD: 'دولار باهامي (BSD)',
+  BTN: 'نغولترم بوتاني (BTN)',
+  BWP: 'بولا بوتسواني (BWP)',
+  BYN: 'روبل بيلاروسي (BYN)',
+  BZD: 'دولار بليزي (BZD)',
+  CAD: 'دولار كندي (CAD)',
+  CDF: 'فرنك كونغولي (CDF)',
+  CHF: 'فرنك سويسري (CHF)',
+  CLP: 'بيزو تشيلي (CLP)',
+  CNY: 'يوان صيني (CNY)',
+  COP: 'بيزو كولومبي (COP)',
+  CRC: 'كولون كوستاريكي (CRC)',
+  CUP: 'بيزو كوبي (CUP)',
+  CVE: 'إسكودو الرأس الأخضر (CVE)',
+  CZK: 'كورونا تشيكي (CZK)',
+  DJF: 'فرنك جيبوتي (DJF)',
+  DKK: 'كرونة دنماركية (DKK)',
+  DOP: 'بيزو دومينيكاني (DOP)',
+  DZD: 'دينار جزائري (DZD)',
+  EGP: 'جنيه مصري (EGP)',
+  ERN: 'ناكفا إريتري (ERN)',
+  ETB: 'بير إثيوبي (ETB)',
+  FJD: 'دولار فيجي (FJD)',
+  FKP: 'جنيه جزر فوكلاند (FKP)',
+  FOK: 'كرونة جزر فارو (FOK)',
+  GEL: 'لاري جورجي (GEL)',
+  GGP: 'جنيه غيرنزي (GGP)',
+  GHS: 'سيدي غاني (GHS)',
+  GIP: 'جنيه جبل طارق (GIP)',
+  GMD: 'دالاسي غامبي (GMD)',
+  GNF: 'فرنك غيني (GNF)',
+  GTQ: 'كتزال غواتيمالي (GTQ)',
+  GYD: 'دولار غياني (GYD)',
+  HKD: 'دولار هونغ كونغ (HKD)',
+  HNL: 'لمبيرا هندوراسي (HNL)',
+  HRK: 'كونا كرواتي (HRK)',
+  HTG: 'غورد هايتي (HTG)',
+  HUF: 'فورنت مجري (HUF)',
+  IDR: 'روبية إندونيسية (IDR)',
+  ILS: 'شيكل إسرائيلي جديد (ILS)',
+  IMP: 'جنيه جزيرة مان (IMP)',
+  INR: 'روبية هندية (INR)',
+  IQD: 'دينار عراقي (IQD)',
+  IRR: 'ريال إيراني (IRR)',
+  ISK: 'كرونة آيسلندية (ISK)',
+  JEP: 'جنيه جيرزي (JEP)',
+  JMD: 'دولار جامايكي (JMD)',
+  JOD: 'دينار أردني (JOD)',
+  JPY: 'ين ياباني (JPY)',
+  KES: 'شلن كيني (KES)',
+  KGS: 'سوم قيرغيزي (KGS)',
+  KHR: 'رييل كمبودي (KHR)',
+  KID: 'دولار كيريباتي (KID)',
+  KMF: 'فرنك قمري (KMF)',
+  KRW: 'وون كوري جنوبي (KRW)',
+  KWD: 'دينار كويتي (KWD)',
+  KYD: 'دولار جزر كايمان (KYD)',
+  KZT: 'تينغي كازاخي (KZT)',
+  LAK: 'كيب لاوسي (LAK)',
+  LBP: 'ليرة لبنانية (LBP)',
+  LKR: 'روبية سريلانكية (LKR)',
+  LRD: 'دولار ليبيري (LRD)',
+  LSL: 'لوتي ليسوتو (LSL)',
+  LYD: 'دينار ليبي (LYD)',
+  MAD: 'درهم مغربي (MAD)',
+  MDL: 'ليو مولدوفي (MDL)',
+  MGA: 'أرياري مدغشقري (MGA)',
+  MKD: 'دينار مقدوني (MKD)',
+  MMK: 'كيات ميانماري (MMK)',
+  MNT: 'توغروغ منغولي (MNT)',
+  MOP: 'باتاكا ماكاوي (MOP)',
+  MRU: 'أوقية موريتانية (MRU)',
+  MUR: 'روبية موريشية (MUR)',
+  MVR: 'روفية مالديفية (MVR)',
+  MWK: 'كواتشا مالاوي (MWK)',
+  MXN: 'بيزو مكسيكي (MXN)',
+  MYR: 'رينغيت ماليزي (MYR)',
+  MZN: 'متيكال موزمبيقي (MZN)',
+  NAD: 'دولار ناميبي (NAD)',
+  NGN: 'نايرا نيجيري (NGN)',
+  NIO: 'قرطبة نيكاراغوي (NIO)',
+  NOK: 'كرونة نرويجية (NOK)',
+  NPR: 'روبية نيبالية (NPR)',
+  NZD: 'دولار نيوزيلندي (NZD)',
+  OMR: 'ريال عماني (OMR)',
+  PAB: 'بالبوا بنمي (PAB)',
+  PEN: 'سول بيروفي (PEN)',
+  PGK: 'كينا بابوا غينيا الجديدة (PGK)',
+  PHP: 'بيزو فلبيني (PHP)',
+  PKR: 'روبية باكستانية (PKR)',
+  PLN: 'زلوتي بولندي (PLN)',
+  PYG: 'غواراني باراغوي (PYG)',
+  QAR: 'ريال قطري (QAR)',
+  RON: 'ليو روماني (RON)',
+  RSD: 'دينار صربي (RSD)',
+  RUB: 'روبل روسي (RUB)',
+  RWF: 'فرنك رواندي (RWF)',
+  SBD: 'دولار جزر سليمان (SBD)',
+  SCR: 'روبية سيشيلية (SCR)',
+  SDG: 'جنيه سوداني (SDG)',
+  SEK: 'كرونة سويدية (SEK)',
+  SGD: 'دولار سنغافوري (SGD)',
+  SHP: 'جنيه سانت هيلينا (SHP)',
+  SLE: 'ليون سيراليوني (SLE)',
+  SLL: 'ليون سيراليوني قديم (SLL)',
+  SOS: 'شلن صومالي (SOS)',
+  SRD: 'دولار سورينامي (SRD)',
+  SSP: 'جنيه جنوب السودان (SSP)',
+  STN: 'دوبرا ساو تومي (STN)',
+  SYP: 'ليرة سورية (SYP)',
+  SZL: 'ليلانجيني سوازيلندي (SZL)',
+  THB: 'بات تايلندي (THB)',
+  TJS: 'سوموني طاجيكي (TJS)',
+  TMT: 'مانات تركمانستاني (TMT)',
+  TND: 'دينار تونسي (TND)',
+  TOP: 'بانغا تونغي (TOP)',
   TRY: 'ليرة تركية (TRY)',
+  TTD: 'دولار ترينيداد وتوباغو (TTD)',
+  TVD: 'دولار توفالو (TVD)',
+  TWD: 'دولار تايواني جديد (TWD)',
+  TZS: 'شلن تنزاني (TZS)',
+  UAH: 'هريفنيا أوكراني (UAH)',
+  UGX: 'شلن أوغندي (UGX)',
+  UYU: 'بيزو أوروغواي (UYU)',
+  UZS: 'سوم أوزبكي (UZS)',
+  VES: 'بوليفار فنزويلي (VES)',
+  VND: 'دونغ فيتنامي (VND)',
+  VUV: 'فاتو فانواتي (VUV)',
+  WST: 'تالا ساموي (WST)',
+  XAF: 'فرنك وسط أفريقي (XAF)',
+  XCD: 'دولار شرق الكاريبي (XCD)',
+  XDR: 'حقوق السحب الخاصة (XDR)',
+  XOF: 'فرنك غرب أفريقي (XOF)',
+  XPF: 'فرنك سي إف بي (XPF)',
+  YER: 'ريال يمني (YER)',
+  ZAR: 'راند جنوب أفريقي (ZAR)',
+  ZMW: 'كواتشا زامبي (ZMW)',
+  ZWL: 'دولار زيمبابوي (ZWL)',
 }
 
-export const buildCurrencyMap = (rates: Record<string, number>): CurrencyMap =>
-  Object.keys(CURRENCY_LABELS).reduce<CurrencyMap>((acc, code) => {
-    acc[code] = {
-      label: CURRENCY_LABELS[code],
-      rate:  rates[code] ?? FALLBACK_RATES[code],
+// يبني خريطة العملات المعروضة. يُدرج فقط العملات التي لها سعر معروف — سواء من
+// الأسعار الحية (rates) أو الاحتياطية (FALLBACK_RATES). لذا قبل وصول الأسعار
+// الحية تظهر العملات الاحتياطية فقط، وبعد وصولها تظهر كامل القائمة (~160). أي
+// عملة بلا سعر تُستبعد بدل إظهارها بتحويل غير صحيح (NaN).
+export const buildCurrencyMap = (rates: Record<string, number>): CurrencyMap => {
+  const map: CurrencyMap = {}
+  for (const code of Object.keys(CURRENCY_LABELS)) {
+    const rate: number | undefined = rates[code] ?? FALLBACK_RATES[code]
+    if (rate !== undefined) {
+      map[code] = { label: CURRENCY_LABELS[code], rate }
     }
-    return acc
-  }, {})
+  }
+  return map
+}

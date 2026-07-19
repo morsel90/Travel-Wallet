@@ -26,6 +26,8 @@ export {
   ArrowRightLeft,
   TrendingUp,
   WifiOff,
-  Wallet, // 🆕 لحبّة "الإجمالي المُودَع" في Header (تصغير StatBox)
-  Scale,  // 🆕 لحبّة "الرصيد المتبقي" في Header (تصغير StatBox)
+  Wallet, // لحبّة "الإجمالي المُودَع" في Header (إحصائيات مدموجة)
+  Scale,  // لحبّة "الرصيد المتبقي" في Header (إحصائيات مدموجة)
+  Share2, // 🆕 زر مشاركة تفاصيل الحساب البنكي (BankDetailsCard)
+  Printer, // 🆕 زر طباعة/حفظ PDF في صفحة التقارير (ReportsView)
 } from 'lucide-react'

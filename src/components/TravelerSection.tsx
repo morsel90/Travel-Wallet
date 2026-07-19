@@ -1,110 +1,135 @@
-import { memo } from 'react'
+import { memo, useCallback, useState } from 'react'
 import { Pencil, Trash2, Plus, X, History, Loader2 } from '../icons'
 import type { TravelerBalance } from '../types'
 import { useData } from '../context/DataContext'
 import { useUI } from '../context/UIContext'
 import { matchesTraveler } from '../utils/participants'
-
+// تأكد من مسار استيراد النافذة الجديدة بناءً على مكان حفظك لها
+import TravelerProfileModal from './modals/TravelerProfileModal' 
 interface TravelerCardProps {
   traveler: TravelerBalance
 }
 
+// دالة تحويل الأرقام الهندية/الشرقية (١٢٣) إلى أرقام غربية (123) لمنع خطأ الـ NaN
+const convertArabicNumerals = (str: string): string => {
+  const map: Record<string, string> = { '٠':'0','١':'1','٢':'2','٣':'3','٤':'4','٥':'5','٦':'6','٧':'7','٨':'8','٩':'9' };
+  return str.replace(/[٠-٩]/g, ch => map[ch] ?? ch);
+};
+
+// مكوّن عرض بطاقة رصيد المسافر المنفرد (Traveler Card)
 export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
-  const { isAdmin, expenses } = useData()
+  // جلبنا settlements و travelers لدعم بيانات النافذة المنبثقة
+  const { isAdmin, expenses, travelers } = useData()
   const { openDeposit, requestDeleteTraveler, openDepositHistory } = useUI()
   
-  // تحديد أنواع البارامترات (e, p) لتجنب أخطاء Implicit Any في TS
+  // حالة التحكم في ظهور نافذة ملف المسافر
+  const [showProfile, setShowProfile] = useState(false)
+  
   const hasExpenses = expenses.some((e: any) => e.participants.some((p: any) => matchesTraveler(traveler, p)))
   const isNegative = traveler.remaining < 0
   const percentage = Math.min(100, Math.max(0, (traveler.remaining / traveler.deposited) * 100)) || 0
 
+  // استخراج كائن المسافر الأساسي من القائمة
+  const baseTraveler = travelers.find((t: any) => t.id === traveler.id) || traveler
+
   return (
-    <div className="bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-slate-100 flex flex-col justify-between gap-2.5 transition-all">
-      {/* القسم العلوي: توزيع أفقي مريح للعين على الجوال */}
-      <div className="flex justify-between items-center gap-3 min-w-0 w-full">
-        
-        {/* اليمين: الأفتار الدائري + تفاصيل الاسم والدفع المسبق */}
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <div className="w-8 h-8 rounded-full bg-teal-50 text-teal-700 flex items-center justify-center text-sm font-bold shrink-0 shadow-sm">
-            {traveler.name[0]}
+    <>
+      <div 
+        onClick={() => setShowProfile(true)}
+        className="bg-white rounded-xl p-3.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col gap-2.5 relative group transition-all hover:shadow-md hover:border-teal-300 cursor-pointer"
+      >
+        {traveler._pending && (
+          <div className="absolute -top-1.5 -right-1.5 bg-teal-500 text-white p-1 rounded-full shadow-sm z-10" title="جارٍ المزامنة...">
+            <Loader2 className="w-3 h-3 animate-spin" />
           </div>
-          
-          <div className="min-w-0 flex-1">
-            <h3 className="font-bold text-slate-800 text-sm sm:text-base flex items-center gap-1.5 min-w-0">
-              <span className="truncate min-w-0 text-slate-900 font-bold">{traveler.name}</span>
-              {traveler._pending && (
-                <span className="flex items-center gap-1 text-[9px] text-teal-600 bg-teal-50 px-1.5 py-0.5 rounded-full font-medium shrink-0 animate-pulse">
-                  <Loader2 className="w-2.5 h-2.5 animate-spin" /> مزامنة
-                </span>
-              )}
-            </h3>
-            <p className="text-[11px] text-slate-400 mt-0.5 tabular-nums truncate">
-              المسبق: <span className="font-semibold text-slate-500">{traveler.deposited.toFixed(2)}</span>
-            </p>
-          </div>
-        </div>
-
-        {/* اليسار: حاوية الرصيد المتبقي بمظهر كبسولة مدمجة وأنيقة */}
-        <div className="text-left shrink-0 bg-slate-50/60 px-3 py-1 rounded-lg border border-slate-100 min-w-[80px] sm:min-w-0">
-          <p className="text-[10px] sm:text-xs font-medium text-slate-400 mb-0.5 text-center sm:text-left">المتبقي</p>
-          <p className={`text-sm sm:text-base font-black tabular-nums text-center sm:text-left ${isNegative ? 'text-rose-600' : 'text-teal-600'}`} dir="ltr">
-            {traveler.remaining.toFixed(2)}
-          </p>
-        </div>
-
-      </div>
-
-      {/* المنتصف: شريط مؤشر النسبة المئوية مرن ومدمج وبدون هدر مساحة */}
-      <div className="w-full flex items-center gap-2 mt-0.5" dir="ltr">
-        <div className="flex-1 bg-slate-100 rounded-full h-1 sm:h-1.5 overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-300 ${isNegative ? 'bg-rose-500' : 'bg-teal-500'}`}
-            style={{ width: `${isNegative ? 100 : percentage}%` }}
-          />
-        </div>
-        {!isNegative && (
-          <span className="text-[9px] text-slate-400 font-mono hidden sm:inline shrink-0">
-            {Math.round(percentage)}%
-          </span>
         )}
-      </div>
 
-      {/* القسم السفلي: أزرار التحكم الخاصة بالمسؤول عند تفعيل وضع المسؤول */}
-      {isAdmin && (
-        <div className="flex flex-col gap-1.5 pt-2 mt-0.5 border-t border-slate-50 w-full animate-fadeIn">
-          <div className="flex gap-1.5 w-full">
-            <button
-              onClick={() => openDeposit(traveler)}
-              className="flex-1 justify-center flex items-center gap-1 text-teal-700 bg-teal-50 hover:bg-teal-100 active:scale-95 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border border-teal-100"
-            >
-              <Pencil className="w-3 h-3" /> تعديل الرصيد
-            </button>
-            <button
-              onClick={() => openDepositHistory(traveler)}
-              title="سجل تعديلات الرصيد"
-              className="flex items-center justify-center text-slate-500 bg-slate-50 hover:bg-slate-100 border border-slate-200 active:scale-95 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all"
-            >
-              <History className="w-3.5 h-3.5" />
-            </button>
+        <div className="flex justify-between items-center gap-3 min-w-0 w-full">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="w-9 h-9 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-sm font-bold shrink-0 shadow-sm">
+              {traveler.name[0]}
+            </div>
+            
+            <div className="min-w-0 flex-1 flex flex-col justify-center gap-0.5">
+              <span className="font-bold text-slate-800 text-base sm:text-lg truncate min-w-0 leading-tight">
+                {traveler.name}
+              </span>
+              <span className="text-xs text-slate-500 truncate min-w-0 leading-tight">
+                المودع: <span className="font-bold text-slate-700">{traveler.deposited} ﷼</span>
+              </span>
+            </div>
           </div>
-          
-          <div className="w-full">
+
+          <div className="text-left shrink-0 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+            <div className="text-[10px] sm:text-xs font-medium text-slate-400 mb-0.5 text-center">المتبقي</div>
+            <div className={`text-sm sm:text-base font-black tabular-nums text-center leading-none ${isNegative ? 'text-rose-600' : 'text-teal-600'}`} dir="ltr">
+              {traveler.remaining.toFixed(2)}
+            </div>
+          </div>
+        </div>
+
+        <div className="w-full flex items-center gap-2 mt-0.5" dir="ltr" title={`استهلاك ${percentage.toFixed(1)}%`}>
+          <div className="flex-1 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${isNegative ? 'bg-rose-500' : 'bg-gradient-to-r from-teal-400 to-teal-600'}`}
+              style={{ width: `${isNegative ? 100 : percentage}%` }}
+            />
+          </div>
+        </div>
+
+        {isAdmin && (
+          <div className="flex items-center justify-end gap-1.5 mt-1 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 transition-opacity">
+            <button 
+              type="button"
+              onClick={(e) => { e.stopPropagation(); openDeposit(traveler); }} 
+              title="تعديل الرصيد" 
+              className="p-1.5 bg-slate-50 hover:bg-teal-50 text-slate-500 hover:text-teal-600 rounded-lg transition-colors"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+            <button 
+              type="button"
+              onClick={(e) => { e.stopPropagation(); openDepositHistory(traveler); }} 
+              title="سجل التعديلات" 
+              className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded-lg transition-colors"
+            >
+              <History className="w-4 h-4" />
+            </button>
+            
             {hasExpenses ? (
-              <span className="block text-center text-[10px] text-slate-400 bg-slate-50 py-1.5 rounded-lg border border-slate-100">
-                لا يمكن الحذف (مرتبط بمصاريف)
+              <span 
+                onClick={(e) => e.stopPropagation()} 
+                className="text-[10px] text-slate-400 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100 flex items-center"
+              >
+                مربوط بمصاريف
               </span>
             ) : (
-              <button
-                onClick={() => requestDeleteTraveler(traveler)}
-                className="w-full flex items-center justify-center gap-1 text-rose-600 bg-rose-50 hover:bg-rose-100 active:scale-95 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border border-rose-100"
+               <button 
+                type="button"
+                onClick={(e) => { e.stopPropagation(); requestDeleteTraveler(traveler); }} 
+                title="حذف المسافر" 
+                className="p-1.5 bg-slate-50 hover:bg-rose-50 text-slate-500 hover:text-rose-600 rounded-lg transition-colors"
               >
-                <Trash2 className="w-3 h-3" /> حذف المسافر
+                <Trash2 className="w-4 h-4" />
               </button>
             )}
           </div>
-        </div>
+        )}
+      </div>
+
+      {/* استدعاء النافذة المنبثقة عند النقر على البطاقة */}
+      {showProfile && (
+        <TravelerProfileModal
+          traveler={baseTraveler as any}
+          balance={traveler}
+          expenses={expenses}
+          settlements={[]}
+          allTravelers={travelers}
+          isAdmin={isAdmin}
+          onClose={() => setShowProfile(false)}
+        />
       )}
-    </div>
+    </>
   )
 })
 
@@ -117,39 +142,74 @@ interface AddTravelerFormProps {
   cancelAddTraveler: () => void
 }
 
+// مكوّن نموذج تفاصيل إضافة المسافر الجديد
 export const AddTravelerForm = memo(({
   newTravelerName, setNewTravelerName,
   newTravelerDeposit, setNewTravelerDeposit,
   onSubmit, cancelAddTraveler
 }: AddTravelerFormProps) => {
+  
+  const handleDepositChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const converted = convertArabicNumerals(e.target.value);
+    const sanitized = converted.replace(/[^0-9.]/g, '');
+    const parts = sanitized.split('.');
+    const finalValue = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : sanitized;
+    setNewTravelerDeposit(finalValue);
+  }, [setNewTravelerDeposit]);
+
   return (
-    <form onSubmit={onSubmit} className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 flex flex-wrap items-end gap-3 mt-4 animate-fadeIn">
-      <div className="flex-1 min-w-[140px]">
-        <label className="block text-xs font-medium text-slate-500 mb-1">اسم المسافر الجديد</label>
-        <input
-          type="text" required autoFocus value={newTravelerName}
-          onChange={(e) => setNewTravelerName(e.target.value)}
-          className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
-          placeholder="مثال: سعد الغامدي"
-        />
-      </div>
-      <div className="w-[140px]">
-        <label className="block text-xs font-medium text-slate-500 mb-1">الدفع المسبق (اختياري)</label>
-        <input
-          type="number" min="0" step="0.01" value={newTravelerDeposit}
-          onChange={(e) => setNewTravelerDeposit(e.target.value)}
-          className="w-full border border-slate-200 rounded-lg p-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
-          placeholder="0.00"
-        />
-      </div>
-      <div className="flex gap-2">
-        <button type="submit" className="flex items-center gap-1.5 bg-teal-600 text-white font-bold py-2 px-4 rounded-xl hover:bg-teal-700 active:scale-95 transition-all text-sm shadow-sm shadow-teal-100">
-          <Plus className="w-3.5 h-3.5" /> إضافة
-        </button>
-        <button type="button" onClick={cancelAddTraveler} className="flex items-center gap-1.5 bg-slate-100 text-slate-600 font-bold py-2 px-4 rounded-xl active:scale-95 transition-all text-sm">
-          <X className="w-3.5 h-3.5" /> إلغاء
+    <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200 mt-5 animate-fadeIn">
+      <div className="flex justify-between items-center mb-5 pb-3.5 border-b border-slate-100">
+        <h3 className="font-bold text-base sm:text-lg text-slate-800">إضافة مسافر جديد</h3>
+        <button 
+          type="button" 
+          onClick={cancelAddTraveler} 
+          className="flex items-center gap-1 p-1.5 text-slate-400 bg-slate-50 hover:bg-slate-100 hover:text-slate-700 rounded-lg font-bold transition-colors"
+          aria-label="إغلاق النموذج"
+        >
+          <X className="w-5 h-5" />
         </button>
       </div>
-    </form>
+
+      <form onSubmit={onSubmit} className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 items-end">
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-bold text-slate-500 mb-1.5 ms-1">اسم المسافر الجديد</label>
+            <input
+              type="text" 
+              required 
+              autoFocus 
+              value={newTravelerName}
+              onChange={(e) => setNewTravelerName(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl p-3 text-base text-slate-800 font-bold focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all placeholder:text-slate-300 placeholder:font-normal"
+              placeholder="مثال: سعد الغامدي"
+            />
+          </div>
+          
+          <div className="relative">
+            <label className="block text-xs font-bold text-slate-500 mb-1.5 ms-1">الدفع المسبق (اختياري)</label>
+            <div className="relative">
+              <input
+                type="text" 
+                inputMode="decimal" 
+                value={newTravelerDeposit}
+                onChange={handleDepositChange}
+                className="w-full bg-white border border-slate-200 rounded-xl p-3 pl-8 text-base text-slate-800 font-bold focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all placeholder:text-slate-300 placeholder:font-normal"
+                placeholder="0.00"
+                dir="ltr"
+              />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">﷼</span>
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          className="w-full bg-teal-600 text-white font-bold py-3.5 rounded-xl hover:bg-teal-700 active:scale-[0.99] transition-all text-base shadow-sm mt-2 flex items-center justify-center gap-1.5"
+        >
+          <Plus className="w-4 h-4" /> اعتماد المسافر الجديد
+        </button>
+      </form>
+    </div>
   )
 })

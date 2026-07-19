@@ -10,6 +10,18 @@ html, body {
   overscroll-behavior-y: contain;
 }
 
+/* 🆕 حركة ظهور ناعمة (تلاشٍ + ارتفاع بسيط) — كانت الفئة animate-fadeIn
+   مستخدمة في عدة مكوّنات (SmartInputBar، AddTravelerForm، EmptyState...) دون
+   تعريف فعلي لها، فلم تكن تُنتج أي أثر. هذا التعريف يفعّلها. مدد الحركة تُقلَّص
+   تلقائياً لمن يفضّل تقليل الحركة عبر قاعدة prefers-reduced-motion أدناه. */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.25s ease-out both;
+}
+
 /* دعم تفضيلات تقليل الحركة للمستخدمين الذين يحتاجونها (مثل من يعانون من
    الدوار أو الحساسية للحركة). تُقلَّص مدد الانتقال والحركة إلى قيمة ضئيلة
    جداً (0.01ms) بحيث تصبح فورية تقريباً، مع الاحتفاظ بتأثيرات
@@ -21,4 +33,83 @@ html, body {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
   }
+}
+
+/* ===== إصلاح input[type="date"] و <select> في Safari iOS ===== */
+
+/* إلغاء appearance الافتراضية في Safari */
+.safari-date-fix,
+.safari-select-fix {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  /* إلغاء border-radius الافتراضي في Safari */
+  border-radius: 0.75rem;
+  /* إصلاح الارتفاع الزائد في Safari */
+  min-height: 44px;
+}
+
+/* إزالة الـ padding الداخلي الإضافي في Safari لحقول التاريخ */
+.safari-date-fix::-webkit-datetime-edit,
+.safari-date-fix::-webkit-datetime-edit-fields-wrapper,
+.safari-date-fix::-webkit-datetime-edit-text,
+.safari-date-fix::-webkit-datetime-edit-day-field,
+.safari-date-fix::-webkit-datetime-edit-month-field,
+.safari-date-fix::-webkit-datetime-edit-year-field {
+  padding: 0;
+  line-height: 1;
+}
+
+/* إخفاء أيقونة التقويم الافتراضية في Safari */
+.safari-date-fix::-webkit-calendar-picker-indicator {
+  opacity: 0.6;
+  filter: invert(0.4);
+  cursor: pointer;
+}
+
+/* إخفاء السهم الافتراضي في Safari للـ select */
+.safari-select-fix::-webkit-inner-spin-button,
+.safari-select-fix::-webkit-list-button {
+  display: none;
+}
+
+/* دعم RTL للـ select */
+.safari-select-fix {
+  direction: rtl;
+}
+
+/* ===== الطباعة / حفظ PDF ===== */
+/* 🆕 مستند الطباعة (#print-root) مخفي تماماً على الشاشة، ويظهر فقط عند الطباعة.
+   يُركَّب عبر Portal كشقيق لـ #root مباشرةً تحت <body>. عند الطباعة نُخفي تطبيق
+   الشاشة كاملاً بـ display:none على #root (يزيل مساحته فلا تظهر صفحات فارغة)،
+   ونُظهر مستند الطباعة في التدفّق الطبيعي (position ثابت static) ليتوزّع على
+   الصفحات بشكل صحيح. الطريقة السابقة (visibility + position:absolute) كانت تُبقي
+   مساحة المخفي (صفحات فارغة) وتقصّ المحتوى في صفحة واحدة، خصوصاً على iOS Safari. */
+#print-root {
+  display: none;
+}
+
+@media print {
+  html, body {
+    height: auto !important;
+    background: #fff !important;
+  }
+  /* إخفاء التطبيق التفاعلي بالكامل (بمساحته) وإظهار مستند الطباعة فقط */
+  #root {
+    display: none !important;
+  }
+  #print-root {
+    display: block !important;
+    /* إجبار طباعة الألوان (رؤوس، أشرطة) بدل تجاهلها افتراضياً */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .print-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+@page {
+  margin: 14mm 12mm;
 }

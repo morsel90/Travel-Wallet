@@ -1,13 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { onAuthStateChanged, signInAnonymously, User } from 'firebase/auth'
 import { auth } from '../firebase'
-import { ADMIN_EMAILS }    from '../constants'
-import { TRIP_ID }         from '../utils/tripId'
+import { TRIP_ID } from '../utils/tripId'
 
-// ─── useAuth ──────────────────────────────────────────────────────────────────
-// 🆕 مفتاح تخزين رمز الرحلة محلياً (localStorage) أصبح خاصاً بكل رحلة (يتضمن
-// TRIP_ID) بدل مفتاح عالمي واحد — حتى لا يحاول التطبيق إعادة استخدام رمز رحلة
-// أخرى مخزَّن سابقاً بالخطأ عند فتح رابط رحلة مختلفة (?trip=xyz آخر) من نفس الجهاز.
 const tripPinStorageKey = () => `travelapp_trip_pin_${TRIP_ID}`
 
 export interface UseAuth {
@@ -16,6 +11,7 @@ export interface UseAuth {
   needsTripPin: boolean
   pinCheckLoading: boolean
   pinError: string | null
+  rateLimitSeconds: number | null
   verifyTripPin: (pin: string) => Promise<boolean>
 }
 
@@ -24,63 +20,84 @@ export function useAuth(): UseAuth {
   const [needsTripPin, setNeedsTripPin] = useState(false)
   const [pinCheckLoading, setPinCheckLoading] = useState(true)
   const [pinError, setPinError] = useState<string | null>(null)
+  const [rateLimitSeconds, setRateLimitSeconds] = useState<number | null>(null)
 
-  // يستدعي الـ Rewrite المحلي عبر fetch للتحقق من الرمز خادميًا وتفادي حظر الترويسات (CORS / Cross-Site)
-  const callVerify = useCallback(async (pin: string): Promise<boolean> => {
+  // حالة الإدارة بناءً على الـ Claims
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  // 🆕 عداد فك الحظر التلقائي — يعمل فقط عندما rateLimitSeconds > 0
+  // نعتمد على boolean signal عمداً (rateLimitActive بدل rateLimitSeconds نفسه)
+  // لتفادي إعادة إنشاء الـ interval كل ثانية أثناء العدّ التنازلي.
+  const rateLimitActive = rateLimitSeconds !== null && rateLimitSeconds > 0
+  useEffect(() => {
+    if (!rateLimitActive) return
+    const interval = setInterval(() => {
+      setRateLimitSeconds((prev) => {
+        if (prev === null || prev <= 1) {
+          clearInterval(interval)
+          setPinError(null)
+          return null
+        }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [rateLimitActive])
+
+  const callVerify = useCallback(async (pin: string): Promise<{ success: boolean, retryAfter?: number, message?: string }> => {
     try {
-      if (!auth.currentUser) return false
-
-      // 1️⃣ جلب التوكن الحالي للمستخدم المجهول (Anonymous) وإجبار تحديثه لضمان صلاحيته
+      if (!auth.currentUser) return { success: false }
       const idToken = await auth.currentUser.getIdToken(true)
 
-      // 2️⃣ 🚀 استدعاء الـ API عبر الـ Rewrite المحلي لتفادي تجريد ترويسة Authorization من قِبل المتصفح
-      // 🆕 نُرسل tripId مع الرمز — الخادم يبحث عن هاش رمز هذه الرحلة تحديداً
-      // ضمن مجموعة tripSecrets/{tripId} بدل سر عالمي واحد (انظر functions/index.js)
       const response = await fetch('/api/verifyTripPin', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${idToken}`
         },
-        body: JSON.stringify({ data: { pin: String(pin).trim(), tripId: TRIP_ID } }) // البنية المتوقعة خادميًا لـ Firebase Cloud Functions
+        body: JSON.stringify({ data: { pin: String(pin).trim(), tripId: TRIP_ID } })
       })
 
+      const resData = await response.json().catch(() => ({}))
+
       if (!response.ok) {
-        console.error("فشل التحقق من الخادم، كود الرد:", response.status)
-        return false
+        if (response.status === 429 || resData?.error?.status === 'RESOURCE_EXHAUSTED' || resData?.error?.status === 'resource-exhausted') {
+          return {
+            success: false,
+            retryAfter: resData?.error?.details?.retryAfter || 900,
+            message: resData?.error?.message || 'تجاوزت عدد المحاولات.'
+          }
+        }
+        return { success: false }
       }
 
-      const resData = await response.json()
-      
-      // 3️⃣ فرض تحديث التوكن محليًا فورًا لاستقبال الـ Custom Claim الجديد (trips: { [tripId]: true }) الذي منحه الباك-إند
       await auth.currentUser.getIdToken(true)
-      
-      // 🚀 فحص مرن للاستجابة: Firebase Callable عبر fetch قد تُرجع النتيجة داخل { result: { success: true } }
-      // نقوم بالتحقق من كائن result أو التحقق المباشر في حال قام الـ proxy بتبسيطه
-      const isSuccess = 
-        resData?.result?.success === true || 
-        resData?.result?.data?.success === true ||
-        resData?.success === true
-
-      return isSuccess
+      const isSuccess = resData?.result?.success === true || resData?.result?.data?.success === true || resData?.success === true
+      return { success: isSuccess }
     } catch (error) {
-      console.error("فشل استدعاء verifyTripPin المباشر:", error)
-      return false
+      return { success: false }
     }
   }, [])
 
   const verifyTripPin = useCallback(async (pin: string): Promise<boolean> => {
     setPinCheckLoading(true)
     setPinError(null)
-    const ok = await callVerify(pin)
-    if (ok) {
-      try { window.localStorage.setItem(tripPinStorageKey(), pin) } catch { /* تجاهل بصمت */ }
+    setRateLimitSeconds(null)
+
+    const result = await callVerify(pin)
+    if (result.success) {
+      try { window.localStorage.setItem(tripPinStorageKey(), pin) } catch { }
       setNeedsTripPin(false)
     } else {
-      setPinError('رمز الرحلة غير صحيح، حاول مرة أخرى.')
+      if (result.retryAfter) {
+        setRateLimitSeconds(result.retryAfter)
+        setPinError(result.message || 'تجاوزت عدد المحاولات المسموحة.')
+      } else {
+        setPinError('رمز الرحلة غير صحيح، حاول مرة أخرى.')
+      }
     }
     setPinCheckLoading(false)
-    return ok
+    return result.success
   }, [callVerify])
 
   useEffect(() => {
@@ -88,11 +105,14 @@ export function useAuth(): UseAuth {
 
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u)
-
       if (!u) { setPinCheckLoading(false); return }
 
-      const isAdminUser = !u.isAnonymous && ADMIN_EMAILS.includes(u.email ?? '')
-      if (isAdminUser) {
+      // 🆕 التحقق من الـ Custom Claim (admin: true)
+      const tokenResult = await u.getIdTokenResult()
+      const isAdminClaim = tokenResult.claims.admin === true
+      setIsAdmin(isAdminClaim)
+
+      if (isAdminClaim) {
         setNeedsTripPin(false)
         setPinCheckLoading(false)
         return
@@ -100,41 +120,32 @@ export function useAuth(): UseAuth {
 
       setPinCheckLoading(true)
       try {
-        const tokenResult = await u.getIdTokenResult()
-        // 🆕 عضوية خاصة بهذه الرحلة تحديداً — خريطة trips: { [tripId]: true }
-        // بدل علم member العالمي القديم (انظر شرح مطوّل في firestore.rules:
-        // isMember). مستخدم تحقق من رحلة أخرى فقط لا يُعتبر عضواً هنا.
         const trips = tokenResult.claims.trips as Record<string, boolean> | undefined
         if (trips?.[TRIP_ID] === true) {
           setNeedsTripPin(false)
           setPinCheckLoading(false)
           return
         }
-      } catch {
-        // تعذّر قراءة التوكن
-      }
+      } catch { }
 
       let cachedPin: string | null = null
-      try { cachedPin = window.localStorage.getItem(tripPinStorageKey()) } catch { /* تجاهل */ }
+      try { cachedPin = window.localStorage.getItem(tripPinStorageKey()) } catch { }
 
       if (cachedPin) {
-        const ok = await callVerify(cachedPin)
-        if (ok) {
+        const result = await callVerify(cachedPin)
+        if (result.success) {
           setNeedsTripPin(false)
           setPinCheckLoading(false)
           return
         }
-        try { window.localStorage.removeItem(tripPinStorageKey()) } catch { /* تجاهل */ }
+        try { window.localStorage.removeItem(tripPinStorageKey()) } catch { }
       }
 
       setNeedsTripPin(true)
       setPinCheckLoading(false)
     })
-
     return unsub
   }, [callVerify])
 
-  const isAdmin = !!(user && !user.isAnonymous && ADMIN_EMAILS.includes(user.email ?? ''))
-
-  return { user, isAdmin, needsTripPin, pinCheckLoading, pinError, verifyTripPin }
+  return { user, isAdmin, needsTripPin, pinCheckLoading, pinError, rateLimitSeconds, verifyTripPin }
 }

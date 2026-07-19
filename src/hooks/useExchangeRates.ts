@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { FALLBACK_RATES, buildCurrencyMap } from '../constants'
+import { FALLBACK_RATES, CURRENCY_LABELS, buildCurrencyMap } from '../constants'
 import type { CurrencyMap } from '../types'
 
 // ─── useExchangeRates ─────────────────────────────────────────────────────────
@@ -21,8 +21,11 @@ export function useExchangeRates(): UseExchangeRates {
       .then(r => r.json())
       .then((data: { result: string; rates: Record<string, number> }) => {
         if (cancelled || data?.result !== 'success') return
+        // 🆕 نبني السعر لكل عملة معرّفة في CURRENCY_LABELS (~160) لا للاحتياطية
+        // فقط — حتى تظهر القائمة الكاملة بعد وصول الأسعار الحية. أي عملة لا
+        // يوفّرها المزوّد تُتجاهل هنا وتبقى مستبعَدة من الخريطة (buildCurrencyMap).
         const updated: Record<string, number> = { SAR: 1 }
-        Object.keys(FALLBACK_RATES).forEach(code => {
+        Object.keys(CURRENCY_LABELS).forEach(code => {
           if (code === 'SAR') return
           const perSAR = data.rates[code]
           if (perSAR) updated[code] = +(1 / perSAR).toFixed(4)

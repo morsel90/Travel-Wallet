@@ -1,9 +1,9 @@
 import { useState, useMemo, useRef, lazy, Suspense, FormEvent, useCallback } from 'react'
 import { signInAnonymously, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth'
-import { setDoc, updateDoc, doc, writeBatch } from 'firebase/firestore' // ✅ إزالة serverTimestamp
+import { setDoc, updateDoc, doc, writeBatch } from 'firebase/firestore' 
 import { auth, db }                                             from './firebase'
 import { travelerDoc, depositLogsCol }         from './firestore'
-import { exportExpensesToCSV }                 from './utils/export'
+import { exportTripToExcel }                   from './utils/reports'
 import { calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from './utils/calculations'
 import { Virtuoso }                            from 'react-virtuoso'
 import { AnimatePresence }                     from 'framer-motion'
@@ -25,58 +25,41 @@ import ErrorBoundary                     from './components/ErrorBoundary'
 import Header                            from './components/Header'
 import Toast                             from './components/Toast'
 import { ConfirmModal }                  from './components/Modal'
-import { TravelerCard }                  from './components/TravelerSection'
+import { TravelerCard, AddTravelerForm } from './components/TravelerSection'
 import { ExpenseForm, ExpenseListItem }  from './components/ExpenseSection'
 import { BankDetailsCard }               from './components/Misc'
 import UpdatePrompt                      from './components/UpdatePrompt'
 import OnboardingBanner                  from './components/OnboardingBanner'
 import TripGate                          from './components/TripGate'
 import PullToRefresh                     from './components/PullToRefresh'
-import QuickAddFab                       from './components/QuickAddFab'
+import SmartInputBar                       from './components/SmartInputBar'
+import EmptyState                         from './components/EmptyState'
 import ModalFallback                     from './components/modals/ModalFallback'
 import { TravelerCardSkeleton, ExpenseListItemSkeleton, ChartsSectionSkeleton } from './components/Skeleton'
-import { Users, Receipt, AlertTriangle, Download, Search, WifiOff } from './icons'
+import { haptic }                         from './utils/haptics'
+// ✅ تم التصحيح: إضافة Plus إلى سطر استيراد الأيقونات هنا
+import { Users, Receipt, AlertTriangle, Download, Search, WifiOff, Plus, BarChart3 } from './icons'
 
 const AdminSignInModal   = lazy(() => import('./components/modals/AdminSignInModal'))
 const DepositModal       = lazy(() => import('./components/modals/DepositModal'))
 const TrashBinModal      = lazy(() => import('./components/modals/TrashBinModal'))
 const DepositHistoryModal = lazy(() => import('./components/modals/DepositHistoryModal'))
-// 🆕 مُحمَّل بتكاسل لأن Recharts تبعية كبيرة نسبياً — لا داعٍ لتضمينها بالحزمة الرئيسية
 const ChartsSection       = lazy(() => import('./components/charts/ChartsSection'))
+const ReportsView         = lazy(() => import('./components/reports/ReportsView'))
 
 export default function App() {
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
 
-  const { user, isAdmin, needsTripPin, pinCheckLoading, pinError, verifyTripPin } = useAuth()
-
-  // 🆕 بانر "غير متصل" عام — Background Sync الفعلي (تخزين الكتابة أثناء
-  // الانقطاع وإرسالها تلقائياً عند العودة) مُنفَّذ أصلاً عبر persistentLocalCache
-  // في firebase.ts (طابور Firestore الداخلي)، وليس عبر Workbox (المتعمّد
-  // تعطيله لطلبات Firebase في vite.config.js لتفادي تعارضه مع هذا الطابور).
-  // هذا الـ hook مجرّد مؤشر واجهة يطمئن المستخدم أن ذلك يحدث تلقائياً.
+  const { user, isAdmin, needsTripPin, pinCheckLoading, pinError, rateLimitSeconds, verifyTripPin } = useAuth()
   const isOnline = useOnlineStatus()
-
-  // 🔒 لا تُنشئ اشتراكات Firestore الفعلية إلا بعد تأكيد الصلاحية (admin أو عضو
-  // متحقق من رمز الرحلة). وإلا فالاشتراك يحاول القراءة فور تسجيل الدخول المجهول
-  // (قبل إدخال الرمز) فيُرفض بصلاحيات "denied"، ولا يُعاد تلقائياً بعد نجاح
-  // التحقق لاحقاً لأن مرجع user لا يتغيّر عند تحديث التوكن فقط.
   const hasAccess = isAdmin || (!pinCheckLoading && !needsTripPin)
 
   const { ratesUpdatedAt, CURRENCIES } = useExchangeRates()
   const { expenses,  setExpenses,  expensesLoaded,  refreshExpenses }  = useExpenses(hasAccess ? user : null, { setIsSyncing, setSyncError })
   const { travelers, setTravelers, travelersLoaded, refreshTravelers } = useTravelers(hasAccess ? user : null, setIsSyncing)
-
-  // 🆕 دعم رحلات متعددة: تفاصيل الحساب البنكي أصبحت خاصة بكل رحلة (Firestore
-  // بدل ثابت في constants.ts) — انظر hooks/useTripConfig.ts. نفس نمط hasAccess
-  // المستخدم أعلاه مع useTravelers/useExpenses تماماً وبنفس السبب.
   const { bankDetails } = useTripConfig(hasAccess ? user : null)
 
-  // 🆕 Skeleton Loading: يغطي فقط الفترة بين اجتياز TripGate ووصول أول رد فعلي
-  // من Firestore (مرة واحدة لكل جلسة/تسجيل دخول) — لا يظهر مجدداً مع تحديثات
-  // الـ listener اللاحقة (real-time) لأن expensesLoaded/travelersLoaded تبقى
-  // true بعد أول رد. بدونه كانت تظهر فراغات أو رسالة "لا توجد مصاريف حتى الآن"
-  // مضلِّلة أثناء التحميل الفعلي، لا بعد تأكيد عدم وجود بيانات.
   const isInitialLoading = !expensesLoaded || !travelersLoaded
 
   const activeExpenses = useMemo(() => expenses.filter(e => !e.deletedAt), [expenses])
@@ -87,8 +70,6 @@ export default function App() {
 
   const { balances, totalSpent, totalDeposited, totalRemaining } = useBalances(activeTravelers, activeExpenses)
 
-  // 🆕 بيانات مشتقة (derived) للرسوم البيانية — تُحسب فقط عند تغيّر balances/activeExpenses
-  // الفعلي، ولا تُقرأ أو تُكتب لـ Firestore مباشرة. انظر utils/calculations.ts.
   const settlements    = useMemo(() => calculateSettlements(balances), [balances])
   const categoryTotals = useMemo(() => calculateCategoryTotals(activeExpenses), [activeExpenses])
   const spendingTrend  = useMemo(() => calculateSpendingTrend(activeExpenses), [activeExpenses])
@@ -99,21 +80,16 @@ export default function App() {
     filteredExpenses
   } = useFilteredExpenses(activeExpenses, activeTravelers)
 
-  const [copiedIban, setCopiedIban] = useState(false)
   const [toast,      setToast]      = useState<ToastMessage | null>(null)
-  // 🆕 يتتبّع مؤقّت إخفاء التوست الحالي لإلغائه عند ظهور توست جديد قبل انتهاء
-  // مهلة القديم — بدون هذا، توست جديد (مثال: "تم استعادة") قد يُخفى قبل أوانه
-  // بمؤقّت توست سابق كان لا يزال يعمل (مثال: توست حذف بمهلة 5 ثوانٍ للتراجع).
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
   const [showAdminSignIn, setShowAdminSignIn] = useState(false)
   const [showTrashBin,    setShowTrashBin]    = useState(false)
+  const [showReports,     setShowReports]     = useState(false)
   const [adminEmail,      setAdminEmail]      = useState('')
   const [adminPassword,   setAdminPassword]   = useState('')
   const [authError,       setAuthError]       = useState<string | null>(null)
 
-  // 🆕 استرداد كلمة المرور — حالة تحميل + عدّ تنازلي 60 ثانية قبل إتاحة إعادة
-  // الإرسال (يمنع الإرسال المتكرر وإرهاق صندوق بريد المستخدم أو حدود Firebase)
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false)
   const [resetCooldownUntil,  setResetCooldownUntil]  = useState<number | null>(null)
   const resetCooldownSeconds = useCountdown(resetCooldownUntil)
@@ -126,16 +102,15 @@ export default function App() {
   const [depositModalFor, setDepositModalFor] = useState<Traveler | null>(null)
   const [depositAmount,   setDepositAmount]   = useState('')
   const [depositMode,     setDepositMode]     = useState<DepositMode>('add')
-  const [depositReason,   setDepositReason]   = useState('') // 🆕 سبب اختياري يُحفظ بسجل التدقيق
-  const [depositHistoryFor, setDepositHistoryFor] = useState<Traveler | null>(null) // 🆕 مسافر عرض سجل تعديلاته
+  const [depositReason,   setDepositReason]   = useState('') 
+  const [depositHistoryFor, setDepositHistoryFor] = useState<Traveler | null>(null) 
 
-  // 🆕 durationMs اختياري (افتراضي 2.5 ثانية) — توستات الحذف القابلة للتراجع
-  // تمرر 5 ثوانٍ لإعطاء وقت كافٍ للضغط على "تراجع". clearTimeout للمؤقّت
-  // السابق يمنع تسابق التوستات (انظر تعليق toastTimeoutRef أعلاه).
   const showToast = useCallback((msg: ToastMessage, durationMs = 2500) => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current)
     setToast(msg)
-    toastTimeoutRef.current = setTimeout(() => setToast(null), durationMs)
+    if (durationMs !== Infinity) {
+      toastTimeoutRef.current = setTimeout(() => setToast(null), durationMs)
+    }
   }, [])
 
   const handleFirestoreError = useCallback((err: unknown, fallback: string) => {
@@ -143,12 +118,6 @@ export default function App() {
     setSyncError(msg.includes('permission') ? 'لا تملك الصلاحية لتنفيذ هذا الإجراء.' : fallback)
   }, [])
 
-  // 🆕 Pull-to-Refresh: يُستدعى من PullToRefresh عند سحب الصفحة لأسفل من
-  // قمّتها — يجلب المصاريف والمسافرين معاً من الخادم مباشرة متجاوزاً الكاش
-  // المحلي تماماً (انظر refreshExpenses/refreshTravelers). عادةً هذا الجلب
-  // زائد عن الحاجة تقنياً لأن onSnapshot يبقي كل شيء محدَّثاً لحظياً أصلاً، لكنه
-  // إيماءة مطمئنة معتادة في تطبيقات الجوال، ومفيدة فعلياً في حال تعليق اتصال
-  // الـ listener لأي سبب (نوم الجهاز الطويل مثلاً) دون أن يلاحظ المستخدم.
   const handlePullToRefresh = useCallback(async () => {
     try {
       await Promise.all([refreshExpenses(), refreshTravelers()])
@@ -157,15 +126,13 @@ export default function App() {
     }
   }, [refreshExpenses, refreshTravelers, handleFirestoreError])
 
-  // 🆕 كل منطق نموذج/عمليات المصروف (إضافة/تعديل مع Rate Limiting، حذف ليّن مع
-  // توست "تراجع"، استعادة، تبديل المشاركين) استُخرج إلى useExpenseActions
-  // لتقليل حجم App.tsx — نفس السلوك تماماً، فقط منقول. انظر hooks/useExpenseActions.ts
   const {
     newExpense, setNewExpense, isAddingExpense, editingExpense, expenseToDelete, setExpenseToDelete,
     openExpenseForm, cancelExpenseForm, handleAddExpense, handleQuickAddExpense, startEditExpense, requestDeleteExpense,
     confirmDelete, handleRestoreExpense, toggleParticipant, toggleAllParticipants,
   } = useExpenseActions({
     activeTravelers, user, isAdmin, setExpenses, showToast, handleFirestoreError, setSyncError,
+    isFirstExpense: activeExpenses.length === 0,
   })
 
   const handleRestoreTraveler = useCallback((id: number) => {
@@ -177,7 +144,7 @@ export default function App() {
 
   const requestDeleteTraveler = useCallback((traveler: Traveler) => setTravelerToDelete(traveler), [])
   const openDeposit = useCallback((traveler: Traveler) => setDepositModalFor(traveler), [])
-  const openDepositHistory = useCallback((traveler: Traveler) => setDepositHistoryFor(traveler), []) // 🆕
+  const openDepositHistory = useCallback((traveler: Traveler) => setDepositHistoryFor(traveler), []) 
   
   const startAddTraveler = useCallback(() => setIsAddingTraveler(true), [])
   const cancelAddTraveler = useCallback(() => {
@@ -190,19 +157,17 @@ export default function App() {
     if (!newTravelerName.trim()) return
     const shortName = newTravelerName.trim().split(' ')[0]
     if (activeTravelers.some(t => t.shortName === shortName)) {
+      haptic.error()
       setSyncError(`يوجد مسافر بنفس الاسم المختصر "${shortName}"، استخدم اسمًا مختلفًا.`)
       return
     }
     const id = travelers.length ? Math.max(...travelers.map(t => t.id)) + 1 : 1
-    // 🐛 إصلاح: useTravelers يستعلم بـ where('deletedAt', '==', null) — Firestore
-    // لا يُطابق هذا الاستعلام مستنداً لا يملك الحقل إطلاقاً (مختلف عن "يساوي null"
-    // في SQL)، فبدون تحديد deletedAt هنا صراحةً لن يظهر المسافر الجديد في القائمة
-    // نهائياً بعد الإضافة (استُدرِك هذا الآن أثناء العمل على التحديثات المتفائلة).
     const traveler: Traveler = { id, name: newTravelerName.trim(), shortName, deposited: parseFloat(newTravelerDeposit) || 0, deletedAt: null }
 
     setNewTravelerName('')
     setNewTravelerDeposit('')
     setIsAddingTraveler(false)
+    haptic.success()
 
     if (!user) {
       setTravelers(prev => [...prev, traveler])
@@ -212,11 +177,9 @@ export default function App() {
       .catch(err => handleFirestoreError(err, 'تعذر إضافة المسافر.'))
   }, [newTravelerName, newTravelerDeposit, travelers, activeTravelers, user, setTravelers, handleFirestoreError])
 
-  // ✅ التعديل هنا: استخدام Date.now() بدلاً من serverTimestamp للتوافق مع قواعد الأمان
-  // 🆕 متفائل — انظر تعليق handleAddExpense أعلاه لشرح النمط والتراجع التلقائي
-  // 🆕 Undo: نفس نمط confirmDelete أعلاه (توست 5 ثوانٍ + زر "تراجع" → handleRestoreTraveler)
   const confirmDeleteTraveler = useCallback((id: number) => {
     setTravelerToDelete(null)
+    haptic.medium()
     showToast(
       { text: 'تم نقل المسافر إلى سلة المهملات', type: 'success', onUndo: () => handleRestoreTraveler(id) },
       5000
@@ -242,17 +205,15 @@ export default function App() {
       depositMode === 'subtract' ? Math.max(0, previousDeposited - amt) :
                                    previousDeposited + amt
 
-    // 🆕 متفائل: نغلق نافذة الإيداع ونعرض التوست فوراً — انظر تعليق handleAddExpense
     setDepositModalFor(null); setDepositAmount(''); setDepositMode('add'); setDepositReason('')
     showToast({ text: 'تم تحديث الرصيد', type: 'success' })
+    haptic.success()
 
     if (!user) {
       setTravelers(prev => prev.map(t => t.id === travelerId ? { ...t, deposited: newAmount } : t))
       return
     }
 
-    // تحديث الرصيد + تسجيل سجل تدقيق (من، متى، القيمة السابقة/الجديدة، السبب)
-    // بعملية batch واحدة ذرّية — إما ينجح الاثنان معًا أو يفشل الاثنان معًا
     const batch = writeBatch(db)
     batch.update(travelerDoc(travelerId), { deposited: newAmount })
     batch.set(doc(depositLogsCol(travelerId)), {
@@ -275,9 +236,6 @@ export default function App() {
       await signInWithEmailAndPassword(auth, adminEmail, adminPassword)
       setShowAdminSignIn(false); setAdminEmail(''); setAdminPassword('')
     } catch (err) {
-      // 🆕 تمييز رسالة الخطأ حسب السبب الفعلي بدل رسالة عامة واحدة لكل الحالات —
-      // نُبقي حالة "بيانات خاطئة" وحدها غامضة عمدًا (لا نفرّق بين بريد غير مسجّل
-      // وكلمة مرور خاطئة) حفاظًا على الخصوصية ومنع اكتشاف الحسابات المسجّلة.
       const code = (err as { code?: string })?.code ?? ''
       const message =
         code === 'auth/invalid-email'         ? 'صيغة البريد الإلكتروني غير صحيحة.' :
@@ -295,13 +253,6 @@ export default function App() {
     finally { signInAnonymously(auth).catch(console.error) }
   }, [])
 
-  // 🆕 استرداد كلمة مرور المسؤول داخل التطبيق — يرسل رابط إعادة تعيين عبر
-  // Firebase Auth للبريد المكتوب بنافذة تسجيل الدخول، بدون الحاجة لـ Firebase
-  // Console. لا يكشف هل البريد مسجّل أو لا (رسالة موحّدة) حفاظًا على الخصوصية.
-  // 🆕 UX: isSendingResetEmail يعرض حالة تحميل على الزر أثناء انتظار Firebase،
-  // وresetCooldownUntil يمنع إعادة الإرسال لمدة 60 ثانية بعد كل محاولة —
-  // نطبّق المهلة حتى لو فشل الإرسال فعلياً (شبكة/خطأ) حفاظاً على نفس الرسالة
-  // الموحّدة لكل الحالات (لا نكشف هل الفشل بسبب بريد غير موجود أم غيره).
   const handleForgotPassword = useCallback(async () => {
     if (isSendingResetEmail || resetCooldownSeconds > 0) return
     if (!adminEmail.trim()) {
@@ -312,7 +263,6 @@ export default function App() {
     try {
       await sendPasswordResetEmail(auth, adminEmail.trim())
     } catch {
-      // نتجاهل تفاصيل الخطأ عمدًا (مثل عدم وجود الحساب) لتفادي كشف معلومات حساسة
     } finally {
       setAuthError(null)
       setIsSendingResetEmail(false)
@@ -320,15 +270,6 @@ export default function App() {
       showToast({ text: 'إذا كان البريد صحيحًا ومسجّلاً، فسيصلك رابط إعادة تعيين كلمة المرور خلال دقائق.', type: 'success' })
     }
   }, [adminEmail, showToast, isSendingResetEmail, resetCooldownSeconds])
-
-  const handleCopyIban = useCallback(() => {
-    navigator.clipboard.writeText(bankDetails.iban)
-      .then(() => { setCopiedIban(true); setTimeout(() => setCopiedIban(false), 2000) })
-      .catch(() => {})
-  }, [bankDetails])
-
-  // 🆕 بناء/تنزيل ملف CSV استُخرج إلى utils/export.ts (exportExpensesToCSV) —
-  // دالة بحتة لا حاجة لتغليفها بـ useCallback هنا أصلاً؛ الزر يستدعيها مباشرة.
 
   const hasUnsavedData = useCallback(() => {
     const hasExpenseData = isAddingExpense && (
@@ -345,7 +286,7 @@ export default function App() {
     return hasExpenseData || hasTravelerData || hasDepositData
   }, [isAddingExpense, newExpense, isAddingTraveler, newTravelerName, newTravelerDeposit, depositModalFor, depositAmount])
 
-const dataContextValue = useMemo(() => ({
+  const dataContextValue = useMemo(() => ({
     travelers: activeTravelers,
     expenses: activeExpenses,
     user,
@@ -376,7 +317,7 @@ const dataContextValue = useMemo(() => ({
     submitTraveler: handleAddTraveler,
     openDeposit,
     requestDeleteTraveler,
-    openDepositHistory, // 🆕
+    openDepositHistory, 
   }), [
     newExpense, isAddingExpense, editingExpense, isAddingTraveler,
     newTravelerName, newTravelerDeposit,
@@ -385,10 +326,8 @@ const dataContextValue = useMemo(() => ({
     openDeposit, requestDeleteTraveler, openDepositHistory
   ])
 
-  // 🔒 بوابة رمز الرحلة: تُعرض بدل اللوحة كاملةً حتى تُمنح عضوية الرحلة (أو لمن هو
-  // مسؤول أصلاً). لا تُمنع استدعاءات الـ hooks أعلاه — فقط ما يُعرض من JSX.
   if (!isAdmin && (pinCheckLoading || needsTripPin)) {
-    return <TripGate loading={pinCheckLoading} error={pinError} onSubmit={verifyTripPin} />
+    return <TripGate loading={pinCheckLoading} error={pinError} rateLimitSeconds={rateLimitSeconds} onSubmit={verifyTripPin} />
   }
 
   return (
@@ -416,19 +355,22 @@ const dataContextValue = useMemo(() => ({
               isSyncing={isSyncing} isAdmin={isAdmin}
               onToggleAdmin={() => isAdmin ? handleAdminSignOut() : setShowAdminSignIn(true)}
               stats={isInitialLoading ? null : { totalDeposited, totalSpent, totalRemaining }}
+              isOnline={isOnline}
+              onStatClick={(stat) => {
+                haptic.light()
+                const id =
+                  stat === 'deposited' ? 'travelers-section' :
+                  stat === 'spent'     ? 'expenses-section'  :
+                                         'charts-section'
+                document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }}
             />
 
-            {/* 🆕 Pull-to-Refresh: سحب لأسفل عند قمة الصفحة يفرض إعادة جلب
-                expenses/travelers من الخادم متجاوزاً الكاش — انظر التعليق الكامل
-                في components/PullToRefresh.tsx وhandlePullToRefresh أعلاه. */}
             <PullToRefresh onRefresh={handlePullToRefresh}>
             <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
 
               <OnboardingBanner />
 
-              {/* 🆕 بانر انقطاع الاتصال — يظهر طوال فترة الانقطاع (لا يُخفى تلقائياً
-                  كالتوست، بل يختفي فوراً مع عودة الاتصال). التخزين والإرسال
-                  التلقائي فعليان أصلاً عبر Firestore SDK — انظر تعليق useOnlineStatus أعلاه. */}
               {!isOnline && (
                 <div className="bg-amber-100 text-amber-800 p-4 rounded-xl text-sm border border-amber-200 shadow-sm flex items-start gap-2">
                   <WifiOff className="w-4 h-4 mt-0.5 shrink-0" />
@@ -443,26 +385,29 @@ const dataContextValue = useMemo(() => ({
                 </div>
               )}
 
-              {/* 🆕 تصغير StatBox: شبكة 2×2 المستقلة السابقة أُزيلت من هنا نهائياً —
-                  نفس الأرقام (المبلغ الإجمالي/إجمالي المصروفات/الرصيد المتبقي +
-                  عدد المسافرين) انتقلت إلى Header نفسه (انظر prop: stats أدناه
-                  وcomponents/Header.tsx) بدل أخذ مساحة عمودية منفصلة أعلى الصفحة. */}
+              {/* قسم الأرصدة: زر الإضافة مدمج بالداخل ككارت تزامني منقط بأسفل القائمة */}
+              <section id="travelers-section" className="scroll-mt-24">
+                <div className="flex justify-between items-center mb-4 px-1">
+                  <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-slate-500" /> أرصدة المسافرين
+                    {!isInitialLoading && (
+                      <span className="text-[11px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full tabular-nums">
+                        {activeTravelers.length}
+                      </span>
+                    )}
+                  </h2>
+                </div>
 
-              <section>
-                <h2 className="text-lg font-bold text-slate-800 mb-4 px-1 flex items-center gap-2">
-                  <Users className="w-5 h-5 text-slate-500" /> موقف المسافرين
-                  {/* 🆕 عدد المسافرين انتقل من حبّة في Header (كان stat رابعاً) إلى
-                      شارة صغيرة هنا بجانب العنوان مباشرة — أقرب لسياقه الفعلي
-                      (بطاقات المسافرين تحته)، ويقلّل عدد الحبّات في الصفّ
-                      المتقلِّص للهيدر (تفادي تجاوز عرض الشاشات الضيقة جداً). */}
-                  {!isInitialLoading && (
-                    <span className="text-[11px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full tabular-nums">
-                      {activeTravelers.length}
-                    </span>
-                  )}
-                </h2>
-                {/* 🆕 تحسين بطاقات المسافرين: سطر واحد على الجوال دائماً (grid-cols-1) لمنع البتر، 
-                    ويتوسع تلقائياً لعمودين أو أكثر على الشاشات الأكبر. */}
+                {!isInitialLoading && activeTravelers.length === 0 && !isAddingTraveler ? (
+                  <EmptyState
+                    Icon={Users}
+                    title="لا يوجد مسافرون بعد"
+                    description="أضف المسافرين المشاركين في الرحلة لتتمكّن من توزيع المصاريف وحساب من يدين لمن."
+                    actionLabel={isAdmin ? 'إضافة أول مسافر' : undefined}
+                    onAction={isAdmin ? startAddTraveler : undefined}
+                    ActionIcon={isAdmin ? Plus : undefined}
+                  />
+                ) : (
                 <div className={`grid gap-3 sm:gap-4 ${isAdmin ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`}>
                   {isInitialLoading
                     ? Array.from({ length: 4 }, (_, i) => <TravelerCardSkeleton key={i} />)
@@ -470,38 +415,80 @@ const dataContextValue = useMemo(() => ({
                         <TravelerCard key={traveler.id} traveler={traveler} />
                       ))
                   }
+                  
+                  {/* البطاقة المكملة المنقطة بأسفل شبكة كروت المسافرين مع الإصلاح التام للـ Plus */}
+                  {isAdmin && !isAddingTraveler && !isInitialLoading && (
+                    <button
+                      type="button"
+                      onClick={startAddTraveler}
+                      className="border-2 border-dashed border-slate-200 hover:border-teal-500 hover:bg-teal-50/40 rounded-xl p-4 flex flex-row sm:flex-col items-center justify-center gap-3 text-slate-500 hover:text-teal-600 transition-all shadow-sm bg-slate-50/10 group cursor-pointer min-h-[76px] sm:min-h-[120px]"
+                    >
+                      <div className="w-9 h-9 rounded-full bg-slate-100 group-hover:bg-teal-100 flex items-center justify-center text-slate-600 group-hover:text-teal-700 transition-colors shrink-0 shadow-sm">
+                        <Plus className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm font-bold">إضافة مسافر جديد</span>
+                    </button>
+                  )}
                 </div>
-               
+                )}
+
+                {/* ظهور نموذج استقبال البيانات المطور تحت الكروت مباشرة عند فتح ميزة الإضافة */}
+                {isAddingTraveler && (
+                  <AddTravelerForm
+                    newTravelerName={newTravelerName}
+                    setNewTravelerName={setNewTravelerName}
+                    newTravelerDeposit={newTravelerDeposit}
+                    setNewTravelerDeposit={setNewTravelerDeposit}
+                    onSubmit={handleAddTraveler}
+                    cancelAddTraveler={cancelAddTraveler}
+                  />
+                )}
               </section>
 
-              {/* 🆕 تصوّر بياني للأرصدة — من يدفع لمن (Sankey)، توزيع حسب الفئة (Pie)،
-                  تطوّر الإجمالي عبر الزمن (Bar + Line). لا يظهر أثناء التحميل الأول
-                  (Skeleton) ولا إن لم يكن هناك أي مصروف بعد فرصد فارغ لكل رسم لا فائدة منه. */}
-              {!isInitialLoading && activeExpenses.length > 0 && (
-                <Suspense fallback={<ChartsSectionSkeleton />}>
-                  <ChartsSection
-                    settlements={settlements}
-                    categoryTotals={categoryTotals}
-                    spendingTrend={spendingTrend}
-                  />
-                </Suspense>
-              )}
+              <div id="charts-section" className="scroll-mt-24">
+                {!isInitialLoading && activeExpenses.length > 0 && (
+                  <Suspense fallback={<ChartsSectionSkeleton />}>
+                    <ChartsSection
+                      settlements={settlements}
+                      categoryTotals={categoryTotals}
+                      spendingTrend={spendingTrend}
+                    />
+                  </Suspense>
+                )}
+
+                {/* حالة فارغة للإحصائيات: بعد إضافة المسافرين وقبل تسجيل أي مصروف */}
+                {!isInitialLoading && activeTravelers.length > 0 && activeExpenses.length === 0 && (
+                  <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <EmptyState
+                      Icon={BarChart3}
+                      title="لا توجد إحصائيات بعد"
+                      description="سجّل أول مصروف للرحلة لعرض ملخص التسويات وتوزيع المصاريف حسب الفئة وتطوّرها الزمني."
+                    />
+                  </section>
+                )}
+              </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="space-y-6 lg:col-span-1">
                   <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                     <ExpenseForm />
                   </section>
-                  <BankDetailsCard bankDetails={bankDetails} copied={copiedIban} onCopy={handleCopyIban} />
+                  <BankDetailsCard bankDetails={bankDetails} />
                 </div>
 
                 <div className="lg:col-span-2">
-                  <section>
+                  <section id="expenses-section" className="scroll-mt-24">
                     <div className="flex flex-wrap justify-between items-center gap-3 mb-4 px-1">
                       <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                         <Receipt className="w-5 h-5 text-slate-500" /> سجل المصاريف
                       </h2>
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => { haptic.light(); setShowReports(true) }}
+                          className="flex items-center gap-1.5 text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-sm"
+                        >
+                          <BarChart3 className="w-3.5 h-3.5" /> التقارير
+                        </button>
                         {isAdmin && (
                           <button
                             onClick={() => setShowTrashBin(true)}
@@ -514,27 +501,27 @@ const dataContextValue = useMemo(() => ({
                           </button>
                         )}
                         <button
-                          onClick={() => exportExpensesToCSV(activeExpenses, activeTravelers)} disabled={!activeExpenses.length}
+                          onClick={() => exportTripToExcel({ expenses: activeExpenses, travelers: activeTravelers, balances, settlements })} disabled={!activeExpenses.length}
                           className="flex items-center gap-1.5 text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-40"
                         >
-                          <Download className="w-3.5 h-3.5" /> تصدير CSV
+                          <Download className="w-3.5 h-3.5" /> تصدير Excel
                         </button>
                       </div>
                     </div>
 
-                    <div className="flex gap-2 mb-3">
+                   <div className="flex gap-2 mb-3">
                       <div className="relative flex-1">
-                        <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                       <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                         <input
                           type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                          placeholder="بحث بالوصف أو المشارك أو التاريخ..."
-                          className="w-full border border-slate-200 rounded-xl pr-8 ps-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 outline-none"
+                          placeholder="بحث بالوصف أو المشارك..."
+                          className="w-full border border-slate-200 rounded-xl pr-9 ps-3 py-2 text-base focus:ring-2 focus:ring-teal-500 outline-none"
                         />
                       </div>
                       <select
                         value={sortOrder}
                         onChange={(e) => setSortOrder(e.target.value as unknown as SortOrder)}
-                        className="border border-slate-200 rounded-xl px-2 py-2 text-xs bg-white focus:ring-2 focus:ring-teal-500 outline-none"
+                        className="border border-slate-200 rounded-xl px-2 py-2 text-base bg-white focus:ring-2 focus:ring-teal-500 outline-none"
                       >
                         <option value="date_desc">الأحدث أولاً</option>
                         <option value="date_asc">الأقدم أولاً</option>
@@ -555,7 +542,14 @@ const dataContextValue = useMemo(() => ({
                         {isInitialLoading ? (
                           <div>{Array.from({ length: 5 }, (_, i) => <ExpenseListItemSkeleton key={i} />)}</div>
                         ) : activeExpenses.length === 0 ? (
-                          <div className="p-8 text-center text-slate-400 font-medium">لا توجد مصاريف حتى الآن</div>
+                          <EmptyState
+                            Icon={Receipt}
+                            title="لا توجد مصاريف بعد"
+                            description="ابدأ بتسجيل أول مصروف للرحلة، وسيتولّى التطبيق حساب حصة كل مسافر تلقائياً."
+                            actionLabel="سجّل أول مصروف"
+                            onAction={() => openExpenseForm()}
+                            ActionIcon={Plus}
+                          />
                         ) : filteredExpenses.length === 0 ? (
                           <div className="p-8 text-center text-slate-400 font-medium">لا توجد نتائج لـ "{searchQuery}"</div>
                         ) : (
@@ -567,10 +561,6 @@ const dataContextValue = useMemo(() => ({
                                 <ExpenseListItem expense={exp} />
                               </div>
                             )}
-                            // 🆕 أثناء التمرير السريع (fling)، تُستبدل العناصر الفعلية بعناصر
-                            // Skeleton نائبة بدل عرض مساحات فارغة/فراغ DOM مُعاد تدويره — انظر
-                            // توثيق react-virtuoso لـ scrollSeekConfiguration. enter تُفعَّل عند
-                            // سرعة تمرير عالية، وexit تُلغي التنشيط بمجرد تباطؤ التمرير تقريباً للتوقف.
                             scrollSeekConfiguration={{
                               enter: velocity => Math.abs(velocity) > 900,
                               exit: velocity => Math.abs(velocity) < 30,
@@ -594,22 +584,27 @@ const dataContextValue = useMemo(() => ({
             </main>
             </PullToRefresh>
 
-            {/* 🆕 Quick Add (FAB): عنصر خارج <PullToRefresh> عمداً — الأخير يطبّق
-                CSS transform دائماً على محتواه (حتى بقيمة translateY(0px))، وأي
-                transform على عنصر أب يُنشئ "containing block" جديداً لأي عنصر
-                position:fixed بداخله، فيكسر ثباته الفعلي أثناء التمرير. لذا يجب
-                أن يبقى FAB (وكل عناصر fixed الأخرى كالنوافذ والتوست) خارج تلك
-                الشجرة تماماً كما هو هنا. */}
-            <QuickAddFab
-              visible={!isInitialLoading && !isAddingExpense}
-              onQuickAdd={handleQuickAddExpense}
-            />
+            <SmartInputBar
+                 visible={!isInitialLoading && !isAddingExpense}
+                 onQuickAdd={handleQuickAddExpense}
+                 onExpand={openExpenseForm} 
+             />
 
-            {/* 🆕 Bottom Sheet: كل النوافذ أدناه (Modal/ConfirmModal المشترك) تنبثق
-                الآن من الأسفل على الجوال بحركة framer-motion — كل نافذة مُحاطة
-                بـ <AnimatePresence> الخاص بها حتى تُشغَّل حركة الخروج (سحب لأسفل
-                واختفاء الخلفية) قبل إزالتها من الشجرة، بدل اختفاء فوري بلا حركة.
-                انظر التعليق التوضيحي الكامل في components/Modal.tsx. */}
+            <AnimatePresence>
+              {showReports && (
+                <Suspense key="reports" fallback={<ModalFallback />}>
+                  <ReportsView
+                    travelers={activeTravelers}
+                    expenses={activeExpenses}
+                    balances={balances}
+                    settlements={settlements}
+                    categoryTotals={categoryTotals}
+                    onClose={() => setShowReports(false)}
+                  />
+                </Suspense>
+              )}
+            </AnimatePresence>
+
             <AnimatePresence>
               {expenseToDelete !== null && (
                 <ConfirmModal
