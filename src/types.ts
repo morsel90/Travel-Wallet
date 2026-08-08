@@ -149,3 +149,31 @@ export interface ToastMessage {
   // client-only بحتة كـ onUndo — لا تُخزَّن ولا تُقارَن، فقط تُستدعى عند الضغط.
   onRetry?: () => void
 }
+// ─── إعدادات الرحلة ومسار التنقل (ميزة جديدة) ──────────────────────────────────
+
+// 🆕 تحديد أنواع التنقل المدعومة في التطبيق
+export type TransportMode = 'flight' | 'car' | 'train' | 'bus'
+
+export interface ItinerarySegment {
+  id: string
+  mode: TransportMode
+  
+  // 🆕 يمثل رقم الرحلة للطيران (QR 1155) أو وصف المركبة (مثال: سيارة يوكن، قطار الحرمين)
+  identifier: string 
+  
+  // 🆕 رقم الحجز (PNR) للطيران، أو رقم حجز الإيجار للسيارة/القطار (اختياري)
+  reference?: string 
+  
+  departure: {
+    location: string // اسم المطار أو مدينة الانطلاق / نقطة التجمع
+    time: string     // ISO timestamp (مثال: "2026-07-21T22:30:00")
+  }
+  arrival: {
+    location: string // اسم المطار أو مدينة الوصول
+    time: string     // ISO timestamp
+  }
+}
+
+// ملاحظة: واجهة إعدادات الرحلة الكاملة (TripConfig) معرّفة ومُصدَّرة من
+// hooks/useTripConfig.ts — وهي الشكل الفعلي الذي يُرجعه الـ hook
+// (tripName + bankDetails ككائن + itinerary). لا تُكرَّر هنا لتفادي التعارض.

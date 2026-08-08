@@ -3,6 +3,7 @@ import { getDoc } from 'firebase/firestore'
 import type { User } from 'firebase/auth'
 import { tripConfigDoc } from '../firestore'
 import { BANK_DETAILS as FALLBACK_BANK_DETAILS } from '../constants'
+import type { ItinerarySegment } from '../types' // 🆕 استيراد واجهة مسار الرحلة
 
 // ─── useTripConfig ──────────────────────────────────────────────────────────
 // 🆕 دعم رحلات متعددة: تفاصيل الحساب البنكي (واسم الرحلة إن وُجد) لم تعد ثابتة
@@ -20,6 +21,7 @@ interface BankDetails {
 export interface TripConfig {
   tripName: string | null
   bankDetails: BankDetails
+  itinerary?: ItinerarySegment[] // 🆕 إضافة مسار الرحلة للواجهة
 }
 
 const FALLBACK_CONFIG: TripConfig = { tripName: null, bankDetails: FALLBACK_BANK_DETAILS }
@@ -42,7 +44,10 @@ export function useTripConfig(user: User | null): TripConfig {
         // 🆕 لا يوجد مستند إعدادات لهذه الرحلة بعد — نستمر بالقيم الافتراضية
         // بصمت (متوقّع تماماً للرحلة الافتراضية قبل تشغيل سكربت الترحيل)
         if (!snap.exists()) { setConfig(FALLBACK_CONFIG); return }
-        const data = snap.data() as { name?: unknown; bankDetails?: Partial<BankDetails> }
+        
+        // 🆕 إضافة itinerary كجزء من البيانات المتوقعة
+        const data = snap.data() as { name?: unknown; bankDetails?: Partial<BankDetails>; itinerary?: ItinerarySegment[] }
+        
         setConfig({
           tripName: typeof data.name === 'string' ? data.name : null,
           bankDetails: {
@@ -50,6 +55,8 @@ export function useTripConfig(user: User | null): TripConfig {
             beneficiary: data.bankDetails?.beneficiary ?? FALLBACK_BANK_DETAILS.beneficiary,
             iban:        data.bankDetails?.iban        ?? FALLBACK_BANK_DETAILS.iban,
           },
+          // 🆕 تمرير المسار إلى حالة التطبيق ليتم عرضه
+          itinerary: Array.isArray(data.itinerary) ? data.itinerary : undefined,
         })
       })
       .catch(err => {

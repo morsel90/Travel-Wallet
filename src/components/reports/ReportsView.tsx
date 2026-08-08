@@ -1,13 +1,13 @@
-// ReportsView.tsx
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 // تمت إعادة استيراد أيقونة Printer
 import { X, Download, Printer, BarChart3, Users, TrendingUp, Wallet, Receipt, Scale, ArrowRightLeft } from '../../icons'
-import type { Expense, Traveler, TravelerBalance, Settlement, CategoryTotal } from '../../types'
+import type { Expense, Traveler, TravelerBalance, Settlement, CategoryTotal, ItinerarySegment } from '../../types'
 import { buildDailySummary } from '../../utils/reportData'
 import { exportTripToExcel } from '../../utils/reports'
 import { PrintableTripReport } from './PrintDocs'
+import { ItinerarySection } from '../ItinerarySection'
 
 interface ReportsViewProps {
   travelers: Traveler[]
@@ -15,6 +15,7 @@ interface ReportsViewProps {
   balances: TravelerBalance[]
   settlements: Settlement[]
   categoryTotals: CategoryTotal[]
+  itinerary?: ItinerarySegment[]
   onClose: () => void
 }
 
@@ -27,7 +28,7 @@ const TABS: Array<{ key: ReportTab; label: string; Icon: typeof BarChart3 }> = [
 
 const fmt = (n: number): string => n.toFixed(2)
 
-function ReportsView({ travelers, expenses, balances, settlements, categoryTotals, onClose }: ReportsViewProps) {
+function ReportsView({ travelers, expenses, balances, settlements, categoryTotals, itinerary, onClose }: ReportsViewProps) {
   const [activeTab, setActiveTab] = useState<ReportTab>('summary')
 
   const totals = useMemo(() => ({
@@ -122,6 +123,10 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-6 pb-24">
         {activeTab === 'summary' && (
           <div className="space-y-6">
+            
+            {/* قسم مسار الرحلة التفصيلي على الشاشة (بطاقة) */}
+            <ItinerarySection itinerary={itinerary} />
+
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <KpiCard Icon={Wallet} label="إجمالي المودَع" value={fmt(totals.deposited)} tone="teal" />
               <KpiCard Icon={Receipt} label="إجمالي المصروف" value={fmt(totals.spent)} tone="rose" />
@@ -228,6 +233,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
             `}
           </style>
           <div className="print-doc-trip">
+            {/* مسار الرحلة صار قسماً رسمياً داخل PrintableTripReport (أسلوب موحّد مع بقية التقرير) */}
             <PrintableTripReport
               tripName=""
               generatedAt={generatedAt}
@@ -236,6 +242,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
               balances={balances}
               settlements={settlements}
               categoryTotals={categoryTotals}
+              itinerary={itinerary}
             />
           </div>
         </div>,

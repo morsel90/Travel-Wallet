@@ -26,8 +26,13 @@ export {
   ArrowRightLeft,
   TrendingUp,
   WifiOff,
+  Plane,
+  Car,
+  Train,
+  Bus,
   Wallet, // لحبّة "الإجمالي المُودَع" في Header (إحصائيات مدموجة)
   Scale,  // لحبّة "الرصيد المتبقي" في Header (إحصائيات مدموجة)
   Share2, // 🆕 زر مشاركة تفاصيل الحساب البنكي (BankDetailsCard)
   Printer, // 🆕 زر طباعة/حفظ PDF في صفحة التقارير (ReportsView)
+  Route,   // 🆕 أيقونة رأس قسم مسار الرحلة (ItinerarySection في التقارير)
 } from 'lucide-react'

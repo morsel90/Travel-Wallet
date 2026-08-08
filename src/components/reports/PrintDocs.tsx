@@ -2,10 +2,19 @@
 // #print-root (عبر Portal في ReportsView) وتظهر فقط عند الطباعة/حفظ PDF. تعتمد
 // على الطباعة الأصلية للمتصفح لضمان تشكيل عربي مثالي (المتصفح يرسم النص).
 
-import type { Traveler, TravelerBalance, Settlement, CategoryTotal, Expense, DepositLogEntry } from '../../types'
+import type { Traveler, TravelerBalance, Settlement, CategoryTotal, Expense, DepositLogEntry, ItinerarySegment } from '../../types'
 import { buildDailySummary, type AccountStatement } from '../../utils/reportData'
 
 const fmt = (n: number): string => n.toFixed(2)
+
+// 🆕 تسميات وسائل النقل + منسّق تاريخ/وقت واضح للمسافر: تقويم ميلادي + أرقام لاتينية
+// + وقت 24 ساعة (بلا ص/م المربكة) مع اسم اليوم — موحّد مع العرض على الشاشة.
+const TRANSPORT_LABELS: Record<string, string> = { flight: 'رحلة جوية', car: 'سيارة', train: 'قطار', bus: 'حافلة' }
+const fmtDateTime = (iso: string): string =>
+  new Date(iso).toLocaleString('ar-SA-u-ca-gregory-nu-latn', {
+    weekday: 'short', day: 'numeric', month: 'short',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  })
 
 interface DocFrameProps {
   title: string
@@ -48,9 +57,10 @@ interface TripReportProps {
   balances: TravelerBalance[]
   settlements: Settlement[]
   categoryTotals: CategoryTotal[]
+  itinerary?: ItinerarySegment[]
 }
 
-export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses, balances, settlements, categoryTotals }: TripReportProps) => {
+export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses, balances, settlements, categoryTotals, itinerary }: TripReportProps) => {
   const deposited = balances.reduce((s, b) => s + b.deposited, 0)
   const spent = balances.reduce((s, b) => s + b.totalExpenses, 0)
   const remaining = balances.reduce((s, b) => s + b.remaining, 0)
@@ -76,6 +86,34 @@ export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses
           </div>
         ))}
       </div>
+
+      {itinerary && itinerary.length > 0 && (
+        <>
+          <SectionTitle>مسار الرحلة</SectionTitle>
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                <th className={th}>النقل</th>
+                <th className={th}>المعرّف</th>
+                <th className={th}>المرجع</th>
+                <th className={th}>الانطلاق</th>
+                <th className={th}>الوصول</th>
+              </tr>
+            </thead>
+            <tbody>
+              {itinerary.map(seg => (
+                <tr key={seg.id}>
+                  <td className={td}>{TRANSPORT_LABELS[seg.mode] ?? seg.mode}</td>
+                  <td className={td}>{seg.identifier}</td>
+                  <td className={td} dir="ltr">{seg.reference ?? '—'}</td>
+                  <td className={td}>{seg.departure.location} — <span dir="ltr">{fmtDateTime(seg.departure.time)}</span></td>
+                  <td className={td}>{seg.arrival.location} — <span dir="ltr">{fmtDateTime(seg.arrival.time)}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
 
       <SectionTitle>ملخص المسافرين</SectionTitle>
       <table className="w-full border-collapse">
