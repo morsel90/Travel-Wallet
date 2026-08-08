@@ -6,9 +6,15 @@ import { matchesTraveler } from './participants'
 // لا تعتمد على أي حالة خارجية — مدخلات ثابتة → مخرجات ثابتة.
 
 /**
- * يقسّم مبلغاً على n مشاركين بحيث تتجمّع الحصص بدقّة = المبلغ الأصلي (دون فقد هللات).
- * يعمل بالهللات (أعداد صحيحة) لتفادي أخطاء الفاصلة العائمة، ثم يوزّع الباقي
- * هللةً هللةً على المشاركين الأوائل. مثال: splitEven(100, 3) → [33.34, 33.33, 33.33].
+ * يقسّم مبلغاً بالتساوي على عدد من المشاركين بدون فقدان أي هللة بسبب التقريب.
+ * يوزّع باقي الهللات بالتسلسل على المشاركين الأوائل لضمان أن مجموع الحصص يساوي المبلغ الأصلي تماماً.
+ * 
+ * @param {number} total - إجمالي المبلغ المراد تقسيمه.
+ * @param {number} n - عدد المشاركين.
+ * @returns {number[]} مصفوفة تحتوي على حصة كل مشارك بدقة متناهية.
+ * 
+ * @example
+ * splitEven(100, 3) // يرجع: [33.34, 33.33, 33.33]
  */
 export function splitEven(total: number, n: number): number[] {
   if (n <= 0) return []
@@ -19,16 +25,14 @@ export function splitEven(total: number, n: number): number[] {
 }
 
 /**
- * 🆕 يقسّم مبلغاً على مشاركين بأوزان غير متساوية (حصص) بدل التساوي التام —
- * "فلان يدفع ضعف" يُترجم لوزن 2 له مقابل وزن 1 للباقين، مثلاً. أي مشارك بلا
- * وزن محدد في shares (أو عند غياب shares بالكامل أو كونها فارغة) يُعامَل بوزن
- * 1 — هذا يجعلها مطابقة تماماً لـ splitEven عند تساوي كل الأوزان أو غيابها،
- * فلا حاجة لأي فرع منطقي إضافي أو ترحيل بيانات في بقية الكود.
- *
- * تعمل بالهللات (أعداد صحيحة) كـ splitEven تماماً لتفادي أخطاء الفاصلة
- * العائمة، وتوزّع باقي الهللات (الناتج عن تقريب كل حصة لأسفل) بطريقة "أكبر
- * كسر متبقٍ" (Largest Remainder) بحيث تتجمّع الحصص بدقّة = المبلغ الأصلي دون
- * محاباة دائمة لنفس المشارك.
+ * يقسّم مبلغاً على المشاركين بناءً على أوزان أو حصص مخصصة (مثلاً: شخص يتحمل ضعف الآخر).
+ * إذا لم تُحدد حصص، أو كانت القيم غير صالحة، فإنه يعامل جميع المشاركين بوزن 1 (قسمة متساوية).
+ * يستخدم خوارزمية "أكبر كسر متبقٍ" لتوزيع الهللات المتبقية لضمان تطابق المجموع.
+ * 
+ * @param {number} total - إجمالي المبلغ.
+ * @param {Array<number | string>} participantIds - معرفات أو أسماء المشاركين.
+ * @param {Record<string, number> | undefined} shares - كائن يمثل حصة كل مشارك (اختياري).
+ * @returns {number[]} مصفوفة تمثل القيمة المالية المطلوبة من كل مشارك.
  */
 export function splitByShares(
   total: number,
@@ -39,9 +43,6 @@ export function splitByShares(
   if (n <= 0) return []
   if (!shares || Object.keys(shares).length === 0) return splitEven(total, n)
 
-  // وزن غير صالح (سالب/صفر/غير رقم) يُعامَل كوزن 1 دفاعياً — هذا يحمي كل من
-  // يقرأ هذا المصروف من قيمة تالفة أو مُتلاعَب بها قد تكون كُتبت مباشرة عبر
-  // Firestore SDK متجاوزةً واجهة النموذج (انظر أيضاً isValidShares في firestore.rules)
   const weights = participantIds.map(id => {
     const w = shares[String(id)]
     return typeof w === 'number' && w > 0 ? w : 1
@@ -68,13 +69,12 @@ export function splitByShares(
 }
 
 /**
- * يوزّع كل مصروف على مشاركيه ويحسب لكل مسافر:
- *  - totalExpenses: مجموع حصصه من المصاريف
- *  - remaining:     ما تبقّى من دفعه المسبق بعد خصم حصصه
- * المطابقة بين المصروف والمسافر تتم عبر المعرّف (id)، مع توافق خلفي مع الأسماء
- * المختصرة القديمة. القسمة عبر splitByShares (تُطابق splitEven تماماً عند عدم
- * وجود shares مخصّصة على المصروف) بحيث تتجمّع حصص المشاركين بدقّة = مبلغ
- * المصروف (لا فروق هللات بسبب التقريب).
+ * يقوم بحساب الموقف المالي لكل مسافر بناءً على المصاريف التي شارك فيها والمبالغ التي دفعها مسبقاً.
+ * تُحسب الحصص تلقائياً مع مراعاة الحصص المخصصة لكل مصروف.
+ * 
+ * @param {Traveler[]} travelers - قائمة المسافرين.
+ * @param {Expense[]} expenses - قائمة جميع المصاريف المسجلة.
+ * @returns {TravelerBalance[]} مصفوفة ببيانات المسافرين موضح فيها ما أنفقه كل شخص وما تبقى له/عليه.
  */
 export function calculateBalances(travelers: Traveler[], expenses: Expense[]): TravelerBalance[] {
   const balances: TravelerBalance[] = travelers.map(t => ({
@@ -99,33 +99,33 @@ export function calculateBalances(travelers: Traveler[], expenses: Expense[]): T
   return balances
 }
 
-/** إجمالي ما أُنفق (بالريال) عبر كل المصاريف. */
+/**
+ * @param {Expense[]} expenses - المصاريف.
+ * @returns {number} إجمالي الأموال التي أُنفقت.
+ */
 export function calculateTotalSpent(expenses: Expense[]): number {
   return expenses.reduce((sum, exp) => sum + exp.amount, 0)
 }
 
-/** إجمالي المبالغ المدفوعة مسبقاً من كل المسافرين. */
+/**
+ * @param {Traveler[]} travelers - المسافرين.
+ * @returns {number} إجمالي المبالغ المدفوعة مقدماً في الصندوق.
+ */
 export function calculateTotalDeposited(travelers: Traveler[]): number {
   return travelers.reduce((sum, t) => sum + t.deposited, 0)
 }
 
 // ─── دوال مشتقة لتصوّر الأرصدة بياناً (Chart Data) ────────────────────────────
-// 🆕 لا تعتمد على أي شيء غير موجود أصلاً (travelers/expenses) — مخرجاتها تُغذّي
-// مكوّنات src/components/charts/ فقط، ولا تُكتب لـ Firestore أبداً.
 
 /**
- * تسوية أرصدة مبسّطة (Debt Simplification) — تُحوّل كل أرصدة remaining الفردية
- * (من balances، أي بعد calculateBalances) إلى قائمة تحويلات مقترحة بين الأعضاء
- * لتصفير الجميع: من عليه (remaining سالب) إلى من له (remaining موجب).
- *
- * خوارزمية جشعة (greedy): تُطابق أكبر "مدين" مع أكبر "دائن" تكراراً حتى تنتهي
- * القائمتان. هذه ليست الحل الأمثل رياضياً من ناحية أقل عدد تحويلات ممكن (المشكلة
- * العامة NP-hard)، لكنها تُعطي نتيجة عملية ومعقولة جداً لعدد صغير من المشاركين
- * كحال هذا التطبيق. ⚠️ هذه تحويلات "مقترحة" لتسوية من دفع أكثر/أقل من نصيبه من
- * المصاريف المشتركة — وليست تحويلات بنكية فعلية ولا مرتبطة بأي نظام دفع حقيقي.
+ * يحسب التسويات المالية لتصفية الحسابات بين المسافرين بناءً على أرصدتهم.
+ * يستخدم خوارزمية لمطابقة الأشخاص المدينين (رصيد سالب) مع الدائنين (رصيد موجب) لتبسيط التحويلات.
+ * 
+ * @param {TravelerBalance[]} balances - أرصدة المسافرين.
+ * @returns {Settlement[]} قائمة بعمليات الدفع المقترحة (من يدفع لمن وكم المبلغ).
  */
 export function calculateSettlements(balances: TravelerBalance[]): Settlement[] {
-  const EPSILON = 0.01 // هللة واحدة — تفادي معاملة أرصدة شبه صفرية (تقريب الفاصلة العائمة) كدين حقيقي
+  const EPSILON = 0.01
 
   const debtors = balances
     .filter(b => b.remaining < -EPSILON)
@@ -162,7 +162,12 @@ export function calculateSettlements(balances: TravelerBalance[]): Settlement[] 
   return settlements
 }
 
-/** إجمالي المصاريف مجمّعة حسب الفئة — المصاريف بلا فئة محفوظة (بيانات قديمة) تُصنَّف "أخرى". مرتّبة تنازلياً. */
+/**
+ * يجمّع إجمالي المصاريف بحسب فئاتها (كالتنقل، السكن، المطاعم).
+ * 
+ * @param {Expense[]} expenses - قائمة المصاريف.
+ * @returns {CategoryTotal[]} فئات المصاريف مرتبة تنازلياً حسب الأعلى تكلفة.
+ */
 export function calculateCategoryTotals(expenses: Expense[]): CategoryTotal[] {
   const totals = new Map<string, number>()
   expenses.forEach(exp => {
@@ -174,9 +179,10 @@ export function calculateCategoryTotals(expenses: Expense[]): CategoryTotal[] {
 }
 
 /**
- * تطوّر المصاريف عبر الزمن: لكل تاريخ فريد — مجموع مصاريف ذلك اليوم، والمجموع
- * التراكمي حتى ذلك اليوم شاملاً. مرتّبة تصاعدياً حسب التاريخ (مقارنة نصية آمنة
- * لأن التنسيق ثابت YYYY-MM-DD).
+ * يحسب تطور معدل الصرف التراكمي مع مرور أيام الرحلة.
+ * 
+ * @param {Expense[]} expenses - قائمة المصاريف.
+ * @returns {SpendingTrendPoint[]} مصفوفة تمثل مجموع المصروفات لكل يوم بشكل تراكمي.
  */
 export function calculateSpendingTrend(expenses: Expense[]): SpendingTrendPoint[] {
   const totalsByDate = new Map<string, number>()

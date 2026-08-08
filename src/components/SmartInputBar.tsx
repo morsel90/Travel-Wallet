@@ -2,18 +2,41 @@ import { useState, useRef, FormEvent } from 'react'
 import { Plus, AlertTriangle } from '../icons'
 import { haptic } from '../utils/haptics'
 
+/**
+ * واجهة الخصائص (Props) المطلوبة لمكوّن شريط الإدخال الذكي.
+ *
+ * @property {boolean} visible - يتحكم في إظهار أو إخفاء شريط الإدخال أسفل الشاشة.
+ * @property {(description: string, amount: number) => string | null} onQuickAdd - دالة تُستدعى عند الإضافة السريعة لمصروف جديد (مثلاً: عشاء في وارسو). تُرجع رسالة خطأ نصية إذا فشلت العملية، أو null إذا تمت بنجاح.
+ * @property {(desc: string, amount: string) => void} onExpand - دالة تُستدعى لفتح الشاشة المتقدمة متى ما استدعى المصروف تفاصيل أكثر (مثل تحديد الدافع الفعلي من المجموعة: أبو محمد، فرحان، إلخ).
+ */
 interface SmartInputBarProps {
   visible: boolean
   onQuickAdd: (description: string, amount: number) => string | null
   onExpand: (desc: string, amount: string) => void
 }
 
-// تحويل الأرقام الهندية/الشرقية إلى غربية
+/**
+ * يحول الأرقام المشرقية (مثل ٠,١,٢) إلى أرقام قياسية (مثل 0,1,2).
+ * هذه الدالة ضرورية لضمان دقة العمليات الحسابية عند إدخال المبالغ بلوحات المفاتيح العربية.
+ *
+ * @param {string} str - النص المدخل.
+ * @returns {string} النص بعد توحيد صيغة الأرقام.
+ */
 const convertArabicNumerals = (str: string): string => {
   const map: Record<string, string> = { '٠':'0','١':'1','٢':'2','٣':'3','٤':'4','٥':'5','٦':'6','٧':'7','٨':'8','٩':'9' }
   return str.replace(/[٠-٩]/g, ch => map[ch] ?? ch)
 }
 
+/**
+ * مكوّن شريط الإدخال الذكي (SmartInputBar).
+ *
+ * شريط سفلي عائم مصمم للإدخال السريع والفعال للمصاريف.
+ * يتضمن معالجة فورية للأرقام، التحقق من صحة المدخلات، ودعم التفاعل اللمسي (Haptics) عند الأخطاء.
+ * كما يوفر خيار الانتقال لوضع الإدخال المتقدم عبر زر "إضافة تفاصيل" لمعالجة الحالات المعقدة.
+ *
+ * @param {SmartInputBarProps} props - الخصائص الممررة للمكوّن.
+ * @returns {JSX.Element | null} واجهة شريط الإدخال، أو null إذا كان مخفياً.
+ */
 const SmartInputBar = ({ visible, onQuickAdd, onExpand }: SmartInputBarProps) => {
   const [desc, setDesc] = useState('')
   const [amount, setAmount] = useState('')
