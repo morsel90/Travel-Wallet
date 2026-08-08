@@ -1,10 +1,15 @@
 import { defineConfig } from 'vitest/config'
+import react from '@vitejs/plugin-react'
 
-// إعداد Vitest مستقل عن إعداد Vite/PWA — يشغّل اختبارات الوحدة على الدوال
-// النقية في src/ دون الحاجة لتحميل إضافة PWA أو بيئة المتصفح.
+// إعداد Vitest تم تحديثه ليدعم اختبارات الدوال النقية بالإضافة إلى 
+// اختبارات مكونات واجهة المستخدم (React Components) عبر محاكاة المتصفح (jsdom).
 export default defineConfig({
+  plugins: [react()],
   test: {
-    environment: 'node',
-    include: ['src/**/*.{test,spec}.ts'],
+    environment: 'jsdom', // تغيير أساسي لدعم React Testing Library
+    setupFiles: ['./src/setupTests.ts'], // استدعاء ملف الإعدادات
+    globals: true,
+    // تحديث المسار ليشمل ملفات .tsx الخاصة بواجهات ريأكت
+    include: ['src/**/*.{test,spec}.{ts,tsx}'], 
   },
 })
