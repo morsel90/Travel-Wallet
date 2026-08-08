@@ -182,6 +182,7 @@
 │       ├── xlsx.ts              # Pure-JS OOXML generator (inlineStr, RTL, ZIP stored)
 │       ├── itinerary.ts         # Pure: segment draft validation, normalize/sort, findNextSegment
 │       ├── travelerName.ts      # Pure: deriveShortName, isValidNameKey, newTravelerId
+│       ├── writeErrors.ts       # Pure: Firestore error code → real cause + is a retry worthwhile
 │       ├── haptics.ts           # Vibration API + visual flash overlay
 │       ├── cn.ts                # Tailwind class merge (clsx alternative)
 │       └── tripId.ts           # TRIP_ID from ?trip= query param
@@ -494,6 +495,7 @@ npm run lint                # ESLint
 - `src/utils/itinerary.test.ts` — Segment validation, time round-tripping, normalize/sort, next-segment
 - `src/utils/tripId.test.ts` — Trip id format guard (path-escape rejection, length limit)
 - `src/utils/travelerName.test.ts` — shortName derivation, doc-ID validity, random id range
+- `src/utils/writeErrors.test.ts` — error-code mapping, retryable classification, and that no message blames the network
 - `src/components/EmptyState.test.tsx` — Empty state component (RTL test)
 
 **Structure:** Pure utility tests live next to their source. Component tests use `@testing-library/react` with `jsdom` environment. Vitest config in `vitest.config.ts` with `setupFiles: ['./src/setupTests.ts']`.
@@ -503,6 +505,25 @@ npm run lint                # ESLint
 ## Design Decisions
 
 Decisions that look like oversights but are not. Read this before "fixing" them.
+
+### Optimistic updates roll back automatically — do not build a retry queue
+
+`firebase.ts` enables `persistentLocalCache`, and that is the rollback mechanism. On every write the Firestore SDK:
+
+1. applies the mutation to the local cache immediately, so `onSnapshot` fires at once with `metadata.hasPendingWrites === true` (this is what surfaces as `_pending`)
+2. persists the pending write to **IndexedDB**, so it survives closing the app
+3. retries it automatically when connectivity returns
+4. **reverts the local mutation if the server ultimately rejects it**, then emits a corrected snapshot — the row disappears on its own
+
+So a queue in IndexedDB would sit on top of the SDK's own IndexedDB queue, and two things retrying the same write means duplicate expenses. Don't.
+
+**The consequence that actually matters:** a write's promise does **not** reject when offline — it stays pending until the server answers. So reaching `.catch()` means the server *refused* the write (rules, a claimed shortName, the expense rate limit), not that the network dropped. The old message said "يبدو أنك غير متصل بالإنترنت" for every failure, which sent people to check their wifi while the real cause was elsewhere, and offered a retry button that was guaranteed to fail identically.
+
+`utils/writeErrors.ts` now maps the Firestore error code to the real cause, states that the change was reverted (because the user is about to watch it vanish), and marks whether a retry is worth offering. Retry is shown only for transient codes — `unavailable`, `deadline-exceeded`, `aborted`, `internal`, `cancelled`.
+
+Match on `error.code`, never on message text: the text varies between SDK versions.
+
+**What is genuinely missing:** undo exists for deleting an expense or a traveler, but not for create or edit. Undoing an edit needs the previous version kept somewhere to restore.
 
 ### `useExpenses` listens to the whole collection on purpose — do not paginate it
 
@@ -543,6 +564,7 @@ Three independent systems that must be deployed separately:
 | "خطأ في الصلاحيات" | User not a member of this trip, or trip not created in Firestore | Run `scripts/create-trip.mjs` for this tripId; user must re-enter PIN |
 | PIN entry stuck in loop | Custom claims format mismatch | User logs out and back in (or `getIdToken(true)`) |
 | Expenses not syncing | Network offline; Firestore SDK queues writes | Check `isOnline` banner; writes sync when connection returns |
+| An expense appeared then vanished | The server rejected the write and Firestore reverted the local copy. A toast now names the cause | Read the toast — usually permissions or the one-expense-per-second limit |
 | `recharts` not found (build error) | Old dependency referenced somewhere | Run `npm install` (package.json no longer lists recharts) |
 | iOS date picker issues | Safari's native date/select styling | Fixes in `index.css` (`.safari-date-fix`, `.safari-select-fix`) |
 | Blank screen after deploy | Trip ID mismatch or missing trip config | Ensure `scripts/create-trip.mjs` was run for the tripId in use |
@@ -569,7 +591,7 @@ Three independent systems that must be deployed separately:
 7. **Modals go in `src/components/modals/`**, are registered in `useModals.ts` (`ModalState` union) and rendered lazily by `ModalManager.tsx` — not directly in App.tsx.
 8. **Pure logic in `utils/`** — testable without React/DOM.
 9. **Arabic-first** — all UI text in Arabic, RTL layout, Arabic numeral conversion.
-10. **Optimistic updates** — close form immediately on submit, show `_pending` flag until server confirms.
+10. **Optimistic updates** — close form immediately on submit, show `_pending` flag until server confirms. Rollback is Firestore's job, not ours (see Design Decisions). Report write failures with `describeWriteError` and never blame the network: an offline write does not reject.
 11. **Haptic feedback** — use `haptic` from `utils/haptics.ts` for all important interactions.
 12. **Run scripts with Admin SDK** — `serviceAccountKey.json` required, never expose admin operations to clients.
 13. **Never write `trips/{tripId}` without merge** — the doc holds independent sections (name, bankDetails, itinerary). Use `useTripAdminActions`, which always merges; a full `set()` silently drops whatever it omits.
