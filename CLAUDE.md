@@ -46,6 +46,7 @@
 | Cloud Functions | Firebase v2 onCall (Node 20) | — |
 | PWA | vite-plugin-pwa (generateSW) | ^0.19.8 |
 | Testing | Vitest + React Testing Library | ^1.6.0 |
+| Component workshop | Storybook (react-vite) | ^10.5.7 |
 | Linting | ESLint + Prettier | ^8.57.0 |
 | Deployment (frontend) | Vercel SPA | — |
 | Deployment (backend) | Firebase CLI | — |
@@ -114,6 +115,9 @@
 │   ├── constants.ts              # FALLBACK_RATES, CURRENCY_LABELS (160), EXPENSE_CATEGORIES
 │   ├── icons.ts                  # Re-exports from lucide-react
 │   ├── index.css                 # Tailwind + print styles + Safari fixes
+│   │
+│   ├── fixtures/index.ts         # Sample data for stories and tests (derived values computed, not hardcoded)
+│   ├── stories/                  # Storybook stories + context decorators
 │   │
 │   ├── hooks/
 │   │   ├── index.ts              # Unified re-export
@@ -528,6 +532,22 @@ npm run lint                # ESLint
 - `src/components/EmptyState.test.tsx` — Empty state component (RTL test)
 
 **Structure:** Pure utility tests live next to their source. Component tests use `@testing-library/react` with `jsdom` environment. Vitest config in `vitest.config.ts` with `setupFiles: ['./src/setupTests.ts']`.
+
+### Storybook
+
+```bash
+npm run storybook          # dev server on :6006
+npm run build-storybook    # static build → storybook-static/ (git-ignored)
+```
+
+Storybook 10 with `@storybook/react-vite`. Two pieces of setup are load-bearing and easy to lose:
+
+- `.storybook/preview.tsx` imports `src/index.css` and wraps every story in `dir="rtl" lang="ar"`. Storybook renders inside its own iframe and inherits neither from `index.html`. Without the CSS import Tailwind classes are just unstyled names; without the `dir` every horizontal layout mirrors, so a story would not show what users see.
+- `src/stories/decorators.tsx` supplies `DataContext` and `UIContext`. Only `TravelerSection`, `ExpenseSection` and `ChartsSection` read from context — the other 29 components take props and need no decorator. Handlers are no-ops that log to the console; stories are for inspecting state, not for writing to Firestore.
+
+Sample data lives in `src/fixtures/`, shared with tests. Derived values (balances, settlements, category totals, trend) are **computed** from the fixture expenses via the real functions, never hand-written — an early draft hardcoded them and they disagreed with the same expense list, which reads as a bug in the app's arithmetic.
+
+Story names are Arabic on purpose (the app is Arabic-first and these are what appear in the sidebar), so `storybook/prefer-pascal-case` is disabled for `src/stories/**` in `.eslintrc.cjs` — Arabic has no letter case, so the rule can only ever emit unfixable warnings.
 
 ---
 
