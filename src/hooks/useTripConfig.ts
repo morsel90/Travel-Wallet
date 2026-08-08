@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { getDoc } from 'firebase/firestore'
+import { onSnapshot } from 'firebase/firestore'
 import type { User } from 'firebase/auth'
 import { tripConfigDoc } from '../firestore'
 import { BANK_DETAILS as FALLBACK_BANK_DETAILS } from '../constants'
-import type { ItinerarySegment } from '../types' // 🆕 استيراد واجهة مسار الرحلة
+import { normalizeItinerary } from '../utils/itinerary'
+import type { BankDetails, ItinerarySegment } from '../types'
 
 // ─── useTripConfig ──────────────────────────────────────────────────────────
 // 🆕 دعم رحلات متعددة: تفاصيل الحساب البنكي (واسم الرحلة إن وُجد) لم تعد ثابتة
@@ -12,16 +13,16 @@ import type { ItinerarySegment } from '../types' // 🆕 استيراد واجه
 // جديدة). القيم في constants.ts (FALLBACK_BANK_DETAILS) تبقى كخط رجوع آمن
 // لرحلات لم يُنشئ لها المسؤول بعد مستند إعدادات — مثال: الرحلة الافتراضية قبل
 // تشغيل سكربت الترحيل لأول مرة بعد هذا التحديث.
-interface BankDetails {
-  bankName: string
-  beneficiary: string
-  iban: string
-}
+//
+// 🆕 صار الاشتراك حيّاً (onSnapshot) بدل قراءة واحدة (getDoc): واجهة إدارة
+// الرحلة تعدّل هذا المستند من داخل التطبيق، وبالقراءة الواحدة كان المسؤول يحفظ
+// تعديلاً ولا يراه في بطاقة الحساب البنكي ولا في ويدجت المقطع القادم حتى يعيد
+// تحميل الصفحة. الاستماع يجعل كل الشاشات تتحدّث فوراً بلا أي تحديث يدوي.
 
 export interface TripConfig {
   tripName: string | null
   bankDetails: BankDetails
-  itinerary?: ItinerarySegment[] // 🆕 إضافة مسار الرحلة للواجهة
+  itinerary?: ItinerarySegment[]
 }
 
 const FALLBACK_CONFIG: TripConfig = { tripName: null, bankDetails: FALLBACK_BANK_DETAILS }
@@ -35,19 +36,31 @@ export function useTripConfig(user: User | null): TripConfig {
   const [config, setConfig] = useState<TripConfig>(FALLBACK_CONFIG)
 
   useEffect(() => {
-    if (!user) { setConfig(FALLBACK_CONFIG); return }
+    if (!user) {
+      setConfig(FALLBACK_CONFIG)
+      return
+    }
 
-    let cancelled = false
-    getDoc(tripConfigDoc())
-      .then(snap => {
-        if (cancelled) return
+    const unsub = onSnapshot(
+      tripConfigDoc(),
+      snap => {
         // 🆕 لا يوجد مستند إعدادات لهذه الرحلة بعد — نستمر بالقيم الافتراضية
         // بصمت (متوقّع تماماً للرحلة الافتراضية قبل تشغيل سكربت الترحيل)
-        if (!snap.exists()) { setConfig(FALLBACK_CONFIG); return }
-        
-        // 🆕 إضافة itinerary كجزء من البيانات المتوقعة
-        const data = snap.data() as { name?: unknown; bankDetails?: Partial<BankDetails>; itinerary?: ItinerarySegment[] }
-        
+        if (!snap.exists()) {
+          setConfig(FALLBACK_CONFIG)
+          return
+        }
+
+        const data = snap.data() as {
+          name?: unknown
+          bankDetails?: Partial<BankDetails>
+          itinerary?: unknown
+        }
+
+        // normalizeItinerary تُسقط أي مقطع تالف وترتّب الباقي زمنياً — القواعد
+        // لا تستطيع التحقق من بنية عناصر القائمة (موثّق في firestore.rules).
+        const itinerary = normalizeItinerary(data.itinerary)
+
         setConfig({
           tripName: typeof data.name === 'string' ? data.name : null,
           bankDetails: {
@@ -55,16 +68,16 @@ export function useTripConfig(user: User | null): TripConfig {
             beneficiary: data.bankDetails?.beneficiary ?? FALLBACK_BANK_DETAILS.beneficiary,
             iban:        data.bankDetails?.iban        ?? FALLBACK_BANK_DETAILS.iban,
           },
-          // 🆕 تمرير المسار إلى حالة التطبيق ليتم عرضه
-          itinerary: Array.isArray(data.itinerary) ? data.itinerary : undefined,
+          itinerary: itinerary.length > 0 ? itinerary : undefined,
         })
-      })
-      .catch(err => {
+      },
+      err => {
         console.error('تعذّرت قراءة إعدادات الرحلة، سيُستخدم الافتراضي:', err)
-        if (!cancelled) setConfig(FALLBACK_CONFIG)
-      })
+        setConfig(FALLBACK_CONFIG)
+      }
+    )
 
-    return () => { cancelled = true }
+    return unsub
   }, [user])
 
   return config

@@ -1,25 +1,23 @@
-import { useContext } from 'react'
-import { DataContext } from '../context/DataContext'
-import { useTripConfig } from '../hooks/useTripConfig'
 import { Plane, Car, Train, Bus } from '../icons'
+import { findNextSegment } from '../utils/itinerary'
 import type { ItinerarySegment } from '../types'
 
-export const NextSegmentWidget = () => {
-  const context = useContext(DataContext)
-  const user = context?.user || null
-  // useTripConfig يُرجع TripConfig التي تحوي itinerary مباشرةً — لا حاجة لأي cast
-  const tripConfig = useTripConfig(user)
+interface NextSegmentWidgetProps {
+  // 🆕 يُمرَّر من App (المصدر: useTripConfig) بدل استدعاء الـ hook هنا. كان
+  // المكوّن يشترك في المستند بنفسه، وبعد تحويل useTripConfig إلى onSnapshot
+  // صار ذلك يعني مستمعاً حيّاً ثانياً على نفس المستند بلا داعٍ.
+  itinerary?: ItinerarySegment[]
+}
 
-  if (!tripConfig?.itinerary || tripConfig.itinerary.length === 0) return null
+export const NextSegmentWidget = ({ itinerary }: NextSegmentWidgetProps) => {
+  if (!itinerary || itinerary.length === 0) return null
 
-  // جلب الوقت الحالي للبحث عن الرحلة القادمة فقط
-  const now = new Date().getTime()
-  const nextSegment = tripConfig.itinerary.find(
-    (seg: ItinerarySegment) => new Date(seg.departure.time).getTime() > now
-  )
+  // findNextSegment مشتركة مع بقية أدوات المسار وتفترض قائمة مرتّبة زمنياً —
+  // وهذا ما تضمنه normalizeItinerary في useTripConfig عند القراءة.
+  const nextSegment = findNextSegment(itinerary)
 
   // إذا كانت كل الرحلات في الماضي، لا تعرض شيئاً
-  if (!nextSegment) return null 
+  if (!nextSegment) return null
 
   const getTransportIcon = (mode: string) => {
     switch (mode) {

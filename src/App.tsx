@@ -8,6 +8,7 @@ import type { ToastMessage, SortOrder } from './types'
 import {
   useAuth, useAdminAuth, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
+  useTripAdminActions,
 } from './hooks'
 import { useFilteredExpenses } from './hooks/useFilteredExpenses'
 
@@ -32,7 +33,7 @@ import SmartInputBar                     from './components/SmartInputBar'
 import EmptyState                        from './components/EmptyState'
 import { TravelerCardSkeleton, ExpenseListItemSkeleton, ChartsSectionSkeleton } from './components/Skeleton'
 import { haptic }                        from './utils/haptics'
-import { Users, Receipt, AlertTriangle, Download, Search, WifiOff, Plus, BarChart3 } from './icons'
+import { Users, Receipt, AlertTriangle, Download, Search, WifiOff, Plus, BarChart3, Settings } from './icons'
 
 const ChartsSection       = lazy(() => import('./components/charts/ChartsSection'))
 
@@ -47,7 +48,7 @@ export default function App() {
   const { ratesUpdatedAt, CURRENCIES } = useExchangeRates()
   const { expenses,  setExpenses,  expensesLoaded,  refreshExpenses }  = useExpenses(hasAccess ? user : null, { setIsSyncing, setSyncError })
   const { travelers, setTravelers, travelersLoaded, refreshTravelers } = useTravelers(hasAccess ? user : null, setIsSyncing)
-  const { bankDetails, itinerary } = useTripConfig(hasAccess ? user : null)
+  const { tripName, bankDetails, itinerary } = useTripConfig(hasAccess ? user : null)
 
   const isInitialLoading = !expensesLoaded || !travelersLoaded
 
@@ -74,7 +75,7 @@ export default function App() {
 
   const {
     modal,
-    openReports, openTrashBin, openDeleteTraveler, openDeposit, openDepositHistory, closeModal,
+    openReports, openTrashBin, openTripAdmin, openDeleteTraveler, openDeposit, openDepositHistory, closeModal,
   } = useModals()
 
   const depositTraveler = modal.type === 'deposit' ? modal.traveler : null
@@ -128,6 +129,10 @@ export default function App() {
     handleAddDeposit, closeDeposit,
   } = useDepositActions({
     depositTraveler, user, setTravelers, showToast, handleFirestoreError, closeModal,
+  })
+
+  const { isSaving: isSavingTrip, saveBankDetails, saveItinerary } = useTripAdminActions({
+    isAdmin, showToast, handleFirestoreError,
   })
 
   const hasUnsavedData = useCallback(() => {
@@ -231,7 +236,7 @@ export default function App() {
               <OnboardingBanner />
 
               {!isInitialLoading && (
-                <NextSegmentWidget />
+                <NextSegmentWidget itinerary={itinerary} />
               )}
 
               {!isOnline && (
@@ -348,6 +353,14 @@ export default function App() {
                         >
                           <BarChart3 className="w-3.5 h-3.5" /> التقارير
                         </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => { haptic.light(); openTripAdmin() }}
+                            className="flex items-center gap-1.5 text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm"
+                          >
+                            <Settings className="w-3.5 h-3.5 text-slate-500" /> إدارة الرحلة
+                          </button>
+                        )}
                         {isAdmin && (
                           <button
                             onClick={openTrashBin}
@@ -473,6 +486,14 @@ export default function App() {
                 deletedTravelers,
                 onRestoreExpense: handleRestoreExpense,
                 onRestoreTraveler: handleRestoreTraveler,
+              }}
+              tripAdmin={{
+                tripName,
+                bankDetails,
+                itinerary: itinerary ?? [],
+                isSaving: isSavingTrip,
+                onSaveBankDetails: saveBankDetails,
+                onSaveItinerary: saveItinerary,
               }}
             />
 

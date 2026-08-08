@@ -1,14 +1,12 @@
 import { Plane, Car, Train, Bus, Route } from '../icons'
+// التسميات مشتركة مع محرّر المسار في واجهة الإدارة — مصدر واحد يمنع اختلاف
+// التسمية بين شاشة العرض وشاشة التحرير.
+import { TRANSPORT_LABEL } from '../utils/itinerary'
 import type { ItinerarySegment } from '../types'
 
 interface ItinerarySectionProps {
   // يُمرَّر من ReportsView (المصدر: useTripConfig في App) بدل الاشتراك المكرر داخل المكوّن
   itinerary?: ItinerarySegment[]
-}
-
-// تسميات وسائل النقل
-const TRANSPORT_LABEL: Record<ItinerarySegment['mode'], string> = {
-  flight: 'رحلة جوية', car: 'سيارة', train: 'قطار', bus: 'حافلة',
 }
 
 // تنسيق واضح للمسافر: تقويم ميلادي + أرقام لاتينية + وقت 24 ساعة (بلا ص/م المربكة)،

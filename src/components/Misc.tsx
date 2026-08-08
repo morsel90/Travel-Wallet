@@ -3,11 +3,7 @@ import { Building2, Copy, Check, Share2 } from '../icons'
 import { haptic } from '../utils/haptics'
 import { cn } from '../utils/cn'
 
-interface BankDetails {
-  bankName: string
-  beneficiary: string
-  iban: string
-}
+import type { BankDetails } from '../types'
 
 interface BankDetailsCardProps {
   bankDetails: BankDetails

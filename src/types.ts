@@ -174,6 +174,14 @@ export interface ItinerarySegment {
   }
 }
 
+// 🆕 تفاصيل الحساب البنكي — كانت مُعرَّفة محلياً في useTripConfig.ts وMisc.tsx
+// معاً؛ وُحِّدت هنا لأن واجهة إدارة الرحلة تحتاج نفس النوع للنموذج.
+export interface BankDetails {
+  bankName: string
+  beneficiary: string
+  iban: string
+}
+
 // ملاحظة: واجهة إعدادات الرحلة الكاملة (TripConfig) معرّفة ومُصدَّرة من
 // hooks/useTripConfig.ts — وهي الشكل الفعلي الذي يُرجعه الـ hook
 // (tripName + bankDetails ككائن + itinerary). لا تُكرَّر هنا لتفادي التعارض.
