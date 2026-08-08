@@ -495,7 +495,7 @@ The itinerary is edited locally and saved in one explicit write, because the fie
 
 `scripts/add-flights.mjs` still exists for bulk entry but is no longer the primary path — it hardcodes its data and overwrites the whole array.
 
-⚠️ `scripts/create-trip.mjs` calls `.set()` **without merge**, so re-running it to change bank details wipes an existing itinerary. Prefer the admin panel for edits; keep the script for first-time trip creation and PIN setup.
+`scripts/create-trip.mjs` writes with `{ merge: true }`, so re-running it to change bank details no longer wipes an existing itinerary. It still replaces the PIN every run, which signs every member of that trip out — the prompt says so before proceeding.
 
 Once saved, `NextSegmentWidget` shows the first segment whose `departure.time` is in the future, and `ItinerarySection` lists all segments in the reports view. Both update immediately — `useTripConfig` listens with `onSnapshot`.
 
@@ -623,7 +623,7 @@ Three independent systems that must be deployed separately:
 | Restoring from the trash fails | Soft-deleting frees the name, so someone may have taken it while the traveler sat in the trash | Rename the other traveler, or rename this one before restoring |
 | Itinerary widget not showing | No `itinerary` on the trip doc, or every segment's `departure.time` is in the past | Add a future segment via **إدارة الرحلة** → مسار الرحلة |
 | A saved segment vanished from the list | `normalizeItinerary` drops malformed segments on read — `firestore.rules` cannot validate list items, so a segment written directly via the SDK with a missing field is filtered out instead of crashing the UI | Re-add it through the admin panel, which validates before writing |
-| Itinerary disappeared after running `create-trip.mjs` | The script uses `.set()` without merge and its payload omits `itinerary` unless you re-enter it | Re-add via the admin panel; use the panel rather than the script for edits |
+| Itinerary disappeared after running `create-trip.mjs` | Fixed — the script now merges. Only data written before that fix can be affected | Re-add via the admin panel |
 | Trips list empty / "تعذّر جلب قائمة الرحلات" for an admin | A `list` query on `trips/` is only satisfiable by `isAdmin()`; the admin claim may not be on the current token yet | Sign out and back in, or force `getIdToken(true)` — the claim is only refreshed on a new token |
 | "إنشاء الرحلة" fails with 404 | `manageTrip` is deployed but the `/api/manageTrip` rewrite is missing from `vercel.json`, or the frontend was deployed without it | Add the rewrite and redeploy the frontend |
 | "هذا الإجراء متاح للمسؤول فقط" when creating a trip | `manageTrip` re-checks `request.auth.token.admin` server-side and does not trust the client | Run `scripts/set-admin.mjs grant <email>`, then re-login |

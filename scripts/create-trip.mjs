@@ -50,7 +50,12 @@ async function main() {
 
   const existing = await db.collection('trips').doc(tripId).get()
   if (existing.exists) {
-    const overwrite = (await ask(`⚠️ الرحلة "${tripId}" موجودة مسبقاً. الكتابة فوق بياناتها ورمزها؟ (اكتب "نعم" للتأكيد): `)).trim()
+    const overwrite = (await ask(
+      `⚠️ الرحلة "${tripId}" موجودة مسبقاً.\n` +
+      `   سيُستبدل رمز الدخول (يُخرج كل أعضائها)، وتُحدَّث الحقول التي تُدخلها فقط.\n` +
+      `   الحقول التي لا تُدخلها (مثل مسار الرحلة) تبقى كما هي.\n` +
+      `   المتابعة؟ (اكتب "نعم" للتأكيد): `
+    )).trim()
     if (overwrite !== 'نعم') {
       console.log('أُلغي — لم يتغيّر شيء.')
       rl.close()
@@ -131,7 +136,13 @@ async function main() {
   const salt = randomBytes(16).toString('hex')
   const pinHash = hashPin(pin, salt)
 
-  await db.collection('trips').doc(tripId).set(tripData)
+  // ⚠️ merge إلزامي: مستند الرحلة يحوي أقساماً مستقلة (الاسم، البنك، المسار)،
+  // وtripData أعلاه لا يحوي itinerary إلا إذا أدخلتَه في هذه الجلسة. بلا merge
+  // كانت إعادة تشغيل السكربت لتغيير تفاصيل البنك تمحو مسار الرحلة بالكامل
+  // بصمت. نفس القاعدة المطبَّقة في hooks/useTripAdminActions.ts.
+  await db.collection('trips').doc(tripId).set(tripData, { merge: true })
+
+  // السرّ يُستبدل كاملاً عمداً — ملح وهاش جديدان لا يُدمجان مع القديم.
   await db.collection('tripSecrets').doc(tripId).set({ salt, pinHash })
 
   console.log(`\n✅ تم إنشاء/تحديث الرحلة "${tripId}".`)
