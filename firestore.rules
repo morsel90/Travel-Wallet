@@ -122,6 +122,32 @@ service cloud.firestore {
         && d.createdAt is number;
     }
 
+    // 🆕 التحقّق من بنية مستند إعدادات الرحلة trips/{tripId} — كل الحقول اختيارية
+    // لأن الواجهة الإدارية تكتب بـ merge (تحدّث تفاصيل البنك وحدها أو المسار وحده،
+    // انظر hooks/useTripAdminActions.ts)، فلا يصل للقواعد إلا الحقل المُعدَّل فعلاً.
+    function isValidTripConfig(d) {
+      return d.keys().hasOnly(['name', 'bankDetails', 'itinerary'])
+        && (!('name' in d) || (d.name is string && d.name.size() <= 100))
+        && (!('bankDetails' in d) || isValidBankDetails(d.bankDetails))
+        && (!('itinerary' in d) || (d.itinerary is list && d.itinerary.size() <= 50));
+    }
+
+    function isValidBankDetails(b) {
+      return b is map
+        && b.keys().hasOnly(['bankName', 'beneficiary', 'iban'])
+        && (!('bankName' in b)    || (b.bankName is string    && b.bankName.size() <= 100))
+        && (!('beneficiary' in b) || (b.beneficiary is string && b.beneficiary.size() <= 100))
+        && (!('iban' in b)        || (b.iban is string        && b.iban.size() <= 40));
+    }
+
+    // ⚠️ لا نتحقق هنا من بنية كل مقطع مسار على حدة (mode/identifier/departure/
+    // arrival) — نفس القيد الموثّق في isValidShares أعلاه: لا وسيلة بسيطة وموثوقة
+    // للتكرار على عناصر قائمة في لغة القواعد. نكتفي بحدّ أعلى للعدد (50) يمنع نمو
+    // المستند بلا سقف. الأثر محدود عمداً: الكاتب الوحيد المسموح له هو المسؤول
+    // (وهو طرف موثوق أصلاً وله صلاحيات أوسع بكثير من هذا)، والقارئ يتعامل دفاعياً
+    // مع أي مقطع تالف — انظر isRenderableSegment في utils/itinerary.ts التي
+    // تُصفّي المقاطع غير الصالحة قبل العرض بدل أن تنهار الواجهة.
+
     // Rate Limiting (حد: مصروف واحد كل ثانية لكل عضو، غير المسؤول) ──────────
     // مستند rateLimits/{uid} (ضمن مسار كل رحلة على حدة) يخزّن "آخر وقت إنشاء
     // مصروف" لنفس المستخدم *في هذه الرحلة تحديداً*، ويُحدَّث بذرّية (writeBatch
@@ -201,14 +227,22 @@ service cloud.firestore {
       }
     }
 
-    // 🆕 إعدادات كل رحلة (الاسم + تفاصيل الحساب البنكي) — انظر
+    // 🆕 إعدادات كل رحلة (الاسم + تفاصيل الحساب البنكي + مسار التنقل) — انظر
     // src/hooks/useTripConfig.ts. تُقرأ فقط بعد التحقق من عضوية *نفس* الرحلة
-    // (tripId هنا == appId أعلاه، لأن كلا المسارين يستخدمان نفس المعرّف). لا
-    // كتابة من العميل إطلاقاً — تُدار حصراً عبر scripts/create-trip.mjs
-    // بصلاحيات Admin SDK (يتجاوز هذه القواعد أصلاً، فلا يحتاج allow write).
+    // (tripId هنا == appId أعلاه، لأن كلا المسارين يستخدمان نفس المعرّف).
+    //
+    // 🆕 الكتابة صارت مسموحة للمسؤول (admin) حصراً، لتشغيل واجهة إدارة الرحلة
+    // داخل التطبيق (src/components/admin/TripAdminView.tsx) بدل السكربتات اليدوية.
+    // هذا آمن لأن محتوى هذا المستند ليس سرّاً: الاسم وتفاصيل الحساب البنكي
+    // والمسار كلها معروضة أصلاً لكل عضو في الرحلة. ⚠️ رمز PIN لا يمرّ من هنا
+    // إطلاقاً — هاشه يبقى في tripSecrets/{tripId} المحظور تماماً على العميل أدناه.
+    //
+    // الحذف يبقى ممنوعاً: حذف مستند الرحلة يتيم بيانات artifacts/{tripId} كاملة
+    // ويقطع الوصول عن كل أعضائها دون أي طريقة استرجاع من الواجهة.
     match /trips/{tripId} {
-      allow read:  if isMember(tripId) || isAdmin();
-      allow write: if false;
+      allow read:           if isMember(tripId) || isAdmin();
+      allow create, update: if isAdmin() && isValidTripConfig(request.resource.data);
+      allow delete:         if false;
     }
 
     // 🆕 هاش رمز PIN الخاص بكل رحلة (salt + pinHash) — لا يُقرأ ولا يُكتب من
