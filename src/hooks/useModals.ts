@@ -12,6 +12,7 @@ export type ModalState =
   | { type: 'none' }
   | { type: 'reports' }
   | { type: 'trashBin' }
+  | { type: 'tripAdmin' }
   | { type: 'deleteTraveler';  traveler: Traveler }
   | { type: 'deposit';         traveler: Traveler }
   | { type: 'depositHistory';  traveler: Traveler }
@@ -19,6 +20,7 @@ export type ModalState =
 type ModalAction =
   | { type: 'OPEN_REPORTS' }
   | { type: 'OPEN_TRASH_BIN' }
+  | { type: 'OPEN_TRIP_ADMIN' }
   | { type: 'OPEN_DELETE_TRAVELER';  traveler: Traveler }
   | { type: 'OPEN_DEPOSIT';          traveler: Traveler }
   | { type: 'OPEN_DEPOSIT_HISTORY';  traveler: Traveler }
@@ -30,6 +32,7 @@ function modalReducer(state: ModalState, action: ModalAction): ModalState {
   switch (action.type) {
     case 'OPEN_REPORTS':         return { type: 'reports' }
     case 'OPEN_TRASH_BIN':       return { type: 'trashBin' }
+    case 'OPEN_TRIP_ADMIN':      return { type: 'tripAdmin' }
     case 'OPEN_DELETE_TRAVELER': return { type: 'deleteTraveler', traveler: action.traveler }
     case 'OPEN_DEPOSIT':         return { type: 'deposit', traveler: action.traveler }
     case 'OPEN_DEPOSIT_HISTORY': return { type: 'depositHistory', traveler: action.traveler }
@@ -43,6 +46,7 @@ export function useModals() {
 
   const openReports        = useCallback(() => dispatch({ type: 'OPEN_REPORTS' }), [])
   const openTrashBin       = useCallback(() => dispatch({ type: 'OPEN_TRASH_BIN' }), [])
+  const openTripAdmin      = useCallback(() => dispatch({ type: 'OPEN_TRIP_ADMIN' }), [])
   const openDeleteTraveler = useCallback((traveler: Traveler) => dispatch({ type: 'OPEN_DELETE_TRAVELER', traveler }), [])
   const openDeposit        = useCallback((traveler: Traveler) => dispatch({ type: 'OPEN_DEPOSIT', traveler }), [])
   const openDepositHistory = useCallback((traveler: Traveler) => dispatch({ type: 'OPEN_DEPOSIT_HISTORY', traveler }), [])
@@ -52,6 +56,7 @@ export function useModals() {
     modal,
     openReports,
     openTrashBin,
+    openTripAdmin,
     openDeleteTraveler,
     openDeposit,
     openDepositHistory,

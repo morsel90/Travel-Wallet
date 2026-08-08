@@ -16,6 +16,7 @@ const ReportsView         = lazy(() => import('./reports/ReportsView'))
 const DepositModal        = lazy(() => import('./modals/DepositModal'))
 const TrashBinModal       = lazy(() => import('./modals/TrashBinModal'))
 const DepositHistoryModal = lazy(() => import('./modals/DepositHistoryModal'))
+const TripAdminView       = lazy(() => import('./admin/TripAdminView'))
 
 interface ModalManagerProps {
   modal: ModalState
@@ -32,10 +33,13 @@ interface ModalManagerProps {
   // سلة المهملات
   trash: Pick<ComponentProps<typeof TrashBinModal>,
     'deletedExpenses' | 'deletedTravelers' | 'onRestoreExpense' | 'onRestoreTraveler'>
+  // 🆕 إدارة الرحلة — للمسؤول فقط (onClose يُدار داخلياً)
+  tripAdmin: Pick<ComponentProps<typeof TripAdminView>,
+    'tripName' | 'bankDetails' | 'itinerary' | 'isSaving' | 'onSaveBankDetails' | 'onSaveItinerary'>
 }
 
 export default function ModalManager({
-  modal, closeModal, confirmDeleteTraveler, reports, deposit, closeDeposit, trash,
+  modal, closeModal, confirmDeleteTraveler, reports, deposit, closeDeposit, trash, tripAdmin,
 }: ModalManagerProps) {
   // اشتقاق الحمولة من الحالة كثوابت محلية — يضمن حفظ التضييق (narrowing) داخل الإغلاقات
   const deleteTarget    = modal.type === 'deleteTraveler'  ? modal.traveler : null
@@ -88,6 +92,14 @@ export default function ModalManager({
         {modal.type === 'trashBin' && (
           <Suspense key="trash-bin" fallback={<ModalFallback />}>
             <TrashBinModal {...trash} onClose={closeModal} />
+          </Suspense>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {modal.type === 'tripAdmin' && (
+          <Suspense key="trip-admin" fallback={<ModalFallback />}>
+            <TripAdminView {...tripAdmin} onClose={closeModal} />
           </Suspense>
         )}
       </AnimatePresence>

@@ -35,4 +35,8 @@ export {
   Share2, // 🆕 زر مشاركة تفاصيل الحساب البنكي (BankDetailsCard)
   Printer, // 🆕 زر طباعة/حفظ PDF في صفحة التقارير (ReportsView)
   Route,   // 🆕 أيقونة رأس قسم مسار الرحلة (ItinerarySection في التقارير)
+  Settings,  // 🆕 زر/رأس واجهة إدارة الرحلة (TripAdminView)
+  Save,      // 🆕 أزرار الحفظ في واجهة إدارة الرحلة
+  ArrowUp,   // 🆕 إعادة ترتيب مقاطع المسار يدوياً
+  ArrowDown, // 🆕 إعادة ترتيب مقاطع المسار يدوياً
 } from 'lucide-react'
