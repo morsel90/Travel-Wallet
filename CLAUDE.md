@@ -43,7 +43,7 @@
 | Virtual List | React Virtuoso | ^4.18.10 |
 | Backend | Firebase Auth + Firestore | ^10.8.1 |
 | Offline | Firestore `persistentLocalCache` | — |
-| Cloud Functions | Firebase v2 onCall (Node 20) | — |
+| Cloud Functions | Firebase v2 onCall (Node 22) | — |
 | PWA | vite-plugin-pwa (generateSW) | ^0.19.8 |
 | Testing | Vitest + React Testing Library | ^1.6.0 |
 | Component workshop | Storybook (react-vite) | ^10.5.7 |
@@ -601,6 +601,8 @@ Three independent systems that must be deployed separately:
 | Cloud Functions | `firebase deploy --only functions` | `verifyTripPin`, `manageTrip` |
 
 **Important:** After updating `firestore.rules` or `functions/index.js`, existing users may need to re-enter their trip PIN (custom claim format changed). Always create the trip via `scripts/create-trip.mjs` before deploying new rules.
+
+**Functions runtime:** Node 22. The version is pinned in **two** places and both must agree — `firebase.json` (`runtime: "nodejs22"`, which is what the deploy actually reads) and `functions/package.json` (`engines.node`). Changing only the latter does nothing. CI uses Node 22 as well, so the frontend is built on the same major the functions run on.
 
 **Vercel rewrites** (`vercel.json`): `/api/verifyTripPin` and `/api/manageTrip` are proxied to their Cloud Function URLs to avoid CORS. The client always calls the `/api/...` path, never the function URL directly. Adding a function means adding a rewrite here too, otherwise the call 404s in production while working fine locally.
 
