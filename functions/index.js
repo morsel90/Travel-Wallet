@@ -25,6 +25,9 @@ admin.initializeApp();
 const db = admin.firestore();
 const WINDOW_MS = 15 * 60 * 1000; // 15 دقيقة
 const MAX_PIN_INPUT_LENGTH = 128;
+// 🆕 حد أدنى لطول الرمز عند إنشائه من الواجهة. لا يُطبَّق على التحقق
+// (verifyTripPin) حتى لا تنكسر رحلات قائمة رمزها أقصر من هذا.
+const MIN_PIN_LENGTH = 4;
 
 // ⚠️ يجب أن يطابق هذا التنسيق تماماً TRIP_ID_PATTERN في src/utils/tripId.ts —
 // إنجليزي/أرقام وشرطة (-) وشرطة سفلية (_) فقط، بطول 1-64 حرفاً، لمنع tripId
@@ -157,5 +160,89 @@ exports.verifyTripPin = onCall(
     });
 
     return { success: true };
+  }
+);
+
+/**
+ * 🆕 manageTrip: إنشاء رحلة جديدة أو تغيير رمز رحلة قائمة — للمسؤول حصراً.
+ *
+ * لماذا دالة خادمية وليست قاعدة Firestore كبقية إعدادات الرحلة؟ لأن هذه العملية
+ * تلمس tripSecrets/{tripId} (الملح + هاش الرمز)، وهو المستند الوحيد المحظور
+ * قراءةً وكتابةً على العميل تحت أي ظرف — بما في ذلك المسؤول. توليد الملح وحساب
+ * الهاش يبقيان خادميين، فلا يصل الرمز الصريح ولا هاشه إلى أي كود يعمل في المتصفح.
+ *
+ * تفاصيل الرحلة غير السرّية (الاسم/البنك/المسار) لا تمرّ من هنا — تُكتب مباشرة
+ * من الواجهة عبر قواعد Firestore (isValidTripConfig)، وهي المسار الأخف والأسرع.
+ */
+exports.manageTrip = onCall(
+  {
+    region: 'us-central1',
+    maxInstances: 5,
+  },
+  async (request) => {
+    // ⚠️ التحقق من صلاحية المسؤول خادميًا من التوكن نفسه — لا نثق بأي علم
+    // يرسله العميل. نفس الـ Custom Claim الذي تفحصه isAdmin() في firestore.rules.
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+    }
+    if (request.auth.token.admin !== true) {
+      throw new HttpsError('permission-denied', 'هذا الإجراء متاح للمسؤول فقط.');
+    }
+
+    const tripId = String(request.data?.tripId ?? '').trim();
+    const pin = String(request.data?.pin ?? '').trim();
+    const name = String(request.data?.name ?? '').trim();
+    const mode = String(request.data?.mode ?? '').trim(); // 'create' | 'resetPin'
+
+    if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'معرّف الرحلة غير صالح — إنجليزي/أرقام وشرطة (-) وشرطة سفلية (_) فقط، بطول 1-64 حرفاً.'
+      );
+    }
+    if (!pin || pin.length > MAX_PIN_INPUT_LENGTH) {
+      throw new HttpsError('invalid-argument', 'أدخل رمز الرحلة.');
+    }
+    if (pin.length < MIN_PIN_LENGTH) {
+      throw new HttpsError('invalid-argument', `رمز الرحلة قصير جداً — ${MIN_PIN_LENGTH} خانات على الأقل.`);
+    }
+    if (mode !== 'create' && mode !== 'resetPin') {
+      throw new HttpsError('invalid-argument', 'نوع العملية غير معروف.');
+    }
+    if (name.length > 100) {
+      throw new HttpsError('invalid-argument', 'اسم الرحلة طويل جداً (100 حرف كحد أقصى).');
+    }
+
+    const tripRef = db.collection('trips').doc(tripId);
+    const existing = await tripRef.get();
+
+    // ⚠️ الإنشاء لا يكتب فوق رحلة قائمة أبداً: الكتابة فوقها تستبدل رمزها الحالي
+    // فيفقد كل أعضائها الوصول فجأة. هذا بالضبط ما يفعله create-trip.mjs بعد سؤال
+    // تأكيد نصي — وهو خطر أكبر من أن يُترك خلف زر في واجهة رسومية.
+    if (mode === 'create' && existing.exists) {
+      throw new HttpsError('already-exists', `الرحلة "${tripId}" موجودة مسبقاً — اختر معرّفاً آخر.`);
+    }
+    if (mode === 'resetPin' && !existing.exists) {
+      throw new HttpsError('not-found', `الرحلة "${tripId}" غير موجودة.`);
+    }
+
+    const salt = crypto.randomBytes(16).toString('hex');
+    const pinHash = hashPin(pin, salt);
+
+    // مستندان في كتابة ذرّية واحدة: لا رحلة بلا رمز، ولا رمز بلا رحلة.
+    const batch = db.batch();
+    if (mode === 'create') {
+      batch.set(tripRef, {
+        name: name || tripId,
+        bankDetails: { bankName: '', beneficiary: '', iban: '' },
+        itinerary: [],
+      });
+    }
+    batch.set(db.collection('tripSecrets').doc(tripId), { salt, pinHash });
+    await batch.commit();
+
+    console.log(`[manageTrip] ${mode} on ${tripId} by ${request.auth.uid}`);
+
+    return { success: true, tripId };
   }
 );
