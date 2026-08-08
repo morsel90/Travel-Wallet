@@ -34,6 +34,7 @@ import SmartInputBar                     from './components/SmartInputBar'
 import EmptyState                        from './components/EmptyState'
 import { TravelerCardSkeleton, ExpenseListItemSkeleton, ChartsSectionSkeleton } from './components/Skeleton'
 import { haptic }                        from './utils/haptics'
+import { describeWriteError, writeErrorCode } from './utils/writeErrors'
 import { Users, Receipt, AlertTriangle, Download, Search, WifiOff, Plus, BarChart3, Settings } from './icons'
 
 const ChartsSection       = lazy(() => import('./components/charts/ChartsSection'))
@@ -93,9 +94,12 @@ export default function App() {
 
   const { showAdminSignIn, openAdminSignIn, handleAdminSignOut, adminModalProps } = useAdminAuth({ showToast })
 
+  // 🆕 يعتمد على كود خطأ Firestore لا على البحث في نص الرسالة: النص غير موثوق
+  // (يتغيّر بين إصدارات SDK وقد يكون مترجَماً)، والكود ثابت ومحدَّد.
+  // fallback يُستخدم فقط حين لا يكون الخطأ من Firestore أصلاً — انظر utils/writeErrors.ts.
   const handleFirestoreError = useCallback((err: unknown, fallback: string) => {
-    const msg = err instanceof Error ? err.message : ''
-    setSyncError(msg.includes('permission') ? 'لا تملك الصلاحية لتنفيذ هذا الإجراء.' : fallback)
+    const code = writeErrorCode(err)
+    setSyncError(code ? describeWriteError(err, 'generic').text : fallback)
   }, [])
 
   const handlePullToRefresh = useCallback(async () => {

@@ -7,6 +7,7 @@ import { expensesCol, expenseDoc, rateLimitDoc } from '../firestore'
 import { EXPENSE_CATEGORIES } from '../constants'
 import { toIds } from '../utils/participants'
 import { haptic } from '../utils/haptics'
+import { describeWriteError } from '../utils/writeErrors'
 import type { Traveler, Expense, ExpenseFormData, ToastMessage } from '../types'
 
 interface UseExpenseActionsParams {
@@ -125,33 +126,40 @@ export function useExpenseActions({
       return
     }
 
-    const handleError = () => {
-      haptic.error()
-      showToast({
-        text: 'فشل الحفظ، يبدو أنك غير متصل بالإنترنت',
-        type: 'error',
-        onRetry: () => {
-          showToast({ text: 'جاري إعادة المحاولة...', type: 'new' }, 1000)
-          // 🆕 إعادة المحاولة باستخدام الحمولة المحفوظة (بدل newExpense الممسوحة)
-          const saved = lastExpensePayloadRef.current
-          if (!saved || !user) return
-          // 🆕 فشل إعادة المحاولة لم يعد يُبتلع بصمت — يظهر الآن في شريط الخطأ
-          // العلوي، وإلا كان المستخدم يرى "جاري إعادة المحاولة..." ثم لا شيء.
-          const onRetryFailed = (err: unknown) =>
-            handleFirestoreError(err, 'تعذّرت إعادة حفظ المصروف — تحقّق من اتصالك وحاول مجدداً.')
+    // 🆕 وصول الخطأ إلى هنا يعني رفض الخادم للكتابة، لا انقطاع الاتصال: الكتابة
+    // دون اتصال تبقى معلّقة في IndexedDB ولا تُرفض (انظر utils/writeErrors.ts).
+    // ولأن Firestore يتراجع عن التعديل المحلي عند الرفض، سيختفي الصف من القائمة
+    // بعد لحظة — فالرسالة تذكر ذلك صراحةً بدل أن يبدو الاختفاء عطلاً عشوائياً.
+    const retryWrite = () => {
+      showToast({ text: 'جاري إعادة المحاولة...', type: 'new' }, 1000)
+      const saved = lastExpensePayloadRef.current
+      if (!saved || !user) return
+      const onRetryFailed = (err: unknown) => {
+        haptic.error()
+        showToast({ ...describeWriteError(err, saved.wasEditing ? 'edit' : 'create'), type: 'error' }, 5000)
+      }
 
-          if (saved.wasEditing && saved.editingId) {
-            setDoc(expenseDoc(saved.editingId), saved.payload)
-              .catch(onRetryFailed).finally(() => { isSubmittingExpenseRef.current = false })
-          } else {
-            const batch = writeBatch(db)
-            batch.set(doc(expensesCol()), saved.payload)
-            if (!isAdmin) batch.set(rateLimitDoc(user.uid), { lastExpenseCreatedAt: Date.now() })
-            batch.commit()
-              .catch(onRetryFailed).finally(() => { isSubmittingExpenseRef.current = false })
-          }
-        }
-      }, Infinity)
+      if (saved.wasEditing && saved.editingId) {
+        setDoc(expenseDoc(saved.editingId), saved.payload)
+          .catch(onRetryFailed).finally(() => { isSubmittingExpenseRef.current = false })
+      } else {
+        const batch = writeBatch(db)
+        batch.set(doc(expensesCol()), saved.payload)
+        if (!isAdmin) batch.set(rateLimitDoc(user.uid), { lastExpenseCreatedAt: Date.now() })
+        batch.commit()
+          .catch(onRetryFailed).finally(() => { isSubmittingExpenseRef.current = false })
+      }
+    }
+
+    const handleError = (err: unknown) => {
+      haptic.error()
+      const { text, retryable } = describeWriteError(err, wasEditing ? 'edit' : 'create')
+      showToast(
+        // زر إعادة المحاولة يظهر فقط حين يُجدي — عرضه على رفض منطقي (صلاحيات،
+        // حد معدّل) يدعو المستخدم لتكرار عملية ستفشل بنفس الطريقة كل مرة.
+        { text, type: 'error', ...(retryable ? { onRetry: retryWrite } : {}) },
+        retryable ? Infinity : 6000
+      )
     }
 
     if (wasEditing && editingId) {
@@ -167,7 +175,7 @@ export function useExpenseActions({
         .catch(handleError)
         .finally(() => { isSubmittingExpenseRef.current = false })
     }
-  }, [newExpense, editingExpense, user, isAdmin, emptyExpenseForm, setExpenses, showToast, handleFirestoreError, setSyncError, isFirstExpense])
+  }, [newExpense, editingExpense, user, isAdmin, emptyExpenseForm, setExpenses, showToast, setSyncError, isFirstExpense])
 
   const handleQuickAddExpense = useCallback((description: string, amount: number): string | null => {
     if (isSubmittingExpenseRef.current) return 'جارٍ معالجة طلب سابق، حاول بعد لحظة.'
@@ -207,19 +215,27 @@ export function useExpenseActions({
       return null
     }
 
-    const handleQuickError = () => {
+    const handleQuickError = (err: unknown) => {
       haptic.error()
-      showToast({
-        text: "فشل الحفظ، يبدو أنك غير متصل بالإنترنت", 
-        type: "error", 
-        onRetry: () => {
-          showToast({ text: 'جاري إعادة المحاولة...', type: 'new' }, 1000);
-          // 🆕 إعادة المحاولة قد تُرفض بدورها (حد المعدّل، أو لا مسافرون) —
-          // نعرض السبب بدل ابتلاعه بصمت كما كان سابقاً.
-          const retryError = handleQuickAddExpense(description, amount);
-          if (retryError) showToast({ text: retryError, type: 'error' }, 3000);
-        }
-      }, Infinity);
+      const { text, retryable } = describeWriteError(err, 'create')
+      showToast(
+        {
+          text,
+          type: 'error',
+          ...(retryable
+            ? {
+                onRetry: () => {
+                  showToast({ text: 'جاري إعادة المحاولة...', type: 'new' }, 1000)
+                  // إعادة المحاولة قد تُرفض بدورها (حد المعدّل، أو لا مسافرون) —
+                  // نعرض السبب بدل ابتلاعه بصمت.
+                  const retryError = handleQuickAddExpense(description, amount)
+                  if (retryError) showToast({ text: retryError, type: 'error' }, 3000)
+                },
+              }
+            : {}),
+        },
+        retryable ? Infinity : 6000
+      )
     }
 
     lastExpenseCreateAtRef.current = now
