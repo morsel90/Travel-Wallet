@@ -5,6 +5,10 @@ import { VitePWA }      from 'vite-plugin-pwa'
 export default defineConfig(({ mode }) => {
   // تحميل كافة المتغيرات المضافة في Vercel أو .env
   const env = loadEnv(mode, process.cwd(), '');
+  const pick = (key) => env[key] || process.env[key];
+  // 🔴 وضع اختبارات E2E (Playwright) فقط — انظر playwright.config.ts الذي يشغّل
+  // `vite --mode e2e`. لا يُفعَّل أبداً بأي أمر آخر (dev/build العاديين).
+  const isE2E = mode === 'e2e';
 
   return {
     resolve: {
@@ -13,14 +17,38 @@ export default defineConfig(({ mode }) => {
 
     // حقن المتغيرات صراحة وقت البناء لضمان وصولها للمتصفح عند البناء على Vercel
     define: {
-      'import.meta.env.VITE_FIREBASE_API_KEY': JSON.stringify(env.VITE_FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY),
-      'import.meta.env.VITE_FIREBASE_AUTH_DOMAIN': JSON.stringify(env.VITE_FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN),
-      'import.meta.env.VITE_FIREBASE_PROJECT_ID': JSON.stringify(env.VITE_FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID),
-      'import.meta.env.VITE_FIREBASE_STORAGE_BUCKET': JSON.stringify(env.VITE_FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET),
-      'import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID': JSON.stringify(env.VITE_FIREBASE_MESSAGING_SENDER_ID || process.env.VITE_FIREBASE_MESSAGING_SENDER_ID),
-      'import.meta.env.VITE_FIREBASE_APP_ID': JSON.stringify(env.VITE_FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID),
+      'import.meta.env.VITE_FIREBASE_API_KEY': JSON.stringify(pick('VITE_FIREBASE_API_KEY')),
+      'import.meta.env.VITE_FIREBASE_AUTH_DOMAIN': JSON.stringify(pick('VITE_FIREBASE_AUTH_DOMAIN')),
+      'import.meta.env.VITE_FIREBASE_PROJECT_ID': JSON.stringify(pick('VITE_FIREBASE_PROJECT_ID')),
+      'import.meta.env.VITE_FIREBASE_STORAGE_BUCKET': JSON.stringify(pick('VITE_FIREBASE_STORAGE_BUCKET')),
+      'import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID': JSON.stringify(pick('VITE_FIREBASE_MESSAGING_SENDER_ID')),
+      'import.meta.env.VITE_FIREBASE_APP_ID': JSON.stringify(pick('VITE_FIREBASE_APP_ID')),
+      // 🔴 E2E فقط — انظر src/firebase.ts (connectAuthEmulator/connectFirestoreEmulator)
+      'import.meta.env.VITE_USE_FIREBASE_EMULATORS': JSON.stringify(pick('VITE_USE_FIREBASE_EMULATORS')),
     },
-    
+
+    // 🔴 E2E فقط — يوجّه fetch('/api/verifyTripPin'|'/api/manageTrip') (انظر
+    // hooks/useAuth.ts وhooks/useTripAdminActions.ts) إلى محاكي Functions محلياً،
+    // بدل وجهة Vercel الحقيقية (vercel.json) التي لا وجود لها هنا. نفس بروتوكول
+    // onCall HTTP الذي يستخدمه vercel.json فعلياً — رابط مباشر لدالة onCall.
+    ...(isE2E ? {
+      server: {
+        proxy: {
+          '/api/verifyTripPin': {
+            target: 'http://127.0.0.1:5001',
+            changeOrigin: true,
+            rewrite: () => `/${pick('VITE_FIREBASE_PROJECT_ID')}/us-central1/verifyTripPin`,
+          },
+          '/api/manageTrip': {
+            target: 'http://127.0.0.1:5001',
+            changeOrigin: true,
+            rewrite: () => `/${pick('VITE_FIREBASE_PROJECT_ID')}/us-central1/manageTrip`,
+          },
+        },
+      },
+    } : {}),
+
+
     // إعدادات البناء وتقسيم الحزم (Code Splitting)
     build: {
       chunkSizeWarningLimit: 600,

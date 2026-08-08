@@ -41,8 +41,39 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  # 🔴 اختبارات firestore.rules — تعمل ضد محاكي Firestore الحقيقي، لا ضد كود
+  # التطبيق. Java مثبّتة مسبقاً على عدّاد ubuntu-latest (يحتاجها المحاكي).
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck:rules
+      - run: npm run test:rules
+
+  # 🔴 اختبارات E2E حقيقية (Playwright) — تشغّل خادم Vite ومتصفحاً حقيقياً ضد
+  # محاكيات Auth+Firestore+Functions. أبطأ جداً من بقية الوظائف (تثبيت متصفح +
+  # إقلاع ثلاثة محاكيات + خادم Vite)، وهي المرشّح الأول لو احتجت لاحقاً جعل CI
+  # أسرع (مثال: تشغيلها على push إلى main فقط لا كل PR).
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck:e2e
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
   build:
-    needs: [lint, typecheck, test]
+    needs: [lint, typecheck, test, rules, e2e]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

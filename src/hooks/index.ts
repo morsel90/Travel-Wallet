@@ -16,4 +16,5 @@ export { useDepositActions }   from './useDepositActions'  // 🆕 منطق نم
 export { useTripConfig }       from './useTripConfig' // 🆕 إعدادات الرحلة النشطة (اسمها/تفاصيل البنك) من Firestore — لدعم رحلات متعددة
 export { useTripAdminActions } from './useTripAdminActions' // 🆕 كتابة إعدادات أي رحلة (البنك/المسار/الرمز) من واجهة الإدارة — للمسؤول فقط
 export { useAllTrips }         from './useAllTrips' // 🆕 قائمة كل الرحلات — استعلام يرضيه isAdmin() وحده
+export { useMyTrips }          from './useMyTrips'  // 🆕 رحلات المستخدم المنضم لها (شاشة «رحلاتي») — قراءة مستند كل رحلة على حدة
 export { useHeaderCollapse }   from './useHeaderCollapse' // 🆕 تتبّع اتجاه التمرير لتقليص/توسيع الهيدر (Sticky + Collapsible)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isValidTripId } from './tripId'
+import { isValidTripId, TRIP_ID, HAS_EXPLICIT_TRIP_ID } from './tripId'
 
 // ⚠️ هذه الصيغة مكرّرة عمداً في ثلاثة أماكن: هنا، وfunctions/index.js
 // (TRIP_ID_PATTERN)، وscripts/create-trip.mjs. الفحص الخادمي هو الحاجز الفعلي؛
@@ -45,5 +45,23 @@ describe('isValidTripId', () => {
 
   it('يرفض سطراً جديداً مضمّناً', () => {
     expect(isValidTripId('ok\nbad')).toBe(false)
+  })
+})
+
+// 🆕 كلاهما يُحسب مرة واحدة عند تحميل الوحدة من نفس المصدر (الرابط)، فلا يمكن
+// تغييرهما داخل الاختبار بعد الاستيراد. بيئة Vitest بلا `?trip=` — أي أن الحالة
+// المرصودة هنا هي بالضبط حالة «فتح التطبيق مجرّداً»: الرحلة الافتراضية، وعَلَم
+// صريح بأن المستخدم لم يقصد رحلة بعينها (وهي الحالة التي تعرض شاشة «رحلاتي»).
+describe('TRIP_ID / HAS_EXPLICIT_TRIP_ID', () => {
+  it('يرجع للرحلة الافتراضية حين لا يذكر الرابط رحلة', () => {
+    expect(TRIP_ID).toBe('travelapp-87206')
+  })
+
+  it('يعلن صراحةً أن الرحلة لم تُذكر في الرابط', () => {
+    expect(HAS_EXPLICIT_TRIP_ID).toBe(false)
+  })
+
+  it('TRIP_ID نفسه يبقى معرّفاً صالحاً دائماً', () => {
+    expect(isValidTripId(TRIP_ID)).toBe(true)
   })
 })

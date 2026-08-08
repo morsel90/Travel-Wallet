@@ -1,10 +1,11 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth }       from 'firebase/auth'
+import { getAuth, connectAuthEmulator } from 'firebase/auth'
 import { getFunctions }  from 'firebase/functions'
 import {
   initializeFirestore,
   persistentLocalCache,
-  persistentMultipleTabManager
+  persistentMultipleTabManager,
+  connectFirestoreEmulator,
 } from 'firebase/firestore'
 
 // ─── إعداد Firebase ──────────────────────────────────────────────────────────
@@ -99,3 +100,15 @@ export const db = initializeFirestore(app, {
     tabManager: persistentMultipleTabManager() // يدعم فتح التطبيق في عدة تبويبات في نفس الوقت
   })
 })
+
+// 🔴 اختبارات E2E (Playwright) فقط — يوجّه SDK فايربيس بالكامل لمحاكيات محلية
+// (Auth + Firestore، انظر firebase.json) بدل مشروع الإنتاج الحقيقي. المتغيّر
+// لا يُعرَّف أبداً في .env المحلي ولا في إعداد Vercel — فقط playwright.config.ts
+// يمرّره عبر webServer.env عند تشغيل `vite --mode e2e`، فهذا الفرع ميت تماماً
+// في npm run dev العادي وفي كل بناء إنتاجي. يجب أن يقع الاستدعاء هنا مباشرة —
+// قبل أي عملية Firestore/Auth فعلية وبعد إنشاء auth/db مباشرة — وإلا فشل
+// connectFirestoreEmulator لأن SDK يرفض تغيير الاتصال بعد أول استخدام.
+if (import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true') {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true })
+  connectFirestoreEmulator(db, '127.0.0.1', 8080)
+}

@@ -5,6 +5,22 @@ import { TRIP_ID } from '../utils/tripId'
 
 const tripPinStorageKey = () => `travelapp_trip_pin_${TRIP_ID}`
 
+/**
+ * 🆕 يقرأ خريطة `trips` من الـ Custom Claims دفاعياً.
+ *
+ * الـ claims تأتي من توكن موقّع من الخادم، لكنها مع ذلك بيانات خارجية بصيغة
+ * حرة (`Record<string, unknown>`) وقد تتغيّر صيغتها بين إصدارات الدالة — كما
+ * حدث فعلاً في هذا المشروع حين استُبدل العلم القديم `member: true` بخريطة
+ * لكل رحلة. لذا نتحقق من النوع بدل الوثوق بالشكل المتوقَّع: الصيغة القديمة
+ * (أو أي صيغة غير متوقّعة) تُعامَل كخريطة فارغة فيُطلب الرمز من جديد، بدل أن
+ * ترمي القراءة وتُسقط تدفّق المصادقة كاملاً.
+ */
+function readTripsClaim(claims: Record<string, unknown>): Record<string, boolean> {
+  const trips = claims.trips
+  if (typeof trips !== 'object' || trips === null || Array.isArray(trips)) return {}
+  return trips as Record<string, boolean>
+}
+
 export interface UseAuth {
   user: User | null
   isAdmin: boolean
@@ -13,6 +29,14 @@ export interface UseAuth {
   pinError: string | null
   rateLimitSeconds: number | null
   verifyTripPin: (pin: string) => Promise<boolean>
+  // 🆕 معرّفات الرحلات التي انضم لها هذا المستخدم فعلاً — مقروءة من خريطة
+  // trips في الـ Custom Claims مباشرةً، بلا أي استعلام على Firestore.
+  //
+  // هذه هي القائمة التي تُبنى منها شاشة «رحلاتي» (TripPicker): المستخدم عضو
+  // في هذه الرحلات أصلاً، فقراءة مستند كلٍّ منها يسمح بها isMember(tripId) في
+  // firestore.rules دون أي تعديل على القواعد. ⚠️ لا يجوز اشتقاقها باستعلام
+  // list على مجموعة trips/ — ذلك الاستعلام لا يرضيه إلا isAdmin().
+  joinedTripIds: string[]
 }
 
 export function useAuth(): UseAuth {
@@ -24,6 +48,9 @@ export function useAuth(): UseAuth {
 
   // حالة الإدارة بناءً على الـ Claims
   const [isAdmin, setIsAdmin] = useState(false)
+
+  // 🆕 رحلات المستخدم — تُقرأ من نفس الـ tokenResult أدناه (لا استدعاء إضافي)
+  const [joinedTripIds, setJoinedTripIds] = useState<string[]>([])
 
   // 🆕 عداد فك الحظر التلقائي — يعمل فقط عندما rateLimitSeconds > 0
   // نعتمد على boolean signal عمداً (rateLimitActive بدل rateLimitSeconds نفسه)
@@ -93,6 +120,9 @@ export function useAuth(): UseAuth {
       } catch {
         // تجاهل متعمّد
       }
+      // 🆕 انضم للتو لهذه الرحلة — نضيفها محلياً بدل انتظار انطلاق
+      // onAuthStateChanged من جديد (قد لا ينطلق أصلاً بعد تحديث التوكن).
+      setJoinedTripIds(prev => prev.includes(TRIP_ID) ? prev : [...prev, TRIP_ID])
       setNeedsTripPin(false)
     } else {
       if (result.retryAfter) {
@@ -118,6 +148,11 @@ export function useAuth(): UseAuth {
       const isAdminClaim = tokenResult.claims.admin === true
       setIsAdmin(isAdminClaim)
 
+      // 🆕 رحلات المستخدم من نفس التوكن — تُقرأ قبل أي خروج مبكر أدناه حتى
+      // تبقى شاشة «رحلاتي» متاحة للمسؤول أيضاً لا للأعضاء وحدهم.
+      const trips = readTripsClaim(tokenResult.claims)
+      setJoinedTripIds(Object.keys(trips).filter(id => trips[id] === true))
+
       if (isAdminClaim) {
         setNeedsTripPin(false)
         setPinCheckLoading(false)
@@ -125,15 +160,10 @@ export function useAuth(): UseAuth {
       }
 
       setPinCheckLoading(true)
-      try {
-        const trips = tokenResult.claims.trips as Record<string, boolean> | undefined
-        if (trips?.[TRIP_ID] === true) {
-          setNeedsTripPin(false)
-          setPinCheckLoading(false)
-          return
-        }
-      } catch {
-        // خريطة trips غير موجودة أو بصيغة غير متوقّعة — نكمل لمسار الرمز المخزّن
+      if (trips[TRIP_ID] === true) {
+        setNeedsTripPin(false)
+        setPinCheckLoading(false)
+        return
       }
 
       let cachedPin: string | null = null
@@ -163,5 +193,5 @@ export function useAuth(): UseAuth {
     return unsub
   }, [callVerify])
 
-  return { user, isAdmin, needsTripPin, pinCheckLoading, pinError, rateLimitSeconds, verifyTripPin }
+  return { user, isAdmin, needsTripPin, pinCheckLoading, pinError, rateLimitSeconds, verifyTripPin, joinedTripIds }
 }

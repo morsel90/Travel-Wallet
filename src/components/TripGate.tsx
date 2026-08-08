@@ -17,9 +17,12 @@ interface TripGateProps {
   error: string | null
   rateLimitSeconds: number | null // 🆕 ثواني متبقية للحظر (null = لا حظر)
   onSubmit: (pin: string) => Promise<boolean>
+  // 🆕 يُمرَّر فقط إن كان المستخدم عضواً في رحلات أخرى — منفذ للخروج من رابط
+  // رحلة لا يملك رمزها بدل أن يعلق في شاشة لا مخرج منها إلا تعديل الرابط يدوياً.
+  onShowMyTrips?: () => void
 }
 
-const TripGate = ({ loading, error, rateLimitSeconds, onSubmit }: TripGateProps) => {
+const TripGate = ({ loading, error, rateLimitSeconds, onSubmit, onShowMyTrips }: TripGateProps) => {
   const [pin, setPin] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -108,6 +111,16 @@ const TripGate = ({ loading, error, rateLimitSeconds, onSubmit }: TripGateProps)
                 }
               </button>
             </form>
+
+            {onShowMyTrips && (
+              <button
+                type="button"
+                onClick={onShowMyTrips}
+                className="mt-4 text-xs font-bold text-teal-600 hover:text-teal-700 hover:underline underline-offset-2 transition-colors"
+              >
+                العودة إلى رحلاتي
+              </button>
+            )}
           </>
         )}
       </div>

@@ -8,9 +8,9 @@ import type { ToastMessage, SortOrder } from './types'
 import {
   useAuth, useAdminAuth, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
-  useTripAdminActions, useAllTrips,
+  useTripAdminActions, useAllTrips, useMyTrips,
 } from './hooks'
-import { TRIP_ID } from './utils/tripId'
+import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from './utils/tripId'
 import { useFilteredExpenses } from './hooks/useFilteredExpenses'
 
 import { DataContext } from './context/DataContext'
@@ -27,6 +27,7 @@ import { NextSegmentWidget }             from './components/NextSegmentWidget'
 import UpdatePrompt                      from './components/UpdatePrompt'
 import OnboardingBanner                  from './components/OnboardingBanner'
 import TripGate                          from './components/TripGate'
+import TripPicker                        from './components/TripPicker'
 import AuthFlow                          from './components/AuthFlow'
 import ModalManager                      from './components/ModalManager'
 import PullToRefresh                     from './components/PullToRefresh'
@@ -43,9 +44,19 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
 
-  const { user, isAdmin, needsTripPin, pinCheckLoading, pinError, rateLimitSeconds, verifyTripPin } = useAuth()
+  const { user, isAdmin, needsTripPin, pinCheckLoading, pinError, rateLimitSeconds, verifyTripPin, joinedTripIds } = useAuth()
   const isOnline = useOnlineStatus()
   const hasAccess = isAdmin || (!pinCheckLoading && !needsTripPin)
+
+  // 🆕 شاشة «رحلاتي» — تُعرض بدل بوابة الرمز حين لا تكون هناك رحلة مقصودة.
+  // نجلبها فقط عند الحاجة الفعلية لعرضها (لا مع كل جلسة عادية داخل رحلة).
+  const [showTripPicker, setShowTripPicker] = useState(false)
+  const needsTripChoice = !isAdmin && !pinCheckLoading && needsTripPin && !HAS_EXPLICIT_TRIP_ID && joinedTripIds.length > 0
+  const isPickerVisible = needsTripChoice || showTripPicker
+  const { trips: myTrips, loading: myTripsLoading, error: myTripsError } = useMyTrips(
+    isPickerVisible ? joinedTripIds : [],
+    user,
+  )
 
   const { ratesUpdatedAt, CURRENCIES } = useExchangeRates()
   const { expenses,  setExpenses,  expensesLoaded,  refreshExpenses }  = useExpenses(hasAccess ? user : null, { setIsSyncing, setSyncError })
@@ -201,8 +212,34 @@ export default function App() {
     openDeposit, openDeleteTraveler, openDepositHistory
   ])
 
+  // 🆕 من فتح التطبيق بلا `?trip=` لا رحلة مقصودة لديه، فمطالبته برمز الرحلة
+  // الافتراضية مطالبةٌ برمز رحلة قد لا تعنيه إطلاقاً — نعرض رحلاته بدلاً منها.
+  // أما من فتح رابط رحلة بعينها فيُطلب رمزها مباشرةً كما كان (مع منفذ للعودة
+  // لقائمته إن كان عضواً في رحلات أخرى).
+  if (isPickerVisible) {
+    return (
+      <TripPicker
+        trips={myTrips}
+        loading={myTripsLoading}
+        error={myTripsError}
+        currentTripId={hasAccess ? TRIP_ID : undefined}
+        // الرجوع متاح فقط حين فُتحت الشاشة اختيارياً من داخل التطبيق — أما حين
+        // كانت شاشة البداية (لا رحلة مقصودة) فلا يوجد ما يُرجع إليه أصلاً.
+        onBack={showTripPicker ? () => setShowTripPicker(false) : undefined}
+      />
+    )
+  }
+
   if (!isAdmin && (pinCheckLoading || needsTripPin)) {
-    return <TripGate loading={pinCheckLoading} error={pinError} rateLimitSeconds={rateLimitSeconds} onSubmit={verifyTripPin} />
+    return (
+      <TripGate
+        loading={pinCheckLoading}
+        error={pinError}
+        rateLimitSeconds={rateLimitSeconds}
+        onSubmit={verifyTripPin}
+        onShowMyTrips={joinedTripIds.length > 0 ? () => setShowTripPicker(true) : undefined}
+      />
+    )
   }
 
   return (
@@ -231,6 +268,8 @@ export default function App() {
               onToggleAdmin={() => isAdmin ? handleAdminSignOut() : openAdminSignIn()}
               stats={isInitialLoading ? null : { totalDeposited, totalSpent, totalRemaining }}
               isOnline={isOnline}
+              // زر التبديل يظهر فقط لمن لديه أكثر من رحلة — لا فائدة منه لصاحب رحلة واحدة
+              onShowMyTrips={joinedTripIds.length > 1 ? () => setShowTripPicker(true) : undefined}
               onStatClick={(stat) => {
                 haptic.light()
                 const id =

@@ -33,7 +33,7 @@ export const haptic = {
 // (prefers-reduced-motion) فلا نُظهر الومضة لمن فعّله — لأنها بطبيعتها وميض.
 function triggerVisualPulse(type: 'success' | 'error') {
   if (typeof document === 'undefined' || typeof window === 'undefined') return
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return
 
   const color = type === 'success' ? 'rgba(16, 185, 129, 0.22)' : 'rgba(244, 63, 94, 0.22)'
   const overlay = document.createElement('div')

@@ -32,16 +32,38 @@ export function tripUrl(tripId: string): string {
 }
 
 function readTripIdFromLocation(): string {
+  const fromQuery = readExplicitTripId()
+  return fromQuery ?? DEFAULT_TRIP_ID
+}
+
+/**
+ * 🆕 معرّف الرحلة المذكور *صراحةً* في الرابط، أو null إن فُتح التطبيق بلا `?trip=`.
+ *
+ * التمييز مهم لشاشة «رحلاتي» (TripPicker): من يفتح رابط رحلة بعينه يقصدها هو
+ * تحديداً، فيُعرض له طلب رمزها مباشرةً؛ أما من يفتح التطبيق مجرّداً فلا رحلة
+ * مقصودة لديه، والأنسب عرض رحلاته المنضم لها بدل مطالبته برمز الرحلة
+ * الافتراضية التي قد لا تعنيه إطلاقاً.
+ */
+function readExplicitTripId(): string | null {
   try {
     const fromQuery = new URLSearchParams(window.location.search).get('trip')?.trim()
     if (fromQuery && TRIP_ID_PATTERN.test(fromQuery)) return fromQuery
   } catch {
     // بيئة بدون window (مثل اختبارات Vitest) — تجاهل والرجوع للرحلة الافتراضية
   }
-  return DEFAULT_TRIP_ID
+  return null
 }
 
 // 🆕 يُحسب مرة واحدة عند تحميل التطبيق (وقت تحميل الوحدة/module) — تبديل
 // الرحلة يتطلب فتح رابط جديد بمعامل ?trip= مختلف وإعادة تحميل كاملة للصفحة؛
 // لا يوجد تبديل حي بين الرحلات داخل نفس الجلسة دون إعادة تحميل.
 export const TRIP_ID: string = readTripIdFromLocation()
+
+/**
+ * 🆕 هل ذُكرت الرحلة صراحةً في الرابط؟ يُحسب مرة واحدة عند تحميل الوحدة تماماً
+ * كـ TRIP_ID أعلاه (ومن نفس المصدر) حتى لا يختلفا أبداً.
+ *
+ * false تعني أن TRIP_ID أعلاه هو الرحلة الافتراضية لا اختيار المستخدم — وهذه
+ * الحالة بالضبط هي التي تعرض شاشة «رحلاتي» بدل بوابة الرمز (انظر App.tsx).
+ */
+export const HAS_EXPLICIT_TRIP_ID: boolean = readExplicitTripId() !== null

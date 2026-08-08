@@ -1,0 +1,243 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { renderHook, act } from '@testing-library/react'
+import { useAuth } from './useAuth'
+
+// firebase/auth واجهة الاتصال الحقيقية بالخادم — نستبدلها بالكامل حتى لا يحدث
+// أي اتصال شبكة فعلي، ونتحكم يدوياً بمتى ينطلق onAuthStateChanged وبأي مستخدم.
+const mocks = vi.hoisted(() => ({
+  onAuthStateChanged: vi.fn(),
+  signInAnonymously: vi.fn(),
+  // كائن auth قابل للتحوير (mutable) — يحاكي auth.currentUser الحقيقي الذي
+  // يُحدَّثه SDK فايربيس نفسه عند كل تغيّر لحالة المصادقة، والذي يعتمد عليه
+  // callVerify مباشرة (لا على وسيط دالة onAuthStateChanged).
+  authObj: { currentUser: null as unknown },
+}))
+
+vi.mock('firebase/auth', () => ({
+  onAuthStateChanged: mocks.onAuthStateChanged,
+  signInAnonymously: mocks.signInAnonymously,
+}))
+
+vi.mock('../firebase', () => ({ auth: mocks.authObj }))
+
+// TRIP_ID يُحسب من window.location.search عند تحميل الوحدة — في بيئة الاختبار
+// (بلا ?trip=) يستقرّ دائماً على الرحلة الافتراضية المُعرَّفة في utils/tripId.ts.
+const TRIP_ID = 'travelapp-87206'
+const pinStorageKey = `travelapp_trip_pin_${TRIP_ID}`
+
+function mkUser(claims: Record<string, unknown>) {
+  return {
+    uid: 'uid-1',
+    getIdTokenResult: vi.fn().mockResolvedValue({ claims }),
+    getIdToken: vi.fn().mockResolvedValue('id-token'),
+  }
+}
+
+let fetchMock: ReturnType<typeof vi.fn>
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  mocks.signInAnonymously.mockResolvedValue(undefined)
+  mocks.authObj.currentUser = null
+  window.localStorage.clear()
+  fetchMock = vi.fn()
+  vi.stubGlobal('fetch', fetchMock)
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
+
+/**
+ * يستخرج دالة الاستماع المُسجَّلة عبر onAuthStateChanged ويستدعيها بمستخدم
+ * معيّن ضمن act — يضبط auth.currentUser أولاً كما يفعل SDK فايربيس الحقيقي
+ * قبل إشعار المستمعين، وينتظر اكتمال كل ما بداخل الـ hook من await.
+ */
+async function fireAuthChange(user: unknown) {
+  mocks.authObj.currentUser = user
+  const callback = mocks.onAuthStateChanged.mock.calls[0][1]
+  await act(async () => {
+    await callback(user)
+  })
+}
+
+describe('useAuth', () => {
+  it('يبدأ بحالة تحميل قبل استقرار حالة المصادقة', () => {
+    const { result } = renderHook(() => useAuth())
+    expect(result.current.pinCheckLoading).toBe(true)
+    expect(result.current.user).toBeNull()
+    expect(result.current.needsTripPin).toBe(false)
+  })
+
+  it('عند عدم وجود مستخدم (تسجيل خروج) ينهي التحميل دون طلب رمز', async () => {
+    const { result } = renderHook(() => useAuth())
+    await fireAuthChange(null)
+    expect(result.current.user).toBeNull()
+    expect(result.current.pinCheckLoading).toBe(false)
+    expect(result.current.needsTripPin).toBe(false)
+  })
+
+  it('مستخدم بصلاحية admin claim لا يحتاج رمز الرحلة', async () => {
+    const { result } = renderHook(() => useAuth())
+    await fireAuthChange(mkUser({ admin: true }))
+    expect(result.current.isAdmin).toBe(true)
+    expect(result.current.needsTripPin).toBe(false)
+    expect(result.current.pinCheckLoading).toBe(false)
+  })
+
+  it('مستخدم يملك claim trips لهذه الرحلة تحديداً لا يحتاج رمز', async () => {
+    const { result } = renderHook(() => useAuth())
+    await fireAuthChange(mkUser({ trips: { [TRIP_ID]: true } }))
+    expect(result.current.isAdmin).toBe(false)
+    expect(result.current.needsTripPin).toBe(false)
+  })
+
+  it('claim trips لرحلة أخرى لا يُعفي من رمز هذه الرحلة', async () => {
+    const { result } = renderHook(() => useAuth())
+    await fireAuthChange(mkUser({ trips: { 'رحلة-أخرى': true } }))
+    expect(result.current.needsTripPin).toBe(true)
+  })
+
+  it('joinedTripIds يعكس كل الرحلات المنضم لها من خريطة claims', async () => {
+    const { result } = renderHook(() => useAuth())
+    await fireAuthChange(mkUser({ trips: { [TRIP_ID]: true, 'trip-b': true } }))
+    expect(result.current.joinedTripIds.sort()).toEqual([TRIP_ID, 'trip-b'].sort())
+  })
+
+  it('joinedTripIds يتجاهل الرحلات ذات القيمة false', async () => {
+    const { result } = renderHook(() => useAuth())
+    await fireAuthChange(mkUser({ trips: { 'trip-a': true, 'trip-b': false } }))
+    expect(result.current.joinedTripIds).toEqual(['trip-a'])
+  })
+
+  it('joinedTripIds متاح للمسؤول أيضاً رغم خروجه المبكر من فحص الرمز', async () => {
+    const { result } = renderHook(() => useAuth())
+    await fireAuthChange(mkUser({ admin: true, trips: { 'trip-a': true } }))
+    expect(result.current.isAdmin).toBe(true)
+    expect(result.current.joinedTripIds).toEqual(['trip-a'])
+  })
+
+  it('صيغة claims قديمة/غير متوقّعة (member: true بلا خريطة trips) لا تُسقط التدفق', async () => {
+    const { result } = renderHook(() => useAuth())
+    await fireAuthChange(mkUser({ member: true }))
+    expect(result.current.joinedTripIds).toEqual([])
+    expect(result.current.needsTripPin).toBe(true) // يُطلب الرمز من جديد، لا انهيار
+  })
+
+  it('خريطة trips بصيغة غير كائن (مصفوفة) تُعامَل كفارغة', async () => {
+    const { result } = renderHook(() => useAuth())
+    await fireAuthChange(mkUser({ trips: ['trip-a'] }))
+    expect(result.current.joinedTripIds).toEqual([])
+    expect(result.current.needsTripPin).toBe(true)
+  })
+
+  it('التحقق الناجح من الرمز يضيف الرحلة لـ joinedTripIds فوراً', async () => {
+    mocks.authObj.currentUser = mkUser({})
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ result: { success: true } }) })
+
+    const { result } = renderHook(() => useAuth())
+    expect(result.current.joinedTripIds).toEqual([])
+
+    await act(async () => {
+      await result.current.verifyTripPin('4321')
+    })
+
+    expect(result.current.joinedTripIds).toEqual([TRIP_ID])
+  })
+
+  it('مستخدم بلا صلاحيات ولا رمز محفوظ محلياً يحتاج رمز الرحلة', async () => {
+    const { result } = renderHook(() => useAuth())
+    await fireAuthChange(mkUser({}))
+    expect(result.current.needsTripPin).toBe(true)
+    expect(result.current.pinCheckLoading).toBe(false)
+  })
+
+  it('يتحقق تلقائياً من رمز محفوظ محلياً — نجاح فيتخطى شاشة إدخال الرمز', async () => {
+    window.localStorage.setItem(pinStorageKey, '1234')
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ result: { success: true } }) })
+
+    const { result } = renderHook(() => useAuth())
+    await fireAuthChange(mkUser({}))
+
+    expect(result.current.needsTripPin).toBe(false)
+    expect(fetchMock).toHaveBeenCalledWith('/api/verifyTripPin', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('رمز محفوظ محلياً لم يعد صالحاً — يُمسح ويُطلب رمز جديد', async () => {
+    window.localStorage.setItem(pinStorageKey, '9999')
+    fetchMock.mockResolvedValue({ ok: false, status: 403, json: async () => ({}) })
+
+    const { result } = renderHook(() => useAuth())
+    await fireAuthChange(mkUser({}))
+
+    expect(result.current.needsTripPin).toBe(true)
+    expect(window.localStorage.getItem(pinStorageKey)).toBeNull()
+  })
+
+  it('verifyTripPin الناجح يحفظ الرمز محلياً وينهي الحاجة له', async () => {
+    mocks.authObj.currentUser = mkUser({})
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ result: { success: true } }) })
+
+    const { result } = renderHook(() => useAuth())
+    let success: boolean | undefined
+    await act(async () => {
+      success = await result.current.verifyTripPin('4321')
+    })
+
+    expect(success).toBe(true)
+    expect(result.current.needsTripPin).toBe(false)
+    expect(window.localStorage.getItem(pinStorageKey)).toBe('4321')
+  })
+
+  it('verifyTripPin الفاشل بلا حظر معدّل يعرض رسالة رمز غير صحيح', async () => {
+    mocks.authObj.currentUser = mkUser({})
+    fetchMock.mockResolvedValue({ ok: false, status: 403, json: async () => ({}) })
+
+    const { result } = renderHook(() => useAuth())
+    await act(async () => {
+      await result.current.verifyTripPin('0000')
+    })
+
+    expect(result.current.pinError).toBe('رمز الرحلة غير صحيح، حاول مرة أخرى.')
+    expect(result.current.rateLimitSeconds).toBeNull()
+  })
+
+  it('verifyTripPin يعيد false عند غياب auth.currentUser (لا يرمي استثناءً)', async () => {
+    mocks.authObj.currentUser = null
+    const { result } = renderHook(() => useAuth())
+    let success: boolean | undefined
+    await act(async () => {
+      success = await result.current.verifyTripPin('0000')
+    })
+    expect(success).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('تجاوز حدّ المحاولات (429) يبدأ عدّاً تنازلياً يُصفّر الخطأ تلقائياً عند انتهائه', async () => {
+    vi.useFakeTimers()
+    mocks.authObj.currentUser = mkUser({})
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: async () => ({
+        error: { status: 'RESOURCE_EXHAUSTED', details: { retryAfter: 2 }, message: 'تجاوزت الحد المسموح' },
+      }),
+    })
+
+    const { result } = renderHook(() => useAuth())
+    await act(async () => {
+      await result.current.verifyTripPin('0000')
+    })
+
+    expect(result.current.rateLimitSeconds).toBe(2)
+    expect(result.current.pinError).toBe('تجاوزت الحد المسموح')
+
+    act(() => vi.advanceTimersByTime(1000))
+    expect(result.current.rateLimitSeconds).toBe(1)
+
+    act(() => vi.advanceTimersByTime(1000))
+    expect(result.current.rateLimitSeconds).toBeNull()
+    expect(result.current.pinError).toBeNull() // يُصفَّر تلقائياً عند انتهاء العدّ
+  })
+})

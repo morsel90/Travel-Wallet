@@ -43,4 +43,5 @@ export {
   ExternalLink, // 🆕 فتح رحلة أخرى في ?trip=
   KeyRound,     // 🆕 تغيير رمز الرحلة (PIN)
   Luggage,      // 🆕 أيقونة بطاقة الرحلة في قائمة الإدارة
+  ChevronLeft,  // 🆕 مؤشّر فتح الرحلة في شاشة «رحلاتي» (RTL: يشير للأمام)
 } from 'lucide-react'

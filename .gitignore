@@ -27,3 +27,14 @@ serviceAccountKey.json
 *storybook.log
 storybook-static
 .env*
+
+# ملفات محلية لأدوات Firebase CLI (محاكيات Firestore/Auth/Functions للاختبارات)
+.firebase
+firestore-debug.log
+ui-debug.log
+
+# مخرجات Playwright (اختبارات E2E)
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
