@@ -25,6 +25,7 @@
 - Haptic feedback (Web Vibration API + visual flash for iOS)
 - Rate limiting on PIN verification and expense creation
 - Trip itinerary (flights/car/train/bus) stored per-trip + "next segment" widget
+- In-app admin panel (admin-only) for bank details and itinerary editing
 
 ---
 
@@ -126,7 +127,8 @@
 │   │   ├── useTravelerActions.ts # Add traveler form + add/delete/restore handlers
 │   │   ├── useDepositActions.ts  # Deposit form + balance update & audit log write
 │   │   ├── useFilteredExpenses.ts # Search + sort with debounce
-│   │   ├── useTripConfig.ts      # Trip name + bank details + itinerary from Firestore
+│   │   ├── useTripConfig.ts      # Trip name + bank details + itinerary (live onSnapshot)
+│   │   ├── useTripAdminActions.ts # Admin writes to trips/{tripId} (merge-only)
 │   │   ├── useDepositLogs.ts     # Deposit audit log fetcher
 │   │   ├── useOnlineStatus.ts    # navigator.onLine tracking
 │   │   ├── useCountdown.ts       # Generic countdown timer
@@ -148,6 +150,8 @@
 │   │   ├── NextSegmentWidget.tsx # "Next leg" card — first future itinerary segment
 │   │   ├── ItinerarySection.tsx  # Full itinerary list (rendered inside ReportsView)
 │   │   ├── Misc.tsx              # BankDetailsCard (copy IBAN / Web Share API)
+│   │   ├── admin/TripAdminView.tsx   # Admin panel: bank details + itinerary editor (full-screen)
+│   │   ├── admin/SegmentForm.tsx     # Add/edit form for a single itinerary segment
 │   │   ├── charts/ChartsSection.tsx  # Settlements, categories, trend (HTML/CSS)
 │   │   ├── reports/ReportsView.tsx   # Full trip report page
 │   │   ├── reports/PrintDocs.tsx     # Printable trip report / statement
@@ -173,6 +177,7 @@
 │       ├── reportData.ts         # buildTravelerReport, buildAccountStatement, buildDailySummary
 │       ├── reports.ts           # Excel row builders + exportTripToExcel + exportTravelerToExcel
 │       ├── xlsx.ts              # Pure-JS OOXML generator (inlineStr, RTL, ZIP stored)
+│       ├── itinerary.ts         # Pure: segment draft validation, normalize/sort, findNextSegment
 │       ├── haptics.ts           # Vibration API + visual flash overlay
 │       ├── cn.ts                # Tailwind class merge (clsx alternative)
 │       └── tripId.ts           # TRIP_ID from ?trip= query param
@@ -206,7 +211,10 @@
 | `src/hooks/useAuth.ts` | Auth state machine: anonymous sign-in, admin claim detection, PIN verification via Cloud Function, rate limit countdown. |
 | `src/hooks/useModals.ts` | `ModalState` discriminated union + reducer — the single source of truth for which modal is open. |
 | `src/components/ModalManager.tsx` | Renders those modals (all `React.lazy`). Purely presentational; data/handlers passed from `App.tsx`. |
-| `src/hooks/useTripConfig.ts` | Reads `trips/{TRIP_ID}` once: trip name, bank details, and itinerary — with `constants.ts` fallbacks. |
+| `src/hooks/useTripConfig.ts` | Live `onSnapshot` on `trips/{TRIP_ID}`: trip name, bank details, itinerary — with `constants.ts` fallbacks. |
+| `src/hooks/useTripAdminActions.ts` | The only client write path to `trips/{TRIP_ID}`. Always `setDoc(..., { merge: true })` — never a full overwrite. |
+| `src/components/admin/TripAdminView.tsx` | Admin panel. Itinerary is edited locally then saved in one explicit write. |
+| `src/utils/itinerary.ts` | Pure itinerary helpers: draft validation, defensive `normalizeItinerary`, `findNextSegment`. Fully tested. |
 | `src/firestore.ts` | Single source of truth for Firestore paths: `expensesCol`, `travelerDoc`, `depositLogsCol`, `rateLimitDoc`, `tripConfigDoc`. |
 | `src/constants.ts` | `CURRENCY_LABELS` (160 currencies), `FALLBACK_RATES`, `EXPENSE_CATEGORIES`, `BANK_DETAILS`. |
 | `src/utils/calculations.ts` | Pure functions for balances, settlements, category totals, spending trend. Fully tested. |
@@ -381,6 +389,8 @@ artifacts/{tripId}/public/data/
   travelers/{id}/depositLogs/{id} — Immutable deposit audit log (admin-only)
 
 trips/{tripId}                    — Trip config (name, bankDetails, itinerary[])
+                                    Admin-writable from the app (validated by isValidTripConfig);
+                                    delete stays forbidden — it would orphan artifacts/{tripId}
 tripSecrets/{tripId}              — PIN hash + salt (no client access, function only)
 rateLimits/verify_{key}          — PIN verify rate limits (function only)
 ```
@@ -420,14 +430,16 @@ node scripts/set-admin.mjs grant user@example.com
 node scripts/list-trips.mjs
 ```
 
-### Add / update a trip itinerary
-The itinerary is an `ItinerarySegment[]` array written into the `trips/{tripId}` doc. There is no admin UI for it yet — edit the hardcoded `TRIP_ID` and `itinerary` array at the top of the script, then run it:
+### Add / update a trip itinerary or bank details
+Use the in-app admin panel: sign in as admin → **إدارة الرحلة** button in the expenses section header. Two tabs — bank details, and an itinerary editor (add / edit / delete / reorder segments).
 
-```bash
-node scripts/add-flights.mjs   # ⚠️ overwrites the whole itinerary array
-```
+The itinerary is edited locally and saved in one explicit write, because the field is stored as a whole array: saving on every keystroke would mean a stream of writes to the same doc and a bigger window to lose an edit when two admins are editing at once.
 
-Once written, `NextSegmentWidget` shows the first segment whose `departure.time` is in the future, and `ItinerarySection` lists all segments inside the reports view.
+`scripts/add-flights.mjs` still exists for bulk entry but is no longer the primary path — it hardcodes its data and overwrites the whole array.
+
+⚠️ `scripts/create-trip.mjs` calls `.set()` **without merge**, so re-running it to change bank details wipes an existing itinerary. Prefer the admin panel for edits; keep the script for first-time trip creation and PIN setup.
+
+Once saved, `NextSegmentWidget` shows the first segment whose `departure.time` is in the future, and `ItinerarySection` lists all segments in the reports view. Both update immediately — `useTripConfig` listens with `onSnapshot`.
 
 ### Deploy all systems
 ```bash
@@ -455,6 +467,7 @@ npm run lint                # ESLint
 - `src/utils/calculations.test.ts` — Core math (splitEven, splitByShares, balances, settlements, charts)
 - `src/utils/reportData.test.ts` — Report builders (traveler report, daily summary, account statement)
 - `src/utils/reports.test.ts` — Excel row builders + XLSX generation
+- `src/utils/itinerary.test.ts` — Segment validation, time round-tripping, normalize/sort, next-segment
 - `src/components/EmptyState.test.tsx` — Empty state component (RTL test)
 
 **Structure:** Pure utility tests live next to their source. Component tests use `@testing-library/react` with `jsdom` environment. Vitest config in `vitest.config.ts` with `setupFiles: ['./src/setupTests.ts']`.
@@ -488,7 +501,9 @@ Three independent systems that must be deployed separately:
 | iOS date picker issues | Safari's native date/select styling | Fixes in `index.css` (`.safari-date-fix`, `.safari-select-fix`) |
 | Blank screen after deploy | Trip ID mismatch or missing trip config | Ensure `scripts/create-trip.mjs` was run for the tripId in use |
 | "يوجد مسافر بنفس الاسم" | Duplicate shortName (first word of name) | Use a different name or rename existing traveler. ⚠️ This check is client-side only (`useTravelerActions.ts`) — `firestore.rules` does not enforce uniqueness, so two admins adding the same shortName simultaneously can both succeed. |
-| Itinerary widget not showing | No `itinerary` on the trip doc, or every segment's `departure.time` is in the past | Run `scripts/add-flights.mjs` with future dates for this tripId |
+| Itinerary widget not showing | No `itinerary` on the trip doc, or every segment's `departure.time` is in the past | Add a future segment via **إدارة الرحلة** → مسار الرحلة |
+| A saved segment vanished from the list | `normalizeItinerary` drops malformed segments on read — `firestore.rules` cannot validate list items, so a segment written directly via the SDK with a missing field is filtered out instead of crashing the UI | Re-add it through the admin panel, which validates before writing |
+| Itinerary disappeared after running `create-trip.mjs` | The script uses `.set()` without merge and its payload omits `itinerary` unless you re-enter it | Re-add via the admin panel; use the panel rather than the script for edits |
 
 ---
 
@@ -505,6 +520,8 @@ Three independent systems that must be deployed separately:
 9. **Optimistic updates** — close form immediately on submit, show `_pending` flag until server confirms.
 10. **Haptic feedback** — use `haptic` from `utils/haptics.ts` for all important interactions.
 11. **Run scripts with Admin SDK** — `serviceAccountKey.json` required, never expose admin operations to clients.
+13. **Never write `trips/{tripId}` without merge** — the doc holds independent sections (name, bankDetails, itinerary). Use `useTripAdminActions`, which always merges; a full `set()` silently drops whatever it omits.
+14. **Secrets stay server-side** — `tripSecrets/{tripId}` is `read, write: if false` and must remain so. PIN handling belongs in `functions/index.js` or an Admin SDK script, never in the client.
 12. **CI pipeline** — all PRs must pass: lint → typecheck → test → build. Run `npm run lint` locally before pushing; ESLint bans `any` (`no-explicit-any`) and empty `catch {}` blocks (`no-empty`), which are easy to introduce accidentally.
 
 </div>
