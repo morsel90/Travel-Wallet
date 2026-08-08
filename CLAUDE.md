@@ -25,7 +25,7 @@
 - Haptic feedback (Web Vibration API + visual flash for iOS)
 - Rate limiting on PIN verification and expense creation
 - Trip itinerary (flights/car/train/bus) stored per-trip + "next segment" widget
-- In-app admin panel (admin-only) for bank details and itinerary editing
+- In-app admin panel (admin-only): list all trips, create a trip, set/reset its PIN, edit bank details and itinerary
 
 ---
 
@@ -128,7 +128,8 @@
 │   │   ├── useDepositActions.ts  # Deposit form + balance update & audit log write
 │   │   ├── useFilteredExpenses.ts # Search + sort with debounce
 │   │   ├── useTripConfig.ts      # Trip name + bank details + itinerary (live onSnapshot)
-│   │   ├── useTripAdminActions.ts # Admin writes to trips/{tripId} (merge-only)
+│   │   ├── useTripAdminActions.ts # Admin writes to any trips/{tripId} (merge-only) + manageTrip calls
+│   │   ├── useAllTrips.ts        # Live list of every trip (admin-only query)
 │   │   ├── useDepositLogs.ts     # Deposit audit log fetcher
 │   │   ├── useOnlineStatus.ts    # navigator.onLine tracking
 │   │   ├── useCountdown.ts       # Generic countdown timer
@@ -150,7 +151,9 @@
 │   │   ├── NextSegmentWidget.tsx # "Next leg" card — first future itinerary segment
 │   │   ├── ItinerarySection.tsx  # Full itinerary list (rendered inside ReportsView)
 │   │   ├── Misc.tsx              # BankDetailsCard (copy IBAN / Web Share API)
-│   │   ├── admin/TripAdminView.tsx   # Admin panel: bank details + itinerary editor (full-screen)
+│   │   ├── admin/TripAdminView.tsx   # Admin panel shell: trips list ↔ trip detail (full-screen)
+│   │   ├── admin/TripDetailPanel.tsx # One trip: name + bank, itinerary editor, PIN reset
+│   │   ├── admin/NewTripForm.tsx     # Create a trip (id + name + PIN) via manageTrip
 │   │   ├── admin/SegmentForm.tsx     # Add/edit form for a single itinerary segment
 │   │   ├── charts/ChartsSection.tsx  # Settlements, categories, trend (HTML/CSS)
 │   │   ├── reports/ReportsView.tsx   # Full trip report page
@@ -271,14 +274,28 @@ For deployment:
 
 ## API / Interface Reference
 
-### Cloud Function (accessible via Vercel rewrite)
+### Cloud Functions (accessible via Vercel rewrites)
 
 ```
 POST /api/verifyTripPin
 Headers: { Authorization: "Bearer <idToken>" }
 Body: { data: { pin: string, tripId: string } }
 Response: { result: { success: boolean } } | HttpsError
+
+POST /api/manageTrip                     # admin claim required, checked server-side
+Headers: { Authorization: "Bearer <idToken>" }
+Body: { data: { mode: 'create' | 'resetPin', tripId, pin, name? } }
+Response: { result: { success: boolean, tripId: string } } | HttpsError
 ```
+
+`manageTrip` exists because creating a trip or changing its PIN writes
+`tripSecrets/{tripId}`, which is `read, write: if false` for every client
+including admins. Salt generation and hashing stay server-side. Everything
+non-secret (name, bank details, itinerary) is written straight from the client
+through `firestore.rules` instead — no function deploy needed to change it.
+
+`mode: 'create'` refuses to overwrite an existing trip: overwriting would
+replace its PIN and lock out every current member.
 
 ### Key Data Context (available to all components)
 
@@ -413,11 +430,11 @@ rateLimits/verify_{key}          — PIN verify rate limits (function only)
 Simply add to `CURRENCY_LABELS` in `constants.ts`. The `buildCurrencyMap` function and `useExchangeRates` hook handle the rest automatically.
 
 ### Create a new trip
-```bash
-node scripts/create-trip.mjs
-# Follow prompts: tripId, name, bank details, PIN
-# Then share: https://your-app.vercel.app/?trip=YOUR_TRIP_ID
-```
+Sign in as admin → **إدارة الرحلات** → «إنشاء رحلة جديدة». Enter a trip id, a name and a PIN; the app calls `manageTrip` which writes `trips/{tripId}` and `tripSecrets/{tripId}` in one atomic batch. Then share `https://your-app.vercel.app/?trip=YOUR_TRIP_ID` plus the PIN.
+
+The PIN is stored only as a salted SHA-256 hash and is never shown again — capture it when you set it. It can be changed later from the same panel (رمز الدخول tab), which forces every member of that trip to re-enter it once.
+
+`scripts/create-trip.mjs` still works and is the fallback if functions are not deployed.
 
 ### Grant admin access
 ```bash
@@ -426,9 +443,9 @@ node scripts/set-admin.mjs grant user@example.com
 ```
 
 ### List existing trips
-```bash
-node scripts/list-trips.mjs
-```
+The admin panel lists every trip with its id, name and segment count, and each row has an **فتح** link to `?trip=X`. `scripts/list-trips.mjs` remains as a CLI equivalent.
+
+Switching trips is a full page load: `TRIP_ID` is read once at module load (`utils/tripId.ts`). You do **not** need to switch trips to edit one — the admin panel edits any trip in place, because the write rule keys on `isAdmin()` and never references the active trip.
 
 ### Add / update a trip itinerary or bank details
 Use the in-app admin panel: sign in as admin → **إدارة الرحلة** button in the expenses section header. Two tabs — bank details, and an itinerary editor (add / edit / delete / reorder segments).
@@ -468,6 +485,7 @@ npm run lint                # ESLint
 - `src/utils/reportData.test.ts` — Report builders (traveler report, daily summary, account statement)
 - `src/utils/reports.test.ts` — Excel row builders + XLSX generation
 - `src/utils/itinerary.test.ts` — Segment validation, time round-tripping, normalize/sort, next-segment
+- `src/utils/tripId.test.ts` — Trip id format guard (path-escape rejection, length limit)
 - `src/components/EmptyState.test.tsx` — Empty state component (RTL test)
 
 **Structure:** Pure utility tests live next to their source. Component tests use `@testing-library/react` with `jsdom` environment. Vitest config in `vitest.config.ts` with `setupFiles: ['./src/setupTests.ts']`.
@@ -482,11 +500,11 @@ Three independent systems that must be deployed separately:
 |---|---|---|
 | Frontend | `vercel --prod` | SPA hosted on Vercel |
 | Firestore Rules | `firebase deploy --only firestore:rules` | Security rules |
-| Cloud Function | `firebase deploy --only functions` | `verifyTripPin` |
+| Cloud Functions | `firebase deploy --only functions` | `verifyTripPin`, `manageTrip` |
 
 **Important:** After updating `firestore.rules` or `functions/index.js`, existing users may need to re-enter their trip PIN (custom claim format changed). Always create the trip via `scripts/create-trip.mjs` before deploying new rules.
 
-**Vercel rewrite** (`vercel.json`): All `/api/verifyTripPin` requests are proxied to the Cloud Function URL to avoid CORS issues. The function is called from the client via `fetch('/api/verifyTripPin', ...)`.
+**Vercel rewrites** (`vercel.json`): `/api/verifyTripPin` and `/api/manageTrip` are proxied to their Cloud Function URLs to avoid CORS. The client always calls the `/api/...` path, never the function URL directly. Adding a function means adding a rewrite here too, otherwise the call 404s in production while working fine locally.
 
 ---
 
@@ -504,6 +522,9 @@ Three independent systems that must be deployed separately:
 | Itinerary widget not showing | No `itinerary` on the trip doc, or every segment's `departure.time` is in the past | Add a future segment via **إدارة الرحلة** → مسار الرحلة |
 | A saved segment vanished from the list | `normalizeItinerary` drops malformed segments on read — `firestore.rules` cannot validate list items, so a segment written directly via the SDK with a missing field is filtered out instead of crashing the UI | Re-add it through the admin panel, which validates before writing |
 | Itinerary disappeared after running `create-trip.mjs` | The script uses `.set()` without merge and its payload omits `itinerary` unless you re-enter it | Re-add via the admin panel; use the panel rather than the script for edits |
+| Trips list empty / "تعذّر جلب قائمة الرحلات" for an admin | A `list` query on `trips/` is only satisfiable by `isAdmin()`; the admin claim may not be on the current token yet | Sign out and back in, or force `getIdToken(true)` — the claim is only refreshed on a new token |
+| "إنشاء الرحلة" fails with 404 | `manageTrip` is deployed but the `/api/manageTrip` rewrite is missing from `vercel.json`, or the frontend was deployed without it | Add the rewrite and redeploy the frontend |
+| "هذا الإجراء متاح للمسؤول فقط" when creating a trip | `manageTrip` re-checks `request.auth.token.admin` server-side and does not trust the client | Run `scripts/set-admin.mjs grant <email>`, then re-login |
 
 ---
 
