@@ -71,7 +71,7 @@ describe('buildSettlementRows', () => {
     expect(rows[0]).toEqual(['من', 'إلى', 'المبلغ (ريال)'])
     // سعد مدين بـ 150 لأحمد
     expect(rows[1][0]).toBe('سعد')
-    expect(rows[1][1]).toBe('أحمد')
+    expect(rows[1][1]).toBe('أحمد الغامدي')
     expect(rows[1][2]).toBe(150)
   })
 
