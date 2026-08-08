@@ -86,7 +86,13 @@ export function useAuth(): UseAuth {
 
     const result = await callVerify(pin)
     if (result.success) {
-      try { window.localStorage.setItem(tripPinStorageKey(), pin) } catch { }
+      // localStorage قد يرمي في وضع التصفح الخاص أو عند امتلاء الحصة — التخزين
+      // هنا تحسين اختياري فقط (تذكّر الرمز)، وفشله لا يمنع الدخول للرحلة.
+      try {
+        window.localStorage.setItem(tripPinStorageKey(), pin)
+      } catch {
+        // تجاهل متعمّد
+      }
       setNeedsTripPin(false)
     } else {
       if (result.retryAfter) {
@@ -126,10 +132,16 @@ export function useAuth(): UseAuth {
           setPinCheckLoading(false)
           return
         }
-      } catch { }
+      } catch {
+        // خريطة trips غير موجودة أو بصيغة غير متوقّعة — نكمل لمسار الرمز المخزّن
+      }
 
       let cachedPin: string | null = null
-      try { cachedPin = window.localStorage.getItem(tripPinStorageKey()) } catch { }
+      try {
+        cachedPin = window.localStorage.getItem(tripPinStorageKey())
+      } catch {
+        // تعذّر الوصول لـ localStorage — نكمل بلا رمز مخزّن (سيُطلب من المستخدم)
+      }
 
       if (cachedPin) {
         const result = await callVerify(cachedPin)
@@ -138,7 +150,11 @@ export function useAuth(): UseAuth {
           setPinCheckLoading(false)
           return
         }
-        try { window.localStorage.removeItem(tripPinStorageKey()) } catch { }
+        try {
+          window.localStorage.removeItem(tripPinStorageKey())
+        } catch {
+          // تجاهل متعمّد — الرمز المخزّن لم يعد صالحاً على أي حال
+        }
       }
 
       setNeedsTripPin(true)

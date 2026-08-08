@@ -23,7 +23,9 @@ function ChartsSection({ settlements, categoryTotals, spendingTrend }: ChartsSec
   const [activeTab, setActiveTab] = useState<ChartTab>('settlements')
   const { travelers } = useData()
 
-  const getShortName = (idOrName: any) => {
+  // المشاركون قد يُخزَّنون كمعرّف رقمي (الصيغة الحالية) أو كاسم مختصر نصي
+  // (مصاريف قديمة) — نفس اتحاد الأنواع المستخدم في Expense['participants'].
+  const getShortName = (idOrName: number | string) => {
     const traveler = travelers.find(t => t.id === Number(idOrName) || t.name === String(idOrName))
     return traveler ? traveler.shortName : String(idOrName)
   }

@@ -6,6 +6,7 @@ import type { Expense, Traveler, TravelerBalance, Settlement } from '../types'
 import { toDisplayNames } from './participants'
 import { splitByShares } from './calculations'
 import { downloadXlsx, type XlsxCell, type XlsxSheet } from './xlsx'
+import type { AccountStatement } from './reportData'
 
 // تقريب لخانتين عشريتين مع إبقاء القيمة رقماً (لتعمل جمعيات Excel عليها).
 const money = (n: number): number => Math.round(n * 100) / 100
@@ -102,7 +103,8 @@ export function exportTripToExcel({ expenses, travelers, balances, settlements }
 export interface TravelerExcelParams {
   traveler: Traveler
   balance: TravelerBalance
-  statement: any // نستخدم any هنا اختصاراً، أو يمكن استيراد نوع Statement
+  // قد تكون null إن لم يُبنَ كشف الحساب بعد (انظر TravelerProfileModal)
+  statement: AccountStatement | null
 }
 
 /** يجمّع بيانات المسافر الفردية ويُنزّل كشف حسابه كملف Excel */
@@ -118,7 +120,7 @@ export function exportTravelerToExcel({ traveler, balance, statement }: Traveler
 
   // 2. بناء ورقة كشف الحساب التفصيلي
   const statementHeader: XlsxCell[] = ['التاريخ', 'الوصف', 'الفئة', 'المبلغ المخصوم (ريال)', 'الرصيد الجاري (ريال)']
-  const statementRows: XlsxCell[][] = statement ? statement.rows.map((r: any) => [
+  const statementRows: XlsxCell[][] = statement ? statement.rows.map(r => [
     r.date,
     r.description,
     r.category,

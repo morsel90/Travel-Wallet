@@ -1,6 +1,6 @@
 import { memo, useCallback, useState } from 'react'
 import { Pencil, Trash2, Plus, X, History, Loader2 } from '../icons'
-import type { TravelerBalance } from '../types'
+import type { Traveler, TravelerBalance } from '../types'
 import { useData } from '../context/DataContext'
 import { useUI } from '../context/UIContext'
 import { matchesTraveler } from '../utils/participants'
@@ -25,12 +25,12 @@ export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
   // حالة التحكم في ظهور نافذة ملف المسافر
   const [showProfile, setShowProfile] = useState(false)
   
-  const hasExpenses = expenses.some((e: any) => e.participants.some((p: any) => matchesTraveler(traveler, p)))
+  const hasExpenses = expenses.some(e => e.participants.some(p => matchesTraveler(traveler, p)))
   const isNegative = traveler.remaining < 0
   const percentage = Math.min(100, Math.max(0, (traveler.remaining / traveler.deposited) * 100)) || 0
 
   // استخراج كائن المسافر الأساسي من القائمة
-  const baseTraveler = travelers.find((t: any) => t.id === traveler.id) || traveler
+  const baseTraveler: Traveler = travelers.find(t => t.id === traveler.id) ?? traveler
 
   return (
     <>
@@ -120,7 +120,7 @@ export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
       {/* استدعاء النافذة المنبثقة عند النقر على البطاقة */}
       {showProfile && (
         <TravelerProfileModal
-          traveler={baseTraveler as any}
+          traveler={baseTraveler}
           balance={traveler}
           expenses={expenses}
           settlements={[]}

@@ -135,15 +135,20 @@ export function useExpenseActions({
           // 🆕 إعادة المحاولة باستخدام الحمولة المحفوظة (بدل newExpense الممسوحة)
           const saved = lastExpensePayloadRef.current
           if (!saved || !user) return
+          // 🆕 فشل إعادة المحاولة لم يعد يُبتلع بصمت — يظهر الآن في شريط الخطأ
+          // العلوي، وإلا كان المستخدم يرى "جاري إعادة المحاولة..." ثم لا شيء.
+          const onRetryFailed = (err: unknown) =>
+            handleFirestoreError(err, 'تعذّرت إعادة حفظ المصروف — تحقّق من اتصالك وحاول مجدداً.')
+
           if (saved.wasEditing && saved.editingId) {
             setDoc(expenseDoc(saved.editingId), saved.payload)
-              .catch(() => {}).finally(() => { isSubmittingExpenseRef.current = false })
+              .catch(onRetryFailed).finally(() => { isSubmittingExpenseRef.current = false })
           } else {
             const batch = writeBatch(db)
             batch.set(doc(expensesCol()), saved.payload)
             if (!isAdmin) batch.set(rateLimitDoc(user.uid), { lastExpenseCreatedAt: Date.now() })
             batch.commit()
-              .catch(() => {}).finally(() => { isSubmittingExpenseRef.current = false })
+              .catch(onRetryFailed).finally(() => { isSubmittingExpenseRef.current = false })
           }
         }
       }, Infinity)
@@ -209,7 +214,10 @@ export function useExpenseActions({
         type: "error", 
         onRetry: () => {
           showToast({ text: 'جاري إعادة المحاولة...', type: 'new' }, 1000);
-          handleQuickAddExpense(description, amount);
+          // 🆕 إعادة المحاولة قد تُرفض بدورها (حد المعدّل، أو لا مسافرون) —
+          // نعرض السبب بدل ابتلاعه بصمت كما كان سابقاً.
+          const retryError = handleQuickAddExpense(description, amount);
+          if (retryError) showToast({ text: retryError, type: 'error' }, 3000);
         }
       }, Infinity);
     }
@@ -223,7 +231,7 @@ export function useExpenseActions({
       .finally(() => { isSubmittingExpenseRef.current = false })
 
     return null
-  }, [activeTravelers, isAdmin, user, setExpenses, showToast, handleFirestoreError, isFirstExpense])
+  }, [activeTravelers, isAdmin, user, setExpenses, showToast, isFirstExpense])
 
   const startEditExpense = useCallback((exp: Expense) => {
     setEditingExpense(exp)
