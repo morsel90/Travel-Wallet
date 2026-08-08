@@ -261,6 +261,71 @@ describe('calculateSettlements', () => {
     const balances = [mkBalance({ id: 1, name: 'أ', remaining: -0.005 }), mkBalance({ id: 2, name: 'ب', remaining: 0.005 })]
     expect(calculateSettlements(balances)).toEqual([])
   })
+
+  // ─── تبسيط الديون ──────────────────────────────────────────────────────────
+  // الاختبارات أدناه تثبّت أهم خاصية في هذه الدالة وأقلّها وضوحاً من قراءتها:
+  // أنها تعمل على *صافي* الرصيد لا على حواف «من دفع لمن»، فتنهار السلاسل
+  // تلقائياً ويختفي الوسيط. بدونها قد يُعاد كتابة الدالة لاحقاً بحيث تُدرج
+  // الوسطاء دون أن يكسر ذلك أي اختبار قائم.
+
+  it('يُسقط الوسيط: علي يدين لخالد ١٠٠ وخالد يدين لسارا ١٠٠ ⇒ علي يدفع لسارا مباشرة', () => {
+    const balances = [
+      mkBalance({ id: 1, name: 'علي',  remaining: -100 }),
+      mkBalance({ id: 2, name: 'خالد', remaining: 0 }),   // صافيه صفر — وسيط بحت
+      mkBalance({ id: 3, name: 'سارا', remaining: 100 }),
+    ]
+    expect(calculateSettlements(balances)).toEqual([
+      { fromId: 1, fromName: 'علي', toId: 3, toName: 'سارا', amount: 100 },
+    ])
+  })
+
+  it('ينهار سلسلة طويلة إلى معاملة واحدة مهما زاد عدد الوسطاء', () => {
+    const balances = [
+      mkBalance({ id: 1, name: 'أ',  remaining: -100 }),
+      mkBalance({ id: 2, name: 'ب',  remaining: 0 }),
+      mkBalance({ id: 3, name: 'ج',  remaining: 0 }),
+      mkBalance({ id: 4, name: 'د',  remaining: 0 }),
+      mkBalance({ id: 5, name: 'هـ', remaining: 100 }),
+    ]
+    const settlements = calculateSettlements(balances)
+    expect(settlements).toHaveLength(1)
+    expect(settlements[0].fromName).toBe('أ')
+    expect(settlements[0].toName).toBe('هـ')
+  })
+
+  it('لا يتجاوز عدد المعاملات N-1 ويُصفّر كل الأرصدة', () => {
+    const balances = [
+      mkBalance({ id: 1, name: 'أحمد', remaining: -250 }),
+      mkBalance({ id: 2, name: 'سعد',  remaining: -120 }),
+      mkBalance({ id: 3, name: 'فهد',  remaining: -30 }),
+      mkBalance({ id: 4, name: 'خالد', remaining: 180 }),
+      mkBalance({ id: 5, name: 'نورة', remaining: 150 }),
+      mkBalance({ id: 6, name: 'ريم',  remaining: 70 }),
+    ]
+    const settlements = calculateSettlements(balances)
+    expect(settlements.length).toBeLessThanOrEqual(balances.length - 1)
+
+    // بعد تنفيذ كل التحويلات يجب أن يصل رصيد كل شخص إلى صفر:
+    // الرصيد + ما دفعه − ما استلمه = 0
+    const net = new Map<string, number>()
+    for (const s of settlements) {
+      net.set(s.fromName, (net.get(s.fromName) ?? 0) + s.amount)
+      net.set(s.toName,   (net.get(s.toName)   ?? 0) - s.amount)
+    }
+    for (const p of balances) {
+      expect(Math.abs(p.remaining + (net.get(p.name) ?? 0))).toBeLessThan(0.01)
+    }
+  })
+
+  it('لا يطلب من أحد أن يدفع لنفسه', () => {
+    const balances = [
+      mkBalance({ id: 1, name: 'أ', remaining: -50 }),
+      mkBalance({ id: 2, name: 'ب', remaining: 50 }),
+    ]
+    for (const s of calculateSettlements(balances)) {
+      expect(s.fromId).not.toBe(s.toId)
+    }
+  })
 })
 
 // ─── calculateCategoryTotals ──────────────────────────────────────────────────
