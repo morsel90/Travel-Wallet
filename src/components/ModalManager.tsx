@@ -33,9 +33,8 @@ interface ModalManagerProps {
   // سلة المهملات
   trash: Pick<ComponentProps<typeof TrashBinModal>,
     'deletedExpenses' | 'deletedTravelers' | 'onRestoreExpense' | 'onRestoreTraveler'>
-  // 🆕 إدارة الرحلة — للمسؤول فقط (onClose يُدار داخلياً)
-  tripAdmin: Pick<ComponentProps<typeof TripAdminView>,
-    'tripName' | 'bankDetails' | 'itinerary' | 'isSaving' | 'onSaveBankDetails' | 'onSaveItinerary'>
+  // 🆕 إدارة الرحلات — للمسؤول فقط (onClose يُدار داخلياً)
+  tripAdmin: Omit<ComponentProps<typeof TripAdminView>, 'onClose'>
 }
 
 export default function ModalManager({

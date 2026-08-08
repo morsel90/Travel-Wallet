@@ -1,18 +1,25 @@
-// 🆕 عمليات الكتابة الخاصة بواجهة إدارة الرحلة — تكتب على مستند trips/{TRIP_ID}
-// الذي صار مسموحاً للمسؤول وحده (انظر isValidTripConfig في firestore.rules).
+// 🆕 عمليات الكتابة الخاصة بواجهة إدارة الرحلات.
 //
-// ⚠️ كل الكتابات هنا تستخدم setDoc(..., { merge: true }) عمداً:
-//   1. الكتابة الكاملة بلا merge تمسح الحقول غير المذكورة — وهذه بالضبط مصيدة
-//      scripts/create-trip.mjs، الذي يستدعي .set() بكائن بلا itinerary فيمحو
-//      مسار الرحلة بالكامل عند تحديث تفاصيل البنك فقط.
-//   2. merge يُنشئ المستند إن لم يكن موجوداً، فلا نحتاج فرعاً منفصلاً لرحلة
-//      لم يُنشأ لها مستند إعدادات بعد.
+// مساران مختلفان عمداً بحسب حساسية البيانات:
 //
-// ملاحظة نطاق: رمز PIN وإنشاء رحلة جديدة خارج هذه الواجهة عمداً — كلاهما يمسّ
-// tripSecrets/{tripId} المحظور تماماً على العميل، ويبقيان في scripts/create-trip.mjs.
+// 1. البيانات غير السرّية (الاسم/البنك/المسار) → كتابة مباشرة على
+//    trips/{tripId} عبر قواعد Firestore (isValidTripConfig). أخفّ وأسرع، ولا
+//    تحتاج نشر دوال عند كل تعديل. القاعدة تشترط isAdmin() فقط ولا تشير للرحلة
+//    النشطة، فالمسؤول يعدّل أي رحلة دون مغادرة الرحلة المفتوحة.
+//
+// 2. إنشاء رحلة أو تغيير رمزها → Cloud Function باسم manageTrip، لأنها تلمس
+//    tripSecrets/{tripId} المحظور على العميل تحت أي ظرف. توليد الملح وحساب
+//    الهاش يبقيان خادميين فلا يلمس المتصفح أياً منهما.
+//
+// ⚠️ كل كتابات المسار الأول تستخدم setDoc(..., { merge: true }):
+//   - الكتابة الكاملة بلا merge تمسح الحقول غير المذكورة — وهذه مصيدة
+//     scripts/create-trip.mjs، الذي يستدعي .set() بكائن بلا itinerary فيمحو
+//     مسار الرحلة عند تحديث تفاصيل البنك فقط.
+//   - merge يُنشئ المستند إن لم يكن موجوداً.
 import { useState, useCallback } from 'react'
 import { setDoc } from 'firebase/firestore'
-import { tripConfigDoc } from '../firestore'
+import { auth } from '../firebase'
+import { tripDocById } from '../firestore'
 import { haptic } from '../utils/haptics'
 import { MAX_SEGMENTS } from '../utils/itinerary'
 import type { BankDetails, ItinerarySegment, ToastMessage } from '../types'
@@ -25,9 +32,11 @@ interface UseTripAdminActionsParams {
 
 export interface UseTripAdminActionsResult {
   isSaving: boolean
-  saveBankDetails: (details: BankDetails) => Promise<boolean>
-  saveItinerary: (itinerary: ItinerarySegment[]) => Promise<boolean>
-  saveTripName: (name: string) => Promise<boolean>
+  saveBankDetails: (tripId: string, details: BankDetails) => Promise<boolean>
+  saveItinerary: (tripId: string, itinerary: ItinerarySegment[]) => Promise<boolean>
+  saveTripName: (tripId: string, name: string) => Promise<boolean>
+  createTrip: (tripId: string, name: string, pin: string) => Promise<boolean>
+  resetTripPin: (tripId: string, pin: string) => Promise<boolean>
 }
 
 export function useTripAdminActions({
@@ -35,14 +44,14 @@ export function useTripAdminActions({
 }: UseTripAdminActionsParams): UseTripAdminActionsResult {
   const [isSaving, setIsSaving] = useState(false)
 
-  // كل المسارات تمرّ من هنا: فحص الصلاحية، علم الحفظ، رسالة النجاح، ومعالجة
-  // الخطأ — بدل تكرار نفس الأربعة في كل دالة حفظ.
+  // كل مسارات الكتابة المباشرة تمرّ من هنا: فحص الصلاحية، علم الحفظ، رسالة
+  // النجاح، ومعالجة الخطأ — بدل تكرار الأربعة في كل دالة.
   const write = useCallback(async (
+    tripId: string,
     payload: Record<string, unknown>,
     successText: string,
     errorFallback: string,
   ): Promise<boolean> => {
-    // حارس على العميل فقط لرسالة أوضح — القواعد هي التي تمنع فعلياً
     if (!isAdmin) {
       showToast({ text: 'هذا الإجراء متاح للمسؤول فقط.', type: 'error' }, 3000)
       return false
@@ -50,7 +59,7 @@ export function useTripAdminActions({
 
     setIsSaving(true)
     try {
-      await setDoc(tripConfigDoc(), payload, { merge: true })
+      await setDoc(tripDocById(tripId), payload, { merge: true })
       haptic.success()
       showToast({ text: successText, type: 'success' })
       return true
@@ -63,7 +72,8 @@ export function useTripAdminActions({
     }
   }, [isAdmin, showToast, handleFirestoreError])
 
-  const saveBankDetails = useCallback((details: BankDetails) => write(
+  const saveBankDetails = useCallback((tripId: string, details: BankDetails) => write(
+    tripId,
     {
       bankDetails: {
         bankName: details.bankName.trim(),
@@ -75,25 +85,82 @@ export function useTripAdminActions({
     'تعذّر حفظ تفاصيل الحساب البنكي.',
   ), [write])
 
-  const saveItinerary = useCallback((itinerary: ItinerarySegment[]) => {
-    // نفس الحدّ المفروض في firestore.rules — نكشفه هنا برسالة مفهومة بدل ترك
+  const saveItinerary = useCallback((tripId: string, itinerary: ItinerarySegment[]) => {
+    // نفس الحدّ المفروض في firestore.rules — نكشفه برسالة مفهومة بدل ترك
     // القواعد ترفض الكتابة بخطأ صلاحيات غامض.
     if (itinerary.length > MAX_SEGMENTS) {
       showToast({ text: `الحد الأقصى ${MAX_SEGMENTS} مقطعاً في المسار.`, type: 'error' }, 3000)
       return Promise.resolve(false)
     }
-    return write(
-      { itinerary },
-      'تم حفظ مسار الرحلة',
-      'تعذّر حفظ مسار الرحلة.',
-    )
+    return write(tripId, { itinerary }, 'تم حفظ مسار الرحلة', 'تعذّر حفظ مسار الرحلة.')
   }, [write, showToast])
 
-  const saveTripName = useCallback((name: string) => write(
+  const saveTripName = useCallback((tripId: string, name: string) => write(
+    tripId,
     { name: name.trim() },
     'تم حفظ اسم الرحلة',
     'تعذّر حفظ اسم الرحلة.',
   ), [write])
 
-  return { isSaving, saveBankDetails, saveItinerary, saveTripName }
+  // ── المسار الخادمي (manageTrip) ─────────────────────────────────────────
+  // نستدعيها عبر إعادة التوجيه في vercel.json (/api/manageTrip) لا عبر رابط
+  // الدالة المباشر — نفس نمط verifyTripPin، لتفادي CORS.
+  const callManageTrip = useCallback(async (
+    mode: 'create' | 'resetPin',
+    tripId: string,
+    pin: string,
+    name: string,
+    successText: string,
+  ): Promise<boolean> => {
+    if (!isAdmin) {
+      showToast({ text: 'هذا الإجراء متاح للمسؤول فقط.', type: 'error' }, 3000)
+      return false
+    }
+
+    setIsSaving(true)
+    try {
+      const user = auth.currentUser
+      if (!user) throw new Error('غير مسجّل الدخول.')
+      const idToken = await user.getIdToken(true)
+
+      const response = await fetch('/api/manageTrip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ data: { mode, tripId, pin, name } }),
+      })
+      const resData = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        // الدالة ترسل رسائل عربية مفهومة (معرّف مكرر، رمز قصير…) فنعرضها كما هي
+        const message = resData?.error?.message || 'تعذّر تنفيذ العملية.'
+        haptic.error()
+        showToast({ text: message, type: 'error' }, 4000)
+        return false
+      }
+
+      haptic.success()
+      showToast({ text: successText, type: 'success' })
+      return true
+    } catch (err) {
+      haptic.error()
+      handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
+      return false
+    } finally {
+      setIsSaving(false)
+    }
+  }, [isAdmin, showToast, handleFirestoreError])
+
+  const createTrip = useCallback(
+    (tripId: string, name: string, pin: string) =>
+      callManageTrip('create', tripId, pin, name, `تم إنشاء الرحلة "${tripId}"`),
+    [callManageTrip]
+  )
+
+  const resetTripPin = useCallback(
+    (tripId: string, pin: string) =>
+      callManageTrip('resetPin', tripId, pin, '', 'تم تغيير رمز الرحلة'),
+    [callManageTrip]
+  )
+
+  return { isSaving, saveBankDetails, saveItinerary, saveTripName, createTrip, resetTripPin }
 }

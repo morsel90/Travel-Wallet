@@ -8,8 +8,9 @@ import type { ToastMessage, SortOrder } from './types'
 import {
   useAuth, useAdminAuth, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
-  useTripAdminActions,
+  useTripAdminActions, useAllTrips,
 } from './hooks'
+import { TRIP_ID } from './utils/tripId'
 import { useFilteredExpenses } from './hooks/useFilteredExpenses'
 
 import { DataContext } from './context/DataContext'
@@ -48,7 +49,9 @@ export default function App() {
   const { ratesUpdatedAt, CURRENCIES } = useExchangeRates()
   const { expenses,  setExpenses,  expensesLoaded,  refreshExpenses }  = useExpenses(hasAccess ? user : null, { setIsSyncing, setSyncError })
   const { travelers, setTravelers, travelersLoaded, refreshTravelers } = useTravelers(hasAccess ? user : null, setIsSyncing)
-  const { tripName, bankDetails, itinerary } = useTripConfig(hasAccess ? user : null)
+  // اسم الرحلة يُحرَّر الآن من واجهة إدارة الرحلات (التي تقرأه من useAllTrips)،
+  // فلا تحتاجه هذه الشاشة — تفاصيل البنك للبطاقة، والمسار للويدجت والتقارير.
+  const { bankDetails, itinerary } = useTripConfig(hasAccess ? user : null)
 
   const isInitialLoading = !expensesLoaded || !travelersLoaded
 
@@ -131,9 +134,13 @@ export default function App() {
     depositTraveler, user, setTravelers, showToast, handleFirestoreError, closeModal,
   })
 
-  const { isSaving: isSavingTrip, saveBankDetails, saveItinerary } = useTripAdminActions({
-    isAdmin, showToast, handleFirestoreError,
-  })
+  // إدارة الرحلات — لا نشترك في قائمة الرحلات إلا للمسؤول: استعلام القائمة على
+  // trips/ يرضيه isAdmin() وحده، فطلبه لعضو عادي مجرّد خطأ صلاحيات في الكونسول.
+  const { trips, loading: tripsLoading, error: tripsError } = useAllTrips(isAdmin)
+  const {
+    isSaving: isSavingTrip,
+    saveBankDetails, saveItinerary, saveTripName, createTrip, resetTripPin,
+  } = useTripAdminActions({ isAdmin, showToast, handleFirestoreError })
 
   const hasUnsavedData = useCallback(() => {
     const hasExpenseData = isAddingExpense && (
@@ -358,7 +365,7 @@ export default function App() {
                             onClick={() => { haptic.light(); openTripAdmin() }}
                             className="flex items-center gap-1.5 text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm"
                           >
-                            <Settings className="w-3.5 h-3.5 text-slate-500" /> إدارة الرحلة
+                            <Settings className="w-3.5 h-3.5 text-slate-500" /> إدارة الرحلات
                           </button>
                         )}
                         {isAdmin && (
@@ -488,12 +495,16 @@ export default function App() {
                 onRestoreTraveler: handleRestoreTraveler,
               }}
               tripAdmin={{
-                tripName,
-                bankDetails,
-                itinerary: itinerary ?? [],
+                currentTripId: TRIP_ID,
+                trips,
+                loading: tripsLoading,
+                error: tripsError,
                 isSaving: isSavingTrip,
+                onSaveTripName: saveTripName,
                 onSaveBankDetails: saveBankDetails,
                 onSaveItinerary: saveItinerary,
+                onCreateTrip: createTrip,
+                onResetPin: resetTripPin,
               }}
             />
 

@@ -1,135 +1,49 @@
-// 🆕 واجهة إدارة الرحلة — شاشة كاملة على نمط ReportsView (motion + رأس لاصق +
-// تبويبات)، مرئية للمسؤول فقط. تستبدل التعديل اليدوي عبر scripts/add-flights.mjs
-// (المسار) وإعادة تشغيل scripts/create-trip.mjs (تفاصيل البنك).
+// 🆕 واجهة إدارة الرحلات — شاشة كاملة على نمط ReportsView، للمسؤول فقط.
+// تستبدل السكربتات اليدوية: create-trip.mjs (إنشاء رحلة/رمز)، add-flights.mjs
+// (المسار)، list-trips.mjs (عرض الرحلات).
 //
-// نطاق مقصود: لا إنشاء رحلة ولا تعيين PIN من هنا — كلاهما يمسّ
-// tripSecrets/{tripId} المحظور على العميل تماماً، ويبقيان في create-trip.mjs.
+// شاشتان: قائمة كل الرحلات، وتفاصيل رحلة مختارة. المسؤول يعدّل أي رحلة من
+// مكانه — قواعد Firestore تشترط isAdmin() ولا تشير للرحلة النشطة إطلاقاً.
 //
-// نمط التحرير: المسار يُحرَّر محلياً بالكامل (إضافة/تعديل/حذف/ترتيب) ثم يُحفظ
-// دفعة واحدة بضغطة صريحة — لا حفظ تلقائي بعد كل تعديل. السبب أن الحقل يُكتب
-// كمصفوفة كاملة، فالحفظ بعد كل ضغطة يعني كتابات متلاحقة على نفس المستند وفرصة
-// أكبر لضياع تعديل عند تحرير الرحلة من جهازين في آنٍ واحد.
-import { useMemo, useState } from 'react'
+// ⚠️ «فتح الرحلة» يعيد تحميل الصفحة على ‎?trip=X، لأن TRIP_ID يُحسب مرة واحدة
+// عند تحميل الوحدة (انظر utils/tripId.ts). لا حاجة لفتحها لمجرد التعديل؛
+// الفتح فقط لرؤية مصاريف تلك الرحلة وأعضائها.
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import {
-  X, Settings, Save, Building2, Route, Plane, Car, Train, Bus,
-  Pencil, Trash2, Plus, ArrowUp, ArrowDown, Loader2, AlertTriangle,
+  X, Settings, Plus, ArrowRight, ExternalLink, Luggage, Route, Loader2, AlertTriangle,
 } from '../../icons'
-import SegmentForm from './SegmentForm'
+import TripDetailPanel from './TripDetailPanel'
+import NewTripForm from './NewTripForm'
 import EmptyState from '../EmptyState'
-import {
-  TRANSPORT_LABEL, MAX_SEGMENTS,
-  emptySegmentDraft, segmentToDraft, draftToSegment, validateDraft,
-} from '../../utils/itinerary'
-import type { SegmentDraft } from '../../utils/itinerary'
-import type { BankDetails, ItinerarySegment, TransportMode } from '../../types'
+import { tripUrl } from '../../utils/tripId'
+import type { TripSummary } from '../../hooks/useAllTrips'
+import type { BankDetails } from '../../types'
 
 interface TripAdminViewProps {
-  tripName: string | null
-  bankDetails: BankDetails
-  itinerary: ItinerarySegment[]
+  currentTripId: string
+  trips: TripSummary[]
+  loading: boolean
+  error: string | null
   isSaving: boolean
-  onSaveBankDetails: (details: BankDetails) => Promise<boolean>
-  onSaveItinerary: (itinerary: ItinerarySegment[]) => Promise<boolean>
+  onSaveTripName: (tripId: string, name: string) => Promise<boolean>
+  onSaveBankDetails: (tripId: string, details: BankDetails) => Promise<boolean>
+  onSaveItinerary: (tripId: string, itinerary: TripSummary['itinerary']) => Promise<boolean>
+  onCreateTrip: (tripId: string, name: string, pin: string) => Promise<boolean>
+  onResetPin: (tripId: string, pin: string) => Promise<boolean>
   onClose: () => void
 }
 
-type AdminTab = 'bank' | 'itinerary'
-
-const TABS: Array<{ key: AdminTab; label: string; Icon: typeof Building2 }> = [
-  { key: 'bank',      label: 'الحساب البنكي', Icon: Building2 },
-  { key: 'itinerary', label: 'مسار الرحلة',   Icon: Route },
-]
-
-const DT_LOCALE = 'ar-SA-u-ca-gregory-nu-latn'
-const fmtDateTime = (iso: string): string => {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  return `${d.toLocaleDateString(DT_LOCALE, { day: 'numeric', month: 'short' })} · ${
-    d.toLocaleTimeString(DT_LOCALE, { hour: '2-digit', minute: '2-digit', hour12: false })}`
-}
-
-const MODE_ICON: Record<TransportMode, typeof Plane> = {
-  flight: Plane, car: Car, train: Train, bus: Bus,
-}
-
-const inputClass =
-  'w-full border border-slate-200 rounded-xl px-3 py-2 text-base bg-white focus:ring-2 focus:ring-teal-500 outline-none'
-const labelClass = 'block text-xs font-bold text-slate-500 mb-1.5'
-
 export default function TripAdminView({
-  tripName, bankDetails, itinerary, isSaving,
-  onSaveBankDetails, onSaveItinerary, onClose,
+  currentTripId, trips, loading, error, isSaving,
+  onSaveTripName, onSaveBankDetails, onSaveItinerary, onCreateTrip, onResetPin, onClose,
 }: TripAdminViewProps) {
-  const [activeTab, setActiveTab] = useState<AdminTab>('bank')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [isCreating, setIsCreating] = useState(false)
 
-  // ── تفاصيل البنك ──────────────────────────────────────────────────────────
-  const [bankForm, setBankForm] = useState<BankDetails>(bankDetails)
-  const bankDirty = useMemo(
-    () => (['bankName', 'beneficiary', 'iban'] as const).some(k => bankForm[k] !== bankDetails[k]),
-    [bankForm, bankDetails]
-  )
-
-  // ── المسار ────────────────────────────────────────────────────────────────
-  // نسخة عمل محلية: كل التعديلات تجري عليها، والحفظ يكتبها كاملة مرة واحدة.
-  const [workingItinerary, setWorkingItinerary] = useState<ItinerarySegment[]>(itinerary)
-  const [draft, setDraft] = useState<SegmentDraft | null>(null)
-  const [draftError, setDraftError] = useState<string | null>(null)
-  const [editingId, setEditingId] = useState<string | null>(null)
-
-  const itineraryDirty = useMemo(
-    () => JSON.stringify(workingItinerary) !== JSON.stringify(itinerary),
-    [workingItinerary, itinerary]
-  )
-
-  const startAdd = () => {
-    setEditingId(null)
-    setDraftError(null)
-    setDraft(emptySegmentDraft())
-  }
-
-  const startEdit = (segment: ItinerarySegment) => {
-    setEditingId(segment.id)
-    setDraftError(null)
-    setDraft(segmentToDraft(segment))
-  }
-
-  const cancelDraft = () => {
-    setDraft(null)
-    setEditingId(null)
-    setDraftError(null)
-  }
-
-  const submitDraft = () => {
-    if (!draft) return
-    const error = validateDraft(draft)
-    if (error) { setDraftError(error); return }
-
-    const segment = draftToSegment(draft)
-    setWorkingItinerary(prev =>
-      editingId
-        ? prev.map(s => (s.id === editingId ? segment : s))
-        : [...prev, segment]
-    )
-    cancelDraft()
-  }
-
-  const removeSegment = (id: string) =>
-    setWorkingItinerary(prev => prev.filter(s => s.id !== id))
-
-  // الترتيب يدوي عمداً: المقاطع تُعرض بترتيب المصفوفة كما هي، ولو رتّبناها
-  // زمنياً هنا لانقلب مكان مقطع لم يُدخَل وقته بعد بشكل مربك أثناء التحرير.
-  const moveSegment = (index: number, direction: -1 | 1) => {
-    setWorkingItinerary(prev => {
-      const target = index + direction
-      if (target < 0 || target >= prev.length) return prev
-      const next = prev.slice()
-      ;[next[index], next[target]] = [next[target], next[index]]
-      return next
-    })
-  }
-
-  const atLimit = workingItinerary.length >= MAX_SEGMENTS
+  // نقرأ الرحلة المختارة من القائمة الحيّة في كل رسم — لا نسخة محلية، حتى
+  // ينعكس أي تعديل محفوظ فوراً بدل بقاء اللوحة على بيانات قديمة.
+  const selected = selectedId ? trips.find(t => t.id === selectedId) ?? null : null
 
   return (
     <motion.div
@@ -142,253 +56,154 @@ export default function TripAdminView({
       <header className="sticky top-0 z-10 bg-teal-700 text-white shadow-md">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
-            <Settings className="w-6 h-6 text-teal-100 shrink-0" />
+            {selected ? (
+              <button
+                type="button"
+                onClick={() => setSelectedId(null)}
+                aria-label="رجوع لقائمة الرحلات"
+                className="p-2 -mr-2 rounded-xl hover:bg-teal-800/60 text-teal-50 transition-colors shrink-0"
+              >
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            ) : (
+              <Settings className="w-6 h-6 text-teal-100 shrink-0" />
+            )}
             <div className="min-w-0">
-              <h1 className="font-bold text-lg truncate">إدارة الرحلة</h1>
-              {tripName && <p className="text-[11px] text-teal-100 truncate">{tripName}</p>}
+              <h1 className="font-bold text-lg truncate">
+                {selected ? selected.name : 'إدارة الرحلات'}
+              </h1>
+              <p className="text-[11px] text-teal-100 truncate" dir="ltr">
+                {selected ? selected.id : `${trips.length} رحلة`}
+              </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="إغلاق إدارة الرحلة"
+            aria-label="إغلاق إدارة الرحلات"
             className="p-2 rounded-xl bg-teal-800/60 hover:bg-teal-800 text-teal-50 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
-
-        <div className="max-w-4xl mx-auto px-4 pb-3 flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {TABS.map(({ key, label, Icon }) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setActiveTab(key)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                activeTab === key ? 'bg-white text-teal-700 shadow-sm' : 'bg-teal-800/40 text-teal-50 hover:bg-teal-800/70'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" /> {label}
-            </button>
-          ))}
-        </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-5 pb-24">
-        {activeTab === 'bank' && (
-          <form
-            onSubmit={e => { e.preventDefault(); void onSaveBankDetails(bankForm) }}
-            className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4"
-          >
-            <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-teal-600" /> تفاصيل الحساب البنكي
-            </h2>
-            <p className="text-xs text-slate-500 -mt-2">
-              تظهر هذه البيانات لكل أعضاء الرحلة في بطاقة التحويل، ويمكنهم نسخها أو مشاركتها.
-            </p>
-
-            <div>
-              <label className={labelClass} htmlFor="bank-name">اسم البنك</label>
-              <input
-                id="bank-name"
-                type="text"
-                value={bankForm.bankName}
-                onChange={e => setBankForm({ ...bankForm, bankName: e.target.value })}
-                className={inputClass}
-              />
-            </div>
-
-            <div>
-              <label className={labelClass} htmlFor="bank-beneficiary">اسم المستفيد</label>
-              <input
-                id="bank-beneficiary"
-                type="text"
-                value={bankForm.beneficiary}
-                onChange={e => setBankForm({ ...bankForm, beneficiary: e.target.value })}
-                className={inputClass}
-              />
-            </div>
-
-            <div>
-              <label className={labelClass} htmlFor="bank-iban">رقم الآيبان (IBAN)</label>
-              <input
-                id="bank-iban"
-                type="text"
-                dir="ltr"
-                value={bankForm.iban}
-                onChange={e => setBankForm({ ...bankForm, iban: e.target.value })}
-                placeholder="SA0000000000000000000000"
-                className={`${inputClass} text-right tabular-nums`}
-              />
-              <p className="text-[11px] text-slate-400 mt-1.5">تُحذف المسافات تلقائياً عند الحفظ.</p>
-            </div>
-
-            <div className="flex items-center gap-2 pt-1">
-              <button
-                type="submit"
-                disabled={isSaving || !bankDirty}
-                className="flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm disabled:opacity-40"
-              >
-                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                حفظ التغييرات
-              </button>
-              {bankDirty && (
-                <button
-                  type="button"
-                  onClick={() => setBankForm(bankDetails)}
-                  className="px-4 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
-                >
-                  تراجع
-                </button>
-              )}
-            </div>
-          </form>
+        {error && (
+          <div className="bg-rose-100 text-rose-800 p-4 rounded-xl text-sm border border-rose-200 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            {error}
+          </div>
         )}
 
-        {activeTab === 'itinerary' && (
+        {loading && (
+          <div className="flex items-center justify-center gap-2 text-slate-500 py-12">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span className="text-sm font-bold">جارٍ تحميل الرحلات...</span>
+          </div>
+        )}
+
+        {!loading && selected && (
+          <TripDetailPanel
+            trip={selected}
+            isSaving={isSaving}
+            onSaveTripName={onSaveTripName}
+            onSaveBankDetails={onSaveBankDetails}
+            onSaveItinerary={onSaveItinerary}
+            onResetPin={onResetPin}
+          />
+        )}
+
+        {!loading && !selected && (
           <>
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                    <Route className="w-5 h-5 text-teal-600" /> مسار الرحلة
-                  </h2>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {workingItinerary.length} من {MAX_SEGMENTS} مقطعاً. يظهر أول مقطع قادم في الصفحة الرئيسية.
-                  </p>
-                </div>
-                {!draft && (
-                  <button
-                    type="button"
-                    onClick={startAdd}
-                    disabled={atLimit}
-                    className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm disabled:opacity-40"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> إضافة مقطع
-                  </button>
-                )}
-              </div>
+            {!isCreating && (
+              <button
+                type="button"
+                onClick={() => setIsCreating(true)}
+                className="w-full border-2 border-dashed border-slate-200 hover:border-teal-500 hover:bg-teal-50/40 rounded-2xl p-4 flex items-center justify-center gap-3 text-slate-500 hover:text-teal-600 transition-all bg-white/40 group min-h-[68px]"
+              >
+                <span className="w-9 h-9 rounded-full bg-slate-100 group-hover:bg-teal-100 flex items-center justify-center text-slate-600 group-hover:text-teal-700 transition-colors shrink-0 shadow-sm">
+                  <Plus className="w-4 h-4" />
+                </span>
+                <span className="text-sm font-bold">إنشاء رحلة جديدة</span>
+              </button>
+            )}
 
-              {itineraryDirty && (
-                <div className="mt-4 flex flex-wrap items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span className="text-xs font-bold text-amber-800 flex-1">
-                    لديك تعديلات غير محفوظة على المسار.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => void onSaveItinerary(workingItinerary)}
-                    disabled={isSaving}
-                    className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-40"
-                  >
-                    {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                    حفظ المسار
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setWorkingItinerary(itinerary); cancelDraft() }}
-                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
-                  >
-                    تراجع
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {draft && (
-              <SegmentForm
-                draft={draft}
-                setDraft={setDraft}
-                onSubmit={submitDraft}
-                onCancel={cancelDraft}
-                isEditing={editingId !== null}
-                error={draftError}
+            {isCreating && (
+              <NewTripForm
+                existingIds={trips.map(t => t.id)}
+                isSaving={isSaving}
+                onCreate={onCreateTrip}
+                onCancel={() => setIsCreating(false)}
               />
             )}
 
-            {workingItinerary.length === 0 && !draft ? (
+            {trips.length === 0 && !isCreating ? (
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <EmptyState
-                  Icon={Route}
-                  title="لا يوجد مسار بعد"
-                  description="أضف رحلات الطيران أو التنقلات البرية ليظهر للمسافرين المقطع القادم وموعده."
-                  actionLabel="إضافة أول مقطع"
-                  onAction={startAdd}
+                  Icon={Luggage}
+                  title="لا توجد رحلات بعد"
+                  description="أنشئ أول رحلة وشارك رابطها ورمزها مع المسافرين معك."
+                  actionLabel="إنشاء رحلة"
+                  onAction={() => setIsCreating(true)}
                   ActionIcon={Plus}
                 />
               </div>
             ) : (
               <div className="space-y-3">
-                {workingItinerary.map((segment, index) => {
-                  const ModeIcon = MODE_ICON[segment.mode]
+                {trips.map(trip => {
+                  const isCurrent = trip.id === currentTripId
                   return (
                     <div
-                      key={segment.id}
-                      className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4"
+                      key={trip.id}
+                      className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="flex items-center justify-center w-9 h-9 rounded-full bg-teal-100 text-teal-700 shrink-0">
-                            <ModeIcon className="w-4 h-4" />
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(trip.id)}
+                        className="flex items-center gap-3 min-w-0 flex-1 text-right group"
+                      >
+                        <span className="flex items-center justify-center w-10 h-10 rounded-full bg-teal-100 text-teal-700 shrink-0">
+                          <Luggage className="w-5 h-5" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="flex items-center gap-2 min-w-0">
+                            <span className="font-bold text-slate-800 truncate group-hover:text-teal-700 transition-colors">
+                              {trip.name}
+                            </span>
+                            {isCurrent && (
+                              <span className="text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shrink-0">
+                                مفتوحة الآن
+                              </span>
+                            )}
                           </span>
-                          <div className="min-w-0">
-                            <p className="text-[11px] font-bold text-slate-400">
-                              {TRANSPORT_LABEL[segment.mode]}
-                              {segment.reference && <span dir="ltr"> · {segment.reference}</span>}
-                            </p>
-                            <p className="text-sm font-bold text-slate-800 truncate">{segment.identifier}</p>
-                          </div>
-                        </div>
+                          <span className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                            <span dir="ltr" className="truncate">{trip.id}</span>
+                            {trip.itinerary.length > 0 && (
+                              <span className="flex items-center gap-1 shrink-0">
+                                <Route className="w-3 h-3" /> {trip.itinerary.length}
+                              </span>
+                            )}
+                          </span>
+                        </span>
+                      </button>
 
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => moveSegment(index, -1)}
-                            disabled={index === 0}
-                            aria-label="تحريك لأعلى"
-                            className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-500 transition-colors disabled:opacity-30"
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedId(trip.id)}
+                          className="text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors"
+                        >
+                          تعديل
+                        </button>
+                        {!isCurrent && (
+                          <a
+                            href={tripUrl(trip.id)}
+                            className="flex items-center gap-1.5 text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors"
                           >
-                            <ArrowUp className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveSegment(index, 1)}
-                            disabled={index === workingItinerary.length - 1}
-                            aria-label="تحريك لأسفل"
-                            className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-500 transition-colors disabled:opacity-30"
-                          >
-                            <ArrowDown className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => startEdit(segment)}
-                            aria-label={`تعديل ${segment.identifier}`}
-                            className="p-1.5 rounded-lg bg-slate-50 hover:bg-teal-50 text-slate-500 hover:text-teal-600 transition-colors"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => removeSegment(segment.id)}
-                            aria-label={`حذف ${segment.identifier}`}
-                            className="p-1.5 rounded-lg bg-slate-50 hover:bg-rose-50 text-slate-500 hover:text-rose-600 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 mt-3">
-                        <div className="bg-slate-50 rounded-lg border border-slate-100 p-2.5 min-w-0">
-                          <p className="text-[11px] font-bold text-slate-400 mb-0.5">الانطلاق</p>
-                          <p className="text-sm font-bold text-slate-700 truncate">{segment.departure.location}</p>
-                          <p className="text-[11px] text-slate-500 mt-1">{fmtDateTime(segment.departure.time)}</p>
-                        </div>
-                        <div className="bg-slate-50 rounded-lg border border-slate-100 p-2.5 min-w-0">
-                          <p className="text-[11px] font-bold text-slate-400 mb-0.5">الوصول</p>
-                          <p className="text-sm font-bold text-slate-700 truncate">{segment.arrival.location}</p>
-                          <p className="text-[11px] text-slate-500 mt-1">{fmtDateTime(segment.arrival.time)}</p>
-                        </div>
+                            <ExternalLink className="w-3.5 h-3.5" /> فتح
+                          </a>
+                        )}
                       </div>
                     </div>
                   )

@@ -14,5 +14,6 @@ export { useExpenseActions }   from './useExpenseActions' // 🆕 منطق نم�
 export { useTravelerActions }  from './useTravelerActions' // 🆕 منطق نموذج/عمليات المسافر كاملاً — استُخرج من App.tsx
 export { useDepositActions }   from './useDepositActions'  // 🆕 منطق نموذج/عمليات الإيداع كاملاً — استُخرج من App.tsx
 export { useTripConfig }       from './useTripConfig' // 🆕 إعدادات الرحلة النشطة (اسمها/تفاصيل البنك) من Firestore — لدعم رحلات متعددة
-export { useTripAdminActions } from './useTripAdminActions' // 🆕 كتابة إعدادات الرحلة (البنك/المسار) من واجهة الإدارة — للمسؤول فقط
+export { useTripAdminActions } from './useTripAdminActions' // 🆕 كتابة إعدادات أي رحلة (البنك/المسار/الرمز) من واجهة الإدارة — للمسؤول فقط
+export { useAllTrips }         from './useAllTrips' // 🆕 قائمة كل الرحلات — استعلام يرضيه isAdmin() وحده
 export { useHeaderCollapse }   from './useHeaderCollapse' // 🆕 تتبّع اتجاه التمرير لتقليص/توسيع الهيدر (Sticky + Collapsible)
