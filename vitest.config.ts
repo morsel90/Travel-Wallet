@@ -1,15 +1,29 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+import { loadEnv } from 'vite'
 
-// إعداد Vitest تم تحديثه ليدعم اختبارات الدوال النقية بالإضافة إلى 
-// اختبارات مكونات واجهة المستخدم (React Components) عبر محاكاة المتصفح (jsdom).
-export default defineConfig({
-  plugins: [react()],
-  test: {
-    environment: 'jsdom', // تغيير أساسي لدعم React Testing Library
-    setupFiles: ['./src/setupTests.ts'], // استدعاء ملف الإعدادات
-    globals: true,
-    // تحديث المسار ليشمل ملفات .tsx الخاصة بواجهات ريأكت
-    include: ['src/**/*.{test,spec}.{ts,tsx}'], 
-  },
+export default defineConfig(({ mode }) => {
+  // تحميل كافة المتغيرات المضافة في Vercel أو .env
+  const env = loadEnv(mode, process.cwd(), '');
+
+  return {
+    plugins: [react()],
+    
+    // حقن المتغيرات صراحة وقت البناء لضمان وصولها للمتصفح في Node 22
+    define: {
+      'import.meta.env.VITE_FIREBASE_API_KEY': JSON.stringify(env.VITE_FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY),
+      'import.meta.env.VITE_FIREBASE_AUTH_DOMAIN': JSON.stringify(env.VITE_FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN),
+      'import.meta.env.VITE_FIREBASE_PROJECT_ID': JSON.stringify(env.VITE_FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID),
+      'import.meta.env.VITE_FIREBASE_STORAGE_BUCKET': JSON.stringify(env.VITE_FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET),
+      'import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID': JSON.stringify(env.VITE_FIREBASE_MESSAGING_SENDER_ID || process.env.VITE_FIREBASE_MESSAGING_SENDER_ID),
+      'import.meta.env.VITE_FIREBASE_APP_ID': JSON.stringify(env.VITE_FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID),
+    },
+
+    test: {
+      environment: 'jsdom',
+      setupFiles: ['./src/setupTests.ts'],
+      globals: true,
+      include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    },
+  }
 })
