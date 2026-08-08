@@ -1,107 +1,98 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react            from '@vitejs/plugin-react'
 import { VitePWA }      from 'vite-plugin-pwa'
 
-export default defineConfig({
-  // ★ إعطاء الأولوية لملفات TypeScript عند الاستيراد بدون امتداد.
-  // نسخ .jsx/.js ما زالت موجودة في src/ لكنها مهملة الآن؛ هذا الترتيب يضمن
-  // أن './App' و'./components/Header' …إلخ تُحمَّل من نسخة .tsx لا .jsx.
-  // (نقطة الدخول أصبحت /src/main.tsx في index.html).
-  // ملاحظة: Vite يحمّل vite.config.js قبل vite.config.ts، لذا التعديل هنا.
-  resolve: {
-    extensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
-  },
-  
-  // ★ إعدادات البناء الجديدة: تقسيم الحزم (Code Splitting) لحل تحذير الـ 500kb
-build: {
-    chunkSizeWarningLimit: 600,
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            // تجميع كل ما يخص فايربيس في ملف منفصل
-            if (id.includes('firebase') || id.includes('@firebase')) {
-              return 'firebase-sdk';
-            }
-            // تجميع أساسيات ريأكت
-            if (id.includes('react') || id.includes('react-dom')) {
-              return 'react-vendor';
-            }
-            // تجميع مكتبات الواجهة والحركات
-            if (id.includes('framer-motion') || id.includes('lucide-react') || id.includes('react-virtuoso')) {
-              return 'ui-vendor';
+export default defineConfig(({ mode }) => {
+  // تحميل كافة المتغيرات المضافة في Vercel أو .env
+  const env = loadEnv(mode, process.cwd(), '');
+
+  return {
+    resolve: {
+      extensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
+    },
+
+    // حقن المتغيرات صراحة وقت البناء لضمان وصولها للمتصفح عند البناء على Vercel
+    define: {
+      'import.meta.env.VITE_FIREBASE_API_KEY': JSON.stringify(env.VITE_FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY),
+      'import.meta.env.VITE_FIREBASE_AUTH_DOMAIN': JSON.stringify(env.VITE_FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN),
+      'import.meta.env.VITE_FIREBASE_PROJECT_ID': JSON.stringify(env.VITE_FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID),
+      'import.meta.env.VITE_FIREBASE_STORAGE_BUCKET': JSON.stringify(env.VITE_FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET),
+      'import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID': JSON.stringify(env.VITE_FIREBASE_MESSAGING_SENDER_ID || process.env.VITE_FIREBASE_MESSAGING_SENDER_ID),
+      'import.meta.env.VITE_FIREBASE_APP_ID': JSON.stringify(env.VITE_FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID),
+    },
+    
+    // إعدادات البناء وتقسيم الحزم (Code Splitting)
+    build: {
+      chunkSizeWarningLimit: 600,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('firebase') || id.includes('@firebase')) {
+                return 'firebase-sdk';
+              }
+              if (id.includes('react') || id.includes('react-dom')) {
+                return 'react-vendor';
+              }
+              if (id.includes('framer-motion') || id.includes('lucide-react') || id.includes('react-virtuoso')) {
+                return 'ui-vendor';
+              }
             }
           }
         }
       }
-    }
-  },
+    },
 
-  plugins: [
-    react(),
-    VitePWA({
-      // generateSW: Workbox يولّد ملف service-worker.js تلقائياً عند البناء
-      strategies: 'generateSW',
-      registerType: 'autoUpdate', // يُحدِّث الـ SW تلقائياً عند رفع نسخة جديدة
-
-      // manifest.webmanifest — يُمكِّن "Add to Home Screen" على الجوال
-      manifest: {
-        name:             'لوحة مصاريف السفر',
-        short_name:       'مصاريف',
-        description:      'تتبع مصاريف الرحلة بين أعضاء المجموعة',
-        theme_color:      '#0f766e',   // teal-700
-        background_color: '#f8fafc',   // slate-50
-        display:          'standalone',
-        lang:             'ar',
-        dir:              'rtl',
-        start_url:        '/',
-        icons: [
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-        ],
-      },
-
-      workbox: {
-        // ما يُخزَّن أثناء التثبيت (precache): ملفات الـ bundle التي يولّدها Vite
-        // Workbox يكتشفها تلقائياً — لا حاجة لتعدادها يدوياً
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-
-        // ★ التعديل الأول: إضافة مسارات التجاهل لمنع تعارض Workbox مع مسارات Firebase الداخلية
-        navigateFallbackDenylist: [/^\/__/],
-
-        // استراتيجية التخزين للموارد الخارجية (Google Fonts, CDN...)
-        // NetworkFirst: يحاول الشبكة أولاً، ويرجع للـ cache عند انقطاع الإنترنت
-        runtimeCaching: [
-          {
-            // أسعار الصرف الحية — NetworkFirst لأن البيانات تتغير
-            urlPattern: /^https:\/\/open\.er-api\.com\//,
-            handler:    'NetworkFirst',
-            options: {
-              cacheName:         'exchange-rates-cache',
-              networkTimeoutSeconds: 5,          // إن لم يرد الخادم خلال 5 ثوانٍ → cache
-              expiration: { maxAgeSeconds: 60 * 60 * 6 }, // صالح 6 ساعات
-              cacheableResponse: { statuses: [0, 200] },
+    plugins: [
+      react(),
+      VitePWA({
+        strategies: 'generateSW',
+        registerType: 'autoUpdate',
+        manifest: {
+          name:             'لوحة مصاريف السفر',
+          short_name:       'مصاريف',
+          description:      'تتبع مصاريف الرحلة بين أعضاء المجموعة',
+          theme_color:      '#0f766e',
+          background_color: '#f8fafc',
+          display:          'standalone',
+          lang:             'ar',
+          dir:              'rtl',
+          start_url:        '/',
+          icons: [
+            { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+            { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+            { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          ],
+        },
+        workbox: {
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+          navigateFallbackDenylist: [/^\/__/],
+          runtimeCaching: [
+            {
+              urlPattern: /^https:\/\/open\.er-api\.com\//,
+              handler:    'NetworkFirst',
+              options: {
+                cacheName:         'exchange-rates-cache',
+                networkTimeoutSeconds: 5,
+                expiration: { maxAgeSeconds: 60 * 60 * 6 },
+                cacheableResponse: { statuses: [0, 200] },
+              },
             },
-          },
-          // ★ التعديل الثاني: توجيه صريح لطلبات Firestore المستمرة (Listen/channel)
-          {
-            urlPattern: /^https:\/\/firestore\.googleapis\.com\/.*/i,
-            handler: 'NetworkOnly',
-          },
-          {
-            // Firebase Auth و Firestore endpoints — NetworkOnly
-            // ⚠️ لا نخزّن طلبات Firebase: الـ SDK يتولى الـ offline persistence بنفسه (انظر firebase.js)
-            urlPattern: /^https:\/\/.*\.googleapis\.com\//,
-            handler:    'NetworkOnly',
-          },
-          {
-            // Firebase Storage و firebaseapp.com
-            urlPattern: /^https:\/\/.*\.firebase(io|app|storage)\.com\//,
-            handler:    'NetworkOnly',
-          },
-        ],
-      },
-    }),
-  ],
+            {
+              urlPattern: /^https:\/\/firestore\.googleapis\.com\/.*/i,
+              handler: 'NetworkOnly',
+            },
+            {
+              urlPattern: /^https:\/\/.*\.googleapis\.com\//,
+              handler:    'NetworkOnly',
+            },
+            {
+              urlPattern: /^https:\/\/.*\.firebase(io|app|storage)\.com\//,
+              handler:    'NetworkOnly',
+            },
+          ],
+        },
+      }),
+    ],
+  };
 })
