@@ -181,6 +181,7 @@
 │       ├── reports.ts           # Excel row builders + exportTripToExcel + exportTravelerToExcel
 │       ├── xlsx.ts              # Pure-JS OOXML generator (inlineStr, RTL, ZIP stored)
 │       ├── itinerary.ts         # Pure: segment draft validation, normalize/sort, findNextSegment
+│       ├── travelerName.ts      # Pure: deriveShortName, isValidNameKey, newTravelerId
 │       ├── haptics.ts           # Vibration API + visual flash overlay
 │       ├── cn.ts                # Tailwind class merge (clsx alternative)
 │       └── tripId.ts           # TRIP_ID from ?trip= query param
@@ -192,6 +193,7 @@
 │   ├── create-trip.mjs          # Admin SDK script: create/update trip + PIN
 │   ├── set-admin.mjs            # Admin SDK script: grant/revoke admin claim
 │   ├── list-trips.mjs           # Admin SDK script: list existing trips
+│   ├── backfill-traveler-names.mjs # One-off migration: claim docs for pre-existing travelers
 │   └── add-flights.mjs          # ⚠️ Admin SDK script: writes itinerary — data hardcoded, edit before each run
 │
 ├── firestore.rules              # Security rules (multi-trip, admin claims, rate limiting)
@@ -402,6 +404,11 @@ interface ItinerarySegment {
 artifacts/{tripId}/public/data/
   expenses/{docId}               — Expense documents
   travelers/{travelerId}          — Traveler documents (id as string key)
+  travelerNames/{shortName}       — Name claim; the doc ID *is* the name.
+                                    `allow update: if false` is what enforces
+                                    uniqueness: a write to an existing doc is an
+                                    update, so the loser of a race is rejected.
+                                    Written with the traveler in one writeBatch.
   rateLimits/{uid}               — Rate limit tracking per user
   travelers/{id}/depositLogs/{id} — Immutable deposit audit log (admin-only)
 
@@ -486,6 +493,7 @@ npm run lint                # ESLint
 - `src/utils/reports.test.ts` — Excel row builders + XLSX generation
 - `src/utils/itinerary.test.ts` — Segment validation, time round-tripping, normalize/sort, next-segment
 - `src/utils/tripId.test.ts` — Trip id format guard (path-escape rejection, length limit)
+- `src/utils/travelerName.test.ts` — shortName derivation, doc-ID validity, random id range
 - `src/components/EmptyState.test.tsx` — Empty state component (RTL test)
 
 **Structure:** Pure utility tests live next to their source. Component tests use `@testing-library/react` with `jsdom` environment. Vitest config in `vitest.config.ts` with `setupFiles: ['./src/setupTests.ts']`.
@@ -518,7 +526,9 @@ Three independent systems that must be deployed separately:
 | `recharts` not found (build error) | Old dependency referenced somewhere | Run `npm install` (package.json no longer lists recharts) |
 | iOS date picker issues | Safari's native date/select styling | Fixes in `index.css` (`.safari-date-fix`, `.safari-select-fix`) |
 | Blank screen after deploy | Trip ID mismatch or missing trip config | Ensure `scripts/create-trip.mjs` was run for the tripId in use |
-| "يوجد مسافر بنفس الاسم" | Duplicate shortName (first word of name) | Use a different name or rename existing traveler. ⚠️ This check is client-side only (`useTravelerActions.ts`) — `firestore.rules` does not enforce uniqueness, so two admins adding the same shortName simultaneously can both succeed. |
+| "يوجد مسافر بنفس الاسم" | Duplicate shortName (first word of name) — caught locally before any write | Use a different name or rename the existing traveler |
+| "الاسم المختصر ... أصبح مستخدماً للتو من جهاز آخر" | The name-claim write lost the race: another device registered that shortName between the local check and the commit. This is the server-side guarantee working | Pick a different name |
+| Restoring from the trash fails | Soft-deleting frees the name, so someone may have taken it while the traveler sat in the trash | Rename the other traveler, or rename this one before restoring |
 | Itinerary widget not showing | No `itinerary` on the trip doc, or every segment's `departure.time` is in the past | Add a future segment via **إدارة الرحلة** → مسار الرحلة |
 | A saved segment vanished from the list | `normalizeItinerary` drops malformed segments on read — `firestore.rules` cannot validate list items, so a segment written directly via the SDK with a missing field is filtered out instead of crashing the UI | Re-add it through the admin panel, which validates before writing |
 | Itinerary disappeared after running `create-trip.mjs` | The script uses `.set()` without merge and its payload omits `itinerary` unless you re-enter it | Re-add via the admin panel; use the panel rather than the script for edits |
@@ -534,15 +544,16 @@ Three independent systems that must be deployed separately:
 2. **No `recharts`** — charts are pure HTML/CSS in `ChartsSection.tsx`.
 3. **No `enableIndexedDbPersistence`** — use `persistentLocalCache` (modern API).
 4. **No direct Cloud Function URL** — always use the Vercel rewrite path `/api/verifyTripPin`.
-5. **Soft delete only** — `deletedAt` timestamps, never permanent deletion (`allow delete: if false` in rules).
-6. **Modals go in `src/components/modals/`**, are registered in `useModals.ts` (`ModalState` union) and rendered lazily by `ModalManager.tsx` — not directly in App.tsx.
-7. **Pure logic in `utils/`** — testable without React/DOM.
-8. **Arabic-first** — all UI text in Arabic, RTL layout, Arabic numeral conversion.
-9. **Optimistic updates** — close form immediately on submit, show `_pending` flag until server confirms.
-10. **Haptic feedback** — use `haptic` from `utils/haptics.ts` for all important interactions.
-11. **Run scripts with Admin SDK** — `serviceAccountKey.json` required, never expose admin operations to clients.
+5. **Soft delete only** — `deletedAt` timestamps, never permanent deletion (`allow delete: if false` in rules). The one exception is `travelerNames/{shortName}`, which is a claim rather than data: soft-deleting a traveler deletes the claim so the name can be reused.
+6. **Traveler writes are batched with their name claim** — adding, trashing or restoring a traveler must write `travelers/{id}` and `travelerNames/{shortName}` in one `writeBatch`. A traveler without a claim is a traveler whose name nobody else is prevented from taking.
+7. **Modals go in `src/components/modals/`**, are registered in `useModals.ts` (`ModalState` union) and rendered lazily by `ModalManager.tsx` — not directly in App.tsx.
+8. **Pure logic in `utils/`** — testable without React/DOM.
+9. **Arabic-first** — all UI text in Arabic, RTL layout, Arabic numeral conversion.
+10. **Optimistic updates** — close form immediately on submit, show `_pending` flag until server confirms.
+11. **Haptic feedback** — use `haptic` from `utils/haptics.ts` for all important interactions.
+12. **Run scripts with Admin SDK** — `serviceAccountKey.json` required, never expose admin operations to clients.
 13. **Never write `trips/{tripId}` without merge** — the doc holds independent sections (name, bankDetails, itinerary). Use `useTripAdminActions`, which always merges; a full `set()` silently drops whatever it omits.
 14. **Secrets stay server-side** — `tripSecrets/{tripId}` is `read, write: if false` and must remain so. PIN handling belongs in `functions/index.js` or an Admin SDK script, never in the client.
-12. **CI pipeline** — all PRs must pass: lint → typecheck → test → build. Run `npm run lint` locally before pushing; ESLint bans `any` (`no-explicit-any`) and empty `catch {}` blocks (`no-empty`), which are easy to introduce accidentally.
+15. **CI pipeline** — all PRs must pass: lint → typecheck → test → build. Run `npm run lint` locally before pushing; ESLint bans `any` (`no-explicit-any`) and empty `catch {}` blocks (`no-empty`), which are easy to introduce accidentally.
 
 </div>
