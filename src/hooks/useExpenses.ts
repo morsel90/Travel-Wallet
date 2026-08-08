@@ -8,6 +8,18 @@ import type { Expense } from '../types'
 // يملك حالة المصاريف ويشترك في listener فوري (onSnapshot) عند توفّر مستخدم.
 // يُرجِع المصاريف + setExpenses (يستخدمه App في الـ handlers للتحديث المتفائل).
 // حالة المزامنة/الخطأ تبقى مملوكة لـ App وتُمرَّر setters لها (دوال ثابتة).
+//
+// ⚠️ الاستماع للمجموعة كاملةً (بلا limit ولا صفحات) قرار مقصود لا سهو:
+//   1. هذه المصاريف ليست قائمة عرض بل مدخل كل الأرقام المالية — الأرصدة
+//      والتسويات والفئات والتقارير وتصدير Excel وكشف حساب كل مسافر. حسابها من
+//      جزء محمَّل يعني أرصدة خاطئة تُعرض بلا أي خطأ ظاهر.
+//   2. البحث في useFilteredExpenses جزئي (includes) على الوصف وأسماء
+//      المشاركين، وFirestore لا يدعم البحث الجزئي — فلا بد أن تكون القائمة
+//      كاملة محلياً وإلا اختفت نتائج موجودة فعلاً.
+//   3. المسار لكل رحلة على حدة (artifacts/{tripId}/...) فالمجموعة محدودة بطول
+//      رحلة واحدة لا بعمر التطبيق، وonSnapshot مع persistentLocalCache يجلب
+//      الفروق فقط بعد القراءة الأولى.
+// انظر قسم Design Decisions في CLAUDE.md لمتى يُعاد النظر وبأي ترتيب.
 export interface UseExpensesReporters {
   setIsSyncing: Dispatch<SetStateAction<boolean>>
   setSyncError: Dispatch<SetStateAction<string | null>>
