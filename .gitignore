@@ -23,3 +23,6 @@ serviceAccountKey.json
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+*storybook.log
+storybook-static
