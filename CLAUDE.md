@@ -107,7 +107,8 @@
 ├── src/
 │   ├── App.tsx                    # Root orchestrator (~500 lines)
 │   ├── main.tsx                  # React entry point
-│   ├── firebase.ts               # Firebase init (auth, db, functions)
+│   ├── firebase.ts               # Firebase init (auth, db, functions) — config from import.meta.env
+│   ├── vite-env.d.ts             # Types for import.meta.env (typo in a var name becomes a compile error)
 │   ├── firestore.ts              # Collection/doc ref builders (expensesCol, travelerDoc, etc.)
 │   ├── types.ts                  # All TypeScript interfaces
 │   ├── constants.ts              # FALLBACK_RATES, CURRENCY_LABELS (160), EXPENSE_CATEGORIES
@@ -240,6 +241,10 @@
 # 1. Install dependencies
 npm install
 
+# 1b. Firebase config (required — the app refuses to start without it)
+cp .env.example .env.local
+# then fill the values from Firebase Console › Project settings › Your apps
+
 # 2. Set up Firebase
 firebase login
 firebase use travelapp-87206
@@ -266,10 +271,34 @@ npm run dev
 
 ## Environment Variables
 
-**No runtime env vars needed** — Firebase config is hardcoded in `src/firebase.ts` (this is safe per Firebase docs for client SDKs). 
+Firebase client config now comes from **build-time** env vars (`import.meta.env`), not from hardcoded values. Copy `.env.example` to `.env.local` and fill it from Firebase Console › Project settings › Your apps.
+
+```
+VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID,
+VITE_FIREBASE_STORAGE_BUCKET, VITE_FIREBASE_MESSAGING_SENDER_ID,
+VITE_FIREBASE_APP_ID          # all required — the app throws at startup if any is missing
+VITE_FIREBASE_MEASUREMENT_ID  # optional (analytics only)
+```
+
+These are not secrets — a Firebase client config is public by design and ships in the JS bundle. Security lives in `firestore.rules` and the functions. The env vars exist so a build can be pointed at a different project without editing tracked code.
+
+**Missing vars fail loudly at startup, by design.** The only sensible fallback would be the production config, and silently falling back to it means a misconfigured staging build writes to the production database. `src/firebase.ts` throws and names the missing variables instead.
+
+**Vite substitutes `VITE_*` at build time, not runtime.** They must exist in the build environment: `.env.local` locally, and Vercel › Project Settings › Environment Variables for deploys. Adding them to Vercel *after* a deploy does nothing until you redeploy.
+
+⚠️ **This does not give you a working second environment on its own.** The project id is also pinned in two places outside Vite's reach:
+
+| Place | Why it cannot read env vars |
+|---|---|
+| `vercel.json` | Rewrite destinations (`/api/verifyTripPin`, `/api/manageTrip`) are literal function URLs; Vercel does not interpolate env vars there |
+| `.firebaserc` | Target project for Firebase CLI (rules and functions deploys) |
+
+Change only the env vars and you get an app split across two projects: Firestore and Auth on the new one, Cloud Functions still on the old one — so PIN verification and trip creation would hit the wrong database. A real staging setup needs both files handled too.
+
+Unrelated but easy to confuse: `DEFAULT_TRIP_ID` in `src/utils/tripId.ts` is the string `travelapp-87206`, which happens to match the project id. It is a *trip* id, not a project id — changing it breaks existing trip links.
 
 For deployment:
-- `.env.local` is **git-ignored** (`.gitignore` excludes `.env.*`) and is not tracked. It exists locally only; the app does not read it at runtime, since Firebase config lives in `src/firebase.ts`.
+- `.env.local` is **git-ignored** (`*.local` in `.gitignore`) and holds the real values. `.env.example` is tracked as the template.
 - `serviceAccountKey.json` is required for all admin scripts (`create-trip.mjs`, `set-admin.mjs`, `list-trips.mjs`, `add-flights.mjs`). It is git-ignored. **Do not commit this file.**
 - `.npmrc` sets `legacy-peer-deps=true` — required for Vercel installs to resolve.
 
@@ -568,6 +597,7 @@ Three independent systems that must be deployed separately:
 | `recharts` not found (build error) | Old dependency referenced somewhere | Run `npm install` (package.json no longer lists recharts) |
 | iOS date picker issues | Safari's native date/select styling | Fixes in `index.css` (`.safari-date-fix`, `.safari-select-fix`) |
 | Blank screen after deploy | Trip ID mismatch or missing trip config | Ensure `scripts/create-trip.mjs` was run for the tripId in use |
+| "إعداد Firebase ناقص" on startup | `VITE_FIREBASE_*` vars were absent from the **build** environment | Locally: create `.env.local` from `.env.example`. On Vercel: add them in Project Settings, then **redeploy** — Vite inlines them at build time, so adding them alone changes nothing |
 | "يوجد مسافر بنفس الاسم" | Duplicate shortName (first word of name) — caught locally before any write | Use a different name or rename the existing traveler |
 | "الاسم المختصر ... أصبح مستخدماً للتو من جهاز آخر" | The name-claim write lost the race: another device registered that shortName between the local check and the commit. This is the server-side guarantee working | Pick a different name |
 | Restoring from the trash fails | Soft-deleting frees the name, so someone may have taken it while the traveler sat in the trash | Rename the other traveler, or rename this one before restoring |
