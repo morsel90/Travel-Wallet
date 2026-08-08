@@ -3,10 +3,25 @@
 import { useState, useCallback } from 'react'
 import type { Dispatch, SetStateAction, FormEvent } from 'react'
 import type { User } from 'firebase/auth'
-import { setDoc, updateDoc } from 'firebase/firestore'
-import { travelerDoc } from '../firestore'
+import { writeBatch } from 'firebase/firestore'
+import { db } from '../firebase'
+import { travelerDoc, travelerNameDoc } from '../firestore'
 import { haptic } from '../utils/haptics'
+import { deriveShortName, isValidNameKey, newTravelerId } from '../utils/travelerName'
 import type { Traveler, ToastMessage } from '../types'
+
+// 🆕 تفرّد الاسم المختصر مفروض خادميًا عبر مستند حجز معرّفه هو الاسم نفسه
+// (travelerNames/{shortName})، وقاعدة `allow update: if false` عليه — انظر
+// firestore.rules. الفحص المحلي أدناه يبقى لأنه يعطي رداً فورياً في الحالة
+// الشائعة، لكنه لا يرى إضافة جهاز آخر لم تصل بعد؛ الحجز هو الحاجز الفعلي.
+//
+// كل عملية تلمس المسافر واسمه تمرّ في writeBatch واحدة: إما أن ينجحا معاً أو
+// يفشلا معاً، فلا يبقى حجز اسم بلا مسافر ولا مسافر بلا حجز.
+
+// رفض القواعد يصل كخطأ صلاحيات عام. في هذا المسار تحديداً السبب الغالب أن اسماً
+// سُجِّل من جهاز آخر قبل لحظات، فنترجمه لرسالة مفهومة بدل «لا تملك الصلاحية».
+const nameConflictMessage = (shortName: string) =>
+  `الاسم المختصر "${shortName}" أصبح مستخدماً للتو من جهاز آخر — اختر اسماً مختلفاً.`
 
 interface UseTravelerActionsParams {
   travelers: Traveler[]
@@ -42,10 +57,24 @@ export function useTravelerActions({
 
   const handleRestoreTraveler = useCallback((id: number) => {
     if (!user) return
+    const traveler = travelers.find(t => t.id === id)
+    if (!traveler) return
+
     showToast({ text: 'تم استعادة المسافر إلى القائمة النشطة', type: 'success' })
-    updateDoc(travelerDoc(id), { deletedAt: null })
-      .catch(err => handleFirestoreError(err, 'تعذر استعادة المسافر.'))
-  }, [user, showToast, handleFirestoreError])
+
+    // الاستعادة تُعيد حجز الاسم، وقد تفشل إن أخذه شخص آخر بينما كان المسافر في
+    // السلة — وهو أثر مقصود لتحرير الاسم عند الحذف. الرسالة تشرح للمسؤول أن
+    // عليه إعادة تسميته بدل أن يرى فشلاً غامضاً.
+    const batch = writeBatch(db)
+    batch.update(travelerDoc(id), { deletedAt: null })
+    batch.set(travelerNameDoc(traveler.shortName), { travelerId: id })
+    batch.commit().catch(err =>
+      handleFirestoreError(
+        err,
+        `تعذّرت استعادة المسافر — قد يكون الاسم "${traveler.shortName}" مستخدماً الآن لمسافر آخر.`
+      )
+    )
+  }, [user, travelers, showToast, handleFirestoreError])
 
   const startAddTraveler = useCallback(() => setIsAddingTraveler(true), [])
   const cancelAddTraveler = useCallback(() => {
@@ -57,13 +86,22 @@ export function useTravelerActions({
   const handleAddTraveler = useCallback((e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!newTravelerName.trim()) return
-    const shortName = newTravelerName.trim().split(' ')[0]
+    const shortName = deriveShortName(newTravelerName)
+
+    // الاسم يصبح معرّف مستند الحجز، فما لا يصلح معرّفاً يُرفض هنا برسالة واضحة
+    // بدل أن يفشل عند المزامنة أو يُكتب في موضع غير المقصود.
+    if (!isValidNameKey(shortName)) {
+      haptic.error()
+      setSyncError('الاسم غير صالح — تجنّب الشرطة المائلة (/) والأسماء الفارغة.')
+      return
+    }
     if (activeTravelers.some(t => t.shortName === shortName)) {
       haptic.error()
       setSyncError(`يوجد مسافر بنفس الاسم المختصر "${shortName}"، استخدم اسمًا مختلفًا.`)
       return
     }
-    const id = travelers.length ? Math.max(...travelers.map(t => t.id)) + 1 : 1
+
+    const id = newTravelerId()
     const traveler: Traveler = { id, name: newTravelerName.trim(), shortName, deposited: parseFloat(newTravelerDeposit) || 0, deletedAt: null }
 
     setNewTravelerName('')
@@ -75,9 +113,14 @@ export function useTravelerActions({
       setTravelers(prev => [...prev, traveler])
       return
     }
-    setDoc(travelerDoc(id), traveler)
-      .catch(err => handleFirestoreError(err, 'تعذر إضافة المسافر.'))
-  }, [newTravelerName, newTravelerDeposit, travelers, activeTravelers, user, setTravelers, handleFirestoreError, setSyncError])
+
+    // المسافر وحجز اسمه معاً: نجاح الحجز هو ما يمنع التكرار، وفشله يمنع إنشاء
+    // المسافر أصلاً بدل أن نحصل على اسمين متطابقين.
+    const batch = writeBatch(db)
+    batch.set(travelerDoc(id), traveler)
+    batch.set(travelerNameDoc(shortName), { travelerId: id })
+    batch.commit().catch(err => handleFirestoreError(err, nameConflictMessage(shortName)))
+  }, [newTravelerName, newTravelerDeposit, activeTravelers, user, setTravelers, handleFirestoreError, setSyncError])
 
   const confirmDeleteTraveler = useCallback((id: number) => {
     closeModal()
@@ -90,9 +133,16 @@ export function useTravelerActions({
       setTravelers(prev => prev.filter(t => t.id !== id))
       return
     }
-    updateDoc(travelerDoc(id), { deletedAt: Date.now() })
-      .catch(err => handleFirestoreError(err, 'تعذر حذف المسافر.'))
-  }, [user, setTravelers, handleFirestoreError, showToast, handleRestoreTraveler, closeModal])
+
+    const traveler = travelers.find(t => t.id === id)
+
+    // النقل للسلة يُحرِّر الاسم — يطابق سلوك الفحص الذي يقارن مع النشطين فقط،
+    // فلا يبقى اسم شخص محذوف حاجزاً للاسم إلى الأبد.
+    const batch = writeBatch(db)
+    batch.update(travelerDoc(id), { deletedAt: Date.now() })
+    if (traveler) batch.delete(travelerNameDoc(traveler.shortName))
+    batch.commit().catch(err => handleFirestoreError(err, 'تعذر حذف المسافر.'))
+  }, [user, travelers, setTravelers, handleFirestoreError, showToast, handleRestoreTraveler, closeModal])
 
   return {
     isAddingTraveler,
