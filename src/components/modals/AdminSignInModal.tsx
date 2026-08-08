@@ -2,7 +2,7 @@ import type { FormEvent, Dispatch, SetStateAction } from 'react'
 import { X, Loader2 } from '../../icons'
 import { Modal } from '../Modal'
 
-interface AdminSignInModalProps {
+export interface AdminSignInModalProps {
   email: string
   setEmail: Dispatch<SetStateAction<string>>
   password: string

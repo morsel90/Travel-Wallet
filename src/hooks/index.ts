@@ -1,5 +1,7 @@
 // نقطة استيراد موحّدة للـ hooks
 export { useAuth }             from './useAuth'
+export { useAdminAuth }        from './useAdminAuth' // 🆕 حالة/منطق مصادقة المسؤول — استُخرج من App.tsx (يعرضه مكوّن AuthFlow)
+export { useModals }           from './useModals'    // 🆕 حالة المودالات موحّدة في reducer واحد — استُخرجت من App.tsx
 export { useExchangeRates }    from './useExchangeRates'
 export { useExpenses }         from './useExpenses'
 export { useTravelers }        from './useTravelers'
@@ -9,5 +11,7 @@ export { useDebounce }         from './useDebounce' // 🆕 أداة عامة ل
 export { useOnlineStatus }     from './useOnlineStatus' // 🆕 حالة اتصال الشبكة (online/offline) — لبانر التنبيه العام
 export { useCountdown }        from './useCountdown' // 🆕 عدّ تنازلي عام بالثواني (مثال: مهلة إعادة إرسال رابط استرداد كلمة المرور)
 export { useExpenseActions }   from './useExpenseActions' // 🆕 منطق نموذج/عمليات المصروف كاملاً — استُخرج من App.tsx لتقليل حجمه
+export { useTravelerActions }  from './useTravelerActions' // 🆕 منطق نموذج/عمليات المسافر كاملاً — استُخرج من App.tsx
+export { useDepositActions }   from './useDepositActions'  // 🆕 منطق نموذج/عمليات الإيداع كاملاً — استُخرج من App.tsx
 export { useTripConfig }       from './useTripConfig' // 🆕 إعدادات الرحلة النشطة (اسمها/تفاصيل البنك) من Firestore — لدعم رحلات متعددة
 export { useHeaderCollapse }   from './useHeaderCollapse' // 🆕 تتبّع اتجاه التمرير لتقليص/توسيع الهيدر (Sticky + Collapsible)

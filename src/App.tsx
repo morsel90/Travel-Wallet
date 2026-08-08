@@ -1,20 +1,13 @@
-import { useState, useMemo, useRef, lazy, Suspense, FormEvent, useCallback } from 'react'
-import { signInAnonymously, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth'
-import { setDoc, updateDoc, doc, writeBatch } from 'firebase/firestore' 
-import { auth, db }                                             from './firebase'
-import { travelerDoc, depositLogsCol }         from './firestore'
+import { useState, useMemo, useRef, lazy, Suspense, useCallback } from 'react'
 import { exportTripToExcel }                   from './utils/reports'
 import { calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from './utils/calculations'
 import { Virtuoso }                            from 'react-virtuoso'
 import { AnimatePresence }                     from 'framer-motion'
-import type {
-  Traveler,
-  DepositMode, ToastMessage, SortOrder
-} from './types'
+import type { ToastMessage, SortOrder } from './types'
 
 import {
-  useAuth, useExchangeRates, useExpenses, useTravelers, useBalances,
-  useOnlineStatus, useCountdown, useExpenseActions, useTripConfig,
+  useAuth, useAdminAuth, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
+  useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
 } from './hooks'
 import { useFilteredExpenses } from './hooks/useFilteredExpenses'
 
@@ -28,24 +21,20 @@ import { ConfirmModal }                  from './components/Modal'
 import { TravelerCard, AddTravelerForm } from './components/TravelerSection'
 import { ExpenseForm, ExpenseListItem }  from './components/ExpenseSection'
 import { BankDetailsCard }               from './components/Misc'
+import { NextSegmentWidget }             from './components/NextSegmentWidget'
 import UpdatePrompt                      from './components/UpdatePrompt'
 import OnboardingBanner                  from './components/OnboardingBanner'
 import TripGate                          from './components/TripGate'
+import AuthFlow                          from './components/AuthFlow'
+import ModalManager                      from './components/ModalManager'
 import PullToRefresh                     from './components/PullToRefresh'
-import SmartInputBar                       from './components/SmartInputBar'
-import EmptyState                         from './components/EmptyState'
-import ModalFallback                     from './components/modals/ModalFallback'
+import SmartInputBar                     from './components/SmartInputBar'
+import EmptyState                        from './components/EmptyState'
 import { TravelerCardSkeleton, ExpenseListItemSkeleton, ChartsSectionSkeleton } from './components/Skeleton'
-import { haptic }                         from './utils/haptics'
-// ✅ تم التصحيح: إضافة Plus إلى سطر استيراد الأيقونات هنا
+import { haptic }                        from './utils/haptics'
 import { Users, Receipt, AlertTriangle, Download, Search, WifiOff, Plus, BarChart3 } from './icons'
 
-const AdminSignInModal   = lazy(() => import('./components/modals/AdminSignInModal'))
-const DepositModal       = lazy(() => import('./components/modals/DepositModal'))
-const TrashBinModal      = lazy(() => import('./components/modals/TrashBinModal'))
-const DepositHistoryModal = lazy(() => import('./components/modals/DepositHistoryModal'))
 const ChartsSection       = lazy(() => import('./components/charts/ChartsSection'))
-const ReportsView         = lazy(() => import('./components/reports/ReportsView'))
 
 export default function App() {
   const [isSyncing, setIsSyncing] = useState(false)
@@ -58,7 +47,7 @@ export default function App() {
   const { ratesUpdatedAt, CURRENCIES } = useExchangeRates()
   const { expenses,  setExpenses,  expensesLoaded,  refreshExpenses }  = useExpenses(hasAccess ? user : null, { setIsSyncing, setSyncError })
   const { travelers, setTravelers, travelersLoaded, refreshTravelers } = useTravelers(hasAccess ? user : null, setIsSyncing)
-  const { bankDetails } = useTripConfig(hasAccess ? user : null)
+  const { bankDetails, itinerary } = useTripConfig(hasAccess ? user : null)
 
   const isInitialLoading = !expensesLoaded || !travelersLoaded
 
@@ -83,27 +72,12 @@ export default function App() {
   const [toast,      setToast]      = useState<ToastMessage | null>(null)
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
-  const [showAdminSignIn, setShowAdminSignIn] = useState(false)
-  const [showTrashBin,    setShowTrashBin]    = useState(false)
-  const [showReports,     setShowReports]     = useState(false)
-  const [adminEmail,      setAdminEmail]      = useState('')
-  const [adminPassword,   setAdminPassword]   = useState('')
-  const [authError,       setAuthError]       = useState<string | null>(null)
+  const {
+    modal,
+    openReports, openTrashBin, openDeleteTraveler, openDeposit, openDepositHistory, closeModal,
+  } = useModals()
 
-  const [isSendingResetEmail, setIsSendingResetEmail] = useState(false)
-  const [resetCooldownUntil,  setResetCooldownUntil]  = useState<number | null>(null)
-  const resetCooldownSeconds = useCountdown(resetCooldownUntil)
-
-  const [isAddingTraveler,   setIsAddingTraveler]   = useState(false)
-  const [newTravelerName,    setNewTravelerName]    = useState('')
-  const [newTravelerDeposit, setNewTravelerDeposit] = useState('')
-  const [travelerToDelete,   setTravelerToDelete]   = useState<Traveler | null>(null)
-
-  const [depositModalFor, setDepositModalFor] = useState<Traveler | null>(null)
-  const [depositAmount,   setDepositAmount]   = useState('')
-  const [depositMode,     setDepositMode]     = useState<DepositMode>('add')
-  const [depositReason,   setDepositReason]   = useState('') 
-  const [depositHistoryFor, setDepositHistoryFor] = useState<Traveler | null>(null) 
+  const depositTraveler = modal.type === 'deposit' ? modal.traveler : null
 
   const showToast = useCallback((msg: ToastMessage, durationMs = 2500) => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current)
@@ -112,6 +86,8 @@ export default function App() {
       toastTimeoutRef.current = setTimeout(() => setToast(null), durationMs)
     }
   }, [])
+
+  const { showAdminSignIn, openAdminSignIn, handleAdminSignOut, adminModalProps } = useAdminAuth({ showToast })
 
   const handleFirestoreError = useCallback((err: unknown, fallback: string) => {
     const msg = err instanceof Error ? err.message : ''
@@ -135,141 +111,24 @@ export default function App() {
     isFirstExpense: activeExpenses.length === 0,
   })
 
-  const handleRestoreTraveler = useCallback((id: number) => {
-    if (!user) return
-    showToast({ text: 'تم استعادة المسافر إلى القائمة النشطة', type: 'success' })
-    updateDoc(travelerDoc(id), { deletedAt: null })
-      .catch(err => handleFirestoreError(err, 'تعذر استعادة المسافر.'))
-  }, [user, showToast, handleFirestoreError])
+  const {
+    isAddingTraveler,
+    newTravelerName, setNewTravelerName,
+    newTravelerDeposit, setNewTravelerDeposit,
+    startAddTraveler, cancelAddTraveler,
+    handleAddTraveler, handleRestoreTraveler, confirmDeleteTraveler,
+  } = useTravelerActions({
+    travelers, activeTravelers, user, setTravelers, showToast, handleFirestoreError, setSyncError, closeModal,
+  })
 
-  const requestDeleteTraveler = useCallback((traveler: Traveler) => setTravelerToDelete(traveler), [])
-  const openDeposit = useCallback((traveler: Traveler) => setDepositModalFor(traveler), [])
-  const openDepositHistory = useCallback((traveler: Traveler) => setDepositHistoryFor(traveler), []) 
-  
-  const startAddTraveler = useCallback(() => setIsAddingTraveler(true), [])
-  const cancelAddTraveler = useCallback(() => {
-    setIsAddingTraveler(false)
-    setNewTravelerName('')
-    setNewTravelerDeposit('')
-  }, [])
-  const handleAddTraveler = useCallback((e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (!newTravelerName.trim()) return
-    const shortName = newTravelerName.trim().split(' ')[0]
-    if (activeTravelers.some(t => t.shortName === shortName)) {
-      haptic.error()
-      setSyncError(`يوجد مسافر بنفس الاسم المختصر "${shortName}"، استخدم اسمًا مختلفًا.`)
-      return
-    }
-    const id = travelers.length ? Math.max(...travelers.map(t => t.id)) + 1 : 1
-    const traveler: Traveler = { id, name: newTravelerName.trim(), shortName, deposited: parseFloat(newTravelerDeposit) || 0, deletedAt: null }
-
-    setNewTravelerName('')
-    setNewTravelerDeposit('')
-    setIsAddingTraveler(false)
-    haptic.success()
-
-    if (!user) {
-      setTravelers(prev => [...prev, traveler])
-      return
-    }
-    setDoc(travelerDoc(id), traveler)
-      .catch(err => handleFirestoreError(err, 'تعذر إضافة المسافر.'))
-  }, [newTravelerName, newTravelerDeposit, travelers, activeTravelers, user, setTravelers, handleFirestoreError])
-
-  const confirmDeleteTraveler = useCallback((id: number) => {
-    setTravelerToDelete(null)
-    haptic.medium()
-    showToast(
-      { text: 'تم نقل المسافر إلى سلة المهملات', type: 'success', onUndo: () => handleRestoreTraveler(id) },
-      5000
-    )
-    if (!user) {
-      setTravelers(prev => prev.filter(t => t.id !== id))
-      return
-    }
-    updateDoc(travelerDoc(id), { deletedAt: Date.now() })
-      .catch(err => handleFirestoreError(err, 'تعذر حذف المسافر.'))
-  }, [user, setTravelers, handleFirestoreError, showToast, handleRestoreTraveler])
-
-  const handleAddDeposit = useCallback((e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (!depositModalFor) return
-    const amt = parseFloat(depositAmount)
-    if (isNaN(amt) || (depositMode !== 'set' && amt <= 0) || (depositMode === 'set' && amt < 0)) return
-
-    const previousDeposited = depositModalFor.deposited
-    const travelerId = depositModalFor.id
-    const newAmount =
-      depositMode === 'set'      ? amt :
-      depositMode === 'subtract' ? Math.max(0, previousDeposited - amt) :
-                                   previousDeposited + amt
-
-    setDepositModalFor(null); setDepositAmount(''); setDepositMode('add'); setDepositReason('')
-    showToast({ text: 'تم تحديث الرصيد', type: 'success' })
-    haptic.success()
-
-    if (!user) {
-      setTravelers(prev => prev.map(t => t.id === travelerId ? { ...t, deposited: newAmount } : t))
-      return
-    }
-
-    const batch = writeBatch(db)
-    batch.update(travelerDoc(travelerId), { deposited: newAmount })
-    batch.set(doc(depositLogsCol(travelerId)), {
-      travelerId,
-      previousDeposited,
-      newDeposited:   newAmount,
-      delta:          newAmount - previousDeposited,
-      mode:           depositMode,
-      reason:         depositReason.trim() || null,
-      changedByEmail: user.email ?? '',
-      changedByUid:   user.uid,
-      createdAt:      Date.now(),
-    })
-    batch.commit().catch(err => handleFirestoreError(err, 'تعذر تحديث الرصيد.'))
-  }, [depositAmount, depositMode, depositModalFor, depositReason, user, setTravelers, showToast, handleFirestoreError])
-
-  const handleAdminSignIn = useCallback(async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault(); setAuthError(null)
-    try {
-      await signInWithEmailAndPassword(auth, adminEmail, adminPassword)
-      setShowAdminSignIn(false); setAdminEmail(''); setAdminPassword('')
-    } catch (err) {
-      const code = (err as { code?: string })?.code ?? ''
-      const message =
-        code === 'auth/invalid-email'         ? 'صيغة البريد الإلكتروني غير صحيحة.' :
-        code === 'auth/user-disabled'          ? 'تم تعطيل هذا الحساب. تواصل مع الدعم الفني.' :
-        code === 'auth/too-many-requests'      ? 'محاولات فاشلة كثيرة متتالية، تم إيقاف الدخول مؤقتًا. حاول بعد قليل.' :
-        code === 'auth/network-request-failed' ? 'تعذر الاتصال بالخادم. تحقق من اتصال الإنترنت وحاول مجددًا.' :
-        'البريد الإلكتروني أو كلمة المرور غير صحيحة.'
-      setAuthError(message)
-      setAdminPassword('')
-    }
-  }, [adminEmail, adminPassword])
-
-  const handleAdminSignOut = useCallback(async () => {
-    try { await signOut(auth) } catch (err) { console.error(err) }
-    finally { signInAnonymously(auth).catch(console.error) }
-  }, [])
-
-  const handleForgotPassword = useCallback(async () => {
-    if (isSendingResetEmail || resetCooldownSeconds > 0) return
-    if (!adminEmail.trim()) {
-      setAuthError('أدخل بريدك الإلكتروني بالحقل أعلاه أولاً ثم اضغط "نسيت كلمة المرور؟".')
-      return
-    }
-    setIsSendingResetEmail(true)
-    try {
-      await sendPasswordResetEmail(auth, adminEmail.trim())
-    } catch {
-    } finally {
-      setAuthError(null)
-      setIsSendingResetEmail(false)
-      setResetCooldownUntil(Date.now() + 60_000)
-      showToast({ text: 'إذا كان البريد صحيحًا ومسجّلاً، فسيصلك رابط إعادة تعيين كلمة المرور خلال دقائق.', type: 'success' })
-    }
-  }, [adminEmail, showToast, isSendingResetEmail, resetCooldownSeconds])
+  const {
+    depositAmount, setDepositAmount,
+    depositMode, setDepositMode,
+    depositReason, setDepositReason,
+    handleAddDeposit, closeDeposit,
+  } = useDepositActions({
+    depositTraveler, user, setTravelers, showToast, handleFirestoreError, closeModal,
+  })
 
   const hasUnsavedData = useCallback(() => {
     const hasExpenseData = isAddingExpense && (
@@ -282,9 +141,9 @@ export default function App() {
       newTravelerName.trim() !== '' ||
       newTravelerDeposit !== ''
     )
-    const hasDepositData = depositModalFor !== null && depositAmount !== ''
+    const hasDepositData = depositTraveler !== null && depositAmount !== ''
     return hasExpenseData || hasTravelerData || hasDepositData
-  }, [isAddingExpense, newExpense, isAddingTraveler, newTravelerName, newTravelerDeposit, depositModalFor, depositAmount])
+  }, [isAddingExpense, newExpense, isAddingTraveler, newTravelerName, newTravelerDeposit, depositTraveler, depositAmount])
 
   const dataContextValue = useMemo(() => ({
     travelers: activeTravelers,
@@ -316,14 +175,14 @@ export default function App() {
     setNewTravelerDeposit,
     submitTraveler: handleAddTraveler,
     openDeposit,
-    requestDeleteTraveler,
-    openDepositHistory, 
+    requestDeleteTraveler: openDeleteTraveler,
+    openDepositHistory,
   }), [
-    newExpense, isAddingExpense, editingExpense, isAddingTraveler,
-    newTravelerName, newTravelerDeposit,
+    newExpense, setNewExpense, isAddingExpense, editingExpense, isAddingTraveler,
+    newTravelerName, setNewTravelerName, newTravelerDeposit, setNewTravelerDeposit,
     openExpenseForm, cancelExpenseForm, handleAddExpense, toggleParticipant, toggleAllParticipants,
     startEditExpense, requestDeleteExpense, startAddTraveler, cancelAddTraveler, handleAddTraveler,
-    openDeposit, requestDeleteTraveler, openDepositHistory
+    openDeposit, openDeleteTraveler, openDepositHistory
   ])
 
   if (!isAdmin && (pinCheckLoading || needsTripPin)) {
@@ -353,7 +212,7 @@ export default function App() {
           <div className="min-h-screen pb-20 md:pb-8">
             <Header
               isSyncing={isSyncing} isAdmin={isAdmin}
-              onToggleAdmin={() => isAdmin ? handleAdminSignOut() : setShowAdminSignIn(true)}
+              onToggleAdmin={() => isAdmin ? handleAdminSignOut() : openAdminSignIn()}
               stats={isInitialLoading ? null : { totalDeposited, totalSpent, totalRemaining }}
               isOnline={isOnline}
               onStatClick={(stat) => {
@@ -371,6 +230,10 @@ export default function App() {
 
               <OnboardingBanner />
 
+              {!isInitialLoading && (
+                <NextSegmentWidget />
+              )}
+
               {!isOnline && (
                 <div className="bg-amber-100 text-amber-800 p-4 rounded-xl text-sm border border-amber-200 shadow-sm flex items-start gap-2">
                   <WifiOff className="w-4 h-4 mt-0.5 shrink-0" />
@@ -385,7 +248,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* قسم الأرصدة: زر الإضافة مدمج بالداخل ككارت تزامني منقط بأسفل القائمة */}
               <section id="travelers-section" className="scroll-mt-24">
                 <div className="flex justify-between items-center mb-4 px-1">
                   <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -416,7 +278,6 @@ export default function App() {
                       ))
                   }
                   
-                  {/* البطاقة المكملة المنقطة بأسفل شبكة كروت المسافرين مع الإصلاح التام للـ Plus */}
                   {isAdmin && !isAddingTraveler && !isInitialLoading && (
                     <button
                       type="button"
@@ -432,7 +293,6 @@ export default function App() {
                 </div>
                 )}
 
-                {/* ظهور نموذج استقبال البيانات المطور تحت الكروت مباشرة عند فتح ميزة الإضافة */}
                 {isAddingTraveler && (
                   <AddTravelerForm
                     newTravelerName={newTravelerName}
@@ -456,7 +316,6 @@ export default function App() {
                   </Suspense>
                 )}
 
-                {/* حالة فارغة للإحصائيات: بعد إضافة المسافرين وقبل تسجيل أي مصروف */}
                 {!isInitialLoading && activeTravelers.length > 0 && activeExpenses.length === 0 && (
                   <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                     <EmptyState
@@ -484,14 +343,14 @@ export default function App() {
                       </h2>
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => { haptic.light(); setShowReports(true) }}
+                          onClick={() => { haptic.light(); openReports() }}
                           className="flex items-center gap-1.5 text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-sm"
                         >
                           <BarChart3 className="w-3.5 h-3.5" /> التقارير
                         </button>
                         {isAdmin && (
                           <button
-                            onClick={() => setShowTrashBin(true)}
+                            onClick={openTrashBin}
                             className="flex items-center gap-1.5 text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm"
                           >
                             <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -590,20 +449,32 @@ export default function App() {
                  onExpand={openExpenseForm} 
              />
 
-            <AnimatePresence>
-              {showReports && (
-                <Suspense key="reports" fallback={<ModalFallback />}>
-                  <ReportsView
-                    travelers={activeTravelers}
-                    expenses={activeExpenses}
-                    balances={balances}
-                    settlements={settlements}
-                    categoryTotals={categoryTotals}
-                    onClose={() => setShowReports(false)}
-                  />
-                </Suspense>
-              )}
-            </AnimatePresence>
+            <ModalManager
+              modal={modal}
+              closeModal={closeModal}
+              closeDeposit={closeDeposit}
+              confirmDeleteTraveler={confirmDeleteTraveler}
+              reports={{
+                travelers: activeTravelers,
+                expenses: activeExpenses,
+                balances,
+                settlements,
+                categoryTotals,
+                itinerary,
+              }}
+              deposit={{
+                amount: depositAmount, setAmount: setDepositAmount,
+                mode: depositMode, setMode: setDepositMode,
+                reason: depositReason, setReason: setDepositReason,
+                onSubmit: handleAddDeposit,
+              }}
+              trash={{
+                deletedExpenses,
+                deletedTravelers,
+                onRestoreExpense: handleRestoreExpense,
+                onRestoreTraveler: handleRestoreTraveler,
+              }}
+            />
 
             <AnimatePresence>
               {expenseToDelete !== null && (
@@ -615,69 +486,7 @@ export default function App() {
                 />
               )}
             </AnimatePresence>
-            <AnimatePresence>
-              {travelerToDelete !== null && (
-                <ConfirmModal
-                  key="confirm-delete-traveler"
-                  title={`حذف ${travelerToDelete.name}؟`}
-                  message="سيتم نقل هذا المسافر إلى سلة المحذوفات لحماية سجل مصاريفه وحساباته السابقة."
-                  onConfirm={() => confirmDeleteTraveler(travelerToDelete.id)}
-                  onCancel={() => setTravelerToDelete(null)}
-                />
-              )}
-            </AnimatePresence>
-            <AnimatePresence>
-              {showAdminSignIn && (
-                <Suspense key="admin-sign-in" fallback={<ModalFallback />}>
-                  <AdminSignInModal
-                    email={adminEmail} setEmail={setAdminEmail}
-                    password={adminPassword} setPassword={setAdminPassword}
-                    authError={authError} onSubmit={handleAdminSignIn}
-                    onClose={() => { setShowAdminSignIn(false); setAuthError(null) }}
-                    onForgotPassword={handleForgotPassword}
-                    isSendingResetEmail={isSendingResetEmail}
-                    resetCooldownSeconds={resetCooldownSeconds}
-                  />
-                </Suspense>
-              )}
-            </AnimatePresence>
-            <AnimatePresence>
-              {depositModalFor && (
-                <Suspense key="deposit" fallback={<ModalFallback />}>
-                  <DepositModal
-                    traveler={depositModalFor} amount={depositAmount} setAmount={setDepositAmount}
-                    mode={depositMode} setMode={setDepositMode}
-                    reason={depositReason} setReason={setDepositReason}
-                    onSubmit={handleAddDeposit}
-                    onClose={() => { setDepositModalFor(null); setDepositAmount(''); setDepositMode('add'); setDepositReason('') }}
-                  />
-                </Suspense>
-              )}
-            </AnimatePresence>
-            <AnimatePresence>
-              {depositHistoryFor && (
-                <Suspense key="deposit-history" fallback={<ModalFallback />}>
-                  <DepositHistoryModal
-                    travelerId={depositHistoryFor.id}
-                    travelerName={depositHistoryFor.name}
-                    onClose={() => setDepositHistoryFor(null)}
-                  />
-                </Suspense>
-              )}
-            </AnimatePresence>
-            <AnimatePresence>
-              {showTrashBin && (
-                <Suspense key="trash-bin" fallback={<ModalFallback />}>
-                  <TrashBinModal
-                    deletedExpenses={deletedExpenses}
-                    deletedTravelers={deletedTravelers}
-                    onRestoreExpense={handleRestoreExpense}
-                    onRestoreTraveler={handleRestoreTraveler}
-                    onClose={() => setShowTrashBin(false)}
-                  />
-                </Suspense>
-              )}
-            </AnimatePresence>
+            <AuthFlow open={showAdminSignIn} modalProps={adminModalProps} />
 
             {toast && <Toast message={toast} />}
             <UpdatePrompt hasUnsavedData={hasUnsavedData} />
