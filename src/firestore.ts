@@ -12,6 +12,13 @@ export const travelersCol = () => collection(db, 'artifacts', TRIP_ID, 'public',
 export const expenseDoc   = (id: string) => doc(db, 'artifacts', TRIP_ID, 'public', 'data', 'expenses',  id)
 export const travelerDoc  = (id: number) => doc(db, 'artifacts', TRIP_ID, 'public', 'data', 'travelers', String(id))
 
+// 🆕 حجز الاسم المختصر — معرّف المستند *هو* الاسم نفسه، وهذا ما يفرض التفرّد:
+// firestore.rules تمنع update على هذه المجموعة منعاً باتاً، فأي كتابة ثانية
+// على اسم قائم تُصنَّف update وتُرفض. يُكتب دائماً مع مستند المسافر في
+// writeBatch واحدة — انظر hooks/useTravelerActions.ts.
+export const travelerNameDoc = (shortName: string) =>
+  doc(db, 'artifacts', TRIP_ID, 'public', 'data', 'travelerNames', shortName)
+
 // 🆕 سجل تدقيق تعديلات الرصيد — subcollection تحت كل مسافر (مرئي للمسؤول فقط)
 export const depositLogsCol = (travelerId: number) =>
   collection(db, 'artifacts', TRIP_ID, 'public', 'data', 'travelers', String(travelerId), 'depositLogs')

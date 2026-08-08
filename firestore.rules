@@ -104,6 +104,13 @@ service cloud.firestore {
         && (!('deletedAt' in d) || d.deletedAt == null || d.deletedAt is number);
     }
 
+    // 🆕 حجز الاسم المختصر: المحتوى مجرّد إشارة لصاحب الاسم (لتشخيص أي تعارض
+    // ولتنظيف الحجوزات اليتيمة)، والقيمة الفعلية في *معرّف المستند* لا في حقوله.
+    function isValidNameClaim(d) {
+      return d.keys().hasOnly(['travelerId'])
+        && d.travelerId is int;
+    }
+
     // التحقّق من بنية سجل تدقيق تعديل الرصيد — غير قابل للتعديل أو الحذف
     // (immutable). changedByUid يجب أن يطابق مُنشئ الطلب الفعلي لمنع انتحال هوية.
     function isValidDepositLog(d) {
@@ -214,6 +221,30 @@ service cloud.firestore {
           allow create:        if isAdmin() && isValidDepositLog(request.resource.data);
           allow update, delete: if false;
         }
+      }
+
+      // 🆕 حجز الاسم المختصر — تفرّد حقيقي على مستوى الخادم.
+      //
+      // الفكرة: معرّف المستند *هو* الاسم المختصر نفسه، فيستحيل وجود اثنين به.
+      // ما يجعل هذا ملزماً فعلاً هو `allow update: if false` أدناه: Firestore
+      // يصنّف أي كتابة على مستند *قائم* بأنها update لا create، فلو حاول
+      // مسؤولان تسجيل نفس الاسم في نفس اللحظة، تنجح واحدة فقط (كتابات المستند
+      // الواحد مُسلسَلة)، والثانية تُقيَّم بعدها على مستند صار موجوداً فتُرفض.
+      //
+      // هذا يحلّ ما لم تستطع الواجهة حلّه: الفحص في useTravelerActions.ts يقارن
+      // مع النسخة المحلية من القائمة، وهي لا ترى إضافة جهاز آخر لم تصل بعد.
+      //
+      // ⚠️ يُكتب مع مستند المسافر في writeBatch واحدة — إما أن ينجحا معاً أو
+      // يفشلا معاً، فلا يبقى حجز اسم بلا مسافر ولا مسافر بلا حجز.
+      //
+      // الحذف مسموح للمسؤول لأن نقل المسافر لسلة المهملات يُحرِّر اسمه (نفس
+      // سلوك الواجهة الحالي: الفحص يقارن مع النشطين فقط). الاستعادة تعيد إنشاء
+      // الحجز، وقد تفشل إن كان شخص آخر أخذ الاسم — وهذا مقصود ومعروض للمستخدم.
+      match /travelerNames/{shortName} {
+        allow read:   if isMember(appId) || isAdmin();
+        allow create: if (isMember(appId) || isAdmin()) && isValidNameClaim(request.resource.data);
+        allow update: if false; // 🚫 هذا السطر تحديداً هو ما يفرض التفرّد
+        allow delete: if isAdmin();
       }
 
       // مستند تتبّع حد المعدّل (Rate Limiting) لكل مستخدم في هذه الرحلة — لا
