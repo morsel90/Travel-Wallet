@@ -51,4 +51,15 @@ jobs:
           node-version: '18'
           cache: 'npm'
       - run: npm ci
+      # إعداد Firebase مطلوب وقت البناء (Vite يستبدل VITE_* حينها لا وقت
+      # التشغيل)، وبدونه يفشل البناء برسالة "إعداد Firebase ناقص". القيم هنا
+      # وهمية عمداً: البناء لا يتصل بـ Firebase إطلاقاً، وهذه الوظيفة تتحقق من
+      # أن الحزمة تُبنى فقط. القيم الحقيقية في لوحة Vercel.
       - run: npm run build
+        env:
+          VITE_FIREBASE_API_KEY: ci-placeholder
+          VITE_FIREBASE_AUTH_DOMAIN: ci-placeholder.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: ci-placeholder
+          VITE_FIREBASE_STORAGE_BUCKET: ci-placeholder.firebasestorage.app
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000'
+          VITE_FIREBASE_APP_ID: '1:000000000000:web:ciplaceholder'
