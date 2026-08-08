@@ -1,253 +1,510 @@
-# CLAUDE.md — Project History & Living Documentation
+# CLAUDE.md — Project Documentation
 
 <div dir="rtl" style="text-align: right">
 
-## آخر تحديث: 2026-07-19 01:59 UTC
+## آخر تحديث: 2026-08-08
 
 ---
 
-## لمحة عامة عن المشروع (Project Overview)
+## Project Overview
 
-تطبيق ويب (PWA) بتقنية SPA لتتبّع مصاريف الرحلات الجماعية وتقسيمها بين المسافرين.
-يدعم رحلات متعددة (كل رحلة مستقلة ببياناتها ورمز PIN خاص بها)، ومزامنة فورية
-عبر Firebase، وتخزين محلي يعمل دون اتصال، وواجهة عربية كاملة (RTL)، وعملات
-متعددة بأسعار صرف حيّة. مكتوب بـ React 18 + TypeScript 5.3 + Vite 5.1.
+**Travel Wallet (لوحة مصاريف السفر)** is a Progressive Web App (PWA) for tracking and splitting group travel expenses. Built as a React SPA with full Arabic RTL support, multi-currency exchange rates, offline-first Firestore persistence, and real-time sync across devices.
 
----
+**Target users:** Group travelers who need to track shared expenses, split costs, settle debts, and export reports — all in one place, without a server backend.
 
-## سجل القرارات النشطة (Active Decisions & Rationale)
-
-1. **مصادقة المسؤول عبر Custom Claims** (v26): استُبدل فحص `ADMIN_EMAILS` الثابت
-   في الكود بقاعدة Firestore بـ `request.auth.token.admin == true`. المسؤول يُمنح
-   صلاحية `admin: true` عبر Admin SDK (`scripts/set-admin.mjs`) بدل حرق البريد
-   الإلكتروني في `constants.ts` — أكثر أماناً وأسهل إدارة لصلاحيات متعددة.
-
-2. **إحصائيات HTML/CSS خالص** (v25+): استُبدلت Recharts بالكامل بـ HTML/CSS يدوي
-   لثلاثة أسباب: (1) تقليل حجم الحزمة (~50KB)، (2) عمل دون اتصال بدون انتظار تحميل
-   مكتبة خارجية، (3) تحكم كامل بالتنسيق العربي والـ RTL.
-
-3. **شريط إدخال ذكي ثابت بدل FAB** (v26): استُبدل زر FAB العائم (`QuickAddFab`)
-   بشريط إدخال سفلي ثابت (`SmartInputBar`) يتضمّن حقل مبلغ + وصف + زر توسيع للنموذج
-   الكامل — تجربة مستخدم أسرع للطريقة الأكثر شيوعاً (إضافة مصروف سريع).
-
-4. **تصدير Excel بدل CSV** (v26): استُبدل تصدير CSV بتصدير Excel حقيقي (XLSX)
-   عبر مكتبة مضمّنة بالكامل (pure JS OOXML) بلا تبعيات خارجية — يدعم العربية،
-   التنسيق، أوراق متعددة، والطباعة.
-
-5. **Rate Limiting للبوابة** (v26): أضيفت حماية من تخمين رمز الرحلة عبر
-   `rateLimits/verify_*` في Cloud Function (5 محاولات/15 دقيقة للمجهول، 20 للمسجّل)،
-   مع عدّ تنازلي يُعرض في الواجهة.
-
-6. **ردود فعل لمسية (Haptic Feedback)** (v26): أضيفت ردود فعل لمسية (اهتزاز) عبر
-   Web Vibration API مع ومضات بصرية بديلة لأجهزة iOS — تُستخدم في كل التفاعلات
-   الهامة (إضافة/حذف/نسخ/أخطاء).
-
-7. **كشف حساب فردي + طباعة PDF** (v26): أضيفت نافذة ملف مسافر متكاملة تعرض كشف
-   حساب تفصيلي مع إمكانية التصدير إلى Excel والطباعة عبر Portal منفصل.
-
-8. **العملات الذكية** (v26): قائمة العملات في نموذج المصروف تُرتّب بذكاء —
-   المثبّتة (SAR/USD/EUR…) أولاً، ثم الأكثر استخداماً في الرحلة، ثم البقية أبجدياً.
+**Core features:**
+- Multi-trip support (each trip has its own data + PIN)
+- Anonymous or admin auth via Firebase Auth + Custom Claims
+- Real-time Firestore listeners with optimistic updates
+- Offline-first: `persistentLocalCache` + `persistentMultipleTabManager`
+- Smart input bar for quick expense entry (bottom-fixed)
+- 160+ currencies with live exchange rates (open.er-api.com)
+- Category-based spending breakdown (HTML/CSS charts — no Recharts)
+- Per-traveler account statements + PDF printing via Portal
+- Full Excel export (pure-JS OOXML, no external deps)
+- Haptic feedback (Web Vibration API + visual flash for iOS)
+- Rate limiting on PIN verification and expense creation
+- Trip itinerary (flights/car/train/bus) stored per-trip + "next segment" widget
 
 ---
 
-## سجل التغييرات الأخيرة (Recent Changes Log)
+## Tech Stack
 
-### 2026-07-19 01:59 — تحديث شامل v26 (إعادة هيكلة + ميزات جديدة)
+| Layer | Technology | Version |
+|---|---|---|
+| Framework | React | ^18.2.0 |
+| Language | TypeScript | ^5.3.3 |
+| Bundler | Vite | ^5.1.4 |
+| State | React Context (DataContext + UIContext) | — |
+| Styling | Tailwind CSS | ^3.4.1 |
+| Icons | Lucide React | ^0.383.0 |
+| Animations | Framer Motion | ^11.2.10 |
+| Virtual List | React Virtuoso | ^4.18.10 |
+| Backend | Firebase Auth + Firestore | ^10.8.1 |
+| Offline | Firestore `persistentLocalCache` | — |
+| Cloud Functions | Firebase v2 onCall (Node 20) | — |
+| PWA | vite-plugin-pwa (generateSW) | ^0.19.8 |
+| Testing | Vitest + React Testing Library | ^1.6.0 |
+| Linting | ESLint + Prettier | ^8.57.0 |
+| Deployment (frontend) | Vercel SPA | — |
+| Deployment (backend) | Firebase CLI | — |
 
-- **الملفات المعدَّلة**: 28 ملفاً (15 تعديلاً + 13 إضافة + 4 حذف)
-- **النوع**: Feature + Refactor + Security
-- **الوصف**: تحديث شامل يتضمن إعادة هيكلة كبيرة — إزالة Recharts، إضافة نظام
-  شريط الإدخال الذكي، نظام التقارير والطباعة، ردود الفعل اللمسية، حماية البوابة
-  من التخمين، تصدير Excel، ملف المسافر الفردي، وتوسعة العملات.
-
-#### ⚙️ تعديلات البنية التحتية (Infrastructure)
-
-| الملف | التغيير |
-|---|---|
-| `package.json` | إزالة `recharts`، بقاء `react-virtuoso` |
-| `.gitignore` | إزالة `*.env*` — السماح بتتبع `.env.local` |
-| `firestore.rules` | استبدال `ADMIN_EMAILS` بـ Custom Claim `admin: true`؛ إضافة قاعدة حظر `rateLimits/*` |
-| `functions/index.js` | إضافة Rate Limiting (5/20 محاولة لكل 15 دقيقة)، تحسين نوع المصادقة، استخدام `FieldValue.increment` |
-
-#### 🔐 المصادقة والأمان (Auth & Security)
-
-| الملف | التغيير |
-|---|---|
-| `src/hooks/useAuth.ts` | استبدال `ADMIN_EMAILS` بـ `getIdTokenResult().claims.admin`؛ إضافة `rateLimitSeconds` مع عدّ تنازلي؛ تعديل `callVerify` لترجع `{ success, retryAfter, message }` |
-| `src/components/TripGate.tsx` | إضافة خاصية `rateLimitSeconds` مع عرض عدّ تنازلي |
-| `src/components/modals/AdminSignInModal.tsx` | تغيير زر "تفعيل" → "دخول" |
-
-#### 🆕 ملفات جديدة (New Files)
-
-| المسار | الوصف |
-|---|---|
-| `src/components/SmartInputBar.tsx` | شريط إدخال ثابت سفلي (مبلغ + وصف + توسيع) بدل FAB |
-| `src/components/EmptyState.tsx` | مكوّن حالة فارغة عامة قابلة لإعادة الاستخدام |
-| `src/components/modals/TravelerProfileModal.tsx` | نافذة ملف مسافر (كشف حساب، طباعة، تصدير) |
-| `src/components/reports/ReportsView.tsx` | صفحة تقارير شاملة (ملخص الرحلة + يومي) |
-| `src/components/reports/PrintDocs.tsx` | مكوّنات طباعة PDF (تقرير رحلة + كشف حساب) |
-| `src/utils/cn.ts` | دمج أسماء فئات Tailwind (بديل clsx) |
-| `src/utils/haptics.ts` | ردود فعل لمسية (vibrate) + ومضات بصرية |
-| `src/utils/reportData.ts` + `.test.ts` | دوال بناء بيانات التقارير (كشف حساب، ملخص يومي) |
-| `src/utils/reports.ts` + `.test.ts` | بناة صفوف Excel (تصدير رحلة / مسافر) |
-| `src/utils/xlsx.ts` | مولّد Excel (.xlsx) مضمّن بالكامل (OOXML) |
-| `src/hooks/useDepositLogs.ts` | جلب سجل تدقيق رصيد مسافر |
-| `scripts/set-admin.mjs` | سكربت منح/سحب صلاحية المسؤول عبر Admin SDK |
-
-#### ❌ ملفات محذوفة (Deleted Files)
-
-| المسار | السبب |
-|---|---|
-| `src/components/QuickAddFab.tsx` | استُبدل بـ SmartInputBar |
-| `src/components/charts/CategoryPieChart.tsx` | استُبدل بـ HTML/CSS خالص داخل ChartsSection |
-| `src/components/charts/SettlementFlowChart.tsx` | استُبدل بـ HTML/CSS خالص داخل ChartsSection |
-| `src/components/charts/SpendingTrendChart.tsx` | استُبدل بـ HTML/CSS خالص داخل ChartsSection |
-
-#### 🎨 تحسينات الواجهة (UI/UX)
-
-| الملف | التغيير |
-|---|---|
-| `src/App.tsx` | استيراد `SmartInputBar`, `EmptyState`, `ReportsView`; إضافة `showReports`; تمرير `isFirstExpense`; استخدام `exportTripToExcel`; إضافة `rateLimitSeconds` لـ `TripGate`; إضافة خاصية `onStatClick` في Header; استبدال CSV بـ Excel; إضافة أقسام `scroll-mt-24`; دمج زر إضافة مسافر منقط |
-| `src/components/Header.tsx` | إضافة `isOnline` + `onStatClick` (تمرير لإحصائيات الهيدر) |
-| `src/components/ExpenseSection.tsx` | إضافة `convertArabicNumerals`; قائمة عملات ذكية (مثبّتة + مستخدمة + بقية); تحسين الواجهة |
-| `src/components/TravelerSection.tsx` | إضافة `convertArabicNumerals`; بطاقات قابلة للضغط → `TravelerProfileModal`; تحسين `AddTravelerForm` (تصميم جديد، أيقونة ريال، text-base لمنع زوم iOS) |
-| `src/components/charts/ChartsSection.tsx` | إعادة كاملة (HTML/CSS): تنسيقات مع زر "تم التحويل"، أشرطة فئة، خط زمني عمودي |
-| `src/components/Modal.tsx` (ضمن DepositModal) | تحسين حقل المبلغ (text + inputMode + منع زوم iOS) |
-| `src/components/Skeleton.tsx` | تحديث التعليقات (إزالة ذكر Recharts/StatBox) |
-| `src/components/Toast.tsx` | إضافة نوع `error` (لون وردي، أيقونة AlertTriangle، بلا bounce); إضافة زر `onRetry` |
-| `src/components/Misc.tsx` | إعادة كاملة لـ `BankDetailsCard` — إدارة نسخ ذاتية، Web Share API، ومضات لمسية |
-| `src/modals/DepositModal.tsx` | تحويل `type="number"` ← `inputMode="decimal"` مع تحويل الأرقام العربية |
-| `src/index.css` | إضافة `animate-fadeIn`; إصلاحات Safari (date/select); دعم الطباعة عبر `#print-root` |
-| `src/icons.ts` | إضافة `Share2`, `Printer` |
-
-#### 💡 تحسينات الوظائف (Logic)
-
-| الملف | التغيير |
-|---|---|
-| `src/constants.ts` | إزالة `INITIAL_TRAVELERS` و`ADMIN_EMAILS`; توسعة `CURRENCY_LABELS` من 9 إلى 160 عملة; تحسين `buildCurrencyMap` (تجاهل العملات بلا سعر) |
-| `src/hooks/useExpenseActions.ts` | إضافة `isFirstExpense` + `haptic.success()` + `haptic.flash()` (احتفالي); إضافة `lastExpensePayloadRef` لإعادة المحاولة; تحسين معالجة الأخطاء مع `onRetry`; توسيع `openExpenseForm` لاستقبال `initialDesc/initialAmount` |
-| `src/hooks/useExchangeRates.ts` | جلب الأسعار لكل العملات (160) بدل الاحتياطية فقط |
-| `src/types.ts` | إضافة حقل `onRetry` في `ToastMessage` |
-| `src/context/DataContext.tsx` | تصدير `travelers` (لـ `getShortName`) |
-
-- **الأثر**: تحسين تجربة المستخدم (إدخال أسرع، ردود فعل لمسية، تقارير متكاملة، Excel/PDF)،
-  تعزيز الأمان (Rate Limiting + Custom Claims)، دعم 160 عملة، توافق أفضل مع iOS Safari.
-- **الاختبارات**: 6 ملفات اختبار جديدة (`reportData.test.ts`, `reports.test.ts`,
-  إضافة اختبارات للتأكّد من صحة بناء البيانات والتقارير).
-- **تغييرات جذرية**:
-  - ⚠️ `ADMIN_EMAILS` أُزيل — يجب منح صلاحية المسؤول عبر
-    `node scripts/set-admin.mjs grant <email>` (بدل إضافة البريد إلى `constants.ts`)
-  - ⚠️ قواعد Firestore تتطلّب `admin: true` في Custom Claims — انشر القواعد:
-    `firebase deploy --only firestore:rules`
-  - ⚠️ `QuickAddFab.tsx` أُزيل وحل محلّه `SmartInputBar` — أي كود يعتمد على
-    الاستيراد القديم يحتاج تحديثاً
-  - ⚠️ `recharts` أُزيلت من `package.json` — شغّل `npm install` بعد السحب
-  - ⚠️ `exportExpensesToCSV` لم تعد موجودة — استُبدِلت بـ `exportTripToExcel`
+**No external charting library** — all charts are pure HTML/CSS. **No external XLSX library** — OOXML generated inline via `src/utils/xlsx.ts`.
 
 ---
 
-## الحالة الراهنة (Current State)
+## Architecture
 
-- **الفرع (Branch)**: `main`
-- **آخر commit**: `b7ffb82` - Initial commit for Travel-Wallet
-- **حالة git**: 28 ملفاً معدّلاً + 13 ملفاً جديداً غير متتبّع
-- **الملفات الرئيسية**:
-  - `src/App.tsx` (693 سطراً) — المنسّق الرئيسي
-  - `src/components/ExpenseSection.tsx` — نموذج وقائمة المصاريف
-  - `src/components/TravelerSection.tsx` — بطاقات ونموذج المسافرين
-  - `src/components/charts/ChartsSection.tsx` — إحصائيات HTML/CSS
-  - `src/hooks/useAuth.ts` — مصادقة و TripGate
-  - `src/hooks/useExpenseActions.ts` — منطق عمليات المصروف
-  - `src/utils/reports.ts` + `xlsx.ts` — تصدير Excel
-
-### المشكلات المعروفة (Known Issues)
-
-1. **`tsconfig.node.json`** يشير إلى `vite.config.ts` لكن الملف الفعلي هو
-   `vite.config.js` — لا يُسبّب خطأً حالياً لكنه تناقض.
-2. **GitHub Actions**: المجلد موجود لكنه فارغ — لا توجد CI pipeline.
-3. **`recharts`**: قد تبقى في `node_modules` (تبعية عابرة) رغم إزالتها من
-   `package.json` — لا تؤثّر على البناء.
-4. **`ADMIN_EMAILS`**: تأكّد من عدم بقاء أي مرجع له في أي ملف (تمت إزالته من
-   `constants.ts` و`useAuth.ts` و`firestore.rules`).
-
-### الخطوات القادمة (Next Steps)
-
-- إضافة CI pipeline (typecheck → test → build)
-- توسيع التغطية الاختبارية لتشمل hooks ومكوّنات (React Testing Library)
-- إصلاح `tsconfig.node.json` للإشارة إلى `vite.config.js`
-- إضافة إشعارات Push (Push Notifications)
-- توثيق API عبر JSDoc للدوال العامة
-
----
-
-## البيئة والتبعيات (Environment & Dependencies)
-
-- **Runtime**: Node.js (v18+)
-- **Package Manager**: npm
-- **Key Packages** (production):
-  - `react@^18.2.0`, `react-dom@^18.2.0`
-  - `firebase@^10.8.1` (Auth + Firestore)
-  - `framer-motion@^11.2.10` (Bottom Sheet animations)
-  - `lucide-react@^0.383.0` (icons)
-  - `react-virtuoso@^4.18.10` (virtual list)
-- **Key Packages** (dev):
-  - `typescript@^5.3.3`, `vite@^5.1.4`
-  - `tailwindcss@^3.4.1`
-  - `vitest@^1.6.0`
-  - `vite-plugin-pwa@^0.19.8`
-- **قاعدة البيانات**: Firebase Firestore (مع `persistentLocalCache` للتخزين المحلي)
-- **Cloud Functions**: 1 (verifyTripPin — v2 onCall)
-- **استضافة**: Vercel (SPA) + Firebase (Rules + Functions)
-
----
-
-## ملاحظات معمارية (Architecture Notes)
-
-- **فصل الاهتمامات**: `App.tsx` (منسّق) → hooks (منطق) → utils (دوال نقية) → components (عرض)
-- **سياقان منفصلان**: `DataContext` (للقراءة فقط) + `UIContext` (نماذج وإجراءات)
-- **تحديث متفائل**: تُغلَق النماذج فور الإرسال مع شارة `_pending`
-- **الكاش المحلي**: `persistentLocalCache` + `persistentMultipleTabManager` (يعمل دون اتصال)
-- **تصدير Excel**: مكتبة OOXML مضمّنة بالكامل في `src/utils/xlsx.ts` (بلا تبعيات)
-- **طباعة PDF**: عبر Portal إلى `#print-root` مع `@media print` في `index.css`
-- **تجنّب CORS**: Cloud Function تُستدعى عبر `/api/verifyTripPin` (Vercel rewrite)
-- **لا توجد تبعية لـ Recharts** — الإحصائيات HTML/CSS خالص
-
----
-
-## سير العمل في التطوير
-
-```bash
-npm install                # تثبيت التبعيات
-npm run dev                # تشغيل خادم التطوير
-npm run build              # tsc && vite build
-npm test                   # vitest run
-npm run typecheck          # tsc --noEmit
-npm run lint               # ESLint
-npm run format             # Prettier
+```
+┌─────────────────────────────────────────────────────────┐
+│                        App.tsx                          │
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐ │
+│  │  TripGate    │  │   Header     │  │  SmartInputBar  │ │
+│  │  (PIN auth)  │  │  (stats +    │  │  (quick add)   │ │
+│  │              │  │   collapse)  │  │                │ │
+│  └─────────────┘  └──────────────┘  └────────────────┘ │
+│  ┌────────────────────────────────────────────────────┐ │
+│  │  <main> (PullToRefresh wrapper)                    │ │
+│  │  ┌──────────────┐ ┌───────────┐ ┌────────────────┐ │ │
+│  │  │ NextSegment  │ │ TravelerSec│ │ ChartsSection │ │ │
+│  │  │ (next trip   │ │ (cards +   │ │ (stats)       │ │ │
+│  │  │  leg)        │ │  add form) │ │               │ │ │
+│  │  └──────────────┘ └───────────┘ └────────────────┘ │ │
+│  │  ┌────────────────────────────────────────────────┐│ │
+│  │  │ ExpenseSection (form + virtual list + search)  ││ │
+│  │  └────────────────────────────────────────────────┘│ │
+│  └────────────────────────────────────────────────────┘ │
+│  ┌──────────────┐ ┌───────────┐ ┌──────────────┐       │
+│  │ ModalManager │ │ AuthFlow  │ │    Toast     │       │
+│  │ (lazy, from  │ │ (lazy     │ │              │       │
+│  │  useModals)  │ │  admin)   │ │              │       │
+│  └──────────────┘ └───────────┘ └──────────────┘       │
+└─────────────────────────────────────────────────────────┘
+          │                      │
+     ┌────▼────┐          ┌──────▼──────┐
+     │  Auth   │          │  Firestore  │
+     │ (anon / │          │ (real-time) │
+     │  admin) │          └─────────────┘
+     └─────────┘
 ```
 
-### النشر (ثلاثة أنظمة منفصلة ⚠️)
+**Data flow:** React Context (DataContext for reads, UIContext for actions) → Hooks (useExpenses, useTravelers, etc.) → Firestore onSnapshot listeners → Optimistic updates with `_pending` flags.
 
-```bash
-vercel --prod                                  # الواجهة
-firebase deploy --only firestore:rules          # قواعد Firestore
-firebase deploy --only functions                # Cloud Functions
-node scripts/create-trip.mjs                    # إنشاء رحلة (كتابة مباشرة)
-node scripts/set-admin.mjs grant <email>        # منح صلاحية المسؤول
+**Two contexts:**
+- `DataContext` — read-only data (travelers, expenses, user, currencies)
+- `UIContext` — form state and action handlers (expense form, traveler form, modals)
+
+**Trip identification:** `TRIP_ID` from `?trip=xyz` query param → used to build Firestore paths at `artifacts/{TRIP_ID}/public/data/{expenses|travelers|rateLimits}/...`
+
+**Modal state:** all general modals (reports, trash bin, delete traveler, deposit, deposit history) live in a single discriminated union (`ModalState` in `useModals.ts`) so only one can be open at a time, and are rendered by `ModalManager.tsx`. Two modals are deliberately *outside* this union because they belong to their own domain state: expense delete confirmation (in `useExpenseActions`) and admin sign-in (in `useAdminAuth` + `AuthFlow.tsx`).
+
+---
+
+## Directory Structure
+
+```
+├── src/
+│   ├── App.tsx                    # Root orchestrator (~500 lines)
+│   ├── main.tsx                  # React entry point
+│   ├── firebase.ts               # Firebase init (auth, db, functions)
+│   ├── firestore.ts              # Collection/doc ref builders (expensesCol, travelerDoc, etc.)
+│   ├── types.ts                  # All TypeScript interfaces
+│   ├── constants.ts              # FALLBACK_RATES, CURRENCY_LABELS (160), EXPENSE_CATEGORIES
+│   ├── icons.ts                  # Re-exports from lucide-react
+│   ├── index.css                 # Tailwind + print styles + Safari fixes
+│   │
+│   ├── hooks/
+│   │   ├── index.ts              # Unified re-export
+│   │   ├── useAuth.ts            # Auth state, admin claims, PIN verification, rate limiting
+│   │   ├── useAdminAuth.ts       # Admin sign-in modal state, sign-in/out, password reset + cooldown
+│   │   ├── useModals.ts          # Unified modal state (discriminated union + reducer)
+│   │   ├── useExpenses.ts        # Firestore onSnapshot → Expense[]
+│   │   ├── useTravelers.ts       # Firestore onSnapshot → Traveler[]
+│   │   ├── useBalances.ts        # Derived balances via useMemo
+│   │   ├── useExchangeRates.ts   # Live FX rates from open.er-api.com
+│   │   ├── useExpenseActions.ts  # CRUD logic for expenses (form, quick-add, edit, delete)
+│   │   ├── useTravelerActions.ts # Add traveler form + add/delete/restore handlers
+│   │   ├── useDepositActions.ts  # Deposit form + balance update & audit log write
+│   │   ├── useFilteredExpenses.ts # Search + sort with debounce
+│   │   ├── useTripConfig.ts      # Trip name + bank details + itinerary from Firestore
+│   │   ├── useDepositLogs.ts     # Deposit audit log fetcher
+│   │   ├── useOnlineStatus.ts    # navigator.onLine tracking
+│   │   ├── useCountdown.ts       # Generic countdown timer
+│   │   ├── useDebounce.ts        # Generic debounce hook
+│   │   └── useHeaderCollapse.ts  # Scroll direction tracking for sticky header
+│   │
+│   ├── context/
+│   │   ├── DataContext.ts        # Read-only data context
+│   │   └── UIContext.ts          # UI actions context
+│   │
+│   ├── components/
+│   │   ├── TripGate.tsx          # PIN entry screen with rate limit countdown
+│   │   ├── Header.tsx            # Sticky collapsible header with stats pills
+│   │   ├── SmartInputBar.tsx     # Fixed bottom input bar (quick expense)
+│   │   ├── TravelerSection.tsx   # Traveler cards + add form + profile modal
+│   │   ├── ExpenseSection.tsx    # Expense form + filtered virtual list
+│   │   ├── ModalManager.tsx      # Renders the 5 general modals from useModals state (lazy)
+│   │   ├── AuthFlow.tsx          # Lazy wrapper for the admin sign-in modal (view-only)
+│   │   ├── NextSegmentWidget.tsx # "Next leg" card — first future itinerary segment
+│   │   ├── ItinerarySection.tsx  # Full itinerary list (rendered inside ReportsView)
+│   │   ├── Misc.tsx              # BankDetailsCard (copy IBAN / Web Share API)
+│   │   ├── charts/ChartsSection.tsx  # Settlements, categories, trend (HTML/CSS)
+│   │   ├── reports/ReportsView.tsx   # Full trip report page
+│   │   ├── reports/PrintDocs.tsx     # Printable trip report / statement
+│   │   ├── modals/
+│   │   │   ├── DepositModal.tsx        # Deposit adjustment (add/subtract/set)
+│   │   │   ├── DepositHistoryModal.tsx # Deposit audit log viewer
+│   │   │   ├── AdminSignInModal.tsx    # Admin email/password sign-in
+│   │   │   ├── TrashBinModal.tsx       # Soft-deleted items restore
+│   │   │   ├── TravelerProfileModal.tsx # Per-traveler statement + export
+│   │   │   └── ModalFallback.tsx       # Lazy loading fallback
+│   │   ├── Modal.tsx             # Bottom sheet / centered modal
+│   │   ├── Toast.tsx             # Animated toast (new/edit/success/error + undo/retry)
+│   │   ├── EmptyState.tsx        # Reusable empty state component
+│   │   ├── Skeleton.tsx          # Loading skeletons
+│   │   ├── ErrorBoundary.tsx     # Class-based error boundary
+│   │   ├── PullToRefresh.tsx     # Pull-to-refresh gesture
+│   │   ├── OnboardingBanner.tsx  # First-time user banner
+│   │   └── UpdatePrompt.tsx      # PWA update prompt
+│   │
+│   └── utils/
+│       ├── calculations.ts       # Pure: splitEven, splitByShares, calculateBalances, settlements, etc.
+│       ├── participants.ts       # matchesTraveler, toDisplayNames, toIds
+│       ├── reportData.ts         # buildTravelerReport, buildAccountStatement, buildDailySummary
+│       ├── reports.ts           # Excel row builders + exportTripToExcel + exportTravelerToExcel
+│       ├── xlsx.ts              # Pure-JS OOXML generator (inlineStr, RTL, ZIP stored)
+│       ├── haptics.ts           # Vibration API + visual flash overlay
+│       ├── cn.ts                # Tailwind class merge (clsx alternative)
+│       └── tripId.ts           # TRIP_ID from ?trip= query param
+│
+├── functions/
+│   └── index.js                 # Cloud Function: verifyTripPin (rate-limited)
+│
+├── scripts/
+│   ├── create-trip.mjs          # Admin SDK script: create/update trip + PIN
+│   ├── set-admin.mjs            # Admin SDK script: grant/revoke admin claim
+│   ├── list-trips.mjs           # Admin SDK script: list existing trips
+│   └── add-flights.mjs          # ⚠️ Admin SDK script: writes itinerary — data hardcoded, edit before each run
+│
+├── firestore.rules              # Security rules (multi-trip, admin claims, rate limiting)
+├── vercel.json                  # Vercel SPA rewrite for /api/verifyTripPin
+├── vite.config.js               # Vite + PWA config (code splitting, Workbox)
+├── vitest.config.ts             # Vitest with jsdom + setupFiles
+├── tailwind.config.js           # Tailwind content paths
+└── .github/workflows/ci.yml    # CI: lint → typecheck → test → build
 ```
 
 ---
 
-## القواعد الأساسية للمساهمين
+## Key Files
 
-1. **لا تستخدم `enableIndexedDbPersistence`** — استخدم `persistentLocalCache`
-2. **لا تستدعِ Cloud Function عبر `cloudfunctions.net`** استخدم `/api/verifyTripPin`
-3. **لا تحذف `vercel.json`** — ضروري لـ Vercel rewrite
-4. **لست بحاجة لـ `recharts`** — الإحصائيات HTML/CSS خالص
-5. **استخدم `scripts/create-trip.mjs`** لإنشاء الرحلات
-6. **استخدم `scripts/set-admin.mjs`** لمنح صلاحية المسؤول
-7. **الأيقونات** عبر `src/icons.ts` — لا تستورد من `lucide-react` مباشرة
-8. **إضافة Modal** → `src/components/modals/` مع `React.lazy()`
-9. **إضافة حقل مصروف** → types → useExpenseActions → ExpenseForm → ExpenseListItem → export → firestore.rules
+| File | Purpose |
+|---|---|
+| `src/App.tsx` | Root component: orchestrates auth flow, state, modals, and layout. The "controller" of the app. |
+| `src/types.ts` | All interfaces: `Traveler`, `Expense`, `ExpenseFormData`, `Settlement`, `ToastMessage`, etc. |
+| `src/hooks/useExpenseActions.ts` | All expense CRUD: form submission, quick add, optimistic updates, retry logic, rate limiting. |
+| `src/hooks/useAuth.ts` | Auth state machine: anonymous sign-in, admin claim detection, PIN verification via Cloud Function, rate limit countdown. |
+| `src/hooks/useModals.ts` | `ModalState` discriminated union + reducer — the single source of truth for which modal is open. |
+| `src/components/ModalManager.tsx` | Renders those modals (all `React.lazy`). Purely presentational; data/handlers passed from `App.tsx`. |
+| `src/hooks/useTripConfig.ts` | Reads `trips/{TRIP_ID}` once: trip name, bank details, and itinerary — with `constants.ts` fallbacks. |
+| `src/firestore.ts` | Single source of truth for Firestore paths: `expensesCol`, `travelerDoc`, `depositLogsCol`, `rateLimitDoc`, `tripConfigDoc`. |
+| `src/constants.ts` | `CURRENCY_LABELS` (160 currencies), `FALLBACK_RATES`, `EXPENSE_CATEGORIES`, `BANK_DETAILS`. |
+| `src/utils/calculations.ts` | Pure functions for balances, settlements, category totals, spending trend. Fully tested. |
+| `src/utils/xlsx.ts` | Pure-JS OOXML XLSX generator — no dependencies. |
+| `functions/index.js` | `verifyTripPin` Cloud Function: rate-limited PIN verification, grants `trips` custom claim. |
+| `firestore.rules` | Security rules: `isAdmin()`, `isMember(tripId)`, `withinExpenseRateLimit`, immutable deposit logs. |
+| `scripts/create-trip.mjs` | Admin SDK script to create/update a trip (name, bank details, PIN hash). |
+| `scripts/set-admin.mjs` | Admin SDK script to grant/revoke `admin: true` custom claim. |
+
+---
+
+## Development Setup
+
+```bash
+# Prerequisites: Node.js v18+, Firebase CLI, Vercel CLI
+
+# 1. Install dependencies
+npm install
+
+# 2. Set up Firebase
+firebase login
+firebase use travelapp-87206
+
+# 3. Create a trip (interactive — provides PIN for the trip URL)
+node scripts/create-trip.mjs
+
+# 4. Deploy Firestore rules + Cloud Function (after creating a trip)
+firebase deploy --only firestore:rules
+firebase deploy --only functions
+
+# 5. Grant admin privileges to a user who has logged in at least once
+node scripts/set-admin.mjs grant admin@example.com
+
+# 6. Start dev server
+npm run dev
+
+# 7. Open http://localhost:5173/?trip=YOUR_TRIP_ID
+```
+
+**Important:** The app reads `TRIP_ID` from `?trip=xyz` in the URL. Without it, it defaults to `?trip=travelapp-87206`.
+
+---
+
+## Environment Variables
+
+**No runtime env vars needed** — Firebase config is hardcoded in `src/firebase.ts` (this is safe per Firebase docs for client SDKs). 
+
+For deployment:
+- `.env.local` is **git-ignored** (`.gitignore` excludes `.env.*`) and is not tracked. It exists locally only; the app does not read it at runtime, since Firebase config lives in `src/firebase.ts`.
+- `serviceAccountKey.json` is required for all admin scripts (`create-trip.mjs`, `set-admin.mjs`, `list-trips.mjs`, `add-flights.mjs`). It is git-ignored. **Do not commit this file.**
+- `.npmrc` sets `legacy-peer-deps=true` — required for Vercel installs to resolve.
+
+---
+
+## API / Interface Reference
+
+### Cloud Function (accessible via Vercel rewrite)
+
+```
+POST /api/verifyTripPin
+Headers: { Authorization: "Bearer <idToken>" }
+Body: { data: { pin: string, tripId: string } }
+Response: { result: { success: boolean } } | HttpsError
+```
+
+### Key Data Context (available to all components)
+
+```typescript
+// From DataContext (useData())
+{
+  travelers: Traveler[]
+  expenses: Expense[]
+  user: User | null
+  isAdmin: boolean
+  currencies: CurrencyMap      // { "SAR": { label, rate }, ... }
+  ratesUpdatedAt: Date | null
+}
+
+// From UIContext (useUI())
+{
+  expenseForm: ExpenseFormData
+  isExpenseFormOpen: boolean
+  openExpenseForm: (initialDesc?, initialAmount?) => void
+  handleQuickAddExpense: (desc, amount) => string | null
+  // ... plus traveler form, deposit, modals
+}
+```
+
+### Pure Utility Functions
+
+```typescript
+// Core calculations (fully tested)
+splitEven(total, n)               // Equal split with remainder distribution
+splitByShares(total, pIds, shares?) // Weighted split
+calculateBalances(travelers, expenses) => TravelerBalance[]
+calculateSettlements(balances) => Settlement[]
+calculateCategoryTotals(expenses) => CategoryTotal[]
+calculateSpendingTrend(expenses) => SpendingTrendPoint[]
+
+// Excel export
+exportTripToExcel({ expenses, travelers, balances, settlements })  // 4-sheet workbook
+exportTravelerToExcel({ traveler, balance, statement })            // per-traveler workbook
+
+// Participant helpers
+matchesTraveler(traveler, participantId) => boolean
+toDisplayNames(participants, travelers) => string[]
+toIds(participants, travelers) => number[]
+```
+
+---
+
+## Data Models
+
+```typescript
+interface Traveler {
+  id: number                    // Unique integer
+  name: string                  // Full name
+  shortName: string             // First word of name (used for matching in participants)
+  deposited: number             // Total pre-paid amount (in SAR)
+  deletedAt?: number | null     // Soft delete timestamp
+  _pending?: boolean            // Client-only: optimistic sync indicator
+}
+
+interface Expense {
+  id: string                    // Firestore document ID
+  date: string                  // YYYY-MM-DD
+  description: string           // Max 200 chars
+  amount: number                // Amount in SAR (after currency conversion)
+  originalAmount: number        // Amount in original currency
+  currency: string              // Currency code (SAR, USD, etc.)
+  exchangeRate: number          // Rate used for conversion
+  participants: (number | string)[]  // Traveler IDs (or old shortNames)
+  createdAt: number             // Unix timestamp (ms)
+  createdByUid?: string         // Creator's UID (for self-edit permission)
+  category?: string             // From EXPENSE_CATEGORIES
+  shares?: Record<string, number> // Uneven split weights
+  deletedAt?: number | null     // Soft delete
+  _pending?: boolean            // Client-only
+}
+
+// Derived (not stored in Firestore)
+interface TravelerBalance extends Traveler {
+  totalExpenses: number
+  remaining: number
+}
+
+interface Settlement {
+  fromId: number; fromName: string
+  toId: number;   toName: string
+  amount: number
+}
+
+// Trip itinerary — stored inside the trips/{tripId} doc, not a subcollection
+type TransportMode = 'flight' | 'car' | 'train' | 'bus'
+
+interface ItinerarySegment {
+  id: string                    // Random hex, generated by the writing script
+  mode: TransportMode
+  identifier: string            // Flight no. ("QR 1155") or vehicle description
+  reference?: string            // PNR / rental booking ref
+  departure: { location: string; time: string }  // time = ISO timestamp
+  arrival:   { location: string; time: string }
+}
+```
+
+**Firestore structure:**
+```
+artifacts/{tripId}/public/data/
+  expenses/{docId}               — Expense documents
+  travelers/{travelerId}          — Traveler documents (id as string key)
+  rateLimits/{uid}               — Rate limit tracking per user
+  travelers/{id}/depositLogs/{id} — Immutable deposit audit log (admin-only)
+
+trips/{tripId}                    — Trip config (name, bankDetails, itinerary[])
+tripSecrets/{tripId}              — PIN hash + salt (no client access, function only)
+rateLimits/verify_{key}          — PIN verify rate limits (function only)
+```
+
+---
+
+## Common Tasks
+
+### Add a new expense field
+1. Add field to `Expense` type in `types.ts`
+2. Add to `ExpenseFormData` type (if user-editable)
+3. Add to `isValidExpense()` in `firestore.rules`
+4. Add to `emptyExpenseForm()` in `useExpenseActions.ts`
+5. Update `ExpenseSection.tsx` form UI
+6. Add to export builders in `reports.ts` / `reportData.ts`
+
+(Excel is the only export path. The legacy CSV `utils/export.ts` was deleted on 2026-08-08 — it had been dead code for a while; recover from git history if ever needed.)
+
+### Add a new currency
+Simply add to `CURRENCY_LABELS` in `constants.ts`. The `buildCurrencyMap` function and `useExchangeRates` hook handle the rest automatically.
+
+### Create a new trip
+```bash
+node scripts/create-trip.mjs
+# Follow prompts: tripId, name, bank details, PIN
+# Then share: https://your-app.vercel.app/?trip=YOUR_TRIP_ID
+```
+
+### Grant admin access
+```bash
+# First, user must log in to the app at least once
+node scripts/set-admin.mjs grant user@example.com
+```
+
+### List existing trips
+```bash
+node scripts/list-trips.mjs
+```
+
+### Add / update a trip itinerary
+The itinerary is an `ItinerarySegment[]` array written into the `trips/{tripId}` doc. There is no admin UI for it yet — edit the hardcoded `TRIP_ID` and `itinerary` array at the top of the script, then run it:
+
+```bash
+node scripts/add-flights.mjs   # ⚠️ overwrites the whole itinerary array
+```
+
+Once written, `NextSegmentWidget` shows the first segment whose `departure.time` is in the future, and `ItinerarySection` lists all segments inside the reports view.
+
+### Deploy all systems
+```bash
+npm run build                    # Frontend build
+vercel --prod                    # Deploy frontend
+firebase deploy --only firestore:rules   # Deploy security rules
+firebase deploy --only functions         # Deploy Cloud Function
+```
+
+### Export trip data
+The app exports Excel directly from the UI (button in expense section header). For per-traveler exports, open a traveler's profile card and use the export button.
+
+---
+
+## Testing
+
+```bash
+npm test                    # vitest run (once)
+npm run test:watch          # vitest (watch mode)
+npm run typecheck           # tsc --noEmit
+npm run lint                # ESLint
+```
+
+**Test files:**
+- `src/utils/calculations.test.ts` — Core math (splitEven, splitByShares, balances, settlements, charts)
+- `src/utils/reportData.test.ts` — Report builders (traveler report, daily summary, account statement)
+- `src/utils/reports.test.ts` — Excel row builders + XLSX generation
+- `src/components/EmptyState.test.tsx` — Empty state component (RTL test)
+
+**Structure:** Pure utility tests live next to their source. Component tests use `@testing-library/react` with `jsdom` environment. Vitest config in `vitest.config.ts` with `setupFiles: ['./src/setupTests.ts']`.
+
+---
+
+## Deployment
+
+Three independent systems that must be deployed separately:
+
+| System | Deployment Command | Purpose |
+|---|---|---|
+| Frontend | `vercel --prod` | SPA hosted on Vercel |
+| Firestore Rules | `firebase deploy --only firestore:rules` | Security rules |
+| Cloud Function | `firebase deploy --only functions` | `verifyTripPin` |
+
+**Important:** After updating `firestore.rules` or `functions/index.js`, existing users may need to re-enter their trip PIN (custom claim format changed). Always create the trip via `scripts/create-trip.mjs` before deploying new rules.
+
+**Vercel rewrite** (`vercel.json`): All `/api/verifyTripPin` requests are proxied to the Cloud Function URL to avoid CORS issues. The function is called from the client via `fetch('/api/verifyTripPin', ...)`.
+
+---
+
+## Troubleshooting
+
+| Issue | Likely Cause | Solution |
+|---|---|---|
+| "خطأ في الصلاحيات" | User not a member of this trip, or trip not created in Firestore | Run `scripts/create-trip.mjs` for this tripId; user must re-enter PIN |
+| PIN entry stuck in loop | Custom claims format mismatch | User logs out and back in (or `getIdToken(true)`) |
+| Expenses not syncing | Network offline; Firestore SDK queues writes | Check `isOnline` banner; writes sync when connection returns |
+| `recharts` not found (build error) | Old dependency referenced somewhere | Run `npm install` (package.json no longer lists recharts) |
+| iOS date picker issues | Safari's native date/select styling | Fixes in `index.css` (`.safari-date-fix`, `.safari-select-fix`) |
+| Blank screen after deploy | Trip ID mismatch or missing trip config | Ensure `scripts/create-trip.mjs` was run for the tripId in use |
+| "يوجد مسافر بنفس الاسم" | Duplicate shortName (first word of name) | Use a different name or rename existing traveler. ⚠️ This check is client-side only (`useTravelerActions.ts`) — `firestore.rules` does not enforce uniqueness, so two admins adding the same shortName simultaneously can both succeed. |
+| Itinerary widget not showing | No `itinerary` on the trip doc, or every segment's `departure.time` is in the past | Run `scripts/add-flights.mjs` with future dates for this tripId |
+
+---
+
+## Contributing Guidelines
+
+1. **No direct `lucide-react` imports in components** — use `src/icons.ts` re-exports only.
+2. **No `recharts`** — charts are pure HTML/CSS in `ChartsSection.tsx`.
+3. **No `enableIndexedDbPersistence`** — use `persistentLocalCache` (modern API).
+4. **No direct Cloud Function URL** — always use the Vercel rewrite path `/api/verifyTripPin`.
+5. **Soft delete only** — `deletedAt` timestamps, never permanent deletion (`allow delete: if false` in rules).
+6. **Modals go in `src/components/modals/`**, are registered in `useModals.ts` (`ModalState` union) and rendered lazily by `ModalManager.tsx` — not directly in App.tsx.
+7. **Pure logic in `utils/`** — testable without React/DOM.
+8. **Arabic-first** — all UI text in Arabic, RTL layout, Arabic numeral conversion.
+9. **Optimistic updates** — close form immediately on submit, show `_pending` flag until server confirms.
+10. **Haptic feedback** — use `haptic` from `utils/haptics.ts` for all important interactions.
+11. **Run scripts with Admin SDK** — `serviceAccountKey.json` required, never expose admin operations to clients.
+12. **CI pipeline** — all PRs must pass: lint → typecheck → test → build. Run `npm run lint` locally before pushing; ESLint bans `any` (`no-explicit-any`) and empty `catch {}` blocks (`no-empty`), which are easy to introduce accidentally.
 
 </div>
