@@ -22,9 +22,18 @@ export const depositLogsCol = (travelerId: number) =>
 export const rateLimitDoc = (uid: string) =>
   doc(db, 'artifacts', TRIP_ID, 'public', 'data', 'rateLimits', uid)
 
-// 🆕 مستند إعدادات الرحلة العامة (الاسم + تفاصيل الحساب البنكي) — مجموعة
-// top-level مستقلة تماماً باسم trips/ (خارج مسار artifacts/{TRIP_ID} أعلاه).
-// يُقرأ فقط بعد التحقق من عضوية هذه الرحلة تحديداً (انظر isMember في
-// firestore.rules)، ولا يُكتب إطلاقاً من العميل — يُدار عبر
-// scripts/create-trip.mjs بصلاحيات Admin SDK. انظر hooks/useTripConfig.ts.
+// 🆕 مستند إعدادات الرحلة العامة (الاسم + تفاصيل الحساب البنكي + المسار) —
+// مجموعة top-level مستقلة تماماً باسم trips/ (خارج مسار artifacts/{TRIP_ID}
+// أعلاه). يُقرأ بعد التحقق من عضوية هذه الرحلة تحديداً، ويُكتب من المسؤول فقط
+// (انظر isMember/isAdmin في firestore.rules وhooks/useTripAdminActions.ts).
 export const tripConfigDoc = () => doc(db, 'trips', TRIP_ID)
+
+// 🆕 مستند *أي* رحلة بمعرّفها — لواجهة إدارة الرحلات، التي تعدّل رحلات غير
+// الرحلة المفتوحة حالياً. القواعد تسمح بذلك أصلاً: شرط الكتابة isAdmin() لا
+// يشير إلى الرحلة النشطة إطلاقاً، فالمسؤول يعدّل أي رحلة دون مغادرة الحالية.
+export const tripDocById = (tripId: string) => doc(db, 'trips', tripId)
+
+// 🆕 مجموعة الرحلات كاملة — استعلام قائمة يقتصر على المسؤول عملياً، لأن
+// isAdmin() هو الشرط الوحيد الذي يتحقق دون النظر لمحتوى المستند (isMember
+// يعتمد على معرّف كل رحلة على حدة، فلا يُرضي استعلام قائمة عامًّا).
+export const tripsCol = () => collection(db, 'trips')

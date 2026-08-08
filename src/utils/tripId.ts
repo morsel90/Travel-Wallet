@@ -17,6 +17,20 @@ const DEFAULT_TRIP_ID = 'travelapp-87206'
 // المقصود) أو حقن مسافات/رموز خاصة عبر الرابط.
 const TRIP_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/
 
+/**
+ * 🆕 يتحقق من صيغة معرّف رحلة قبل إرساله لدالة manageTrip — لعرض رسالة فورية
+ * في نموذج «رحلة جديدة» بدل انتظار رفض الخادم. الخادم يعيد نفس الفحص بنفسه
+ * (functions/index.js) ولا يعتمد على هذا إطلاقاً؛ هذه راحة واجهة لا حماية.
+ */
+export function isValidTripId(candidate: string): boolean {
+  return TRIP_ID_PATTERN.test(candidate.trim())
+}
+
+/** رابط فتح رحلة بمعرّفها — التبديل يتطلب إعادة تحميل كاملة (انظر أدناه). */
+export function tripUrl(tripId: string): string {
+  return `${window.location.origin}${window.location.pathname}?trip=${encodeURIComponent(tripId)}`
+}
+
 function readTripIdFromLocation(): string {
   try {
     const fromQuery = new URLSearchParams(window.location.search).get('trip')?.trim()
