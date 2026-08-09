@@ -18,12 +18,22 @@
 //   - merge يُنشئ المستند إن لم يكن موجوداً.
 import { useState, useCallback } from 'react'
 import { setDoc } from 'firebase/firestore'
-import { auth } from '../firebase'
+import { httpsCallable } from 'firebase/functions'
+import { auth, functions } from '../firebase'
 import { tripDocById } from '../firestore'
 import { haptic } from '../utils/haptics'
 import { MAX_SEGMENTS } from '../utils/itinerary'
 import { TRIP_STATUS_LABEL } from '../types'
 import type { BankDetails, ItinerarySegment, ToastMessage, TripStatus } from '../types'
+
+// عقد استدعاء manageTrip — يطابق ما تقرأه الدالة في functions/index.js
+interface ManageTripRequest {
+  mode: 'create' | 'resetPin' | 'delete'
+  tripId: string
+  pin: string
+  name: string
+}
+interface ManageTripResponse { success: boolean; tripId: string }
 
 interface UseTripAdminActionsParams {
   isAdmin: boolean
@@ -115,8 +125,10 @@ export function useTripAdminActions({
   ), [write])
 
   // ── المسار الخادمي (manageTrip) ─────────────────────────────────────────
-  // نستدعيها عبر إعادة التوجيه في vercel.json (/api/manageTrip) لا عبر رابط
-  // الدالة المباشر — نفس نمط verifyTripPin، لتفادي CORS.
+  // 🆕 عبر httpsCallable لا fetch على `/api/manageTrip`. الرابط يُشتق من معرّف
+  // المشروع في إعداد التطبيق، فتتبع الدالة أي بيئة يشير إليها البناء — وهو ما
+  // كان مستحيلاً مع إعادة التوجيه في vercel.json (رابط مكتوب حرفياً لا يقرأ
+  // متغيرات البيئة). انظر التعليق الأوسع في hooks/useAuth.ts.
   const callManageTrip = useCallback(async (
     mode: 'create' | 'resetPin' | 'delete',
     tripId: string,
@@ -133,29 +145,28 @@ export function useTripAdminActions({
     try {
       const user = auth.currentUser
       if (!user) throw new Error('غير مسجّل الدخول.')
-      const idToken = await user.getIdToken(true)
+      // تحديث التوكن ليحمل claim المسؤول الحالي — الدالة تعيد فحصه خادمياً
+      await user.getIdToken(true)
 
-      const response = await fetch('/api/manageTrip', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ data: { mode, tripId, pin, name } }),
-      })
-      const resData = await response.json().catch(() => ({}))
-
-      if (!response.ok) {
-        // الدالة ترسل رسائل عربية مفهومة (معرّف مكرر، رمز قصير…) فنعرضها كما هي
-        const message = resData?.error?.message || 'تعذّر تنفيذ العملية.'
-        haptic.error()
-        showToast({ text: message, type: 'error' }, 4000)
-        return false
-      }
+      const manageTrip = httpsCallable<ManageTripRequest, ManageTripResponse>(functions, 'manageTrip')
+      await manageTrip({ mode, tripId, pin, name })
 
       haptic.success()
       showToast({ text: successText, type: 'success' })
       return true
     } catch (err) {
       haptic.error()
-      handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
+      // الدالة ترسل رسائل عربية مفهومة (معرّف مكرر، رمز قصير، رحلة غير فارغة…)
+      // وتصل في message ضمن FunctionsError — نعرضها كما هي.
+      const message = (err as { message?: string })?.message
+      const isFunctionsError = typeof (err as { code?: string })?.code === 'string'
+        && String((err as { code?: string }).code).startsWith('functions/')
+
+      if (isFunctionsError && message) {
+        showToast({ text: message, type: 'error' }, 4000)
+      } else {
+        handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
+      }
       return false
     } finally {
       setIsSaving(false)

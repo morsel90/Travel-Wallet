@@ -21,15 +21,10 @@
 
 import { initializeApp, cert } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
-import { readFileSync } from 'fs'
-import { dirname, join } from 'path'
-import { fileURLToPath } from 'url'
 import { createInterface } from 'readline/promises'
+import { loadServiceAccount } from './serviceAccount.mjs'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const serviceAccount = JSON.parse(
-  readFileSync(join(__dirname, '..', 'serviceAccountKey.json'), 'utf8'),
-)
+const serviceAccount = loadServiceAccount()
 
 initializeApp({ credential: cert(serviceAccount) })
 const auth = getAuth()

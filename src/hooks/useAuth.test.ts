@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   // يُحدَّثه SDK فايربيس نفسه عند كل تغيّر لحالة المصادقة، والذي يعتمد عليه
   // callVerify مباشرة (لا على وسيط دالة onAuthStateChanged).
   authObj: { currentUser: null as unknown },
+  // 🆕 الدالة التي يُرجعها httpsCallable — هي ما يُستدعى فعلياً بالحمولة
+  callVerifyFn: vi.fn(),
 }))
 
 vi.mock('firebase/auth', () => ({
@@ -18,7 +20,18 @@ vi.mock('firebase/auth', () => ({
   signInAnonymously: mocks.signInAnonymously,
 }))
 
-vi.mock('../firebase', () => ({ auth: mocks.authObj }))
+// 🆕 استُبدل fetch الخام بـ httpsCallable من SDK — انظر التعليق في useAuth.ts.
+// نحاكي المصنع نفسه ليُرجع دالتنا، فنتحكم في الاستجابة والخطأ معاً.
+vi.mock('firebase/functions', () => ({
+  httpsCallable: () => mocks.callVerifyFn,
+}))
+
+vi.mock('../firebase', () => ({ auth: mocks.authObj, functions: {} }))
+
+/** يحاكي خطأ دالة سحابية كما يصل للعميل: code بصيغة functions/... مع details. */
+function functionsError(code: string, message: string, details?: unknown) {
+  return Object.assign(new Error(message), { code, details })
+}
 
 // TRIP_ID يُحسب من window.location.search عند تحميل الوحدة — في بيئة الاختبار
 // (بلا ?trip=) يستقرّ دائماً على الرحلة الافتراضية المُعرَّفة في utils/tripId.ts.
@@ -33,15 +46,11 @@ function mkUser(claims: Record<string, unknown>) {
   }
 }
 
-let fetchMock: ReturnType<typeof vi.fn>
-
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.signInAnonymously.mockResolvedValue(undefined)
   mocks.authObj.currentUser = null
   window.localStorage.clear()
-  fetchMock = vi.fn()
-  vi.stubGlobal('fetch', fetchMock)
 })
 
 afterEach(() => {
@@ -185,7 +194,7 @@ describe('useAuth', () => {
 
   it('التحقق الناجح من الرمز يضيف الرحلة لـ joinedTripIds فوراً', async () => {
     mocks.authObj.currentUser = mkUser({})
-    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ result: { success: true } }) })
+    mocks.callVerifyFn.mockResolvedValue({ data: { success: true } })
 
     const { result } = renderHook(() => useAuth())
     expect(result.current.joinedTripIds).toEqual([])
@@ -206,18 +215,18 @@ describe('useAuth', () => {
 
   it('يتحقق تلقائياً من رمز محفوظ محلياً — نجاح فيتخطى شاشة إدخال الرمز', async () => {
     window.localStorage.setItem(pinStorageKey, '1234')
-    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ result: { success: true } }) })
+    mocks.callVerifyFn.mockResolvedValue({ data: { success: true } })
 
     const { result } = renderHook(() => useAuth())
     await fireAuthChange(mkUser({}))
 
     expect(result.current.needsTripPin).toBe(false)
-    expect(fetchMock).toHaveBeenCalledWith('/api/verifyTripPin', expect.objectContaining({ method: 'POST' }))
+    expect(mocks.callVerifyFn).toHaveBeenCalledWith({ pin: '1234', tripId: TRIP_ID })
   })
 
   it('رمز محفوظ محلياً لم يعد صالحاً — يُمسح ويُطلب رمز جديد', async () => {
     window.localStorage.setItem(pinStorageKey, '9999')
-    fetchMock.mockResolvedValue({ ok: false, status: 403, json: async () => ({}) })
+    mocks.callVerifyFn.mockRejectedValue(functionsError('functions/permission-denied', 'رمز الرحلة غير صحيح.'))
 
     const { result } = renderHook(() => useAuth())
     await fireAuthChange(mkUser({}))
@@ -228,7 +237,7 @@ describe('useAuth', () => {
 
   it('verifyTripPin الناجح يحفظ الرمز محلياً وينهي الحاجة له', async () => {
     mocks.authObj.currentUser = mkUser({})
-    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ result: { success: true } }) })
+    mocks.callVerifyFn.mockResolvedValue({ data: { success: true } })
 
     const { result } = renderHook(() => useAuth())
     let success: boolean | undefined
@@ -243,7 +252,7 @@ describe('useAuth', () => {
 
   it('verifyTripPin الفاشل بلا حظر معدّل يعرض رسالة رمز غير صحيح', async () => {
     mocks.authObj.currentUser = mkUser({})
-    fetchMock.mockResolvedValue({ ok: false, status: 403, json: async () => ({}) })
+    mocks.callVerifyFn.mockRejectedValue(functionsError('functions/permission-denied', 'رمز الرحلة غير صحيح.'))
 
     const { result } = renderHook(() => useAuth())
     await act(async () => {
@@ -262,19 +271,15 @@ describe('useAuth', () => {
       success = await result.current.verifyTripPin('0000')
     })
     expect(success).toBe(false)
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(mocks.callVerifyFn).not.toHaveBeenCalled()
   })
 
-  it('تجاوز حدّ المحاولات (429) يبدأ عدّاً تنازلياً يُصفّر الخطأ تلقائياً عند انتهائه', async () => {
+  it('تجاوز حدّ المحاولات يبدأ عدّاً تنازلياً يُصفّر الخطأ تلقائياً عند انتهائه', async () => {
     vi.useFakeTimers()
     mocks.authObj.currentUser = mkUser({})
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 429,
-      json: async () => ({
-        error: { status: 'RESOURCE_EXHAUSTED', details: { retryAfter: 2 }, message: 'تجاوزت الحد المسموح' },
-      }),
-    })
+    mocks.callVerifyFn.mockRejectedValue(
+      functionsError('functions/resource-exhausted', 'تجاوزت الحد المسموح', { retryAfter: 2 })
+    )
 
     const { result } = renderHook(() => useAuth())
     await act(async () => {
@@ -290,5 +295,45 @@ describe('useAuth', () => {
     act(() => vi.advanceTimersByTime(1000))
     expect(result.current.rateLimitSeconds).toBeNull()
     expect(result.current.pinError).toBeNull() // يُصفَّر تلقائياً عند انتهاء العدّ
+  })
+
+  // ⚠️ اختبار انحدار: الدالة كانت ترمي HttpsError بلا details، فكان العميل يسقط
+  // على 900 ثانية ويعرض «15 دقيقة» دائماً مهما كان المتبقي. أُصلح في
+  // functions/index.js — وهذان الاختباران يثبّتان الطرفين.
+  it('يستخدم retryAfter القادم من الخادم لا قيمة ثابتة', async () => {
+    mocks.authObj.currentUser = mkUser({})
+    mocks.callVerifyFn.mockRejectedValue(
+      functionsError('functions/resource-exhausted', 'محظور', { retryAfter: 42 })
+    )
+
+    const { result } = renderHook(() => useAuth())
+    await act(async () => { await result.current.verifyTripPin('0000') })
+
+    expect(result.current.rateLimitSeconds).toBe(42)
+  })
+
+  it('يسقط على 900 ثانية فقط حين لا يرسل الخادم retryAfter إطلاقاً', async () => {
+    mocks.authObj.currentUser = mkUser({})
+    mocks.callVerifyFn.mockRejectedValue(
+      functionsError('functions/resource-exhausted', 'محظور')
+    )
+
+    const { result } = renderHook(() => useAuth())
+    await act(async () => { await result.current.verifyTripPin('0000') })
+
+    expect(result.current.rateLimitSeconds).toBe(900)
+  })
+
+  it('خطأ دالة من نوع آخر لا يُفسَّر كحظر معدّل', async () => {
+    mocks.authObj.currentUser = mkUser({})
+    mocks.callVerifyFn.mockRejectedValue(
+      functionsError('functions/internal', 'عطل داخلي')
+    )
+
+    const { result } = renderHook(() => useAuth())
+    await act(async () => { await result.current.verifyTripPin('0000') })
+
+    expect(result.current.rateLimitSeconds).toBeNull()
+    expect(result.current.pinError).toBe('رمز الرحلة غير صحيح، حاول مرة أخرى.')
   })
 })

@@ -351,20 +351,36 @@ These are not secrets — a Firebase client config is public by design and ships
 
 **Vite substitutes `VITE_*` at build time, not runtime.** They must exist in the build environment: `.env.local` locally, and Vercel › Project Settings › Environment Variables for deploys. Adding them to Vercel *after* a deploy does nothing until you redeploy.
 
-⚠️ **This does not give you a working second environment on its own.** The project id is also pinned in two places outside Vite's reach:
+🆕 **A second environment now works from the env vars alone.** Everything the client touches — Firestore, Auth **and Cloud Functions** — follows `VITE_FIREBASE_PROJECT_ID`.
 
-| Place | Why it cannot read env vars |
+This used not to be true. The client called functions through `fetch('/api/verifyTripPin')`, a `vercel.json` rewrite pointing at a **literal** function URL, and Vercel does not interpolate env vars in rewrite destinations. So a preview build authenticated against staging while calling production's functions: the function received a token issued by a different project and rejected it as `unauthenticated`, and read `tripSecrets` from the wrong database. Staging was not merely awkward, it could not work.
+
+The fix was to stop hand-rolling the call. `httpsCallable` derives the function URL from the app's `projectId`, so it follows the environment for free — and `getFunctions` was already exported from `src/firebase.ts`, unused, since the beginning. `vercel.json` no longer needs any rewrite, and the `/api` dev proxy is gone with it.
+
+Two things still need setting per environment, but both accept it now:
+
+| Place | How to point it at another project |
 |---|---|
-| `vercel.json` | Rewrite destinations (`/api/verifyTripPin`, `/api/manageTrip`) are literal function URLs; Vercel does not interpolate env vars there |
-| `.firebaserc` | Target project for Firebase CLI (rules and functions deploys) |
-
-Change only the env vars and you get an app split across two projects: Firestore and Auth on the new one, Cloud Functions still on the old one — so PIN verification and trip creation would hit the wrong database. A real staging setup needs both files handled too.
+| `.firebaserc` | 🆕 multi-project: `firebase use staging` or `--project staging` |
+| admin scripts | 🆕 `FIREBASE_SERVICE_ACCOUNT=serviceAccountKey.staging.json node scripts/…` |
 
 Unrelated but easy to confuse: `DEFAULT_TRIP_ID` in `src/utils/tripId.ts` is the string `travelapp-87206`, which happens to match the project id. It is a *trip* id, not a project id — changing it breaks existing trip links.
 
+### Setting up a staging environment (🆕)
+
+1. Create a second Firebase project; enable **Anonymous** and **Email/Password** auth, and create a Firestore database.
+2. Put its id in `.firebaserc` under `staging`, then deploy the backend to it:
+   `npx firebase deploy --only firestore:rules,functions --project staging`
+3. Download that project's service-account key as `serviceAccountKey.staging.json` (git-ignored by the `serviceAccountKey*.json` pattern), then seed it:
+   `FIREBASE_SERVICE_ACCOUNT=serviceAccountKey.staging.json node scripts/create-trip.mjs`
+4. In Vercel › Settings › Environment Variables, set the six `VITE_FIREBASE_*` values for the **Preview** environment only, pointing at the staging project. Leave **Production** on the production project.
+5. Redeploy. Preview deployments now read and write staging exclusively.
+
+Every admin script prints the project id it is about to touch before doing anything — the last guard against running a seeding script against production while believing you are on staging.
+
 For deployment:
 - `.env.local` is **git-ignored** (`*.local` in `.gitignore`) and holds the real values. `.env.example` is tracked as the template.
-- `serviceAccountKey.json` is required for all admin scripts (`create-trip.mjs`, `set-admin.mjs`, `list-trips.mjs`, `add-flights.mjs`). It is git-ignored. **Do not commit this file.**
+- A service-account key is required for all admin scripts. The default is `serviceAccountKey.json`; override per environment with `FIREBASE_SERVICE_ACCOUNT`. All `serviceAccountKey*.json` files are git-ignored. **Never commit one.**
 - `.npmrc` sets `legacy-peer-deps=true` — required for Vercel installs to resolve.
 
 ---

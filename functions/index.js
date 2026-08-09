@@ -140,9 +140,14 @@ exports.verifyTripPin = onCall(
     
     if (rateCheck.limited) {
       const minutesLeft = Math.ceil(rateCheck.retryAfter / 60);
+      // ⚠️ الوسيط الثالث (details) ليس زينة: العميل يقرأ منه retryAfter ليعرض
+      // عدّاً تنازلياً دقيقاً. كان مفقوداً، فكان العميل يسقط على قيمته الاحتياطية
+      // (900 ثانية) ويعرض «15 دقيقة» دائماً مهما كان المتبقي الحقيقي — انظر
+      // callVerify في hooks/useAuth.ts.
       throw new HttpsError(
-        'resource-exhausted', 
-        `تجاوزت عدد المحاولات المسموحة. يرجى المحاولة بعد ${minutesLeft} دقيقة.`
+        'resource-exhausted',
+        `تجاوزت عدد المحاولات المسموحة. يرجى المحاولة بعد ${minutesLeft} دقيقة.`,
+        { retryAfter: rateCheck.retryAfter }
       );
     }
 

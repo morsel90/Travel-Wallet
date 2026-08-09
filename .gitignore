@@ -14,7 +14,9 @@ dist-ssr
 !.env.example
 
 # مفاتيح حساب الخدمة (Firebase Admin) — سرّية ولا تُرفع أبداً
-serviceAccountKey.json
+# 🆕 النمط لا الاسم الواحد: مفاتيح البيئات الأخرى (serviceAccountKey.staging.json
+# وغيرها) كانت ستُرفع لأن القاعدة السابقة كانت تطابق الاسم الافتراضي وحده.
+serviceAccountKey*.json
 
 # ملفات النظام والمحرر
 .DS_Store

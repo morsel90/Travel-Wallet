@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth, connectAuthEmulator } from 'firebase/auth'
-import { getFunctions }  from 'firebase/functions'
+import { getFunctions, connectFunctionsEmulator } from 'firebase/functions'
 import {
   initializeFirestore,
   persistentLocalCache,
@@ -13,16 +13,17 @@ import {
 // سرّ (إعداد عميل Firebase عام بطبيعته ويظهر في حزمة JS مهما فعلنا)، بل ليمكن
 // توجيه بناء إلى مشروع آخر دون تعديل ملف متتبَّع في git.
 //
-// ⚠️ الفصل غير مكتمل عمداً — معرّف المشروع ما زال مثبّتاً في موضعين خارج نطاق
-// Vite ولا يقرآن import.meta.env إطلاقاً:
-//   1. vercel.json — وجهات إعادة التوجيه لدوال السحابة
-//      (https://us-central1-<project>.cloudfunctions.net/...). وجهات Vercel
-//      لا تقبل متغيرات بيئة، فتغيير المتغيرات أدناه وحدها يُنتج تطبيقاً
-//      نصفه على مشروع والنصف الآخر على مشروع ثانٍ: Firestore والمصادقة هنا،
-//      بينما /api/verifyTripPin و/api/manageTrip هناك.
-//   2. .firebaserc — المشروع الهدف لأوامر Firebase CLI (نشر القواعد والدوال).
-// أي أن هذه المتغيرات تُخرج الإعداد من الكود، ولا تمنحك بيئة staging عاملة
-// وحدها. انظر قسم Environment Variables في CLAUDE.md قبل إعداد بيئة ثانية.
+// 🆕 صار الفصل مكتملاً على جانب العميل: Firestore والمصادقة **والدوال** كلها
+// تتبع VITE_FIREBASE_PROJECT_ID أدناه. كان هذا مستحيلاً سابقاً لأن العميل نادى
+// الدوال عبر إعادة توجيه في vercel.json إلى رابط مكتوب حرفياً، ووجهات Vercel لا
+// تقبل متغيرات بيئة — فكان البناء الموجَّه لمشروع آخر يصادق على مشروع ويستدعي
+// دوال مشروع ثانٍ. الاستدعاء الآن عبر httpsCallable الذي يشتق الرابط من
+// projectId (انظر hooks/useAuth.ts).
+//
+// ⚠️ ما زال خارج نطاق Vite: `.firebaserc` (المشروع الهدف لأوامر Firebase CLI)
+// ومفتاح حساب الخدمة للسكربتات الإدارية. كلاهما يقبل التبديل الآن —
+// `firebase use staging` و`FIREBASE_SERVICE_ACCOUNT=…` على الترتيب. انظر قسم
+// «Setting up a staging environment» في CLAUDE.md.
 
 interface FirebaseEnvConfig {
   apiKey: string
@@ -89,6 +90,13 @@ export const auth = getAuth(app)
 // (region: 'us-central1' داخل onCall) وإلا فشلت استدعاءات verifyTripPin.
 // تبقى مكتوبة في الكود لأنها خاصية معمارية مشتركة مع الخادم، لا إعداد بيئة:
 // تغييرها هنا وحده دون تغييرها هناك يكسر الاستدعاءات بصمت.
+//
+// 🆕 هذه النسخة هي المسار الوحيد لاستدعاء الدوال الآن (httpsCallable في
+// hooks/useAuth.ts وhooks/useTripAdminActions.ts). كان العميل يستدعيها بـ fetch
+// خام على `/api/...` عبر إعادة توجيه في vercel.json — وهو ما ربط التطبيق بمشروع
+// Firebase واحد مكتوب حرفياً في ملف لا يقرأ متغيرات البيئة، فاستحال قيام بيئة
+// staging حقيقية. الـ SDK يشتق رابط الدالة من projectId تلقائياً، فتتبع الدوال
+// أي مشروع تشير إليه متغيرات VITE_FIREBASE_* بلا أي إعداد إضافي.
 export const functions = getFunctions(app, 'us-central1')
 
 // التهيئة الحديثة لقاعدة البيانات مع تفعيل التخزين المؤقت (Offline Persistence).
@@ -111,4 +119,5 @@ export const db = initializeFirestore(app, {
 if (import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true') {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true })
   connectFirestoreEmulator(db, '127.0.0.1', 8080)
+  connectFunctionsEmulator(functions, '127.0.0.1', 5001)
 }

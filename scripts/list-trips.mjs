@@ -1,12 +1,9 @@
 // scripts/list-trips.mjs
 import { initializeApp, cert } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
-import { readFileSync } from 'fs'
-import { dirname, join } from 'path'
-import { fileURLToPath } from 'url'
+import { loadServiceAccount } from './serviceAccount.mjs'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const serviceAccount = JSON.parse(readFileSync(join(__dirname, '..', 'serviceAccountKey.json'), 'utf8'))
+const serviceAccount = loadServiceAccount()
 
 initializeApp({ credential: cert(serviceAccount) })
 const db = getFirestore()

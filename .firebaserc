@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "travelapp-87206"
+    "default": "travelapp-87206",
+    "production": "travelapp-87206",
+    "staging": "REPLACE_WITH_STAGING_PROJECT_ID"
   }
 }

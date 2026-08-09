@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { onAuthStateChanged, signInAnonymously, User } from 'firebase/auth'
-import { auth } from '../firebase'
+import { httpsCallable } from 'firebase/functions'
+import { auth, functions } from '../firebase'
 import { TRIP_ID } from '../utils/tripId'
+
+// عقد استدعاء verifyTripPin — يطابق ما تقرأه الدالة في functions/index.js
+interface VerifyTripPinRequest { pin: string; tripId: string }
+interface VerifyTripPinResponse { success: boolean }
 
 const tripPinStorageKey = () => `travelapp_trip_pin_${TRIP_ID}`
 
@@ -74,37 +79,45 @@ export function useAuth(): UseAuth {
     return () => clearInterval(interval)
   }, [rateLimitActive])
 
+  // 🆕 استدعاء عبر SDK بدل fetch خام على `/api/verifyTripPin`.
+  //
+  // ⚠️ سبب التحويل معماري لا تجميلي: المسار `/api/...` كان مجرد إعادة توجيه في
+  // vercel.json إلى رابط دالة **مكتوب حرفياً بمعرّف المشروع**، ووجهات Vercel لا
+  // تقرأ متغيرات البيئة. فكان أي بناء — مهما ضُبطت متغيراته — يخاطب دوال مشروع
+  // الإنتاج، فيصادق العميل على مشروع ويستدعي دوال مشروع آخر: توكن من جهة وتحقق
+  // من جهة، والنتيجة رفض بـ unauthenticated. أي أن بيئة staging كانت مستحيلة.
+  //
+  // httpsCallable يشتق الرابط من projectId في إعداد التطبيق، فتتبع الدوال تلقائياً
+  // أي مشروع تشير إليه VITE_FIREBASE_* — وتتبع المحاكي في اختبارات E2E
+  // (connectFunctionsEmulator في firebase.ts) بلا أي وسيط أو إعداد إضافي.
   const callVerify = useCallback(async (pin: string): Promise<{ success: boolean, retryAfter?: number, message?: string }> => {
     try {
       if (!auth.currentUser) return { success: false }
-      const idToken = await auth.currentUser.getIdToken(true)
-
-      const response = await fetch('/api/verifyTripPin', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`
-        },
-        body: JSON.stringify({ data: { pin: String(pin).trim(), tripId: TRIP_ID } })
-      })
-
-      const resData = await response.json().catch(() => ({}))
-
-      if (!response.ok) {
-        if (response.status === 429 || resData?.error?.status === 'RESOURCE_EXHAUSTED' || resData?.error?.status === 'resource-exhausted') {
-          return {
-            success: false,
-            retryAfter: resData?.error?.details?.retryAfter || 900,
-            message: resData?.error?.message || 'تجاوزت عدد المحاولات.'
-          }
-        }
-        return { success: false }
-      }
-
+      // تحديث التوكن قبل الاستدعاء: الـ SDK يرفق التوكن المخزَّن، فالتحديث هنا
+      // يضمن أن ما يُرسَل حديث (يهم بعد منح صلاحية أو عضوية رحلة جديدة).
       await auth.currentUser.getIdToken(true)
-      const isSuccess = resData?.result?.success === true || resData?.result?.data?.success === true || resData?.success === true
-      return { success: isSuccess }
+
+      const verify = httpsCallable<VerifyTripPinRequest, VerifyTripPinResponse>(functions, 'verifyTripPin')
+      const result = await verify({ pin: String(pin).trim(), tripId: TRIP_ID })
+
+      if (result.data?.success !== true) return { success: false }
+
+      // التوكن الجديد يحمل claim العضوية التي منحتها الدالة للتوّ
+      await auth.currentUser.getIdToken(true)
+      return { success: true }
     } catch (error) {
+      // أخطاء الدوال تصل ككائن FunctionsError: code مثل 'functions/resource-exhausted'
+      // وdetails هي الوسيط الثالث في HttpsError خادمياً.
+      const fnError = error as { code?: string; message?: string; details?: { retryAfter?: number } }
+
+      if (fnError.code === 'functions/resource-exhausted') {
+        return {
+          success: false,
+          // 900 خط رجوع فقط — الدالة ترسل المتبقي الفعلي في details.retryAfter
+          retryAfter: fnError.details?.retryAfter ?? 900,
+          message: fnError.message || 'تجاوزت عدد المحاولات.',
+        }
+      }
       return { success: false }
     }
   }, [])
