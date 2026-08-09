@@ -31,8 +31,20 @@ export default defineConfig({
   // يبني خادم Vite تلقائياً بإعداد e2e (متصل بالمحاكيات — انظر vite.config.js
   // وsrc/firebase.ts) قبل أي اختبار، ويوقفه بعد انتهائها.
   webServer: {
-    command: 'vite --mode e2e --port 5173 --strictPort',
+    // npx بدل `vite` المجرّد: لا يضمن Playwright وجود node_modules/.bin في PATH
+    // الصدفة التي يُشغّل بها الأمر، فالأمر المجرّد قد يفشل فوراً بـ "command not
+    // found" ثم ينتظر Playwright الرابط حتى تنتهي المهلة — فيبدو الخطأ مهلةً
+    // بينما سببه الحقيقي سطر واحد لم يُعرض أصلاً.
+    // --host 127.0.0.1 صراحةً: Vite يربط افتراضياً على `localhost`، وهي على
+    // macOS مع Node الحديث قد تُحلّ إلى ::1 (IPv6) وحدها. حينها يفشل فحص
+    // Playwright على http://127.0.0.1:5173 (IPv4) رغم أن الخادم يعمل، فيحاول
+    // تشغيل خادم ثانٍ على منفذ محجوز أصلاً. تثبيت العنوان يجعل الطرفين يتفقان.
+    command: 'npx vite --mode e2e --host 127.0.0.1 --port 5173 --strictPort',
     url: BASE_URL,
+    // 🆕 أظهر مخرجات الخادم: بدونها يُخفي Playwright سبب فشل الإقلاع تماماً
+    // ولا يعرض إلا "Timed out waiting..." التي لا تدل على شيء.
+    stdout: 'pipe',
+    stderr: 'pipe',
     reuseExistingServer: !process.env.CI,
     // 🆕 30 ثانية كانت غير كافية في التجربة الفعلية: أول إقلاع لـ Vite بإعداد
     // e2e (بذاكرة تخزين مؤقت جديدة كلياً لهذا الوضع) يزامن تجميع firebase +

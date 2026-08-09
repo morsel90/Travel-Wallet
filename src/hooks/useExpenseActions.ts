@@ -51,6 +51,27 @@ export function useExpenseActions({
   const [expenseToDelete, setExpenseToDelete] = useState<string | null>(null)
 
   const isSubmittingExpenseRef = useRef(false)
+
+  /**
+   * 🆕 يحرّر قفل الإرسال بمجرد *إصدار* الكتابة محلياً — لا عند تأكيد الخادم.
+   *
+   * ⚠️ كان يُحرَّر سابقاً داخل `.finally()` على وعد الكتابة، وهذا خطأ مباشر
+   * بالنظر لسلوك Firestore الموثّق في CLAUDE.md: الكتابة دون اتصال تُطبَّق على
+   * الكاش المحلي وتبقى معلّقة في IndexedDB بلا حسم — لا تُحلّ ولا تُرفض حتى
+   * يعود الاتصال. فـ `.finally()` لا يُستدعى إطلاقاً طوال فترة الانقطاع، ويبقى
+   * القفل مغلقاً، فيُرفض كل مصروف تالٍ عند `if (isSubmittingExpenseRef.current)
+   * return` **بصمت تام**: النموذج لا يُغلق ولا تظهر أي رسالة.
+   *
+   * أي أن من يسجّل مصروفاً في الطائرة كان يستطيع تسجيل واحد فقط، ثم يجد النموذج
+   * لا يستجيب دون تفسير. كشفه اختبار E2E في e2e/offline-optimistic-write.spec.ts.
+   *
+   * التحرير الفوري آمن: القفل يحمي من إرسال مزدوج داخل نفس النقرة، وبعد انتهاء
+   * المعالج يكون النموذج قد أُغلق (setIsAddingExpense(false)) وأُفرغت حقوله،
+   * فلا يبقى زر يُنقر مرتين أصلاً.
+   */
+  const releaseSubmitLock = useCallback(() => {
+    isSubmittingExpenseRef.current = false
+  }, [])
   const lastExpenseCreateAtRef = useRef(0)
   // 🆕 يخزّن بيانات آخر مصروف قبل مسح النموذج لإعادة المحاولة عند فشل الكتابة
   // دون الاعتماد على newExpense التي تُمسح فوراً بعد الإرسال.
@@ -140,15 +161,14 @@ export function useExpenseActions({
       }
 
       if (saved.wasEditing && saved.editingId) {
-        setDoc(expenseDoc(saved.editingId), saved.payload)
-          .catch(onRetryFailed).finally(() => { isSubmittingExpenseRef.current = false })
+        setDoc(expenseDoc(saved.editingId), saved.payload).catch(onRetryFailed)
       } else {
         const batch = writeBatch(db)
         batch.set(doc(expensesCol()), saved.payload)
         if (!isAdmin) batch.set(rateLimitDoc(user.uid), { lastExpenseCreatedAt: Date.now() })
-        batch.commit()
-          .catch(onRetryFailed).finally(() => { isSubmittingExpenseRef.current = false })
+        batch.commit().catch(onRetryFailed)
       }
+      releaseSubmitLock()
     }
 
     const handleError = (err: unknown) => {
@@ -163,19 +183,17 @@ export function useExpenseActions({
     }
 
     if (wasEditing && editingId) {
-      setDoc(expenseDoc(editingId), payload)
-        .catch(handleError)
-        .finally(() => { isSubmittingExpenseRef.current = false })
+      setDoc(expenseDoc(editingId), payload).catch(handleError)
     } else {
       lastExpenseCreateAtRef.current = now
       const batch = writeBatch(db)
       batch.set(doc(expensesCol()), payload)
       if (!isAdmin) batch.set(rateLimitDoc(user.uid), { lastExpenseCreatedAt: now })
-      batch.commit()
-        .catch(handleError)
-        .finally(() => { isSubmittingExpenseRef.current = false })
+      batch.commit().catch(handleError)
     }
-  }, [newExpense, editingExpense, user, isAdmin, emptyExpenseForm, setExpenses, showToast, setSyncError, isFirstExpense])
+    // الكتابة صدرت وطُبِّقت على الكاش المحلي — لا ننتظر تأكيد الخادم لتحرير القفل
+    releaseSubmitLock()
+  }, [newExpense, editingExpense, user, isAdmin, emptyExpenseForm, setExpenses, showToast, setSyncError, isFirstExpense, releaseSubmitLock])
 
   const handleQuickAddExpense = useCallback((description: string, amount: number): string | null => {
     if (isSubmittingExpenseRef.current) return 'جارٍ معالجة طلب سابق، حاول بعد لحظة.'
@@ -242,12 +260,12 @@ export function useExpenseActions({
     const batch = writeBatch(db)
     batch.set(doc(expensesCol()), payload)
     if (!isAdmin) batch.set(rateLimitDoc(user.uid), { lastExpenseCreatedAt: now })
-    batch.commit()
-      .catch(handleQuickError)
-      .finally(() => { isSubmittingExpenseRef.current = false })
+    batch.commit().catch(handleQuickError)
+    // كما في handleAddExpense: التحرير عند إصدار الكتابة لا عند تأكيدها
+    releaseSubmitLock()
 
     return null
-  }, [activeTravelers, isAdmin, user, setExpenses, showToast, isFirstExpense])
+  }, [activeTravelers, isAdmin, user, setExpenses, showToast, isFirstExpense, releaseSubmitLock])
 
   const startEditExpense = useCallback((exp: Expense) => {
     setEditingExpense(exp)

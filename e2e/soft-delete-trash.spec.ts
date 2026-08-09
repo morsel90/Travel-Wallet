@@ -34,7 +34,10 @@ test('حذف مصروف ثم التراجع الفوري يعيده، وحذفه
   await expect(page.getByText('تم نقل المصروف إلى سلة المهملات')).toBeVisible()
   await expect(expenseCard(page, 'تذاكر متحف')).not.toBeVisible()
 
-  await page.getByRole('button', { name: 'تراجع' }).click()
+  // force: تنبيه النجاح يحمل animate-bounce (حركة لا نهائية في Toast.tsx)، وPlaywright
+  // يرفض النقر على عنصر لا «يستقر» بين إطارات الحركة فيظل يعيد المحاولة حتى يختفي
+  // التنبيه بعد 5 ثوانٍ. المستخدم الحقيقي ينقره دون مشكلة — القيد أداتي لا تطبيقي.
+  await page.getByRole('button', { name: 'تراجع' }).click({ force: true })
   await expect(expenseCard(page, 'تذاكر متحف')).toBeVisible()
 
   // ── الحذف الثاني + الاستعادة من سلة المهملات ────────────────────────────

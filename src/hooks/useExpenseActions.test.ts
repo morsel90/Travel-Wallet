@@ -276,6 +276,49 @@ describe('useExpenseActions — الكتابة عبر Firestore (مستخدم م
     expect(handleFirestoreError).toHaveBeenCalledWith(expect.any(Error), 'تعذر حذف المصروف.')
   })
 
+  it('كتابة معلّقة بلا حسم (وضع عدم الاتصال) لا تمنع تسجيل مصروف تالٍ', async () => {
+    // ⚠️ اختبار انحدار (regression) لخلل حقيقي كشفه E2E: قفل الإرسال كان يُحرَّر
+    // في .finally على وعد الكتابة، ووعد Firestore دون اتصال لا يُحسم إطلاقاً —
+    // فيبقى القفل مغلقاً ويُرفض كل مصروف تالٍ بصمت. نحاكي ذلك بوعد لا يُحسم أبداً.
+    mocks.batchCommit.mockReturnValue(new Promise(() => {})) // معلّق للأبد
+    const { result } = setup({ user: fakeUser, isAdmin: true })
+
+    act(() => result.current.setNewExpense({ ...result.current.newExpense, description: 'أول', amount: '10' }))
+    await act(async () => {
+      result.current.handleAddExpense(fakeEvent())
+      await flushMicrotasks()
+    })
+    expect(mocks.batchCommit).toHaveBeenCalledTimes(1)
+
+    // المصروف الثاني يجب أن يُرسل رغم أن الأول لم يُؤكَّد بعد
+    act(() => result.current.setNewExpense({ ...result.current.newExpense, description: 'ثانٍ', amount: '20' }))
+    await act(async () => {
+      result.current.handleAddExpense(fakeEvent())
+      await flushMicrotasks()
+    })
+    expect(mocks.batchCommit).toHaveBeenCalledTimes(2)
+  })
+
+  it('الإضافة السريعة أيضاً لا تُحجب بكتابة سابقة معلّقة بلا حسم', async () => {
+    mocks.batchCommit.mockReturnValue(new Promise(() => {}))
+    const { result } = setup({ user: fakeUser, isAdmin: true })
+
+    let firstError: string | null = null
+    let secondError: string | null = null
+    await act(async () => {
+      firstError = result.current.handleQuickAddExpense('قهوة', 10)
+      await flushMicrotasks()
+    })
+    await act(async () => {
+      secondError = result.current.handleQuickAddExpense('شاي', 12)
+      await flushMicrotasks()
+    })
+
+    expect(firstError).toBeNull()
+    expect(secondError).toBeNull() // لا «جارٍ معالجة طلب سابق»
+    expect(mocks.batchCommit).toHaveBeenCalledTimes(2)
+  })
+
   it('خطأ غير قابل لإعادة المحاولة (permission-denied) لا يعرض زر إعادة محاولة', async () => {
     const permissionError = Object.assign(new Error('nope'), { code: 'permission-denied' })
     mocks.batchCommit.mockRejectedValueOnce(permissionError)

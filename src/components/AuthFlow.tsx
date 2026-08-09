@@ -6,7 +6,13 @@ import { AnimatePresence } from 'framer-motion'
 import ModalFallback from './modals/ModalFallback'
 import type { AdminSignInModalProps } from './modals/AdminSignInModal'
 
-const AdminSignInModal = lazy(() => import('./modals/AdminSignInModal'))
+const importAdminSignInModal = () => import('./modals/AdminSignInModal')
+
+const AdminSignInModal = lazy(importAdminSignInModal)
+
+/** 🆕 جزء نافذة دخول المسؤول للتحميل المسبق الهادئ — انظر modalImporters في ModalManager. */
+// eslint-disable-next-line react-refresh/only-export-components -- نفس المقايضة الموثّقة في ModalManager.tsx
+export const authImporters = [importAdminSignInModal]
 
 interface AuthFlowProps {
   open: boolean

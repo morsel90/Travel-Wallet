@@ -14,8 +14,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-travelapp-rules \"vitest run --config vitest.rules.config.ts\"",
-    "test:e2e": "firebase emulators:exec --only auth,firestore,functions --project demo-travelapp-e2e \"playwright test\"",
+    "test:rules": "node scripts/run-with-emulators.mjs --only firestore --project demo-travelapp-rules -- vitest run --config vitest.rules.config.ts",
+    "test:e2e": "node scripts/run-with-emulators.mjs --only auth,firestore,functions --project demo-travelapp-e2e -- playwright test",
     "e2e:install": "playwright install --with-deps chromium",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"

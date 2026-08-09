@@ -12,11 +12,38 @@ import { ConfirmModal } from './Modal'
 import ModalFallback from './modals/ModalFallback'
 import type { ModalState } from '../hooks/useModals'
 
-const ReportsView         = lazy(() => import('./reports/ReportsView'))
-const DepositModal        = lazy(() => import('./modals/DepositModal'))
-const TrashBinModal       = lazy(() => import('./modals/TrashBinModal'))
-const DepositHistoryModal = lazy(() => import('./modals/DepositHistoryModal'))
-const TripAdminView       = lazy(() => import('./admin/TripAdminView'))
+// ⚠️ دوال الاستيراد مُسمّاة ومُعاد استخدامها في modalImporters أدناه بدل تكرارها:
+// التحميل المسبق يجب أن يستورد *نفس* المُعرّف حرفياً وإلا سحب وحدة أخرى وبقي
+// الجزء الحقيقي بلا تحميل (انظر preloadAll في utils/preload.ts).
+const importReportsView         = () => import('./reports/ReportsView')
+const importDepositModal        = () => import('./modals/DepositModal')
+const importTrashBinModal       = () => import('./modals/TrashBinModal')
+const importDepositHistoryModal = () => import('./modals/DepositHistoryModal')
+const importTripAdminView       = () => import('./admin/TripAdminView')
+
+const ReportsView         = lazy(importReportsView)
+const DepositModal        = lazy(importDepositModal)
+const TrashBinModal       = lazy(importTrashBinModal)
+const DepositHistoryModal = lazy(importDepositHistoryModal)
+const TripAdminView       = lazy(importTripAdminView)
+
+/**
+ * 🆕 أجزاء المودالات للتحميل المسبق الهادئ — تُستهلك من App.tsx.
+ * تعيش هنا بجوار `lazy()` عمداً: تغيير مسار أعلاه يظهر أثره هنا فوراً، بينما
+ * قائمة مسارات في ملف بعيد كانت ستنحرف بصمت وتُبطل التحميل المسبق دون أن يلاحظ أحد.
+ */
+// مقايضة مقصودة مع Fast Refresh: نقل هذه القائمة لملف منفصل يُرضي القاعدة لكنه
+// يفصل المسارات عن `lazy()` أعلاه، فتنحرف بصمت عند أي إعادة تسمية ويتوقف التحميل
+// المسبق دون أن يفشل شيء ظاهرياً. الكلفة هنا إعادة تحميل كاملة عند تحرير هذا
+// الملف أثناء التطوير فقط.
+// eslint-disable-next-line react-refresh/only-export-components
+export const modalImporters = [
+  importReportsView,
+  importDepositModal,
+  importTrashBinModal,
+  importDepositHistoryModal,
+  importTripAdminView,
+]
 
 interface ModalManagerProps {
   modal: ModalState

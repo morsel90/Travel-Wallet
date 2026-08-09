@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, lazy, Suspense, useCallback } from 'react'
+import { useState, useMemo, useRef, lazy, Suspense, useCallback, useEffect } from 'react'
 import { exportTripToExcel }                   from './utils/reports'
 import { calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from './utils/calculations'
 import { Virtuoso }                            from 'react-virtuoso'
@@ -28,17 +28,26 @@ import UpdatePrompt                      from './components/UpdatePrompt'
 import OnboardingBanner                  from './components/OnboardingBanner'
 import TripGate                          from './components/TripGate'
 import TripPicker                        from './components/TripPicker'
-import AuthFlow                          from './components/AuthFlow'
-import ModalManager                      from './components/ModalManager'
+import AuthFlow, { authImporters }        from './components/AuthFlow'
+import ModalManager, { modalImporters }   from './components/ModalManager'
 import PullToRefresh                     from './components/PullToRefresh'
 import SmartInputBar                     from './components/SmartInputBar'
 import EmptyState                        from './components/EmptyState'
 import { TravelerCardSkeleton, ExpenseListItemSkeleton, ChartsSectionSkeleton } from './components/Skeleton'
 import { haptic }                        from './utils/haptics'
+import { onIdle, preloadAll }            from './utils/preload'
 import { describeWriteError, writeErrorCode } from './utils/writeErrors'
 import { Users, Receipt, AlertTriangle, Download, Search, WifiOff, Plus, BarChart3, Settings } from './icons'
 
-const ChartsSection       = lazy(() => import('./components/charts/ChartsSection'))
+// ⚠️ دالة الاستيراد مُسمّاة لتُعاد في التحميل المسبق بنفس المُعرّف حرفياً —
+// انظر ModalManager.tsx وutils/preload.ts.
+const importChartsSection = () => import('./components/charts/ChartsSection')
+const ChartsSection       = lazy(importChartsSection)
+
+// 🆕 كل الأجزاء المؤجّلة في التطبيق، للتحميل المسبق الهادئ بعد أول عرض.
+// ChartsSection أهمها: لا تُطلب إلا عند أول مصروف في الرحلة، فتسجيل ذلك المصروف
+// أثناء انقطاع الاتصال كان يُسقط التطبيق كاملاً إلى ErrorBoundary.
+const LAZY_IMPORTERS = [importChartsSection, ...modalImporters, ...authImporters]
 
 export default function App() {
   const [isSyncing, setIsSyncing] = useState(false)
@@ -211,6 +220,18 @@ export default function App() {
     startEditExpense, requestDeleteExpense, startAddTraveler, cancelAddTraveler, handleAddTraveler,
     openDeposit, openDeleteTraveler, openDepositHistory
   ])
+
+  // 🆕 سحب الأجزاء المؤجّلة بهدوء بعد أن يصبح التطبيق تفاعلياً، حتى تكون حاضرة
+  // إن انقطع الاتصال لاحقاً. لولا هذا، أول مصروف يُسجَّل في رحلة أثناء الانقطاع
+  // يستدعي ChartsSection لأول مرة فيفشل استيرادها وتنهار الواجهة إلى
+  // ErrorBoundary (كشفه اختبار E2E فعلياً — انظر utils/preload.ts).
+  //
+  // ⚠️ يجب أن يبقى هذا الـ hook قبل أي `return` مشروط أدناه (قواعد الـ Hooks).
+  // ولا نسحب شيئاً قبل ثبوت الوصول: لا معنى لتحميل مودالات لمن لم يجتز البوابة.
+  useEffect(() => {
+    if (!hasAccess) return
+    return onIdle(() => preloadAll(LAZY_IMPORTERS))
+  }, [hasAccess])
 
   // 🆕 من فتح التطبيق بلا `?trip=` لا رحلة مقصودة لديه، فمطالبته برمز الرحلة
   // الافتراضية مطالبةٌ برمز رحلة قد لا تعنيه إطلاقاً — نعرض رحلاته بدلاً منها.
