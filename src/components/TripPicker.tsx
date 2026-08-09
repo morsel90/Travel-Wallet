@@ -1,5 +1,6 @@
 import { Luggage, ChevronLeft, Loader2, AlertTriangle, PieChart, ArrowRight } from '../icons'
 import type { MyTrip } from '../hooks/useMyTrips'
+import { TRIP_STATUS_LABEL } from '../types'
 import { tripUrl } from '../utils/tripId'
 import { haptic } from '../utils/haptics'
 
@@ -99,11 +100,17 @@ const TripPicker = ({ trips, loading, error, currentTripId, onBack }: TripPicker
                       <span className="block font-bold text-slate-800 truncate leading-tight">
                         {trip.name}
                       </span>
-                      {isCurrent && (
-                        <span className="block text-[11px] font-bold text-teal-600 mt-0.5">
-                          الرحلة المفتوحة حالياً
-                        </span>
-                      )}
+                      <span className="flex items-center gap-1.5 mt-0.5">
+                        {isCurrent && (
+                          <span className="text-[11px] font-bold text-teal-600">الرحلة المفتوحة حالياً</span>
+                        )}
+                        {/* الحالة تُعرض فقط حين تكون غير نشطة — لا فائدة من وسم كل رحلة عادية */}
+                        {trip.status !== 'active' && (
+                          <span className="text-[11px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-md">
+                            {TRIP_STATUS_LABEL[trip.status]}
+                          </span>
+                        )}
+                      </span>
                     </span>
 
                     <ChevronLeft className="w-5 h-5 text-slate-300 shrink-0" />

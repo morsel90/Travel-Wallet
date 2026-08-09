@@ -68,6 +68,10 @@ const adminDb      = (uid = 'admin-1'): Firestore =>
 const seed = (fn: (db: Firestore) => Promise<void>) =>
   testEnv.withSecurityRulesDisabled(async (ctx: RulesTestContext) => fn(asModularFirestore(ctx.firestore())))
 
+/** يضبط حالة دورة حياة الرحلة قبل الاختبار (غياب المستند نفسه = active). */
+const setTripStatus = (status: 'active' | 'completed' | 'archived') =>
+  seed(db => setDoc(doc(db, 'trips', TRIP_ID), { name: 'رحلة', status }))
+
 // ─── مسارات المستندات (نسخة مستقلة — انظر التعليق أعلى الملف) ────────────────
 const expensesCol    = (db: Firestore, tripId = TRIP_ID) => collection(db, 'artifacts', tripId, 'public', 'data', 'expenses')
 const expenseDoc     = (db: Firestore, id: string, tripId = TRIP_ID) => doc(db, 'artifacts', tripId, 'public', 'data', 'expenses', id)
@@ -81,6 +85,7 @@ const tripSecretsDoc  = (db: Firestore, tripId = TRIP_ID) => doc(db, 'tripSecret
 const pinRateLimitDoc = (db: Firestore, key = 'k1') => doc(db, 'rateLimits', key)
 
 // ─── حمولات صالحة (تطابق isValidExpense/isValidTraveler/isValidDepositLog) ───
+/** مصروف بلا نسبة — يمثّل المصاريف القديمة السابقة لحقل createdByUid. */
 const validExpense = (overrides: Record<string, unknown> = {}) => ({
   date: '2026-08-01',
   description: 'عشاء',
@@ -92,6 +97,16 @@ const validExpense = (overrides: Record<string, unknown> = {}) => ({
   createdAt: Date.now(),
   ...overrides,
 })
+
+/**
+ * مصروف منسوب لكاتبه — الشكل الطبيعي لأي إنشاء بعد إغلاق ثغرة النسبة.
+ *
+ * ⚠️ استخدمه في كل اختبار إنشاء لا يقصد اختبار النسبة نفسها. بدونه يفشل الإنشاء
+ * لغياب createdByUid، فيمرّ اختبار `assertFails` **للسبب الخطأ** ويبدو ناجحاً
+ * وهو لا يفحص ما وُضع لفحصه إطلاقاً.
+ */
+const expenseBy = (uid: string, overrides: Record<string, unknown> = {}) =>
+  validExpense({ createdByUid: uid, ...overrides })
 
 const validTraveler = (overrides: Record<string, unknown> = {}) => ({
   id: 1,
@@ -120,30 +135,30 @@ const validDepositLog = (changedByUid: string, overrides: Record<string, unknown
 describe('عضوية الرحلة — expenses', () => {
   it('مستخدم مجهول تماماً (بلا تسجيل دخول) يُمنع من القراءة والإضافة', async () => {
     await assertFails(getDocs(expensesCol(anonDb())))
-    await assertFails(setDoc(expenseDoc(anonDb(), 'e1'), validExpense()))
+    await assertFails(setDoc(expenseDoc(anonDb(), 'e1'), expenseBy('anon')))
   })
 
   it('مستخدم موقّع دخول لكن ليس عضواً في أي رحلة يُمنع من القراءة والإضافة', async () => {
     await assertFails(getDocs(expensesCol(strangerDb())))
-    await assertFails(setDoc(expenseDoc(strangerDb(), 'e1'), validExpense()))
+    await assertFails(setDoc(expenseDoc(strangerDb(), 'e1'), expenseBy('stranger')))
   })
 
-  it('عضو الرحلة يستطيع قراءة المصاريف وإضافة مصروف صالح', async () => {
+  it('عضو الرحلة يستطيع قراءة المصاريف وإضافة مصروف صالح منسوب لنفسه', async () => {
     await assertSucceeds(getDocs(expensesCol(memberDb())))
-    await assertSucceeds(setDoc(expenseDoc(memberDb(), 'e1'), validExpense()))
+    await assertSucceeds(setDoc(expenseDoc(memberDb(), 'e1'), expenseBy('member-1')))
   })
 
   it('عضو رحلة أخرى لا يرى ولا يكتب في رحلة لا ينتمي إليها (عزل بين الرحلات)', async () => {
     await assertFails(getDocs(expensesCol(otherTripMemberDb())))
-    await assertFails(setDoc(expenseDoc(otherTripMemberDb(), 'e1'), validExpense()))
+    await assertFails(setDoc(expenseDoc(otherTripMemberDb(), 'e1'), expenseBy('member-other-trip')))
   })
 
   it('مصروف ببنية غير صالحة (وصف فارغ) يُرفض حتى من عضو حقيقي', async () => {
-    await assertFails(setDoc(expenseDoc(memberDb(), 'e1'), validExpense({ description: '' })))
+    await assertFails(setDoc(expenseDoc(memberDb(), 'e1'), expenseBy('member-1', { description: '' })))
   })
 
   it('مصروف بحقل غير معروف يُرفض (hasOnly)', async () => {
-    await assertFails(setDoc(expenseDoc(memberDb(), 'e1'), validExpense({ extraField: 'x' })))
+    await assertFails(setDoc(expenseDoc(memberDb(), 'e1'), expenseBy('member-1', { extraField: 'x' })))
   })
 })
 
@@ -168,13 +183,47 @@ describe('ملكية المصروف — update', () => {
     await assertSucceeds(updateDoc(expenseDoc(adminDb(), 'owned'), { amount: 300 }))
   })
 
-  it('⚠️ ملاحظة: الإنشاء لا يتحقق أن createdByUid يطابق هوية الكاتب الفعلية', async () => {
-    // ليس اختبار حماية بل توثيق سلوك حالي: isExpenseOwner يُفعَّل عند update
-    // فقط. عند create يُقبَل أي createdByUid يرسله العميل دون تحقق أنه
-    // auth.uid الفعلي — عضو يمكنه نظرياً كتابة مصروف منسوب لعضو آخر.
-    await assertSucceeds(
+  it('المسؤول لا يستطيع تغيير createdByUid عند التعديل (الحقل ثابت للجميع)', async () => {
+    await assertFails(updateDoc(expenseDoc(adminDb(), 'owned'), { createdByUid: 'someone-else' }))
+  })
+
+  it('المسؤول يستطيع تعديل مصروف قديم بلا مالك، ويختم نفسه عليه', async () => {
+    // المصاريف السابقة لإضافة createdByUid لا تملك الحقل. العميل يرسل
+    // `editingExpense?.createdByUid ?? user?.uid` فيختم المحرِّر — يجب أن يُقبل،
+    // وإلا انكسر تعديل المسؤول لكل مصروف قديم.
+    await seed(db => setDoc(expenseDoc(db, 'legacy'), validExpense())) // بلا createdByUid
+    await assertSucceeds(updateDoc(expenseDoc(adminDb('admin-1'), 'legacy'), { createdByUid: 'admin-1' }))
+  })
+
+  it('لا يمكن ختم مصروف قديم بلا مالك باسم شخص آخر', async () => {
+    await seed(db => setDoc(expenseDoc(db, 'legacy2'), validExpense()))
+    await assertFails(updateDoc(expenseDoc(adminDb('admin-1'), 'legacy2'), { createdByUid: 'member-2' }))
+  })
+})
+
+// 🔒 الثغرة التي كانت مفتوحة وأُغلقت: الإنشاء لم يكن يتحقق أن createdByUid يطابق
+// هوية الكاتب، فأي عضو يستطيع نسبة مصروف لغيره. هذه الاختبارات تمنع عودتها.
+describe('نسبة المصروف عند الإنشاء — createdByUid', () => {
+  it('عضو لا يستطيع إنشاء مصروف منسوب لعضو آخر', async () => {
+    await assertFails(
       setDoc(expenseDoc(memberDb('member-1'), 'impersonated'), validExpense({ createdByUid: 'member-2' }))
     )
+  })
+
+  it('المسؤول أيضاً لا يستطيع نسبة مصروف لغيره — لا استثناء للصلاحية', async () => {
+    await assertFails(
+      setDoc(expenseDoc(adminDb('admin-1'), 'impersonated-by-admin'), validExpense({ createdByUid: 'member-2' }))
+    )
+  })
+
+  it('عضو ينسب المصروف لنفسه — يُقبل', async () => {
+    await assertSucceeds(
+      setDoc(expenseDoc(memberDb('member-1'), 'own'), validExpense({ createdByUid: 'member-1' }))
+    )
+  })
+
+  it('إنشاء مصروف بلا createdByUid إطلاقاً يُرفض — كل مصروف جديد يجب أن يكون منسوباً', async () => {
+    await assertFails(setDoc(expenseDoc(memberDb('member-1'), 'anonymous'), validExpense()))
   })
 })
 
@@ -238,19 +287,85 @@ describe('تفرّد الاسم المختصر — travelerNames', () => {
   })
 })
 
+// 🆕 دورة حياة الرحلة: active / completed / archived — مفروضة في القواعد لا في
+// الواجهة. المنع في الواجهة وحدها يعني أن «رحلة للقراءة فقط» ليست كذلك حقيقةً.
+describe('دورة حياة الرحلة — status', () => {
+  it('غياب حقل status يُعامَل كـ active — الرحلات القائمة قبل الميزة لا تتجمّد', async () => {
+    // مستند رحلة بلا status إطلاقاً — وهي حالة كل رحلة أُنشئت قبل هذه الميزة
+    await seed(db => setDoc(doc(db, 'trips', TRIP_ID), { name: 'رحلة قديمة' }))
+    await assertSucceeds(setDoc(expenseDoc(memberDb('member-1'), 'e1'), expenseBy('member-1')))
+  })
+
+  it('غياب مستند الرحلة كاملاً يُعامَل كـ active أيضاً', async () => {
+    await assertSucceeds(setDoc(expenseDoc(memberDb('member-1'), 'e1'), expenseBy('member-1')))
+  })
+
+  it('الرحلة النشطة تقبل المصاريف', async () => {
+    await setTripStatus('active')
+    await assertSucceeds(setDoc(expenseDoc(memberDb('member-1'), 'e1'), expenseBy('member-1')))
+  })
+
+  it('الرحلة المنتهية (completed) ترفض المصاريف الجديدة', async () => {
+    await setTripStatus('completed')
+    await assertFails(setDoc(expenseDoc(memberDb('member-1'), 'e1'), expenseBy('member-1')))
+  })
+
+  it('المسؤول أيضاً لا يستطيع إضافة مصروف لرحلة منتهية — الحالة وصف للرحلة لا قيد على الصلاحية', async () => {
+    await setTripStatus('completed')
+    await assertFails(setDoc(expenseDoc(adminDb('admin-1'), 'e1'), expenseBy('admin-1')))
+  })
+
+  it('الرحلة المنتهية ترفض تعديل مصروف قائم (ويشمل ذلك الحذف الليّن)', async () => {
+    await seed(db => setDoc(expenseDoc(db, 'owned'), expenseBy('member-1')))
+    await setTripStatus('completed')
+    await assertFails(updateDoc(expenseDoc(memberDb('member-1'), 'owned'), { amount: 200 }))
+  })
+
+  it('لكن الرحلة المنتهية تُبقي المسافرين والإيداعات قابلة للتعديل — لتسوية الحسابات بعدها', async () => {
+    await seed(db => setDoc(travelerDoc(db, 1), validTraveler()))
+    await setTripStatus('completed')
+    await assertSucceeds(updateDoc(travelerDoc(adminDb(), 1), { deposited: 500 }))
+    await assertSucceeds(setDoc(doc(depositLogsCol(adminDb('admin-1'), 1)), validDepositLog('admin-1')))
+  })
+
+  it('الرحلة المؤرشفة ترفض كل الكتابات — مصاريف ومسافرين وإيداعات', async () => {
+    await seed(db => setDoc(travelerDoc(db, 1), validTraveler()))
+    await setTripStatus('archived')
+    await assertFails(setDoc(expenseDoc(memberDb('member-1'), 'e1'), expenseBy('member-1')))
+    await assertFails(updateDoc(travelerDoc(adminDb(), 1), { deposited: 500 }))
+    await assertFails(setDoc(doc(depositLogsCol(adminDb('admin-1'), 1)), validDepositLog('admin-1')))
+  })
+
+  it('القراءة تبقى متاحة في كل الحالات — التقارير يجب أن تعمل بعد الإغلاق', async () => {
+    await seed(db => setDoc(expenseDoc(db, 'e1'), expenseBy('member-1')))
+    await setTripStatus('archived')
+    await assertSucceeds(getDocs(expensesCol(memberDb())))
+    await assertSucceeds(getDoc(tripConfigDoc(memberDb())))
+  })
+
+  it('المسؤول وحده يغيّر حالة الرحلة', async () => {
+    await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { status: 'completed' }, { merge: true }))
+    await assertFails(setDoc(tripConfigDoc(memberDb()), { status: 'completed' }, { merge: true }))
+  })
+
+  it('حالة غير معروفة تُرفض — لا قيمة خارج الثلاث المعرَّفة', async () => {
+    await assertFails(setDoc(tripConfigDoc(adminDb()), { status: 'frozen' }, { merge: true }))
+  })
+})
+
 describe('حدّ المعدّل — expense rate limiting', () => {
   it('عضو غير مسؤول بلا سجل حدّ معدّل سابق يستطيع إضافة مصروف', async () => {
-    await assertSucceeds(setDoc(expenseDoc(memberDb('member-1'), 'e1'), validExpense()))
+    await assertSucceeds(setDoc(expenseDoc(memberDb('member-1'), 'e1'), expenseBy('member-1')))
   })
 
   it('عضو غير مسؤول يُمنع من إضافة مصروف ثانٍ خلال أقل من ثانية من آخر مصروف', async () => {
     await seed(db => setDoc(rateLimitDoc(db, 'member-1'), { lastExpenseCreatedAt: Date.now() }))
-    await assertFails(setDoc(expenseDoc(memberDb('member-1'), 'e2'), validExpense()))
+    await assertFails(setDoc(expenseDoc(memberDb('member-1'), 'e2'), expenseBy('member-1')))
   })
 
   it('المسؤول معفى من حدّ المعدّل حتى لو وُجد سجل حديث', async () => {
     await seed(db => setDoc(rateLimitDoc(db, 'admin-1'), { lastExpenseCreatedAt: Date.now() }))
-    await assertSucceeds(setDoc(expenseDoc(adminDb('admin-1'), 'e1'), validExpense()))
+    await assertSucceeds(setDoc(expenseDoc(adminDb('admin-1'), 'e1'), expenseBy('admin-1')))
   })
 
   it('مستند حدّ المعدّل لا يُقرأ من العميل مباشرة أبداً — حتى من صاحبه', async () => {

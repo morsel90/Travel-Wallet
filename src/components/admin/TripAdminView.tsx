@@ -18,7 +18,7 @@ import NewTripForm from './NewTripForm'
 import EmptyState from '../EmptyState'
 import { tripUrl } from '../../utils/tripId'
 import type { TripSummary } from '../../hooks/useAllTrips'
-import type { BankDetails } from '../../types'
+import type { BankDetails, TripStatus } from '../../types'
 
 interface TripAdminViewProps {
   currentTripId: string
@@ -31,13 +31,15 @@ interface TripAdminViewProps {
   onSaveItinerary: (tripId: string, itinerary: TripSummary['itinerary']) => Promise<boolean>
   onCreateTrip: (tripId: string, name: string, pin: string) => Promise<boolean>
   onResetPin: (tripId: string, pin: string) => Promise<boolean>
+  onSaveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
   onDeleteTrip: (tripId: string) => Promise<boolean>
   onClose: () => void
 }
 
 export default function TripAdminView({
   currentTripId, trips, loading, error, isSaving,
-  onSaveTripName, onSaveBankDetails, onSaveItinerary, onCreateTrip, onResetPin, onDeleteTrip, onClose,
+  onSaveTripName, onSaveBankDetails, onSaveItinerary, onCreateTrip, onResetPin,
+  onSaveTripStatus, onDeleteTrip, onClose,
 }: TripAdminViewProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [isCreating, setIsCreating] = useState(false)
@@ -112,6 +114,7 @@ export default function TripAdminView({
             onSaveBankDetails={onSaveBankDetails}
             onSaveItinerary={onSaveItinerary}
             onResetPin={onResetPin}
+            onSaveTripStatus={onSaveTripStatus}
             onDeleteTrip={onDeleteTrip}
             // الرحلة لم تعد موجودة — نعود للقائمة بدل إبقاء لوحة تشير لمستند محذوف
             onDeleted={() => setSelectedId(null)}

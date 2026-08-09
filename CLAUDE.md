@@ -2,7 +2,28 @@
 
 <div dir="rtl" style="text-align: right">
 
-## آخر تحديث: 2026-08-08
+## آخر تحديث: 2026-08-09
+
+### What changed on 2026-08-09
+
+**Testing went from one layer to three.** Unit coverage previously reached the pure calculation utilities only; every hook was untested. Now: **255 unit tests**, **44 `firestore.rules` tests** against a real emulator, and **8 Playwright E2E tests** driving a real browser. CI runs all three.
+
+**Six real bugs were found and fixed.** Four of them were invisible to code review and to unit tests, and only surfaced in a real browser:
+
+| Bug | Why it hid |
+|---|---|
+| Submit lock never released while offline — silently blocked every expense after the first | Mocked promises always settle; only a real dropped connection reproduces it |
+| Admin evicted from admin mode on every page reload | Needed a real reload cycle; trip switching made it routine |
+| App crashed to `ErrorBoundary` on the first expense of a trip while offline | A `React.lazy` chunk fetched with no connectivity |
+| A whole travel group locked out after 5 PIN attempts on one shared wifi | Rate-limit key was per-IP, not per-trip; a group shares both |
+| `haptics.ts` threw where `matchMedia` is unavailable, despite documenting itself as always safe | — |
+| `TrashBinModal` close button had no accessible name | — |
+
+**Features added:** the "my trips" picker (open the app with no `?trip=` and pick from the trips you belong to), deletion of **empty** trips, and a **trip lifecycle** (`active` / `completed` / `archived`) enforced in the rules — which is what finally gives trips with data a way to be closed without destroying anything.
+
+**Performance:** the UI context was split by volatility, so typing in the expense form no longer re-renders every expense row and traveler card. Zustand was evaluated and deliberately not adopted — see *Design Decisions*.
+
+**Security gap closed:** `firestore.rules` now verifies `createdByUid` on expense **creation**, not just on update. A member could previously attribute an expense to someone else — making "who recorded this" unreliable, which is the only reference there is when a settlement is disputed. `createdByUid` is now required on create, must equal the caller, and is immutable afterwards **for admins too**. See *Design Decisions*.
 
 ---
 
@@ -25,7 +46,8 @@
 - Haptic feedback (Web Vibration API + visual flash for iOS)
 - Rate limiting on PIN verification and expense creation
 - Trip itinerary (flights/car/train/bus) stored per-trip + "next segment" widget
-- In-app admin panel (admin-only): list all trips, create a trip, set/reset its PIN, edit bank details and itinerary
+- In-app admin panel (admin-only): list all trips, create a trip, set/reset its PIN, edit bank details and itinerary, delete an *empty* trip
+- 🆕 "My trips" picker: opening the app with no `?trip=` shows the trips you belong to instead of demanding a PIN for the default one
 
 ---
 
@@ -36,7 +58,7 @@
 | Framework | React | ^18.2.0 |
 | Language | TypeScript | ^5.3.3 |
 | Bundler | Vite | ^5.1.4 |
-| State | React Context (DataContext + UIContext) | — |
+| State | React Context (DataContext + UIActionsContext + UIFormContext) | — |
 | Styling | Tailwind CSS | ^3.4.1 |
 | Icons | Lucide React | ^0.383.0 |
 | Animations | Framer Motion | ^11.2.10 |
@@ -45,7 +67,9 @@
 | Offline | Firestore `persistentLocalCache` | — |
 | Cloud Functions | Firebase v2 onCall (Node 22) | — |
 | PWA | vite-plugin-pwa (generateSW) | ^0.19.8 |
-| Testing | Vitest + React Testing Library | ^1.6.0 |
+| Testing (unit) | Vitest + React Testing Library | ^1.6.0 |
+| Testing (rules) | @firebase/rules-unit-testing + Firestore emulator | ^3.0.4 |
+| Testing (E2E) | Playwright (chromium) + Auth/Firestore/Functions emulators | ^1.49.1 |
 | Component workshop | Storybook (react-vite) | ^10.5.7 |
 | Linting | ESLint + Prettier | ^8.57.0 |
 | Deployment (frontend) | Vercel SPA | — |
@@ -90,13 +114,18 @@
      └─────────┘
 ```
 
-**Data flow:** React Context (DataContext for reads, UIContext for actions) → Hooks (useExpenses, useTravelers, etc.) → Firestore onSnapshot listeners → Optimistic updates with `_pending` flags.
+**Data flow:** React Context (reads + actions) → Hooks (useExpenses, useTravelers, etc.) → Firestore onSnapshot listeners → Optimistic updates with `_pending` flags.
 
-**Two contexts:**
+**Three contexts — split by *how often they change*, not by topic:**
 - `DataContext` — read-only data (travelers, expenses, user, currencies)
-- `UIContext` — form state and action handlers (expense form, traveler form, modals)
+- `UIActionsContext` — handler functions only; identity is stable in practice
+- `UIFormContext` — the volatile expense-form state, and the handlers bound to it
+
+🆕 The UI split is load-bearing for performance, not cosmetic — see *Design Decisions* below. Only three components read context at all: `TravelerSection`, `ExpenseSection`, `ChartsSection`.
 
 **Trip identification:** `TRIP_ID` from `?trip=xyz` query param → used to build Firestore paths at `artifacts/{TRIP_ID}/public/data/{expenses|travelers|rateLimits}/...`
+
+🆕 `HAS_EXPLICIT_TRIP_ID` (same module) records whether the URL actually named a trip. Opening the app *bare* means no trip was intended, so the "my trips" picker is shown instead of the default trip's PIN gate.
 
 **Modal state:** all general modals (reports, trash bin, delete traveler, deposit, deposit history) live in a single discriminated union (`ModalState` in `useModals.ts`) so only one can be open at a time, and are rendered by `ModalManager.tsx`. Two modals are deliberately *outside* this union because they belong to their own domain state: expense delete confirmation (in `useExpenseActions`) and admin sign-in (in `useAdminAuth` + `AuthFlow.tsx`).
 
@@ -106,7 +135,7 @@
 
 ```
 ├── src/
-│   ├── App.tsx                    # Root orchestrator (~500 lines)
+│   ├── App.tsx                    # Root orchestrator (~610 lines — a known refactor candidate, see Design Decisions)
 │   ├── main.tsx                  # React entry point
 │   ├── firebase.ts               # Firebase init (auth, db, functions) — config from import.meta.env
 │   ├── vite-env.d.ts             # Types for import.meta.env (typo in a var name becomes a compile error)
@@ -135,6 +164,7 @@
 │   │   ├── useTripConfig.ts      # Trip name + bank details + itinerary (live onSnapshot)
 │   │   ├── useTripAdminActions.ts # Admin writes to any trips/{tripId} (merge-only) + manageTrip calls
 │   │   ├── useAllTrips.ts        # Live list of every trip (admin-only query)
+│   │   ├── useMyTrips.ts         # 🆕 Trips this user joined — one getDoc each (a list query is admin-only)
 │   │   ├── useDepositLogs.ts     # Deposit audit log fetcher
 │   │   ├── useOnlineStatus.ts    # navigator.onLine tracking
 │   │   ├── useCountdown.ts       # Generic countdown timer
@@ -143,10 +173,11 @@
 │   │
 │   ├── context/
 │   │   ├── DataContext.ts        # Read-only data context
-│   │   └── UIContext.ts          # UI actions context
+│   │   └── UIContext.ts          # 🆕 TWO contexts: UIActionsContext (stable) + UIFormContext (volatile)
 │   │
 │   ├── components/
-│   │   ├── TripGate.tsx          # PIN entry screen with rate limit countdown
+│   │   ├── TripGate.tsx          # PIN entry screen with rate limit countdown (+ escape link to "my trips")
+│   │   ├── TripPicker.tsx        # 🆕 "My trips" list — shown when the URL names no trip
 │   │   ├── Header.tsx            # Sticky collapsible header with stats pills
 │   │   ├── SmartInputBar.tsx     # Fixed bottom input bar (quick expense)
 │   │   ├── TravelerSection.tsx   # Traveler cards + add form + profile modal
@@ -157,7 +188,7 @@
 │   │   ├── ItinerarySection.tsx  # Full itinerary list (rendered inside ReportsView)
 │   │   ├── Misc.tsx              # BankDetailsCard (copy IBAN / Web Share API)
 │   │   ├── admin/TripAdminView.tsx   # Admin panel shell: trips list ↔ trip detail (full-screen)
-│   │   ├── admin/TripDetailPanel.tsx # One trip: name + bank, itinerary editor, PIN reset
+│   │   ├── admin/TripDetailPanel.tsx # One trip: name + bank, itinerary editor, PIN reset, 🆕 delete (empty only)
 │   │   ├── admin/NewTripForm.tsx     # Create a trip (id + name + PIN) via manageTrip
 │   │   ├── admin/SegmentForm.tsx     # Add/edit form for a single itinerary segment
 │   │   ├── charts/ChartsSection.tsx  # Settlements, categories, trend (HTML/CSS)
@@ -189,25 +220,44 @@
 │       ├── travelerName.ts      # Pure: deriveShortName, isValidNameKey, newTravelerId
 │       ├── writeErrors.ts       # Pure: Firestore error code → real cause + is a retry worthwhile
 │       ├── haptics.ts           # Vibration API + visual flash overlay
+│       ├── preload.ts           # 🆕 Idle-time preloading of lazy chunks (onIdle + preloadAll)
 │       ├── cn.ts                # Tailwind class merge (clsx alternative)
-│       └── tripId.ts           # TRIP_ID from ?trip= query param
+│       └── tripId.ts           # TRIP_ID + HAS_EXPLICIT_TRIP_ID from ?trip= query param
 │
 ├── functions/
-│   └── index.js                 # Cloud Function: verifyTripPin (rate-limited)
+│   └── index.js                 # Cloud Functions: verifyTripPin (rate-limited) + manageTrip (create/resetPin/delete)
 │
 ├── scripts/
 │   ├── create-trip.mjs          # Admin SDK script: create/update trip + PIN
 │   ├── set-admin.mjs            # Admin SDK script: grant/revoke admin claim
 │   ├── list-trips.mjs           # Admin SDK script: list existing trips
 │   ├── backfill-traveler-names.mjs # One-off migration: claim docs for pre-existing travelers
-│   └── add-flights.mjs          # ⚠️ Admin SDK script: writes itinerary — data hardcoded, edit before each run
+│   ├── add-flights.mjs          # ⚠️ Admin SDK script: writes itinerary — data hardcoded, edit before each run
+│   └── run-with-emulators.mjs   # 🆕 Runs a command inside the emulators with a trustworthy exit code
+│
+├── tests/                       # 🆕 firestore.rules tests (emulator, NOT app code)
+│   ├── firestore-rules/firestore.rules.test.ts
+│   └── tsconfig.json
+│
+├── e2e/                         # 🆕 Playwright end-to-end specs (real browser + emulators)
+│   ├── critical-flow.spec.ts            # PIN → admin → travelers → expense → edit → balances → report → export
+│   ├── balances-math.spec.ts            # Exact settlement arithmetic through the real UI
+│   ├── soft-delete-trash.spec.ts        # Delete → undo toast → delete again → restore from trash
+│   ├── offline-optimistic-write.spec.ts # Offline write shows _pending, then syncs on reconnect
+│   ├── trip-picker.spec.ts              # Bare URL shows "my trips"; clicking one opens it
+│   ├── admin-persists-across-trips.spec.ts # Admin survives reload and trip switching
+│   ├── wrong-pin.spec.ts                # Rejection message, then success
+│   ├── utils/{seed,flows}.ts            # Emulator seeding + shared UI steps
+│   └── tsconfig.json
 │
 ├── firestore.rules              # Security rules (multi-trip, admin claims, rate limiting)
-├── vercel.json                  # Vercel SPA rewrite for /api/verifyTripPin
-├── vite.config.js               # Vite + PWA config (code splitting, Workbox)
-├── vitest.config.ts             # Vitest with jsdom + setupFiles
+├── vercel.json                  # Vercel SPA rewrites for /api/verifyTripPin + /api/manageTrip
+├── vite.config.js               # Vite + PWA config (code splitting, Workbox, 🆕 /api dev proxy)
+├── vitest.config.ts             # Vitest with jsdom + setupFiles (unit tests)
+├── vitest.rules.config.ts       # 🆕 Separate config for rules tests (node env, needs emulator)
+├── playwright.config.ts         # 🆕 E2E config — boots `vite --mode e2e` against the emulators
 ├── tailwind.config.js           # Tailwind content paths
-└── .github/workflows/ci.yml    # CI: lint → typecheck → test → build
+└── .github/workflows/ci.yml    # CI: lint → typecheck → test → rules → e2e → build
 ```
 
 ---
@@ -230,10 +280,14 @@
 | `src/constants.ts` | `CURRENCY_LABELS` (160 currencies), `FALLBACK_RATES`, `EXPENSE_CATEGORIES`, `BANK_DETAILS`. |
 | `src/utils/calculations.ts` | Pure functions for balances, settlements, category totals, spending trend. Fully tested. |
 | `src/utils/xlsx.ts` | Pure-JS OOXML XLSX generator — no dependencies. |
-| `functions/index.js` | `verifyTripPin` Cloud Function: rate-limited PIN verification, grants `trips` custom claim. |
+| `functions/index.js` | `verifyTripPin` (rate-limited PIN verification, grants the `trips` claim) + `manageTrip` (create / resetPin / delete). |
 | `firestore.rules` | Security rules: `isAdmin()`, `isMember(tripId)`, `withinExpenseRateLimit`, immutable deposit logs. |
+| `src/context/UIContext.ts` | 🆕 Two contexts split by volatility. Read the comment there before adding a field — putting a changing value in the actions context silently undoes the split. |
+| `src/hooks/useMyTrips.ts` | 🆕 The user's own trips. Reads each `trips/{id}` with its own `getDoc` — a `list` query is admin-only and would fail for members. |
+| `src/utils/preload.ts` | 🆕 Idle-time preloading of lazy chunks so they exist before connectivity is lost. |
 | `scripts/create-trip.mjs` | Admin SDK script to create/update a trip (name, bank details, PIN hash). |
 | `scripts/set-admin.mjs` | Admin SDK script to grant/revoke `admin: true` custom claim. |
+| `scripts/run-with-emulators.mjs` | 🆕 Wrapper giving emulator-backed test runs a trustworthy exit code. See its header comment — three separate bugs lived here. |
 
 ---
 
@@ -267,9 +321,16 @@ node scripts/set-admin.mjs grant admin@example.com
 npm run dev
 
 # 7. Open http://localhost:5173/?trip=YOUR_TRIP_ID
+
+# 8. (optional) Prepare the E2E browser — first time only
+npm run e2e:install
 ```
 
-**Important:** The app reads `TRIP_ID` from `?trip=xyz` in the URL. Without it, it defaults to `?trip=travelapp-87206`.
+**Important:** The app reads `TRIP_ID` from `?trip=xyz` in the URL. Without it, it defaults to `?trip=travelapp-87206` — and 🆕 if you already belong to trips, the "my trips" picker is shown instead of that trip's PIN gate.
+
+🆕 **Prerequisite for the rules and E2E suites: Java.** The Firestore emulator is a JVM process; without a JDK both fail with «Unable to locate a Java Runtime» buried in `firebase-debug.log`.
+
+🆕 **`npm run dev` proxies `/api/*` to the real Cloud Functions** (see `vite.config.js`), mirroring the Vercel rewrites. PIN verification therefore works locally. Restart the dev server after changing that config — `server.proxy` is only read at startup.
 
 ---
 
@@ -320,7 +381,7 @@ Response: { result: { success: boolean } } | HttpsError
 
 POST /api/manageTrip                     # admin claim required, checked server-side
 Headers: { Authorization: "Bearer <idToken>" }
-Body: { data: { mode: 'create' | 'resetPin', tripId, pin, name? } }
+Body: { data: { mode: 'create' | 'resetPin' | 'delete', tripId, pin?, name? } }
 Response: { result: { success: boolean, tripId: string } } | HttpsError
 ```
 
@@ -332,6 +393,24 @@ through `firestore.rules` instead — no function deploy needed to change it.
 
 `mode: 'create'` refuses to overwrite an existing trip: overwriting would
 replace its PIN and lock out every current member.
+
+🆕 `mode: 'delete'` needs no `pin` or `name`, and **refuses any trip that has a
+single traveler or expense** (checked server-side with `limit(1)` queries — the
+question is "is there data?", not "how much"). This is what keeps the deletion
+safe, and why `allow delete: if false` stays in `firestore.rules`: if the client
+could delete directly, that emptiness check could simply be bypassed, orphaning
+`artifacts/{tripId}` and destroying deposit logs that are immutable by design.
+It deletes `trips/{tripId}` and `tripSecrets/{tripId}` in one atomic batch, which
+also frees the trip id for reuse — the actual need behind it (a trip created with
+a typo'd id). Archiving would not free the id, which is why it wasn't chosen.
+
+🆕 **PIN rate limiting is scoped per trip.** The key is `anon_${ip}_${tripId}` (or
+`auth_${uid}_${tripId}`), so exceeding the limit on one trip no longer locks the
+user out of every other trip. The anonymous limit is **15** per 15 minutes, not 5:
+a travel group joining the *same* trip shares one wifi and therefore one key, and
+5 attempts between them was reachable by two typos. The IP is used rather than the
+uid because `signInAnonymously` makes fresh uids free — a uid-based limit is
+bypassed by reloading the page.
 
 ### Key Data Context (available to all components)
 
@@ -346,15 +425,31 @@ replace its PIN and lock out every current member.
   ratesUpdatedAt: Date | null
 }
 
-// From UIContext (useUI())
+// 🆕 From UIActionsContext (useUIActions()) — functions only, stable identity.
+// This is what per-item components (ExpenseListItem, TravelerCard) may consume.
+{
+  cancelExpenseForm: () => void
+  startEditExpense: (expense: Expense) => void
+  requestDeleteExpense: (id: string) => void
+  openDeposit: (traveler: Traveler) => void
+  requestDeleteTraveler: (traveler: Traveler) => void
+  openDepositHistory: (traveler: Traveler) => void
+}
+
+// 🆕 From UIFormContext (useUIForm()) — changes on every keystroke.
+// Consumed only by ExpenseForm. Do NOT consume this from a repeated component.
 {
   expenseForm: ExpenseFormData
+  setExpenseForm: Dispatch<SetStateAction<ExpenseFormData>>
   isExpenseFormOpen: boolean
-  openExpenseForm: (initialDesc?, initialAmount?) => void
-  handleQuickAddExpense: (desc, amount) => string | null
-  // ... plus traveler form, deposit, modals
+  isEditingExpense: boolean
+  submitExpense: (e: FormEvent<HTMLFormElement>) => void
+  toggleParticipant: (id: number) => void
+  toggleAllParticipants: () => void
 }
 ```
+
+Everything else the screens need (traveler form fields, quick add, `openExpenseForm`) is passed as **props** from `App.tsx` — it was removed from context because nothing read it there.
 
 ### Pure Utility Functions
 
@@ -483,8 +578,36 @@ The PIN is stored only as a salted SHA-256 hash and is never shown again — cap
 node scripts/set-admin.mjs grant user@example.com
 ```
 
+### Close or archive a trip (🆕)
+Admin panel → select the trip → **الاسم والحساب** tab → **حالة الرحلة**.
+
+| Status | Expenses | Travelers & deposits | In the trip list |
+|---|---|---|---|
+| `active` (default) | yes | yes | shown |
+| `completed` | **blocked** | yes — so you can still settle up after the trip | shown, tagged |
+| `archived` | blocked | blocked | hidden unless it is the trip you have open |
+
+The reasoning behind `completed` keeping deposits writable: "the spending has ended" is not the same as "the books are closed". After a trip you often still correct a deposit or record who paid whom. `archived` is the full close.
+
+**Enforced in `firestore.rules`, not in the UI** — `tripAcceptsExpenses` / `tripAcceptsWrites`. A read-only trip that is only read-only in the UI is not read-only. The UI hiding (`utils/tripStatus.ts`) exists so the user is told *why* the buttons are gone, rather than clicking something the server will refuse with an opaque permission error.
+
+⚠️ **A missing `status` field means `active`**, in both the rules and `utils/tripStatus.ts`. Every trip created before this feature lacks the field; treating absence as anything else would have frozen all of them on deploy. No migration is needed or wanted.
+
+⚠️ **Cost:** one extra document read per write to a trip's data (the rules `get()` the trip doc). Negligible against the guarantee — and the rules limit is 10 reads per request, of which expense creation now uses two.
+
+Requires deploying rules: `npx firebase deploy --only firestore:rules`.
+
+### Delete a trip (🆕)
+Admin panel → select the trip → **حذف الرحلة** tab. You must type the trip id to confirm, because the action is irreversible and trip names in a list look alike.
+
+**Only empty trips can be deleted** — the server refuses if a single traveler or expense exists, and returns a message saying so. That restriction is the whole safety model: see `mode: 'delete'` under *API Reference*. A trip that holds data is never deleted; 🆕 **archive it instead** (see above) — that is what the lifecycle states are for.
+
+Requires deploying functions (`npx firebase deploy --only functions`) — it is server-side logic, not a rules change.
+
 ### List existing trips
 The admin panel lists every trip with its id, name and segment count, and each row has an **فتح** link to `?trip=X`. `scripts/list-trips.mjs` remains as a CLI equivalent.
+
+Members (non-admins) get their own list via the 🆕 **"my trips"** picker — the trips in their token's `trips` claim. Opening the app with no `?trip=` shows it; picking a trip navigates to `?trip=X`. Admins see *all* trips there instead, via `useAllTrips`.
 
 Switching trips is a full page load: `TRIP_ID` is read once at module load (`utils/tripId.ts`). You do **not** need to switch trips to edit one — the admin panel edits any trip in place, because the write rule keys on `isAdmin()` and never references the active trip.
 
@@ -514,24 +637,42 @@ The app exports Excel directly from the UI (button in expense section header). F
 
 ## Testing
 
+Three independent layers. Each catches a class of bug the others structurally cannot.
+
 ```bash
-npm test                    # vitest run (once)
-npm run test:watch          # vitest (watch mode)
-npm run typecheck           # tsc --noEmit
+npm test                    # 1. unit — vitest, jsdom, no emulator, ~3s
+npm run test:rules          # 2. firestore.rules — real Firestore emulator
+npm run test:e2e            # 3. E2E — real browser + auth/firestore/functions emulators
+npm run e2e:install         # first time only: download the Playwright chromium build
+
+npm run typecheck           # app sources
+npm run typecheck:rules     # tests/ (separate tsconfig)
+npm run typecheck:e2e       # e2e/  (separate tsconfig)
 npm run lint                # ESLint
 ```
 
-**Test files:**
-- `src/utils/calculations.test.ts` — Core math (splitEven, splitByShares, balances, settlements, charts)
-- `src/utils/reportData.test.ts` — Report builders (traveler report, daily summary, account statement)
-- `src/utils/reports.test.ts` — Excel row builders + XLSX generation
-- `src/utils/itinerary.test.ts` — Segment validation, time round-tripping, normalize/sort, next-segment
-- `src/utils/tripId.test.ts` — Trip id format guard (path-escape rejection, length limit)
-- `src/utils/travelerName.test.ts` — shortName derivation, doc-ID validity, random id range
-- `src/utils/writeErrors.test.ts` — error-code mapping, retryable classification, and that no message blames the network
-- `src/components/EmptyState.test.tsx` — Empty state component (RTL test)
+Layers 2 and 3 need **Java** (the Firestore emulator is a JVM process) and a cached emulator jar.
 
-**Structure:** Pure utility tests live next to their source. Component tests use `@testing-library/react` with `jsdom` environment. Vitest config in `vitest.config.ts` with `setupFiles: ['./src/setupTests.ts']`.
+#### 1. Unit tests (`src/**/*.test.ts`)
+Pure utilities and every hook. Hooks are tested with `renderHook`, mocking `firebase/firestore` and `src/firestore.ts` — none of them need React context, because hooks take their data as parameters and the contexts only carry results *outward*.
+
+- `utils/`: `calculations`, `reportData`, `reports`, `itinerary`, `tripId`, `travelerName`, `writeErrors`, `preload`
+- `hooks/`: `useAuth`, `useExpenseActions`, `useTravelerActions`, `useDepositActions`, `useMyTrips`, `useModals`, `useBalances`, `useFilteredExpenses`, `useDebounce`, `useCountdown`, `useOnlineStatus`, `useHeaderCollapse`
+- `components/EmptyState.test.tsx`
+
+#### 2. Rules tests (`tests/firestore-rules/`)
+Run against the emulator with `@firebase/rules-unit-testing` — they test `firestore.rules` itself, not app code. Cover: anonymous/non-member denial, cross-trip isolation, expense ownership on update, hard-delete blocked everywhere, admin-only trip writes, `tripSecrets` unreachable even by admin, the expense rate limit including clock tampering, deposit-log immutability, and `travelerNames` uniqueness.
+
+🆕 Expense attribution is covered in both directions: a member (and an admin) is refused when creating an expense under someone else's `createdByUid`, refused when omitting it, and refused when changing it on update. Legacy expenses that predate the field are covered too — see *Design Decisions*.
+
+⚠️ **Use `expenseBy(uid)` — not `validExpense()` — in any test that creates an expense** unless attribution itself is what's being tested. `validExpense()` omits `createdByUid`, so creation now fails on that alone, and an `assertFails` test would pass for entirely the wrong reason while appearing to verify something else.
+
+#### 3. E2E tests (`e2e/`)
+A real browser driving the real UI against emulators — no mocks. `playwright.config.ts` boots `vite --mode e2e`, which points the Firebase SDK at the emulators (`VITE_USE_FIREBASE_EMULATORS`) and proxies `/api/*` to the Functions emulator.
+
+**These earned their keep immediately** — three bugs found here were invisible to unit tests and code review: the offline submit-lock, the app crash on a lazy chunk while offline, and admin being evicted on reload. Each required a real browser losing a real connection.
+
+**Structure:** unit tests live next to their source; rules and E2E live in their own top-level folders with their own `tsconfig.json`, because they compile against different globals and must not be swept into `npm test` (which has no emulator running).
 
 ### Storybook
 
@@ -543,7 +684,7 @@ npm run build-storybook    # static build → storybook-static/ (git-ignored)
 Storybook 10 with `@storybook/react-vite`. Two pieces of setup are load-bearing and easy to lose:
 
 - `.storybook/preview.tsx` imports `src/index.css` and wraps every story in `dir="rtl" lang="ar"`. Storybook renders inside its own iframe and inherits neither from `index.html`. Without the CSS import Tailwind classes are just unstyled names; without the `dir` every horizontal layout mirrors, so a story would not show what users see.
-- `src/stories/decorators.tsx` supplies `DataContext` and `UIContext`. Only `TravelerSection`, `ExpenseSection` and `ChartsSection` read from context — the other 29 components take props and need no decorator. Handlers are no-ops that log to the console; stories are for inspecting state, not for writing to Firestore.
+- `src/stories/decorators.tsx` supplies `DataContext`, `UIActionsContext` and `UIFormContext`. Only `TravelerSection`, `ExpenseSection` and `ChartsSection` read from context — the other components take props and need no decorator. Handlers are no-ops that log to the console; stories are for inspecting state, not for writing to Firestore. (`Providers` takes `uiActions` / `uiForm` overrides separately since the 🆕 context split.)
 
 Sample data lives in `src/fixtures/`, shared with tests. Derived values (balances, settlements, category totals, trend) are **computed** from the fixture expenses via the real functions, never hand-written — an early draft hardcoded them and they disagreed with the same expense list, which reads as a bug in the app's arithmetic.
 
@@ -573,6 +714,73 @@ So a queue in IndexedDB would sit on top of the SDK's own IndexedDB queue, and t
 Match on `error.code`, never on message text: the text varies between SDK versions.
 
 **What is genuinely missing:** undo exists for deleting an expense or a traveler, but not for create or edit. Undoing an edit needs the previous version kept somewhere to restore.
+
+### 🆕 The submit lock is released when the write is *issued*, not when it is confirmed
+
+`useExpenseActions` guards against double submission with `isSubmittingExpenseRef`. It used to be cleared inside `.finally()` on the write promise — which is wrong for exactly the reason documented directly above: **an offline write's promise never settles.** So while offline the lock stayed closed forever, and every expense after the first was rejected at `if (isSubmittingExpenseRef.current) return` in **complete silence** — the form didn't close, no error appeared, nothing happened.
+
+A user on a plane could log one expense, then find the form dead with no explanation. Found by `e2e/offline-optimistic-write.spec.ts`; pinned by two regression tests that simulate a never-settling promise.
+
+Releasing it synchronously is safe: the form closes and clears its fields in the same handler, so there is no button left to double-click.
+
+**The lesson worth keeping:** the codebase documented "offline writes never reject" accurately in one place and then contradicted it in another. When you rely on that fact, grep for the other places that also rely on it.
+
+### 🆕 Never call `signInAnonymously` unconditionally on load
+
+`useAuth` used to call it at the top of its effect on every mount. Firebase returns the current user if they are *already anonymous*, but creates a **new anonymous session that replaces them** if they are signed in with email/password. Result: every page reload evicted the admin.
+
+It stayed invisible until trip switching shipped, because switching trips is a full page load (`TRIP_ID` is read once at module load) and that was the first thing to reload the page routinely.
+
+Now the anonymous session is created only after `onAuthStateChanged` reports *no* user — i.e. after Firebase has finished restoring any persisted session. A ref guards against two concurrent calls, since each could mint a **different** anonymous uid and the second would silently lose the trip memberships stored in the first one's claims. For the same reason `useAdminAuth.handleAdminSignOut` no longer calls it either: session creation has exactly one owner.
+
+### 🆕 The UI context is split by volatility, and that split is load-bearing
+
+Any component consuming a context re-renders when the context **value** changes — not when the slice it reads changes — and `memo()` does not help, because context consumption bypasses it.
+
+`expenseForm` used to live in the same context value as the action handlers. So **every keystroke** in the expense form re-rendered every visible expense row and traveler card, even though all those components read from it were two stable callbacks. `src/context/UIContext.ts` now separates:
+
+- `UIActionsContext` — functions only; identity changes only when the active traveler list does (rare)
+- `UIFormContext` — the volatile form state and the handlers bound to it, consumed only by `ExpenseForm` (a single instance that *should* re-render per keystroke)
+
+⚠️ **When adding a field, place it by how often it changes, not by what it relates to.** One changing value in the actions context silently restores the old behaviour with no visible symptom.
+
+While splitting, six fields were deleted outright (`newTravelerName` and friends, `openExpenseForm`, `isAddingTraveler`, `startAddTraveler`, `submitTraveler`): no component ever read them through context — they are passed as props from `App.tsx` — so they were pure churn.
+
+**This is also why Zustand was not adopted.** Its selling point here would be selective subscription, which the split already provides. The hooks are independent of context already (they take data as parameters), so a state-library migration would rewrite plumbing for a benefit near zero.
+
+### 🆕 `createdByUid` is enforced at creation and immutable afterwards
+
+The rules used to check expense ownership only on **update**. Creation accepted whatever `createdByUid` the client sent, so a member could record an expense attributed to someone else — handing that person the right to edit it, removing their own, and corrupting the only record of who entered it. For a tool whose output is "who owes whom", that record is the thing people fall back on when a settlement is questioned.
+
+Three rules now hold, with no exception for admins:
+
+1. **Creation must be self-attributed** — `isOwnCreation` requires the field to be present *and* equal to `request.auth.uid`. Requiring presence is what makes every new expense attributable; the client already sent it on both the form and quick-add paths, so nothing had to change there.
+2. **`createdByUid` never changes** — `preservesCreator` applies to the admin path too. It used to be checked only inside the owner branch, so an admin could rewrite it. A field that records "who created this" and accepts later edits records nothing.
+3. **Legacy expenses stay editable** — expenses written before the field existed have no owner. The client sends `editingExpense?.createdByUid ?? user?.uid`, which stamps the *editor* on such a document. Rejecting that would have broken admin edits of every old expense, so `preservesCreator` permits stamping an unowned document — but only with the caller's own uid, and never overwriting an owner that already exists.
+
+**Why not exempt admins from rule 1:** if "record on behalf of someone else" is ever wanted, the honest shape is a separate field (`paidBy`) rather than lying in the field that documents the writer. Same reasoning that keeps `changedByUid` bound to `request.auth.uid` in deposit logs.
+
+**If you ever want an audit trail of edits**, add `updatedByUid` as a new field rather than loosening `createdByUid` — creator and last-editor are different facts and conflating them loses both.
+
+### 🆕 Trip lifecycle is enforced in the rules, and absence means `active`
+
+`trips/{tripId}.status` is `active` | `completed` | `archived`, checked by `tripAcceptsExpenses` / `tripAcceptsWrites` in `firestore.rules`. `utils/tripStatus.ts` mirrors the same logic for the UI **and protects nothing** — it exists so a closed trip explains itself instead of presenting buttons the server will reject.
+
+Two decisions worth keeping:
+
+**`completed` still allows traveler and deposit writes.** Only expenses are blocked. If it blocked everything it would be indistinguishable from `archived` except for list visibility, and the state would not earn its place. The real-world need it serves is settling up after the spending stops.
+
+**A missing `status` is `active` — in the rules and in the client.** This is not leniency, it is the migration strategy: every pre-existing trip lacks the field, and any stricter reading would have frozen all of them the moment the rules were deployed. The same principle already governs `createdByUid` on legacy expenses.
+
+⚠️ When changing the meaning of a state, change `firestore.rules` and `utils/tripStatus.ts` **together**. If they disagree the UI either promises something the server refuses, or hides something it would have allowed — and both look like random breakage. `src/utils/tripStatus.test.ts` pins the shared semantics.
+
+### 🆕 Lazy chunks are preloaded once the app is idle
+
+`React.lazy` chunks are fetched on first need. If that moment arrives while offline, the dynamic import fails, throws during render, and the whole tree falls to `ErrorBoundary`. The sharpest case: `ChartsSection` is only requested when `activeExpenses.length > 0`, so **logging the very first expense of a trip while offline crashed the entire app**.
+
+`utils/preload.ts` fetches them quietly on `requestIdleCallback` (with a `setTimeout` fallback for older Safari) once the user has access. Failure is swallowed on purpose — this is opportunistic; if it fails, behaviour is exactly what it was before.
+
+In production the service worker precaches all chunks and covers this, but a real window remains: a first visit that loses connectivity before the SW finishes activating.
 
 ### `useExpenses` listens to the whole collection on purpose — do not paginate it
 
@@ -606,6 +814,12 @@ Three independent systems that must be deployed separately:
 
 **Vercel rewrites** (`vercel.json`): `/api/verifyTripPin` and `/api/manageTrip` are proxied to their Cloud Function URLs to avoid CORS. The client always calls the `/api/...` path, never the function URL directly. Adding a function means adding a rewrite here too, otherwise the call 404s in production while working fine locally.
 
+🆕 **`vite.config.js` mirrors those rewrites for the dev server**, because `/api/*` does not exist outside Vercel. Without it, `npm run dev` returns HTML for the PIN call, JSON parsing fails, and the UI reports «رمز الرحلة غير صحيح» for a perfectly correct PIN — with the gate then hiding the whole app including the admin sign-in button. In `--mode e2e` the same proxy points at the Functions emulator instead.
+
+🆕 **Two firebase-tools versions may exist on one machine** (a global install and the project's devDependency). `npm run` puts `node_modules/.bin` first, but a bare `firebase …` typed in a terminal may not resolve there. Use `npx firebase deploy …` so deploys use the pinned version. `scripts/run-with-emulators.mjs` resolves the local binary explicitly for the same reason — a newer global CLI wants a newer emulator jar and will try to download it.
+
+🆕 **Order matters when a change touches both.** Deploy functions *before* pushing frontend code that calls them, or the new UI will hit an old function and fail with a confusing error.
+
 ---
 
 ## Troubleshooting
@@ -629,6 +843,18 @@ Three independent systems that must be deployed separately:
 | Trips list empty / "تعذّر جلب قائمة الرحلات" for an admin | A `list` query on `trips/` is only satisfiable by `isAdmin()`; the admin claim may not be on the current token yet | Sign out and back in, or force `getIdToken(true)` — the claim is only refreshed on a new token |
 | "إنشاء الرحلة" fails with 404 | `manageTrip` is deployed but the `/api/manageTrip` rewrite is missing from `vercel.json`, or the frontend was deployed without it | Add the rewrite and redeploy the frontend |
 | "هذا الإجراء متاح للمسؤول فقط" when creating a trip | `manageTrip` re-checks `request.auth.token.admin` server-side and does not trust the client | Run `scripts/set-admin.mjs grant <email>`, then re-login |
+| 🆕 "رمز الرحلة غير صحيح" on `localhost` with a correct PIN | `/api/verifyTripPin` is a Vercel rewrite that does not exist under `npm run dev`; the dev server returned HTML instead | Fixed by the `/api` proxy in `vite.config.js`. Restart the dev server — `server.proxy` is read only at startup |
+| 🆕 Admin mode lost after switching trips | Trip switching is a full page reload, and `signInAnonymously` used to run unconditionally on every load, replacing the admin session | Fixed in `useAuth`. If it recurs, verify the deployed build actually contains the fix (`git log origin/main..main`) |
+| 🆕 Nothing happens when adding a second expense offline | The submit lock waited for a server confirmation that never comes while offline | Fixed in `useExpenseActions` — released when the write is issued |
+| 🆕 App shows "حدث خطأ غير متوقع" right after the first expense of a trip, offline | A `React.lazy` chunk (`ChartsSection`) was requested for the first time with no connectivity | Mitigated by `utils/preload.ts`; the service worker covers it in production |
+| 🆕 "لا يمكن حذف ... لأنها تحوي مسافرين أو مصاريف" | Deletion is restricted to empty trips by design — deposit logs are immutable and must not be orphaned | Expected. Archive the trip instead (see *Close or archive a trip*) |
+| 🆕 The expense form and bottom input bar have disappeared | The trip's `status` is `completed` or `archived` | Expected — a banner at the top of the page says which. Set it back to `active` from the admin panel if it was a mistake |
+| 🆕 A trip vanished from "my trips" | It was archived; archived trips are hidden unless you have that trip open | Open it directly via `?trip=X`, or set it back to `active`/`completed` |
+| 🆕 Writes fail with a permission error right after changing a trip's status | Expected: the rules read `trips/{tripId}.status` on every write, so the change takes effect immediately for everyone | Not a bug. Check the status in the admin panel |
+| 🆕 `npm run test:rules` / `test:e2e` fail with "Unable to locate a Java Runtime" | The Firestore emulator is a JVM process | Install a JDK (`brew install openjdk` + link it), then re-run |
+| 🆕 Emulator fails downloading `cloud-firestore-emulator-*.jar` | A newer firebase-tools (often a *global* install) wants a newer jar and cannot reach `storage.googleapis.com` | Run through `npm run …` so the pinned local version is used; it reuses the cached jar |
+| 🆕 E2E fails with "Port 5173 is already in use" | A leftover `vite`/`npm run dev` from another terminal | `lsof -i :5173` then kill it; do not run a dev server alongside `npm run test:e2e` |
+| 🆕 `wrong-pin` E2E test fails with a rate-limit message | Too many PIN attempts accumulated on that trip's counter within 15 minutes | The test clears counters via `clearPinRateLimits()`; if changed, keep that call |
 
 ---
 
@@ -638,7 +864,7 @@ Three independent systems that must be deployed separately:
 2. **No `recharts`** — charts are pure HTML/CSS in `ChartsSection.tsx`.
 3. **No `enableIndexedDbPersistence`** — use `persistentLocalCache` (modern API).
 4. **No direct Cloud Function URL** — always use the Vercel rewrite path `/api/verifyTripPin`.
-5. **Soft delete only** — `deletedAt` timestamps, never permanent deletion (`allow delete: if false` in rules). The one exception is `travelerNames/{shortName}`, which is a claim rather than data: soft-deleting a traveler deletes the claim so the name can be reused.
+5. **Soft delete only** — `deletedAt` timestamps, never permanent deletion (`allow delete: if false` in rules). Two exceptions, both deliberate: `travelerNames/{shortName}` is a claim rather than data (soft-deleting a traveler frees the name for reuse), and 🆕 an **empty** trip may be deleted through `manageTrip` server-side — never from the client, and never when it holds any traveler or expense.
 6. **Traveler writes are batched with their name claim** — adding, trashing or restoring a traveler must write `travelers/{id}` and `travelerNames/{shortName}` in one `writeBatch`. A traveler without a claim is a traveler whose name nobody else is prevented from taking.
 7. **Modals go in `src/components/modals/`**, are registered in `useModals.ts` (`ModalState` union) and rendered lazily by `ModalManager.tsx` — not directly in App.tsx.
 8. **Pure logic in `utils/`** — testable without React/DOM.
@@ -648,6 +874,10 @@ Three independent systems that must be deployed separately:
 12. **Run scripts with Admin SDK** — `serviceAccountKey.json` required, never expose admin operations to clients.
 13. **Never write `trips/{tripId}` without merge** — the doc holds independent sections (name, bankDetails, itinerary). Use `useTripAdminActions`, which always merges; a full `set()` silently drops whatever it omits.
 14. **Secrets stay server-side** — `tripSecrets/{tripId}` is `read, write: if false` and must remain so. PIN handling belongs in `functions/index.js` or an Admin SDK script, never in the client.
-15. **CI pipeline** — all PRs must pass: lint → typecheck → test → build. Run `npm run lint` locally before pushing; ESLint bans `any` (`no-explicit-any`) and empty `catch {}` blocks (`no-empty`), which are easy to introduce accidentally.
+15. **CI pipeline** — all PRs must pass: lint → typecheck → test → rules → e2e → build. Run `npm run lint` locally before pushing; ESLint bans `any` (`no-explicit-any`) and empty `catch {}` blocks (`no-empty`), which are easy to introduce accidentally.
+16. 🆕 **Context fields go where their volatility says**, not where their topic says — see `src/context/UIContext.ts`. A changing value placed in `UIActionsContext` reintroduces the per-keystroke re-render with no visible symptom.
+17. 🆕 **Never gate a screen on a condition that excludes the person who uses it.** The "my trips" picker originally required `needsTripPin && !isAdmin`, which hid it from every member of the default trip *and* from admins entirely — i.e. from everyone who would ever open it. Ask "who does this condition exclude?" before shipping visibility logic.
+18. 🆕 **Verify the negative case for anything that reports success/failure.** The emulator wrapper (`scripts/run-with-emulators.mjs`) had three separate bugs — including one where failing tests reported success — and none would have surfaced by only checking that a passing run exits 0.
+19. 🆕 **Before debugging production behaviour, confirm the fix is actually deployed** (`git log origin/main..main`). A meaningful amount of time was lost diagnosing a bug that was already fixed locally but never pushed.
 
 </div>

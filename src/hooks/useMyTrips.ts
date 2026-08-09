@@ -17,11 +17,15 @@ import { useState, useEffect, useCallback } from 'react'
 import type { User } from 'firebase/auth'
 import { getDoc } from 'firebase/firestore'
 import { tripDocById } from '../firestore'
+import { normalizeTripStatus } from '../utils/tripStatus'
+import type { TripStatus } from '../types'
 
 export interface MyTrip {
   id: string
   /** اسم الرحلة المعروض — يسقط للمعرّف نفسه إن كان المستند بلا اسم صالح. */
   name: string
+  /** 🆕 حالة دورة الحياة — تُستخدم لإخفاء المؤرشفة ولتمييز المنتهية في القائمة. */
+  status: TripStatus
 }
 
 export interface UseMyTripsResult {
@@ -62,8 +66,12 @@ export function useMyTrips(tripIds: string[], user: User | null): UseMyTripsResu
           // قاعدة البيانات بعد انضمامه (الحذف ممنوع من الواجهة لكنه ممكن
           // بـ Admin SDK). نُسقطها بصمت بدل عرض صف مكسور لا يفتح شيئاً.
           if (!snap.exists()) return null
-          const data = snap.data() as { name?: unknown }
-          return { id, name: typeof data.name === 'string' && data.name ? data.name : id }
+          const data = snap.data() as { name?: unknown; status?: unknown }
+          return {
+            id,
+            name: typeof data.name === 'string' && data.name ? data.name : id,
+            status: normalizeTripStatus(data.status),
+          }
         } catch {
           // فشل قراءة رحلة واحدة (صلاحية سُحبت، أو انقطاع لحظي) يجب ألا
           // يُسقط بقية القائمة — نعرض ما نجح ونتجاهل ما فشل.

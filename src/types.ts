@@ -174,6 +174,26 @@ export interface ItinerarySegment {
   }
 }
 
+// ─── دورة حياة الرحلة ────────────────────────────────────────────────────────
+// 🆕 حالة الرحلة — مخزَّنة في trips/{tripId}.status ومفروضة في firestore.rules
+// (انظر tripAcceptsExpenses/tripAcceptsWrites هناك) لا في الواجهة وحدها.
+//
+//   active    → كل شيء مسموح
+//   completed → لا مصاريف جديدة، لكن تعديل المسافرين والإيداعات يبقى متاحاً
+//               لتسوية الحسابات بعد انتهاء الرحلة
+//   archived  → لا كتابة إطلاقاً، وتختفي من القوائم افتراضياً
+//
+// ⚠️ غياب الحقل = active. كل الرحلات المنشأة قبل هذه الميزة بلا `status`، ولو
+// عُوملت كغير نشطة لتجمّدت جميعها. لا ترحيل مطلوب — لا في القواعد ولا هنا.
+export type TripStatus = 'active' | 'completed' | 'archived'
+
+/** ترتيب دلالي للتقييد: كل حالة تشمل قيود ما قبلها. مفيد للمقارنات في الواجهة. */
+export const TRIP_STATUS_LABEL: Record<TripStatus, string> = {
+  active:    'نشطة',
+  completed: 'منتهية',
+  archived:  'مؤرشفة',
+}
+
 // 🆕 تفاصيل الحساب البنكي — كانت مُعرَّفة محلياً في useTripConfig.ts وMisc.tsx
 // معاً؛ وُحِّدت هنا لأن واجهة إدارة الرحلة تحتاج نفس النوع للنموذج.
 export interface BankDetails {

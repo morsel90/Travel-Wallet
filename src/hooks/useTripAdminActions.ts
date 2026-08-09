@@ -22,7 +22,8 @@ import { auth } from '../firebase'
 import { tripDocById } from '../firestore'
 import { haptic } from '../utils/haptics'
 import { MAX_SEGMENTS } from '../utils/itinerary'
-import type { BankDetails, ItinerarySegment, ToastMessage } from '../types'
+import { TRIP_STATUS_LABEL } from '../types'
+import type { BankDetails, ItinerarySegment, ToastMessage, TripStatus } from '../types'
 
 interface UseTripAdminActionsParams {
   isAdmin: boolean
@@ -35,6 +36,8 @@ export interface UseTripAdminActionsResult {
   saveBankDetails: (tripId: string, details: BankDetails) => Promise<boolean>
   saveItinerary: (tripId: string, itinerary: ItinerarySegment[]) => Promise<boolean>
   saveTripName: (tripId: string, name: string) => Promise<boolean>
+  /** 🆕 تغيير حالة دورة حياة الرحلة — القواعد تفرض أثرها، هذا يكتب الحقل فقط. */
+  saveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
   createTrip: (tripId: string, name: string, pin: string) => Promise<boolean>
   resetTripPin: (tripId: string, pin: string) => Promise<boolean>
   /** حذف نهائي — للرحلات الفارغة فقط، والخادم هو من يفرض ذلك (انظر functions/index.js). */
@@ -102,6 +105,13 @@ export function useTripAdminActions({
     { name: name.trim() },
     'تم حفظ اسم الرحلة',
     'تعذّر حفظ اسم الرحلة.',
+  ), [write])
+
+  const saveTripStatus = useCallback((tripId: string, status: TripStatus) => write(
+    tripId,
+    { status },
+    `تم تغيير حالة الرحلة إلى «${TRIP_STATUS_LABEL[status]}»`,
+    'تعذّر تغيير حالة الرحلة.',
   ), [write])
 
   // ── المسار الخادمي (manageTrip) ─────────────────────────────────────────
@@ -172,5 +182,5 @@ export function useTripAdminActions({
     [callManageTrip]
   )
 
-  return { isSaving, saveBankDetails, saveItinerary, saveTripName, createTrip, resetTripPin, deleteTrip }
+  return { isSaving, saveBankDetails, saveItinerary, saveTripName, saveTripStatus, createTrip, resetTripPin, deleteTrip }
 }

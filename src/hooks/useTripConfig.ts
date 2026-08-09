@@ -4,7 +4,8 @@ import type { User } from 'firebase/auth'
 import { tripConfigDoc } from '../firestore'
 import { BANK_DETAILS as FALLBACK_BANK_DETAILS } from '../constants'
 import { normalizeItinerary } from '../utils/itinerary'
-import type { BankDetails, ItinerarySegment } from '../types'
+import { normalizeTripStatus } from '../utils/tripStatus'
+import type { BankDetails, ItinerarySegment, TripStatus } from '../types'
 
 // ─── useTripConfig ──────────────────────────────────────────────────────────
 // 🆕 دعم رحلات متعددة: تفاصيل الحساب البنكي (واسم الرحلة إن وُجد) لم تعد ثابتة
@@ -23,9 +24,11 @@ export interface TripConfig {
   tripName: string | null
   bankDetails: BankDetails
   itinerary?: ItinerarySegment[]
+  /** 🆕 حالة دورة الحياة — غياب الحقل يُعامَل كـ active (انظر utils/tripStatus.ts). */
+  status: TripStatus
 }
 
-const FALLBACK_CONFIG: TripConfig = { tripName: null, bankDetails: FALLBACK_BANK_DETAILS }
+const FALLBACK_CONFIG: TripConfig = { tripName: null, bankDetails: FALLBACK_BANK_DETAILS, status: 'active' }
 
 // 🆕 مرّر hasAccess ? user : null من App.tsx (تماماً كما مع useTravelers/
 // useExpenses) — وليس user مباشرة. وإلا فمحاولة القراءة الأولى (قبل التحقق من
@@ -55,6 +58,7 @@ export function useTripConfig(user: User | null): TripConfig {
           name?: unknown
           bankDetails?: Partial<BankDetails>
           itinerary?: unknown
+          status?: unknown
         }
 
         // normalizeItinerary تُسقط أي مقطع تالف وترتّب الباقي زمنياً — القواعد
@@ -69,6 +73,7 @@ export function useTripConfig(user: User | null): TripConfig {
             iban:        data.bankDetails?.iban        ?? FALLBACK_BANK_DETAILS.iban,
           },
           itinerary: itinerary.length > 0 ? itinerary : undefined,
+          status: normalizeTripStatus(data.status),
         })
       },
       err => {

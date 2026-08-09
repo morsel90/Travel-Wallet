@@ -9,13 +9,16 @@ import { useState, useEffect } from 'react'
 import { onSnapshot } from 'firebase/firestore'
 import { tripsCol } from '../firestore'
 import { normalizeItinerary } from '../utils/itinerary'
-import type { BankDetails, ItinerarySegment } from '../types'
+import { normalizeTripStatus } from '../utils/tripStatus'
+import type { BankDetails, ItinerarySegment, TripStatus } from '../types'
 
 export interface TripSummary {
   id: string
   name: string
   bankDetails: BankDetails
   itinerary: ItinerarySegment[]
+  /** 🆕 حالة دورة الحياة — غياب الحقل = active (توافق خلفي، انظر utils/tripStatus.ts). */
+  status: TripStatus
 }
 
 const EMPTY_BANK: BankDetails = { bankName: '', beneficiary: '', iban: '' }
@@ -44,10 +47,13 @@ export function useAllTrips(enabled: boolean): UseAllTripsResult {
       tripsCol(),
       snap => {
         const list: TripSummary[] = snap.docs.map(d => {
-          const data = d.data() as { name?: unknown; bankDetails?: Partial<BankDetails>; itinerary?: unknown }
+          const data = d.data() as {
+            name?: unknown; bankDetails?: Partial<BankDetails>; itinerary?: unknown; status?: unknown
+          }
           return {
             id: d.id,
             name: typeof data.name === 'string' && data.name ? data.name : d.id,
+            status: normalizeTripStatus(data.status),
             bankDetails: {
               bankName:    data.bankDetails?.bankName    ?? EMPTY_BANK.bankName,
               beneficiary: data.bankDetails?.beneficiary ?? EMPTY_BANK.beneficiary,

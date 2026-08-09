@@ -36,8 +36,9 @@ import EmptyState                        from './components/EmptyState'
 import { TravelerCardSkeleton, ExpenseListItemSkeleton, ChartsSectionSkeleton } from './components/Skeleton'
 import { haptic }                        from './utils/haptics'
 import { onIdle, preloadAll }            from './utils/preload'
+import { acceptsExpenses, closedTripNotice } from './utils/tripStatus'
 import { describeWriteError, writeErrorCode } from './utils/writeErrors'
-import { Users, Receipt, AlertTriangle, Download, Search, WifiOff, Plus, BarChart3, Settings } from './icons'
+import { Users, Receipt, AlertTriangle, Download, Search, WifiOff, Plus, BarChart3, Settings, Lock } from './icons'
 
 // ⚠️ دالة الاستيراد مُسمّاة لتُعاد في التحميل المسبق بنفس المُعرّف حرفياً —
 // انظر ModalManager.tsx وutils/preload.ts.
@@ -67,7 +68,13 @@ export default function App() {
   const { travelers, setTravelers, travelersLoaded, refreshTravelers } = useTravelers(hasAccess ? user : null, setIsSyncing)
   // اسم الرحلة يُحرَّر الآن من واجهة إدارة الرحلات (التي تقرأه من useAllTrips)،
   // فلا تحتاجه هذه الشاشة — تفاصيل البنك للبطاقة، والمسار للويدجت والتقارير.
-  const { bankDetails, itinerary } = useTripConfig(hasAccess ? user : null)
+  const { bankDetails, itinerary, status: tripStatus } = useTripConfig(hasAccess ? user : null)
+
+  // 🆕 دورة حياة الرحلة. ⚠️ هذه إخفاء وتفسير فقط — الحماية الحقيقية في
+  // firestore.rules (tripAcceptsExpenses/tripAcceptsWrites). الغرض ألا يضغط
+  // المستخدم زراً سترفضه القواعد بخطأ صلاحيات غامض.
+  const canAddExpenses = acceptsExpenses(tripStatus)
+  const tripClosedNotice = closedTripNotice(tripStatus)
 
   const isInitialLoading = !expensesLoaded || !travelersLoaded
 
@@ -158,17 +165,20 @@ export default function App() {
   const { trips, loading: tripsLoading, error: tripsError } = useAllTrips(isAdmin)
   const {
     isSaving: isSavingTrip,
-    saveBankDetails, saveItinerary, saveTripName, createTrip, resetTripPin, deleteTrip,
+    saveBankDetails, saveItinerary, saveTripName, saveTripStatus, createTrip, resetTripPin, deleteTrip,
   } = useTripAdminActions({ isAdmin, showToast, handleFirestoreError })
 
   // ─── شاشة «رحلاتي» ────────────────────────────────────────────────────────
   // 🆕 المسؤول يرى كل الرحلات (استعلام القائمة يرضيه isAdmin وحده)، والعضو
   // العادي يرى ما انضم له فقط. بدون هذا التفريق كانت الشاشة تختفي عن المسؤول
   // تماماً: هو يتجاوز رمز الرحلة أصلاً فقد لا يملك خريطة trips في توكنه إطلاقاً.
-  const pickerTrips = useMemo(
-    () => (isAdmin ? trips.map(t => ({ id: t.id, name: t.name })) : myTrips),
-    [isAdmin, trips, myTrips],
-  )
+  // 🆕 المؤرشفة تُخفى من القائمة — هذا هو الفرق العملي الوحيد بينها وبين
+  // المنتهية. تبقى الرحلة المفتوحة حالياً ظاهرة دائماً ولو كانت مؤرشفة، وإلا
+  // اختفت من تحت المستخدم بينما هو داخلها.
+  const pickerTrips = useMemo(() => {
+    const source = isAdmin ? trips.map(t => ({ id: t.id, name: t.name, status: t.status })) : myTrips
+    return source.filter(t => t.status !== 'archived' || t.id === TRIP_ID)
+  }, [isAdmin, trips, myTrips])
   const pickerLoading = isAdmin ? tripsLoading : myTripsLoading
   const pickerError   = isAdmin ? tripsError   : myTripsError
 
@@ -329,6 +339,15 @@ export default function App() {
                 <NextSegmentWidget itinerary={itinerary} />
               )}
 
+              {/* 🆕 رحلة منتهية أو مؤرشفة: نشرح سبب اختفاء أزرار الإدخال بدل
+                  تركها تختفي بلا تفسير. القواعد هي التي تمنع فعلاً، وهذا إعلام. */}
+              {tripClosedNotice && (
+                <div className="bg-slate-100 text-slate-700 p-4 rounded-xl text-sm border border-slate-200 shadow-sm flex items-start gap-2">
+                  <Lock className="w-4 h-4 mt-0.5 shrink-0 text-slate-500" />
+                  {tripClosedNotice}
+                </div>
+              )}
+
               {!isOnline && (
                 <div className="bg-amber-100 text-amber-800 p-4 rounded-xl text-sm border border-amber-200 shadow-sm flex items-start gap-2">
                   <WifiOff className="w-4 h-4 mt-0.5 shrink-0" />
@@ -424,9 +443,12 @@ export default function App() {
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="space-y-6 lg:col-span-1">
-                  <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                    <ExpenseForm />
-                  </section>
+                  {/* نموذج المصروف يختفي كلياً في الرحلة المنتهية/المؤرشفة */}
+                  {canAddExpenses && (
+                    <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                      <ExpenseForm />
+                    </section>
+                  )}
                   <BankDetailsCard bankDetails={bankDetails} />
                 </div>
 
@@ -506,11 +528,13 @@ export default function App() {
                         ) : activeExpenses.length === 0 ? (
                           <EmptyState
                             Icon={Receipt}
-                            title="لا توجد مصاريف بعد"
-                            description="ابدأ بتسجيل أول مصروف للرحلة، وسيتولّى التطبيق حساب حصة كل مسافر تلقائياً."
-                            actionLabel="سجّل أول مصروف"
-                            onAction={() => openExpenseForm()}
-                            ActionIcon={Plus}
+                            title={canAddExpenses ? 'لا توجد مصاريف بعد' : 'لا توجد مصاريف في هذه الرحلة'}
+                            description={canAddExpenses
+                              ? 'ابدأ بتسجيل أول مصروف للرحلة، وسيتولّى التطبيق حساب حصة كل مسافر تلقائياً.'
+                              : 'أُغلقت هذه الرحلة دون تسجيل أي مصروف فيها.'}
+                            actionLabel={canAddExpenses ? 'سجّل أول مصروف' : undefined}
+                            onAction={canAddExpenses ? () => openExpenseForm() : undefined}
+                            ActionIcon={canAddExpenses ? Plus : undefined}
                           />
                         ) : filteredExpenses.length === 0 ? (
                           <div className="p-8 text-center text-slate-400 font-medium">لا توجد نتائج لـ "{searchQuery}"</div>
@@ -547,9 +571,9 @@ export default function App() {
             </PullToRefresh>
 
             <SmartInputBar
-                 visible={!isInitialLoading && !isAddingExpense}
+                 visible={!isInitialLoading && !isAddingExpense && canAddExpenses}
                  onQuickAdd={handleQuickAddExpense}
-                 onExpand={openExpenseForm} 
+                 onExpand={openExpenseForm}
              />
 
             <ModalManager
@@ -588,6 +612,7 @@ export default function App() {
                 onSaveItinerary: saveItinerary,
                 onCreateTrip: createTrip,
                 onResetPin: resetTripPin,
+                onSaveTripStatus: saveTripStatus,
                 onDeleteTrip: deleteTrip,
               }}
             />

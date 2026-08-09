@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Building2, Route, KeyRound, Save, Plane, Car, Train, Bus,
-  Pencil, Trash2, Plus, ArrowUp, ArrowDown, Loader2, AlertTriangle,
+  Pencil, Trash2, Plus, ArrowUp, ArrowDown, Loader2, AlertTriangle, Lock,
 } from '../../icons'
 import SegmentForm from './SegmentForm'
 import EmptyState from '../EmptyState'
@@ -18,7 +18,8 @@ import {
 } from '../../utils/itinerary'
 import type { SegmentDraft } from '../../utils/itinerary'
 import type { TripSummary } from '../../hooks/useAllTrips'
-import type { BankDetails, TransportMode } from '../../types'
+import { TRIP_STATUS_LABEL } from '../../types'
+import type { BankDetails, TransportMode, TripStatus } from '../../types'
 
 interface TripDetailPanelProps {
   trip: TripSummary
@@ -27,6 +28,8 @@ interface TripDetailPanelProps {
   onSaveBankDetails: (tripId: string, details: BankDetails) => Promise<boolean>
   onSaveItinerary: (tripId: string, itinerary: TripSummary['itinerary']) => Promise<boolean>
   onResetPin: (tripId: string, pin: string) => Promise<boolean>
+  /** 🆕 تغيير حالة دورة حياة الرحلة (active / completed / archived). */
+  onSaveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
   /** حذف نهائي — الخادم يرفضه إن كانت الرحلة تحوي أي بيانات. */
   onDeleteTrip: (tripId: string) => Promise<boolean>
   /** يُستدعى بعد نجاح الحذف — الرحلة لم تعد موجودة فلا يصح إبقاء لوحتها مفتوحة. */
@@ -58,9 +61,16 @@ const inputClass =
   'w-full border border-slate-200 rounded-xl px-3 py-2 text-base bg-white focus:ring-2 focus:ring-teal-500 outline-none'
 const labelClass = 'block text-xs font-bold text-slate-500 mb-1.5'
 
+// ما تمنعه كل حالة — يُعرض للمسؤول قبل أن يختار، لأن الأثر ليس بديهياً من الاسم
+const STATUS_HELP: Record<TripStatus, string> = {
+  active:    'كل شيء متاح: تسجيل المصاريف وتعديلها وإدارة المسافرين والأرصدة.',
+  completed: 'لا مصاريف جديدة ولا تعديل عليها، لكن تعديل المسافرين والأرصدة يبقى متاحاً لتسوية الحسابات. التقارير تعمل كالمعتاد.',
+  archived:  'للاطّلاع والتقارير فقط — لا تُقبل أي كتابة. وتختفي من قائمة الرحلات لمن ليس داخلها.',
+}
+
 export default function TripDetailPanel({
   trip, isSaving, onSaveTripName, onSaveBankDetails, onSaveItinerary, onResetPin,
-  onDeleteTrip, onDeleted,
+  onSaveTripStatus, onDeleteTrip, onDeleted,
 }: TripDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>('bank')
 
@@ -239,6 +249,43 @@ export default function TripDetailPanel({
             />
             <p className="text-[11px] text-slate-400 mt-1.5">تُحذف المسافات تلقائياً عند الحفظ.</p>
           </div>
+
+          <hr className="border-slate-100" />
+
+          {/* 🆕 دورة حياة الرحلة — الأثر مفروض في firestore.rules لا هنا */}
+          <div>
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-1">
+              <Lock className="w-4 h-4 text-teal-600" /> حالة الرحلة
+            </h3>
+            <p className="text-xs text-slate-500 mb-3">
+              يتغيّر الأثر فوراً لكل الأعضاء — والمنع مفروض على الخادم لا في الواجهة فقط.
+            </p>
+
+            <div className="flex flex-wrap gap-1.5" role="group" aria-label="حالة الرحلة">
+              {(['active', 'completed', 'archived'] as const).map(value => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => { if (value !== trip.status) void onSaveTripStatus(trip.id, value) }}
+                  disabled={isSaving}
+                  aria-pressed={trip.status === value}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all border disabled:opacity-40 ${
+                    trip.status === value
+                      ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {TRIP_STATUS_LABEL[value]}
+                </button>
+              ))}
+            </div>
+
+            <p className="text-[11px] text-slate-500 mt-2.5 leading-relaxed bg-slate-50 border border-slate-100 rounded-lg p-2.5">
+              {STATUS_HELP[trip.status]}
+            </p>
+          </div>
+
+          <hr className="border-slate-100" />
 
           <div className="flex items-center gap-2 pt-1">
             <button

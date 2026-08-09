@@ -94,6 +94,36 @@ service cloud.firestore {
         && existing.data.createdByUid == request.auth.uid;
     }
 
+    // 🆕 لا يجوز أن يُنسب مصروف عند إنشائه لغير كاتبه.
+    //
+    // ⚠️ كانت هذه ثغرة مفتوحة وموثّقة: التحقق من الملكية كان عند التعديل فقط،
+    // فأي عضو يستطيع كتابة مصروف بـ createdByUid لشخص آخر — فينسب مصروفاً لم
+    // يسجّله، ويمنح ذلك الشخص صلاحية تعديله ويحرم نفسه منها. والأثر المالي أن
+    // سجل «من سجّل هذا المصروف» يصبح غير موثوق، وهو المرجع الوحيد عند أي خلاف.
+    //
+    // الحقل إلزامي الآن عند الإنشاء: العميل يرسله دائماً (انظر useExpenseActions)،
+    // والمصاريف القديمة التي تسبقه لا تتأثر لأن القواعد تُقيَّم على الكتابات
+    // الجديدة وحدها. ولا استثناء للمسؤول: إن أراد التسجيل نيابةً عن غيره مستقبلاً
+    // فالصواب حقل مستقل (paidBy) لا الكذب في حقل يوثّق الكاتب.
+    function isOwnCreation(d) {
+      return 'createdByUid' in d && d.createdByUid == request.auth.uid;
+    }
+
+    // 🆕 createdByUid لا يتغيّر بعد الإنشاء — للمسؤول أيضاً.
+    //
+    // كان شرط الثبات مربوطاً بمسار المالك وحده، فالمسؤول كان يستطيع تغييره عند
+    // التعديل. حقل يوثّق «من أنشأ» ويقبل التغيير لاحقاً لا يوثّق شيئاً.
+    //
+    // ⚠️ حالة المصاريف القديمة (بلا الحقل أصلاً) مُعالَجة صراحةً: العميل يرسل
+    // `editingExpense?.createdByUid ?? user?.uid`، أي أنه يختم المحرِّر على مصروف
+    // قديم لا مالك له. منعُ ذلك كان سيكسر تعديل المسؤول للمصاريف القديمة تماماً،
+    // فنسمح بختم *الكاتب نفسه* على ما لا مالك له — ولا نسمح بتغيير مالك قائم أبداً.
+    function preservesCreator(existing, incoming) {
+      return ('createdByUid' in existing.data)
+        ? ('createdByUid' in incoming && incoming.createdByUid == existing.data.createdByUid)
+        : (!('createdByUid' in incoming) || incoming.createdByUid == request.auth.uid);
+    }
+
     // التحقّق من بنية المسافر — تم السماح بحقل deletedAt الاختياري كـ number (Unix timestamp)
     function isValidTraveler(d) {
       return d.keys().hasOnly(['id', 'name', 'shortName', 'deposited', 'deletedAt'])
@@ -133,10 +163,42 @@ service cloud.firestore {
     // لأن الواجهة الإدارية تكتب بـ merge (تحدّث تفاصيل البنك وحدها أو المسار وحده،
     // انظر hooks/useTripAdminActions.ts)، فلا يصل للقواعد إلا الحقل المُعدَّل فعلاً.
     function isValidTripConfig(d) {
-      return d.keys().hasOnly(['name', 'bankDetails', 'itinerary'])
+      return d.keys().hasOnly(['name', 'bankDetails', 'itinerary', 'status'])
         && (!('name' in d) || (d.name is string && d.name.size() <= 100))
         && (!('bankDetails' in d) || isValidBankDetails(d.bankDetails))
-        && (!('itinerary' in d) || (d.itinerary is list && d.itinerary.size() <= 50));
+        && (!('itinerary' in d) || (d.itinerary is list && d.itinerary.size() <= 50))
+        && (!('status' in d) || d.status in ['active', 'completed', 'archived']);
+    }
+
+    // ─── دورة حياة الرحلة ────────────────────────────────────────────────────
+    //
+    // 🆕 حالة الرحلة تُفرَض هنا لا في الواجهة. «رحلة للقراءة فقط» تُمنع من الواجهة
+    // وحدها ليست للقراءة فقط — نفس مبدأ الحذف الليّن وحماية tripSecrets وثبات
+    // createdByUid: الضمان يعيش في القواعد.
+    //
+    //   active    → كل شيء مسموح (وهي الحالة الافتراضية)
+    //   completed → لا مصاريف جديدة، لكن المسافرون والإيداعات تبقى قابلة للتعديل
+    //               لتسوية الحسابات بعد انتهاء الرحلة. «انتهى الإنفاق» ≠ «أُغلق الدفتر».
+    //   archived  → لا كتابة إطلاقاً (القراءة والتقارير تبقى تعمل)
+    //
+    // ⚠️ غياب الحقل = active عمداً. كل الرحلات المنشأة قبل هذه الميزة بلا `status`،
+    // ولو عُوملت كغير نشطة لتجمّدت جميعها فور نشر هذه القواعد. لا حاجة لأي ترحيل.
+    //
+    // ⚠️ الكلفة: قراءة مستند إضافية لكل كتابة على الرحلة. مهملة مقابل الضمان،
+    // والحدّ 10 قراءات لكل طلب — إنشاء المصروف يستهلك اثنتين فقط مع حدّ المعدّل.
+    function tripStatus(appId) {
+      let ref = /databases/$(database)/documents/trips/$(appId);
+      return exists(ref) ? get(ref).data.get('status', 'active') : 'active';
+    }
+
+    /** المصاريف: الرحلة النشطة وحدها تقبلها. */
+    function tripAcceptsExpenses(appId) {
+      return tripStatus(appId) == 'active';
+    }
+
+    /** بقية الكتابات (مسافرون، إيداعات): كل شيء عدا المؤرشفة. */
+    function tripAcceptsWrites(appId) {
+      return tripStatus(appId) != 'archived';
     }
 
     function isValidBankDetails(b) {
@@ -190,35 +252,46 @@ service cloud.firestore {
         allow read:   if isMember(appId) || isAdmin();
         // المسؤول معفى من حد المعدّل (قد يحتاج إدخال عدة مصاريف دفعة واحدة
         // بعد الرحلة)؛ الأعضاء محدودون بمصروف واحد كل ثانية — انظر withinExpenseRateLimit
+        // 🆕 isOwnCreation يُطبَّق على الجميع بمن فيهم المسؤول: لا يُنسب مصروف
+        // لغير كاتبه مهما كانت صلاحيته.
+        // 🆕 tripAcceptsExpenses: رحلة منتهية أو مؤرشفة لا تقبل مصاريف جديدة —
+        // ولا استثناء للمسؤول، فالحالة وصف للرحلة لا قيد على الصلاحية.
         allow create: if isValidExpense(request.resource.data)
+                        && isOwnCreation(request.resource.data)
+                        && tripAcceptsExpenses(appId)
                         && (
                              isAdmin()
                              || (isMember(appId) && withinExpenseRateLimit(appId))
                            );
         // يُسمح بالتعديل (ويشمل الحذف اللين عبر تحديث deletedAt) للمسؤول دائماً،
-        // أو لصاحب المصروف نفسه بشرط عدم تغيير هوية المالك (createdByUid) في العملية
+        // أو لصاحب المصروف نفسه. 🆕 وثبات createdByUid صار شرطاً مشتركاً على
+        // المسارين — كان مربوطاً بمسار المالك وحده، فكان المسؤول يستطيع تغييره.
         allow update: if isValidExpense(request.resource.data)
+                        && preservesCreator(resource, request.resource.data)
+                        && tripAcceptsExpenses(appId)
                         && (
                              isAdmin()
-                             || (
-                                  isExpenseOwner(resource, appId)
-                                  && request.resource.data.createdByUid == resource.data.createdByUid
-                                )
+                             || isExpenseOwner(resource, appId)
                            );
         allow delete: if false; // 🚫 حظر الحذف الصلب نهائياً لإجبار استخدام الـ Soft Delete
       }
 
+      // 🆕 tripAcceptsWrites: المسافرون والإيداعات تبقى قابلة للتعديل في الرحلة
+      // المنتهية (completed) لتسوية الحسابات بعدها — وتُمنع في المؤرشفة وحدها.
       match /travelers/{travelerId} {
         allow read:   if isMember(appId) || isAdmin();
-        allow create: if (isMember(appId) || isAdmin()) && isValidTraveler(request.resource.data);
-        allow update: if isAdmin()    && isValidTraveler(request.resource.data);
+        allow create: if (isMember(appId) || isAdmin()) && isValidTraveler(request.resource.data)
+                        && tripAcceptsWrites(appId);
+        allow update: if isAdmin()    && isValidTraveler(request.resource.data)
+                        && tripAcceptsWrites(appId);
         allow delete: if false; // 🚫 حظر الحذف الصلب نهائياً لحماية سجل الأرصدة التراكمي
 
         // سجل تدقيق تعديلات الرصيد — مرئي للمسؤول فقط، وغير قابل للتعديل أو
         // الحذف نهائياً بعد إنشائه (سجل تدقيق حقيقي لا يمكن التلاعب به لاحقاً)
         match /depositLogs/{logId} {
           allow read:          if isAdmin();
-          allow create:        if isAdmin() && isValidDepositLog(request.resource.data);
+          allow create:        if isAdmin() && isValidDepositLog(request.resource.data)
+                                 && tripAcceptsWrites(appId);
           allow update, delete: if false;
         }
       }
@@ -242,9 +315,12 @@ service cloud.firestore {
       // الحجز، وقد تفشل إن كان شخص آخر أخذ الاسم — وهذا مقصود ومعروض للمستخدم.
       match /travelerNames/{shortName} {
         allow read:   if isMember(appId) || isAdmin();
-        allow create: if (isMember(appId) || isAdmin()) && isValidNameClaim(request.resource.data);
+        // يُكتب في نفس writeBatch مع مستند المسافر، فيجب أن يخضع لنفس شرط الحالة
+        // وإلا فشلت الدفعة كاملةً لتعارض الشرطين بلا سبب مفهوم.
+        allow create: if (isMember(appId) || isAdmin()) && isValidNameClaim(request.resource.data)
+                        && tripAcceptsWrites(appId);
         allow update: if false; // 🚫 هذا السطر تحديداً هو ما يفرض التفرّد
-        allow delete: if isAdmin();
+        allow delete: if isAdmin() && tripAcceptsWrites(appId);
       }
 
       // مستند تتبّع حد المعدّل (Rate Limiting) لكل مستخدم في هذه الرحلة — لا
