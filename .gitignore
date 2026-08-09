@@ -33,6 +33,13 @@ storybook-static
 firestore-debug.log
 ui-debug.log
 
+# ملف رمز خروج المحاكيات (scripts/run-with-emulators.mjs) — يُحذف تلقائياً،
+# ويبقى فقط إن انهارت العملية فجأة
+.emulator-exit-*
+
+# ملفات مؤقتة تُنشئها أنظمة ملفات FUSE عند حذف ملف ما زال مفتوحاً
+.fuse_hidden*
+
 # مخرجات Playwright (اختبارات E2E)
 /test-results/
 /playwright-report/

@@ -57,15 +57,10 @@ export default function App() {
   const isOnline = useOnlineStatus()
   const hasAccess = isAdmin || (!pinCheckLoading && !needsTripPin)
 
-  // 🆕 شاشة «رحلاتي» — تُعرض بدل بوابة الرمز حين لا تكون هناك رحلة مقصودة.
-  // نجلبها فقط عند الحاجة الفعلية لعرضها (لا مع كل جلسة عادية داخل رحلة).
+  // 🆕 شاشة «رحلاتي» — تُعرض حين يُفتح التطبيق بلا `?trip=`، أي بلا رحلة مقصودة.
+  // (منطق العرض الكامل مُجمَّع أدناه بعد useAllTrips، لأن المسؤول يرى كل الرحلات.)
   const [showTripPicker, setShowTripPicker] = useState(false)
-  const needsTripChoice = !isAdmin && !pinCheckLoading && needsTripPin && !HAS_EXPLICIT_TRIP_ID && joinedTripIds.length > 0
-  const isPickerVisible = needsTripChoice || showTripPicker
-  const { trips: myTrips, loading: myTripsLoading, error: myTripsError } = useMyTrips(
-    isPickerVisible ? joinedTripIds : [],
-    user,
-  )
+  const { trips: myTrips, loading: myTripsLoading, error: myTripsError } = useMyTrips(joinedTripIds, user)
 
   const { ratesUpdatedAt, CURRENCIES } = useExchangeRates()
   const { expenses,  setExpenses,  expensesLoaded,  refreshExpenses }  = useExpenses(hasAccess ? user : null, { setIsSyncing, setSyncError })
@@ -166,6 +161,27 @@ export default function App() {
     saveBankDetails, saveItinerary, saveTripName, createTrip, resetTripPin,
   } = useTripAdminActions({ isAdmin, showToast, handleFirestoreError })
 
+  // ─── شاشة «رحلاتي» ────────────────────────────────────────────────────────
+  // 🆕 المسؤول يرى كل الرحلات (استعلام القائمة يرضيه isAdmin وحده)، والعضو
+  // العادي يرى ما انضم له فقط. بدون هذا التفريق كانت الشاشة تختفي عن المسؤول
+  // تماماً: هو يتجاوز رمز الرحلة أصلاً فقد لا يملك خريطة trips في توكنه إطلاقاً.
+  const pickerTrips = useMemo(
+    () => (isAdmin ? trips.map(t => ({ id: t.id, name: t.name })) : myTrips),
+    [isAdmin, trips, myTrips],
+  )
+  const pickerLoading = isAdmin ? tripsLoading : myTripsLoading
+  const pickerError   = isAdmin ? tripsError   : myTripsError
+
+  // تُعرض حين فُتح التطبيق بلا `?trip=` — أي بلا رحلة مقصودة — أو حين طلبها
+  // المستخدم صراحةً من الهيدر. اختيار رحلة ينقل إلى `?trip=X` فيصبح المعرّف
+  // صريحاً ولا تظهر الشاشة مجدداً.
+  //
+  // ⚠️ لا نشترط needsTripPin هنا: كان ذلك يخفي الشاشة عن كل عضو في الرحلة
+  // الافتراضية (وهم الأغلبية) لأنه لا يُطالَب برمز أصلاً، فلا يراها أحد عملياً.
+  const isPickerVisible =
+    showTripPicker ||
+    (!HAS_EXPLICIT_TRIP_ID && !pinCheckLoading && !pickerLoading && pickerTrips.length > 0)
+
   const hasUnsavedData = useCallback(() => {
     const hasExpenseData = isAddingExpense && (
       newExpense.description.trim() !== '' ||
@@ -240,10 +256,10 @@ export default function App() {
   if (isPickerVisible) {
     return (
       <TripPicker
-        trips={myTrips}
-        loading={myTripsLoading}
-        error={myTripsError}
-        currentTripId={hasAccess ? TRIP_ID : undefined}
+        trips={pickerTrips}
+        loading={pickerLoading}
+        error={pickerError}
+        currentTripId={HAS_EXPLICIT_TRIP_ID && hasAccess ? TRIP_ID : undefined}
         // الرجوع متاح فقط حين فُتحت الشاشة اختيارياً من داخل التطبيق — أما حين
         // كانت شاشة البداية (لا رحلة مقصودة) فلا يوجد ما يُرجع إليه أصلاً.
         onBack={showTripPicker ? () => setShowTripPicker(false) : undefined}
@@ -289,8 +305,8 @@ export default function App() {
               onToggleAdmin={() => isAdmin ? handleAdminSignOut() : openAdminSignIn()}
               stats={isInitialLoading ? null : { totalDeposited, totalSpent, totalRemaining }}
               isOnline={isOnline}
-              // زر التبديل يظهر فقط لمن لديه أكثر من رحلة — لا فائدة منه لصاحب رحلة واحدة
-              onShowMyTrips={joinedTripIds.length > 1 ? () => setShowTripPicker(true) : undefined}
+              // زر التبديل يظهر متى وُجدت رحلة أخرى غير المفتوحة حالياً
+              onShowMyTrips={pickerTrips.length > 1 ? () => setShowTripPicker(true) : undefined}
               onStatClick={(stat) => {
                 haptic.light()
                 const id =
