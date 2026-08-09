@@ -14,7 +14,7 @@ import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from './utils/tripId'
 import { useFilteredExpenses } from './hooks/useFilteredExpenses'
 
 import { DataContext } from './context/DataContext'
-import { UIContext }   from './context/UIContext'
+import { UIActionsContext, UIFormContext } from './context/UIContext'
 
 import ErrorBoundary                     from './components/ErrorBoundary'
 import Header                            from './components/Header'
@@ -158,7 +158,7 @@ export default function App() {
   const { trips, loading: tripsLoading, error: tripsError } = useAllTrips(isAdmin)
   const {
     isSaving: isSavingTrip,
-    saveBankDetails, saveItinerary, saveTripName, createTrip, resetTripPin,
+    saveBankDetails, saveItinerary, saveTripName, createTrip, resetTripPin, deleteTrip,
   } = useTripAdminActions({ isAdmin, showToast, handleFirestoreError })
 
   // ─── شاشة «رحلاتي» ────────────────────────────────────────────────────────
@@ -206,35 +206,37 @@ export default function App() {
     ratesUpdatedAt
   }), [activeTravelers, activeExpenses, user, isAdmin, CURRENCIES, ratesUpdatedAt])
 
-  const uiContextValue = useMemo(() => ({
-    expenseForm: newExpense,
-    setExpenseForm: setNewExpense,
-    isExpenseFormOpen: isAddingExpense,
-    isEditingExpense: !!editingExpense,
-    openExpenseForm,
+  // ⚠️ قيمتان منفصلتان لا واحدة — انظر شرح الفصل في context/UIContext.ts.
+  //
+  // هذه القيمة يجب أن تبقى ثابتة الهوية قدر الإمكان: كل ما فيها دوال، وأكثرها
+  // `useCallback` بلا اعتماديات. تتغير عملياً عند تغيّر قائمة المسافرين النشطين
+  // فقط (نادر). لا تُضف إليها أي قيمة متغيّرة — سيُبطل ذلك الفصل بصمت ويعيد
+  // إعادة الرسم الواسعة عند كل ضغطة مفتاح.
+  const uiActionsValue = useMemo(() => ({
     cancelExpenseForm,
-    submitExpense: handleAddExpense,
-    toggleParticipant,
-    toggleAllParticipants,
     startEditExpense,
     requestDeleteExpense,
-    isAddingTraveler,
-    startAddTraveler,
-    cancelAddTraveler,
-    newTravelerName,
-    setNewTravelerName,
-    newTravelerDeposit,
-    setNewTravelerDeposit,
-    submitTraveler: handleAddTraveler,
     openDeposit,
     requestDeleteTraveler: openDeleteTraveler,
     openDepositHistory,
   }), [
-    newExpense, setNewExpense, isAddingExpense, editingExpense, isAddingTraveler,
-    newTravelerName, setNewTravelerName, newTravelerDeposit, setNewTravelerDeposit,
-    openExpenseForm, cancelExpenseForm, handleAddExpense, toggleParticipant, toggleAllParticipants,
-    startEditExpense, requestDeleteExpense, startAddTraveler, cancelAddTraveler, handleAddTraveler,
-    openDeposit, openDeleteTraveler, openDepositHistory
+    cancelExpenseForm, startEditExpense, requestDeleteExpense,
+    openDeposit, openDeleteTraveler, openDepositHistory,
+  ])
+
+  // وهذه تتغير مع كل حرف يُكتب في نموذج المصروف — وهذا صحيح ومقصود: مستهلكها
+  // الوحيد ExpenseForm، وهو نسخة واحدة يجب أن تعكس ما يُكتب فيها فوراً.
+  const uiFormValue = useMemo(() => ({
+    expenseForm: newExpense,
+    setExpenseForm: setNewExpense,
+    isExpenseFormOpen: isAddingExpense,
+    isEditingExpense: !!editingExpense,
+    submitExpense: handleAddExpense,
+    toggleParticipant,
+    toggleAllParticipants,
+  }), [
+    newExpense, setNewExpense, isAddingExpense, editingExpense,
+    handleAddExpense, toggleParticipant, toggleAllParticipants,
   ])
 
   // 🆕 سحب الأجزاء المؤجّلة بهدوء بعد أن يصبح التطبيق تفاعلياً، حتى تكون حاضرة
@@ -281,7 +283,8 @@ export default function App() {
 
   return (
     <DataContext.Provider value={dataContextValue}>
-      <UIContext.Provider value={uiContextValue}>
+      <UIActionsContext.Provider value={uiActionsValue}>
+      <UIFormContext.Provider value={uiFormValue}>
         <ErrorBoundary
           fallback={
             <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50 text-center">
@@ -585,6 +588,7 @@ export default function App() {
                 onSaveItinerary: saveItinerary,
                 onCreateTrip: createTrip,
                 onResetPin: resetTripPin,
+                onDeleteTrip: deleteTrip,
               }}
             />
 
@@ -604,7 +608,8 @@ export default function App() {
             <UpdatePrompt hasUnsavedData={hasUnsavedData} />
           </div>
         </ErrorBoundary>
-      </UIContext.Provider>
+      </UIFormContext.Provider>
+      </UIActionsContext.Provider>
     </DataContext.Provider>
   )
 }

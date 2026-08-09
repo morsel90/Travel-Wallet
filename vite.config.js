@@ -27,26 +27,36 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_USE_FIREBASE_EMULATORS': JSON.stringify(pick('VITE_USE_FIREBASE_EMULATORS')),
     },
 
-    // 🔴 E2E فقط — يوجّه fetch('/api/verifyTripPin'|'/api/manageTrip') (انظر
-    // hooks/useAuth.ts وhooks/useTripAdminActions.ts) إلى محاكي Functions محلياً،
-    // بدل وجهة Vercel الحقيقية (vercel.json) التي لا وجود لها هنا. نفس بروتوكول
-    // onCall HTTP الذي يستخدمه vercel.json فعلياً — رابط مباشر لدالة onCall.
-    ...(isE2E ? {
-      server: {
-        proxy: {
-          '/api/verifyTripPin': {
-            target: 'http://127.0.0.1:5001',
-            changeOrigin: true,
-            rewrite: () => `/${pick('VITE_FIREBASE_PROJECT_ID')}/us-central1/verifyTripPin`,
-          },
-          '/api/manageTrip': {
-            target: 'http://127.0.0.1:5001',
-            changeOrigin: true,
-            rewrite: () => `/${pick('VITE_FIREBASE_PROJECT_ID')}/us-central1/manageTrip`,
-          },
-        },
-      },
-    } : {}),
+    // 🆕 إعادة توجيه /api/* في خادم التطوير — تُحاكي ما يفعله vercel.json في الإنتاج.
+    //
+    // ⚠️ لماذا هذا ضروري: العميل يستدعي fetch('/api/verifyTripPin') دائماً (انظر
+    // hooks/useAuth.ts وhooks/useTripAdminActions.ts)، وهذا المسار مجرد إعادة
+    // توجيه معرَّفة في vercel.json — لا وجود له خارج Vercel. فبدون ما يلي، خادم
+    // Vite يُرجع صفحة HTML بدل استجابة الدالة، فيفشل تحليل JSON ويُترجَم الخطأ
+    // في الواجهة إلى «رمز الرحلة غير صحيح» رغم أن الرمز صحيح تماماً.
+    //
+    // والأثر أسوأ من مجرد رسالة مضلِّلة: بوابة الرمز تحجب التطبيق كاملاً بما فيه
+    // زر دخول المسؤول، فيستحيل استخدام `npm run dev` على الإطلاق دون هذا التوجيه.
+    //
+    // الوجهة تختلف بحسب الوضع: محاكي Functions محلياً في اختبارات E2E، ودوال
+    // السحابة الحقيقية في التطوير العادي (نفس وجهة vercel.json تماماً، لكنها
+    // مشتقّة من معرّف المشروع هنا بدل أن تكون مكتوبة حرفياً).
+    server: {
+      proxy: (() => {
+        const projectId = pick('VITE_FIREBASE_PROJECT_ID')
+        const target = isE2E
+          ? 'http://127.0.0.1:5001'
+          : `https://us-central1-${projectId}.cloudfunctions.net`
+        // محاكي Functions يتطلب بادئة المشروع والمنطقة في المسار، بينما دوال
+        // الإنتاج تحمل ذلك في اسم النطاق نفسه.
+        const pathFor = (fn) => (isE2E ? `/${projectId}/us-central1/${fn}` : `/${fn}`)
+
+        return {
+          '/api/verifyTripPin': { target, changeOrigin: true, rewrite: () => pathFor('verifyTripPin') },
+          '/api/manageTrip':    { target, changeOrigin: true, rewrite: () => pathFor('manageTrip') },
+        }
+      })(),
+    },
 
 
     // إعدادات البناء وتقسيم الحزم (Code Splitting)

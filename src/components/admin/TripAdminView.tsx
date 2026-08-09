@@ -31,12 +31,13 @@ interface TripAdminViewProps {
   onSaveItinerary: (tripId: string, itinerary: TripSummary['itinerary']) => Promise<boolean>
   onCreateTrip: (tripId: string, name: string, pin: string) => Promise<boolean>
   onResetPin: (tripId: string, pin: string) => Promise<boolean>
+  onDeleteTrip: (tripId: string) => Promise<boolean>
   onClose: () => void
 }
 
 export default function TripAdminView({
   currentTripId, trips, loading, error, isSaving,
-  onSaveTripName, onSaveBankDetails, onSaveItinerary, onCreateTrip, onResetPin, onClose,
+  onSaveTripName, onSaveBankDetails, onSaveItinerary, onCreateTrip, onResetPin, onDeleteTrip, onClose,
 }: TripAdminViewProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [isCreating, setIsCreating] = useState(false)
@@ -111,6 +112,9 @@ export default function TripAdminView({
             onSaveBankDetails={onSaveBankDetails}
             onSaveItinerary={onSaveItinerary}
             onResetPin={onResetPin}
+            onDeleteTrip={onDeleteTrip}
+            // الرحلة لم تعد موجودة — نعود للقائمة بدل إبقاء لوحة تشير لمستند محذوف
+            onDeleted={() => setSelectedId(null)}
           />
         )}
 

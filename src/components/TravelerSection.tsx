@@ -2,7 +2,7 @@ import { memo, useCallback, useState } from 'react'
 import { Pencil, Trash2, Plus, X, History, Loader2 } from '../icons'
 import type { Traveler, TravelerBalance } from '../types'
 import { useData } from '../context/DataContext'
-import { useUI } from '../context/UIContext'
+import { useUIActions } from '../context/UIContext'
 import { matchesTraveler } from '../utils/participants'
 // تأكد من مسار استيراد النافذة الجديدة بناءً على مكان حفظك لها
 import TravelerProfileModal from './modals/TravelerProfileModal' 
@@ -20,7 +20,8 @@ const convertArabicNumerals = (str: string): string => {
 export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
   // جلبنا settlements و travelers لدعم بيانات النافذة المنبثقة
   const { isAdmin, expenses, travelers } = useData()
-  const { openDeposit, requestDeleteTraveler, openDepositHistory } = useUI()
+  // إجراءات فقط — البطاقة تتكرر لكل مسافر، فلا يجوز أن تشترك في حالة نموذج متقلبة
+  const { openDeposit, requestDeleteTraveler, openDepositHistory } = useUIActions()
   
   // حالة التحكم في ظهور نافذة ملف المسافر
   const [showProfile, setShowProfile] = useState(false)

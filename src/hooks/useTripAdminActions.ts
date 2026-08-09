@@ -37,6 +37,8 @@ export interface UseTripAdminActionsResult {
   saveTripName: (tripId: string, name: string) => Promise<boolean>
   createTrip: (tripId: string, name: string, pin: string) => Promise<boolean>
   resetTripPin: (tripId: string, pin: string) => Promise<boolean>
+  /** حذف نهائي — للرحلات الفارغة فقط، والخادم هو من يفرض ذلك (انظر functions/index.js). */
+  deleteTrip: (tripId: string) => Promise<boolean>
 }
 
 export function useTripAdminActions({
@@ -106,7 +108,7 @@ export function useTripAdminActions({
   // نستدعيها عبر إعادة التوجيه في vercel.json (/api/manageTrip) لا عبر رابط
   // الدالة المباشر — نفس نمط verifyTripPin، لتفادي CORS.
   const callManageTrip = useCallback(async (
-    mode: 'create' | 'resetPin',
+    mode: 'create' | 'resetPin' | 'delete',
     tripId: string,
     pin: string,
     name: string,
@@ -162,5 +164,13 @@ export function useTripAdminActions({
     [callManageTrip]
   )
 
-  return { isSaving, saveBankDetails, saveItinerary, saveTripName, createTrip, resetTripPin }
+  // الرمز والاسم فارغان: الحذف لا يحتاجهما، والدالة الخادمية لا تفرضهما في هذا
+  // الوضع. ورسالة «الرحلة ليست فارغة» تأتي من الخادم وتُعرض كما هي (انظر أعلاه).
+  const deleteTrip = useCallback(
+    (tripId: string) =>
+      callManageTrip('delete', tripId, '', '', `تم حذف الرحلة "${tripId}"`),
+    [callManageTrip]
+  )
+
+  return { isSaving, saveBankDetails, saveItinerary, saveTripName, createTrip, resetTripPin, deleteTrip }
 }

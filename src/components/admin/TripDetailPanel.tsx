@@ -27,14 +27,19 @@ interface TripDetailPanelProps {
   onSaveBankDetails: (tripId: string, details: BankDetails) => Promise<boolean>
   onSaveItinerary: (tripId: string, itinerary: TripSummary['itinerary']) => Promise<boolean>
   onResetPin: (tripId: string, pin: string) => Promise<boolean>
+  /** حذف نهائي — الخادم يرفضه إن كانت الرحلة تحوي أي بيانات. */
+  onDeleteTrip: (tripId: string) => Promise<boolean>
+  /** يُستدعى بعد نجاح الحذف — الرحلة لم تعد موجودة فلا يصح إبقاء لوحتها مفتوحة. */
+  onDeleted: () => void
 }
 
-type DetailTab = 'bank' | 'itinerary' | 'pin'
+type DetailTab = 'bank' | 'itinerary' | 'pin' | 'danger'
 
 const TABS: Array<{ key: DetailTab; label: string; Icon: typeof Building2 }> = [
   { key: 'bank',      label: 'الاسم والحساب', Icon: Building2 },
   { key: 'itinerary', label: 'مسار الرحلة',   Icon: Route },
   { key: 'pin',       label: 'رمز الدخول',    Icon: KeyRound },
+  { key: 'danger',    label: 'حذف الرحلة',    Icon: Trash2 },
 ]
 
 const MODE_ICON: Record<TransportMode, typeof Plane> = {
@@ -55,6 +60,7 @@ const labelClass = 'block text-xs font-bold text-slate-500 mb-1.5'
 
 export default function TripDetailPanel({
   trip, isSaving, onSaveTripName, onSaveBankDetails, onSaveItinerary, onResetPin,
+  onDeleteTrip, onDeleted,
 }: TripDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>('bank')
 
@@ -66,6 +72,9 @@ export default function TripDetailPanel({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [newPin, setNewPin] = useState('')
   const [pinError, setPinError] = useState<string | null>(null)
+  // تأكيد الحذف بكتابة المعرّف: الحذف نهائي ولا تراجع عنه، وضغطة زر واحدة
+  // بالخطأ على رحلة خاطئة أسهل مما ينبغي في قائمة رحلات متشابهة الأسماء.
+  const [deleteConfirm, setDeleteConfirm] = useState('')
 
   // القائمة حيّة (onSnapshot): إعادة تهيئة النماذج عند تبديل الرحلة المختارة
   // حتى لا تُعرض بيانات الرحلة السابقة في حقول الرحلة الجديدة.
@@ -78,6 +87,7 @@ export default function TripDetailPanel({
     setDraftError(null)
     setNewPin('')
     setPinError(null)
+    setDeleteConfirm('')
     setActiveTab('bank')
   }, [trip.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -139,6 +149,16 @@ export default function TripDetailPanel({
     const ok = await onResetPin(trip.id, newPin.trim())
     if (ok) setNewPin('')
   }
+
+  const submitDelete = async () => {
+    const ok = await onDeleteTrip(trip.id)
+    if (ok) onDeleted()
+  }
+
+  // مؤشّر إرشادي فقط. المرجع الحقيقي هو فحص الخادم قبل الحذف مباشرةً: القائمة
+  // هنا لا تعرف عدد المصاريف/المسافرين (لا تُقرأ في هذه الشاشة)، وحتى لو عرفت
+  // لكانت لقطة قديمة قد يضيف عليها جهاز آخر بين العرض والضغط.
+  const hasItinerary = trip.itinerary.length > 0
 
   return (
     <div className="space-y-5">
@@ -434,6 +454,57 @@ export default function TripDetailPanel({
           >
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
             تغيير الرمز
+          </button>
+        </form>
+      )}
+
+      {activeTab === 'danger' && (
+        <form
+          onSubmit={e => { e.preventDefault(); void submitDelete() }}
+          className="bg-white rounded-2xl shadow-sm border border-rose-200 p-5 space-y-4"
+        >
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <Trash2 className="w-4 h-4 text-rose-600" /> حذف الرحلة نهائياً
+          </h3>
+
+          <div className="text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-1.5">
+            <p className="font-bold">لا يمكن التراجع عن هذا الإجراء.</p>
+            <p>
+              يُحذف مستند الرحلة ورمز دخولها معاً. الحذف متاح <span className="font-bold">للرحلات الفارغة فقط</span> —
+              أي التي لا تحوي أي مسافر أو مصروف — حمايةً للسجلات المالية وسجلات الإيداع
+              التي لا يمكن استرجاعها.
+            </p>
+            <p>بعد الحذف يصبح المعرّف <span dir="ltr" className="font-mono">{trip.id}</span> متاحاً لإنشاء رحلة جديدة به.</p>
+          </div>
+
+          {hasItinerary && (
+            <p className="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-2.5">
+              تنبيه: هذه الرحلة تحوي {trip.itinerary.length} مقطعاً في مسارها، وستُحذف معها.
+            </p>
+          )}
+
+          <div>
+            <label className={labelClass} htmlFor="delete-confirm">
+              للتأكيد، اكتب معرّف الرحلة: <span dir="ltr" className="font-mono text-slate-700">{trip.id}</span>
+            </label>
+            <input
+              id="delete-confirm"
+              type="text"
+              autoComplete="off"
+              value={deleteConfirm}
+              onChange={e => setDeleteConfirm(e.target.value)}
+              dir="ltr"
+              className={`${inputClass} text-right`}
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSaving || deleteConfirm.trim() !== trip.id}
+            className="flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm disabled:opacity-40"
+          >
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            حذف الرحلة نهائياً
           </button>
         </form>
       )}

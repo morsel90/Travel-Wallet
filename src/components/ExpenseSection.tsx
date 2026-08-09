@@ -3,7 +3,7 @@ import type { TouchEvent as ReactTouchEvent } from 'react'
 import { Plus, Pencil, Trash2, X, Loader2 } from '../icons'
 import type { Expense } from '../types'
 import { useData } from '../context/DataContext'
-import { useUI } from '../context/UIContext'
+import { useUIActions, useUIForm } from '../context/UIContext'
 import { toDisplayNames } from '../utils/participants'
 import { EXPENSE_CATEGORIES } from '../constants'
 import { splitByShares } from '../utils/calculations'
@@ -23,12 +23,15 @@ const PINNED_CURRENCIES = ['SAR', 'USD', 'EUR', 'AED', 'GBP']
 export const ExpenseForm = memo(() => {
   const { travelers, currencies, ratesUpdatedAt, expenses } = useData()
 
+  // هذا المكوّن وحده يستهلك سياق النموذج المتقلب — وهو نسخة واحدة، فإعادة رسمه
+  // مع كل حرف صحيحة ومطلوبة. أما زر الإلغاء فإجراء ثابت يأتي من السياق الآخر.
   const {
     isExpenseFormOpen,
     expenseForm, setExpenseForm,
-    isEditingExpense, submitExpense, cancelExpenseForm,
+    isEditingExpense, submitExpense,
     toggleParticipant, toggleAllParticipants,
-  } = useUI()
+  } = useUIForm()
+  const { cancelExpenseForm } = useUIActions()
 
   // 🆕 منطق فصل العملات لقائمة منسدلة لا تُزدحم مهما بلغ عددها:
   //   • "الشائعة": العملات المثبّتة (PINNED، بترتيب ثابت) + العملات المستخدمة فعلياً
@@ -372,7 +375,9 @@ const SWIPE_TRIGGER_PX = 60
 // 2️⃣ مكوّن عرض كارت بطاقة المصروف المنفرد في السجل
 export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
   const { isAdmin, currencies, travelers, user } = useData()
-  const { startEditExpense, requestDeleteExpense } = useUI()
+  // ⚠️ الإجراءات وحدها عمداً — هذا المكوّن يتكرر لكل صف في القائمة، واستهلاكه
+  // لسياق النموذج كان يعيد رسم كل الصفوف المعروضة مع كل ضغطة مفتاح.
+  const { startEditExpense, requestDeleteExpense } = useUIActions()
   const canManage = isAdmin || (user?.uid != null && expense.createdByUid === user.uid)
 
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)

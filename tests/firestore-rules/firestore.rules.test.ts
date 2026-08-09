@@ -47,18 +47,26 @@ beforeEach(async () => {
 })
 
 // ─── سياقات المصادقة ────────────────────────────────────────────────────────
-const anonDb      = (): Firestore => testEnv.unauthenticatedContext().firestore()
-const strangerDb   = (uid = 'stranger'): Firestore => testEnv.authenticatedContext(uid).firestore() // موقّع دخول بلا أي claim
+//
+// ⚠️ `ctx.firestore()` في @firebase/rules-unit-testing v3 يُصرَّح بأنه نسخة
+// التوافق (compat) من Firestore، بينما هذا الملف يستخدم الواجهة الحديثة
+// (doc/collection/getDoc من 'firebase/firestore'). النسخة المُعادة تعمل معها
+// فعلياً وقت التشغيل — الاختبارات تمرّ — لكن التصريحين لا يتطابقان نوعياً.
+// نحصر التحويل في هذه الدالة الواحدة بدل نثره في كل استدعاء.
+const asModularFirestore = (db: unknown): Firestore => db as Firestore
+
+const anonDb      = (): Firestore => asModularFirestore(testEnv.unauthenticatedContext().firestore())
+const strangerDb   = (uid = 'stranger'): Firestore => asModularFirestore(testEnv.authenticatedContext(uid).firestore()) // موقّع دخول بلا أي claim
 const memberDb     = (uid = 'member-1'): Firestore =>
-  testEnv.authenticatedContext(uid, { trips: { [TRIP_ID]: true } }).firestore()
+  asModularFirestore(testEnv.authenticatedContext(uid, { trips: { [TRIP_ID]: true } }).firestore())
 const otherTripMemberDb = (uid = 'member-other-trip'): Firestore =>
-  testEnv.authenticatedContext(uid, { trips: { [OTHER_TRIP_ID]: true } }).firestore()
+  asModularFirestore(testEnv.authenticatedContext(uid, { trips: { [OTHER_TRIP_ID]: true } }).firestore())
 const adminDb      = (uid = 'admin-1'): Firestore =>
-  testEnv.authenticatedContext(uid, { admin: true }).firestore()
+  asModularFirestore(testEnv.authenticatedContext(uid, { admin: true }).firestore())
 
 /** يكتب بيانات تجهيزية متجاوزاً القواعد تماماً — لتحضير حالة سابقة قبل الاختبار الفعلي. */
 const seed = (fn: (db: Firestore) => Promise<void>) =>
-  testEnv.withSecurityRulesDisabled(async (ctx: RulesTestContext) => fn(ctx.firestore()))
+  testEnv.withSecurityRulesDisabled(async (ctx: RulesTestContext) => fn(asModularFirestore(ctx.firestore())))
 
 // ─── مسارات المستندات (نسخة مستقلة — انظر التعليق أعلى الملف) ────────────────
 const expensesCol    = (db: Firestore, tripId = TRIP_ID) => collection(db, 'artifacts', tripId, 'public', 'data', 'expenses')
@@ -334,7 +342,11 @@ describe('إدارة الرحلات — trips/{tripId}', () => {
     await assertFails(setDoc(tripConfigDoc(adminDb()), { notAllowed: true }))
   })
 
-  it('لا أحد يستطيع حذف مستند الرحلة — حتى المسؤول', async () => {
+  // ⚠️ يبقى الحذف ممنوعاً على العميل حتى بعد إضافة «حذف رحلة» للواجهة: الحذف
+  // يمرّ حصراً عبر manageTrip (Cloud Function بصلاحيات Admin SDK تتجاوز القواعد)،
+  // وهناك يُفرض شرط أن تكون الرحلة فارغة. لو سُمح للعميل بالحذف مباشرةً لأمكن
+  // تجاوز ذلك الشرط بالكامل وتيتيم بيانات artifacts/{tripId}.
+  it('لا أحد يستطيع حذف مستند الرحلة من العميل — حتى المسؤول', async () => {
     await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة تجريبية' }))
     await assertFails(deleteDoc(tripConfigDoc(adminDb())))
   })

@@ -73,3 +73,21 @@ export async function seedTrip({ tripId, pin, adminEmail, adminPassword }: SeedT
   }
   await auth.setCustomUserClaims(uid, { admin: true })
 }
+
+/**
+ * 🆕 يصفّر عدّادات حدّ المحاولات الخاصة بـ verifyTripPin.
+ *
+ * ⚠️ يلزم أي اختبار يعتمد على *نص* رسالة الخطأ عند رمز خاطئ. صار المفتاح
+ * يشمل tripId (انظر checkRateLimit في functions/index.js) فلم تعد الاختبارات
+ * تتشارك عدّاداً واحداً — لكن تشغيل نفس الملف مراراً خلال 15 دقيقة يراكم
+ * العدّاد على رحلته هو، فيحصل على «تجاوزت عدد المحاولات» بدل الرسالة المتوقَّعة.
+ * التصفير يجعل الاختبار مستقلاً عن عدد المرات التي شُغِّل فيها قبله.
+ */
+export async function clearPinRateLimits(): Promise<void> {
+  const db = getFirestore(adminApp())
+  const snap = await db.collection('rateLimits').get()
+  if (snap.empty) return
+  const batch = db.batch()
+  snap.docs.forEach(doc => batch.delete(doc.ref))
+  await batch.commit()
+}

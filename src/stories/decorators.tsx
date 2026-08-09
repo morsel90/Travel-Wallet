@@ -10,8 +10,8 @@ import type { ReactNode } from 'react'
 import type { Decorator } from '@storybook/react-vite'
 import { DataContext } from '../context/DataContext'
 import type { DataContextType } from '../context/DataContext'
-import { UIContext } from '../context/UIContext'
-import type { UIContextType } from '../context/UIContext'
+import { UIActionsContext, UIFormContext } from '../context/UIContext'
+import type { UIActionsContextType, UIFormContextType } from '../context/UIContext'
 import { CURRENCY_LABELS, FALLBACK_RATES } from '../constants'
 import * as fx from '../fixtures'
 import type { CurrencyMap } from '../types'
@@ -37,7 +37,16 @@ export const baseData: DataContextType = {
   ratesUpdatedAt: new Date('2026-07-21T09:00:00'),
 }
 
-export const baseUI: UIContextType = {
+export const baseUIActions: UIActionsContextType = {
+  cancelExpenseForm: log('cancelExpenseForm'),
+  startEditExpense: log('startEditExpense'),
+  requestDeleteExpense: log('requestDeleteExpense'),
+  openDeposit: log('openDeposit'),
+  requestDeleteTraveler: log('requestDeleteTraveler'),
+  openDepositHistory: log('openDepositHistory'),
+}
+
+export const baseUIForm: UIFormContextType = {
   expenseForm: {
     date: '2026-07-21',
     description: '',
@@ -52,38 +61,26 @@ export const baseUI: UIContextType = {
   setExpenseForm: log('setExpenseForm'),
   isExpenseFormOpen: false,
   isEditingExpense: false,
-  openExpenseForm: log('openExpenseForm'),
-  cancelExpenseForm: log('cancelExpenseForm'),
   submitExpense: log('submitExpense'),
   toggleParticipant: log('toggleParticipant'),
   toggleAllParticipants: log('toggleAllParticipants'),
-  startEditExpense: log('startEditExpense'),
-  requestDeleteExpense: log('requestDeleteExpense'),
-  isAddingTraveler: false,
-  startAddTraveler: log('startAddTraveler'),
-  cancelAddTraveler: log('cancelAddTraveler'),
-  newTravelerName: '',
-  setNewTravelerName: log('setNewTravelerName'),
-  newTravelerDeposit: '',
-  setNewTravelerDeposit: log('setNewTravelerDeposit'),
-  submitTraveler: log('submitTraveler'),
-  openDeposit: log('openDeposit'),
-  requestDeleteTraveler: log('requestDeleteTraveler'),
-  openDepositHistory: log('openDepositHistory'),
 }
 
 interface ProvidersProps {
   children: ReactNode
   data?: Partial<DataContextType>
-  ui?: Partial<UIContextType>
+  uiActions?: Partial<UIActionsContextType>
+  uiForm?: Partial<UIFormContextType>
 }
 
-export function Providers({ children, data, ui }: ProvidersProps) {
+export function Providers({ children, data, uiActions, uiForm }: ProvidersProps) {
   return (
     <DataContext.Provider value={{ ...baseData, ...data }}>
-      <UIContext.Provider value={{ ...baseUI, ...ui }}>
-        {children}
-      </UIContext.Provider>
+      <UIActionsContext.Provider value={{ ...baseUIActions, ...uiActions }}>
+        <UIFormContext.Provider value={{ ...baseUIForm, ...uiForm }}>
+          {children}
+        </UIFormContext.Provider>
+      </UIActionsContext.Provider>
     </DataContext.Provider>
   )
 }
