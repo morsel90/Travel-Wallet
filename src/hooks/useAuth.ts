@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { onAuthStateChanged, signInAnonymously, User } from 'firebase/auth'
 import { auth } from '../firebase'
 import { TRIP_ID } from '../utils/tripId'
@@ -51,6 +51,9 @@ export function useAuth(): UseAuth {
 
   // 🆕 رحلات المستخدم — تُقرأ من نفس الـ tokenResult أدناه (لا استدعاء إضافي)
   const [joinedTripIds, setJoinedTripIds] = useState<string[]>([])
+
+  // يمنع إنشاء أكثر من حساب مجهول عند تزامن حدثين — انظر التعليق عند الاستخدام
+  const isSigningInAnonymouslyRef = useRef(false)
 
   // 🆕 عداد فك الحظر التلقائي — يعمل فقط عندما rateLimitSeconds > 0
   // نعتمد على boolean signal عمداً (rateLimitActive بدل rateLimitSeconds نفسه)
@@ -137,11 +140,34 @@ export function useAuth(): UseAuth {
   }, [callVerify])
 
   useEffect(() => {
-    signInAnonymously(auth).catch(console.error)
-
+    // ⚠️ لا تنقل signInAnonymously خارج هذا المستمع ليُستدعى مباشرةً عند التحميل.
+    //
+    // كان يُستدعى بلا شرط عند كل تحميل للصفحة، وسلوك Firebase أن
+    // signInAnonymously حين يكون المستخدم الحالي **غير مجهول** (مسؤول مسجّل
+    // بالبريد) يُنشئ جلسة مجهولة جديدة تحلّ محلّه — أي يطرد المسؤول من جلسته.
+    //
+    // النتيجة: كل إعادة تحميل تُخرج المسؤول من وضع المسؤول. لم يظهر الأثر بوضوح
+    // إلا بعد إضافة التبديل بين الرحلات، لأن التبديل إعادة تحميل كاملة
+    // (TRIP_ID يُقرأ مرة واحدة عند تحميل الوحدة — انظر utils/tripId.ts).
+    //
+    // الصواب: ننتظر Firebase حتى يستعيد الجلسة المحفوظة، ولا ننشئ جلسة مجهولة
+    // إلا إذا تبيّن فعلاً أنه لا يوجد مستخدم.
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u)
-      if (!u) { setPinCheckLoading(false); return }
+      if (!u) {
+        // حارس ضد استدعاءين متزامنين: كلٌّ منهما قد يُنشئ حساباً مجهولاً مستقلاً،
+        // فيفقد المستخدم عضويات الرحلات المخزّنة في claims الحساب الأول.
+        if (!isSigningInAnonymouslyRef.current) {
+          isSigningInAnonymouslyRef.current = true
+          signInAnonymously(auth)
+            .catch(console.error)
+            .finally(() => { isSigningInAnonymouslyRef.current = false })
+        }
+        setIsAdmin(false)
+        setJoinedTripIds([])
+        setPinCheckLoading(false)
+        return
+      }
 
       // 🆕 التحقق من الـ Custom Claim (admin: true)
       const tokenResult = await u.getIdTokenResult()

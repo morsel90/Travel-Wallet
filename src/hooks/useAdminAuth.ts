@@ -4,7 +4,7 @@
 import { useState, useCallback } from 'react'
 import type { FormEvent } from 'react'
 import {
-  signInAnonymously, signInWithEmailAndPassword, signOut, sendPasswordResetEmail,
+  signInWithEmailAndPassword, signOut, sendPasswordResetEmail,
 } from 'firebase/auth'
 import { auth } from '../firebase'
 import { useCountdown } from './useCountdown'
@@ -50,8 +50,12 @@ export function useAdminAuth({ showToast }: UseAdminAuthArgs) {
   }, [adminEmail, adminPassword])
 
   const handleAdminSignOut = useCallback(async () => {
+    // ⚠️ لا تُنشئ جلسة مجهولة هنا. useAuth يملك هذه المسؤولية وحده: مستمع
+    // onAuthStateChanged فيه يرصد غياب المستخدم بعد signOut ويُنشئ الجلسة
+    // المجهولة بحارس يمنع التزامن. استدعاؤها من هنا أيضاً يعني طلبين متوازيين
+    // قد يُنشئ كلٌّ منهما حساباً مجهولاً مستقلاً، فتضيع عضويات الرحلات المحفوظة
+    // في claims الحساب الأول ويُطالَب المستخدم برموز رحلاته من جديد.
     try { await signOut(auth) } catch (err) { console.error(err) }
-    finally { signInAnonymously(auth).catch(console.error) }
   }, [])
 
   const handleForgotPassword = useCallback(async () => {

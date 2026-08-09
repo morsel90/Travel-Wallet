@@ -78,6 +78,57 @@ describe('useAuth', () => {
     expect(result.current.needsTripPin).toBe(false)
   })
 
+  // ── اختبارات انحدار: طرد المسؤول عند إعادة التحميل ───────────────────────
+  // ⚠️ كان signInAnonymously يُستدعى بلا شرط عند كل تحميل. وسلوك Firebase أن
+  // إنشاء جلسة مجهولة بينما المستخدم الحالي غير مجهول يُحلّها محلّه — أي يطرد
+  // المسؤول. ظهر الأثر عند التبديل بين الرحلات لأنه إعادة تحميل كاملة.
+  it('لا يُنشئ جلسة مجهولة عند التحميل قبل أن تُستعاد الجلسة المحفوظة', () => {
+    renderHook(() => useAuth())
+    expect(mocks.signInAnonymously).not.toHaveBeenCalled()
+  })
+
+  it('مسؤول مستعاد من جلسة محفوظة يبقى مسؤولاً ولا يُستبدل بحساب مجهول', async () => {
+    const { result } = renderHook(() => useAuth())
+    await fireAuthChange(mkUser({ admin: true }))
+
+    expect(result.current.isAdmin).toBe(true)
+    expect(mocks.signInAnonymously).not.toHaveBeenCalled()
+  })
+
+  it('عضو عادي مستعاد من جلسة محفوظة لا يُستبدل بحساب مجهول جديد', async () => {
+    const { result } = renderHook(() => useAuth())
+    await fireAuthChange(mkUser({ trips: { [TRIP_ID]: true } }))
+
+    expect(result.current.needsTripPin).toBe(false)
+    // حساب مجهول جديد يعني uid جديداً بلا أي عضويات — وضياع رحلات المستخدم
+    expect(mocks.signInAnonymously).not.toHaveBeenCalled()
+  })
+
+  it('يُنشئ جلسة مجهولة فقط حين يتبيّن فعلاً عدم وجود مستخدم', async () => {
+    renderHook(() => useAuth())
+    await fireAuthChange(null)
+    expect(mocks.signInAnonymously).toHaveBeenCalledTimes(1)
+  })
+
+  it('لا يُنشئ حسابين مجهولين عند تكرار حدث غياب المستخدم', async () => {
+    // حسابان مجهولان متزامنان = uid ثانٍ بلا claims، فتضيع عضويات الأول
+    mocks.signInAnonymously.mockReturnValue(new Promise(() => {})) // معلّق: يحاكي طلباً لم يكتمل بعد
+    renderHook(() => useAuth())
+    await fireAuthChange(null)
+    await fireAuthChange(null)
+    expect(mocks.signInAnonymously).toHaveBeenCalledTimes(1)
+  })
+
+  it('تسجيل الخروج من وضع المسؤول يُعيد الحالة لغير مسؤول ويُفرغ الرحلات', async () => {
+    const { result } = renderHook(() => useAuth())
+    await fireAuthChange(mkUser({ admin: true, trips: { 'trip-a': true } }))
+    expect(result.current.isAdmin).toBe(true)
+
+    await fireAuthChange(null)
+    expect(result.current.isAdmin).toBe(false)
+    expect(result.current.joinedTripIds).toEqual([])
+  })
+
   it('مستخدم بصلاحية admin claim لا يحتاج رمز الرحلة', async () => {
     const { result } = renderHook(() => useAuth())
     await fireAuthChange(mkUser({ admin: true }))
