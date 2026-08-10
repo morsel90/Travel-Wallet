@@ -66,7 +66,8 @@ describe('useMyTrips', () => {
     mocks.getDoc.mockResolvedValueOnce(docSnap(undefined))
     const { result } = renderHook(() => useMyTrips(['trip-xyz'], fakeUser))
     await waitFor(() => expect(result.current.loading).toBe(false))
-    expect(result.current.trips).toEqual([{ id: 'trip-xyz', name: 'trip-xyz' }])
+    // status: 'active' لأن غياب الحقل يعني «نشطة» — انظر normalizeTripStatus
+    expect(result.current.trips).toEqual([{ id: 'trip-xyz', name: 'trip-xyz', status: 'active' }])
   })
 
   it('يُسقط رحلة مذكورة في claims لكن مستندها غير موجود، ويُبقي البقية', async () => {
@@ -76,7 +77,7 @@ describe('useMyTrips', () => {
     const { result } = renderHook(() => useMyTrips(['t1', 'deleted-trip'], fakeUser))
     await waitFor(() => expect(result.current.loading).toBe(false))
 
-    expect(result.current.trips).toEqual([{ id: 't1', name: 'رحلة قائمة' }])
+    expect(result.current.trips).toEqual([{ id: 't1', name: 'رحلة قائمة', status: 'active' }])
     expect(result.current.error).toBeNull() // نجاح جزئي ليس خطأً
   })
 
@@ -87,7 +88,7 @@ describe('useMyTrips', () => {
     const { result } = renderHook(() => useMyTrips(['t1', 't2'], fakeUser))
     await waitFor(() => expect(result.current.loading).toBe(false))
 
-    expect(result.current.trips).toEqual([{ id: 't1', name: 'رحلة ناجحة' }])
+    expect(result.current.trips).toEqual([{ id: 't1', name: 'رحلة ناجحة', status: 'active' }])
     expect(result.current.error).toBeNull()
   })
 

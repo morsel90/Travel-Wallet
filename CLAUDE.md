@@ -2,7 +2,21 @@
 
 <div dir="rtl" style="text-align: right">
 
-## آخر تحديث: 2026-08-09
+## آخر تحديث: 2026-08-11
+
+### What changed on 2026-08-11
+
+**Financial invariant tests, and the bug they found.** `src/utils/calculations.invariants.test.ts` adds 21 property-based rules (fast-check) over the money calculations — conservation of shares, the ledger equation, settlement coverage, and no `NaN`/`Infinity`/impossible share. Rules 1–3 held. **Rule 4 did not.**
+
+Clearing the exchange-rate field (or typing a lone `.` in the amount) produced `amount: NaN`, which the optimistic write put straight into the local cache — turning **every balance and settlement into `NaN`** — and which `firestore.rules` then rejected with a permissions message unrelated to the cause. Offline it was not rejected at all. Fixed at the input boundary *and* inside the pure functions; see *Design Decisions*. Note `handleQuickAddExpense` had always guarded correctly while `handleAddExpense` never did.
+
+Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the balances only sum to zero by coincidence. See *Testing*.
+
+**Documentation drift fixed.** The `httpsCallable` migration removed the `vercel.json` rewrites and the `/api` dev proxy, but only the *Environment Variables* section was updated. Six other places still described `/api/*` as the live call path — the directory tree, the dev-setup note, the whole *API Reference*, the E2E description, the *Deployment* section and two Troubleshooting rows — plus guideline 4, which instructed the opposite of what the code now does. All corrected against `vercel.json` (a `$schema` line and nothing else) and `vite.config.js` (no proxy). Nothing in the app was wrong; the map was.
+
+**A push gate, and why `main` was red for two days.** Running the new suite surfaced three *unrelated* failures in `useMyTrips.test.ts`, live since `c51e9f8` — `status` was added to `MyTrip` without updating the `toEqual` assertions. The cause was not the CI definition, which is correct, but that **this repo has zero merge commits**: everything is pushed straight to `main`, so the `pull_request:` trigger has never fired and CI can only report after the fact. Added `.githooks/pre-push` (wired through `prepare`, so a fresh clone gets it) and documented the branch-protection settings that actually enforce it. See *The push gate* under *Testing*.
+
+---
 
 ### What changed on 2026-08-09
 
@@ -251,8 +265,8 @@
 │   └── tsconfig.json
 │
 ├── firestore.rules              # Security rules (multi-trip, admin claims, rate limiting)
-├── vercel.json                  # Vercel SPA rewrites for /api/verifyTripPin + /api/manageTrip
-├── vite.config.js               # Vite + PWA config (code splitting, Workbox, 🆕 /api dev proxy)
+├── vercel.json                  # 🆕 SPA config only — no rewrites; functions are called via httpsCallable
+├── vite.config.js               # Vite + PWA config (code splitting, Workbox, env substitution)
 ├── vitest.config.ts             # Vitest with jsdom + setupFiles (unit tests)
 ├── vitest.rules.config.ts       # 🆕 Separate config for rules tests (node env, needs emulator)
 ├── playwright.config.ts         # 🆕 E2E config — boots `vite --mode e2e` against the emulators
@@ -330,7 +344,7 @@ npm run e2e:install
 
 🆕 **Prerequisite for the rules and E2E suites: Java.** The Firestore emulator is a JVM process; without a JDK both fail with «Unable to locate a Java Runtime» buried in `firebase-debug.log`.
 
-🆕 **`npm run dev` proxies `/api/*` to the real Cloud Functions** (see `vite.config.js`), mirroring the Vercel rewrites. PIN verification therefore works locally. Restart the dev server after changing that config — `server.proxy` is only read at startup.
+🆕 **PIN verification works under `npm run dev` with no proxy of any kind.** The client calls functions through `httpsCallable`, which derives the URL from `projectId`, so the dev server has nothing to forward. The old `/api/*` dev proxy — and the `vercel.json` rewrite it mirrored — are both gone; see *Environment Variables*.
 
 ---
 
@@ -387,19 +401,31 @@ For deployment:
 
 ## API / Interface Reference
 
-### Cloud Functions (accessible via Vercel rewrites)
+### Cloud Functions (🆕 called via `httpsCallable`, never over HTTP by hand)
 
-```
-POST /api/verifyTripPin
-Headers: { Authorization: "Bearer <idToken>" }
-Body: { data: { pin: string, tripId: string } }
-Response: { result: { success: boolean } } | HttpsError
+Both are Firebase v2 `onCall` functions. The client invokes them through the SDK, which
+attaches the ID token, derives the URL from `projectId`, and handles CORS — so there is
+**no `/api/*` path, no `vercel.json` rewrite, and no dev proxy**. See *Environment
+Variables* for why hand-rolled `fetch` made a staging environment impossible.
 
-POST /api/manageTrip                     # admin claim required, checked server-side
-Headers: { Authorization: "Bearer <idToken>" }
-Body: { data: { mode: 'create' | 'resetPin' | 'delete', tripId, pin?, name? } }
-Response: { result: { success: boolean, tripId: string } } | HttpsError
+```ts
+import { httpsCallable } from 'firebase/functions'
+import { functions } from './firebase'
+
+// hooks/useAuth.ts
+await httpsCallable<{ pin: string; tripId: string }, { success: boolean }>(
+  functions, 'verifyTripPin',
+)({ pin, tripId })
+
+// hooks/useTripAdminActions.ts — admin claim required, re-checked server-side
+await httpsCallable<
+  { mode: 'create' | 'resetPin' | 'delete'; tripId: string; pin?: string; name?: string },
+  { success: boolean; tripId: string }
+>(functions, 'manageTrip')({ mode, tripId, pin, name })
 ```
+
+Failures arrive as `FirebaseError` with a `functions/…` code (`unauthenticated`,
+`permission-denied`, `resource-exhausted` for the PIN rate limit), not as an HTTP status.
 
 `manageTrip` exists because creating a trip or changing its PIN writes
 `tripSecrets/{tripId}`, which is `read, write: if false` for every client
@@ -676,6 +702,13 @@ Pure utilities and every hook. Hooks are tested with `renderHook`, mocking `fire
 - `hooks/`: `useAuth`, `useExpenseActions`, `useTravelerActions`, `useDepositActions`, `useMyTrips`, `useModals`, `useBalances`, `useFilteredExpenses`, `useDebounce`, `useCountdown`, `useOnlineStatus`, `useHeaderCollapse`
 - `components/EmptyState.test.tsx`
 
+🆕 **Financial invariants (`utils/calculations.invariants.test.ts`)** — a fourth kind of test inside layer 1, using **fast-check** for property-based generation. A unit test says "this input gives this output"; an invariant says "whatever the input, this must hold" — so it covers what you did *not* think of, which is what breaks an arithmetic app. Four rules: sum of shares equals the expense amount; the ledger equation (`remaining = deposited − attributed`, and nothing created or lost); settlements equal `min(debt, credit)`; and no `NaN`/`Infinity`/impossible share anywhere. On failure fast-check shrinks to the smallest reproducing case.
+
+Two things worth knowing before editing that file:
+
+- **Compare in halalas, never in riyals.** Every calculation rounds to `Math.round(total * 100)`; comparing floats directly (`0.1 + 0.2 !== 0.3`) fails a correct rule for a reason unrelated to money. Rule 1 therefore guarantees conservation *of the amount rounded to the halala* — the strongest claim that is actually true.
+- **Rule 3 is `min(debt, credit)`, not "total debt".** `remaining = deposited − share`, so the balances sum to the fund's surplus or deficit and reach zero only by coincidence; a surplus leaves creditors unmatched. Stating it as "= total debt" fails on a perfectly healthy ledger. A separate test covers the balanced case where the stronger claim does hold. Measured deviation is exactly one halala, bounded by `EPSILON` and *not* by group size.
+
 #### 2. Rules tests (`tests/firestore-rules/`)
 Run against the emulator with `@firebase/rules-unit-testing` — they test `firestore.rules` itself, not app code. Cover: anonymous/non-member denial, cross-trip isolation, expense ownership on update, hard-delete blocked everywhere, admin-only trip writes, `tripSecrets` unreachable even by admin, the expense rate limit including clock tampering, deposit-log immutability, and `travelerNames` uniqueness.
 
@@ -684,11 +717,42 @@ Run against the emulator with `@firebase/rules-unit-testing` — they test `fire
 ⚠️ **Use `expenseBy(uid)` — not `validExpense()` — in any test that creates an expense** unless attribution itself is what's being tested. `validExpense()` omits `createdByUid`, so creation now fails on that alone, and an `assertFails` test would pass for entirely the wrong reason while appearing to verify something else.
 
 #### 3. E2E tests (`e2e/`)
-A real browser driving the real UI against emulators — no mocks. `playwright.config.ts` boots `vite --mode e2e`, which points the Firebase SDK at the emulators (`VITE_USE_FIREBASE_EMULATORS`) and proxies `/api/*` to the Functions emulator.
+A real browser driving the real UI against emulators — no mocks. `playwright.config.ts` boots `vite --mode e2e` with `VITE_USE_FIREBASE_EMULATORS=true`, which makes `src/firebase.ts` call `connectAuthEmulator` / `connectFirestoreEmulator` / `connectFunctionsEmulator`. 🆕 Functions included — the SDK routes callables to the emulator directly, so no `/api` proxy is involved here either.
 
 **These earned their keep immediately** — three bugs found here were invisible to unit tests and code review: the offline submit-lock, the app crash on a lazy chunk while offline, and admin being evicted on reload. Each required a real browser losing a real connection.
 
 **Structure:** unit tests live next to their source; rules and E2E live in their own top-level folders with their own `tsconfig.json`, because they compile against different globals and must not be swept into `npm test` (which has no emulator running).
+
+### 🆕 The push gate — why CI alone was not enough
+
+`.github/workflows/ci.yml` was never the problem. `npm test` exits non-zero on failure and `build` depends on `test`, so the pipeline is correctly wired. The gap was structural: **this repository has zero merge commits** — every commit has gone straight to `main`, so the workflow's `pull_request:` trigger has never fired once. Only `push: branches: [main]` applies, and that reports *after* the code has already landed.
+
+That is how `c51e9f8` put `main` in a red state for two days: it added `status` to `MyTrip` without updating the three `toEqual` assertions in `useMyTrips.test.ts`. Note that `npm run typecheck` could not have caught it — `toEqual` is loosely typed, so only actually running the suite finds it.
+
+Two layers now close it:
+
+**1. `.githooks/pre-push` (local, in place).** Runs `lint → typecheck → test` before any push. Wired via `core.hooksPath`, which the `prepare` script in `package.json` sets on every `npm install` — so it survives a fresh clone, unlike a hand-edited `.git/hooks/`. Bypass with `git push --no-verify`.
+
+`test:rules` and `test:e2e` are deliberately **not** in the hook: both need Java and emulators and take minutes, and a hook that slow gets routinely bypassed, which makes it worth nothing. They stay in CI.
+
+**2. Branch protection (needs to be enabled once, on GitHub).** The hook is a courtesy that `--no-verify` defeats; only the server can actually refuse. Settings › Branches › Add rule for `main`:
+
+- ✅ Require status checks to pass before merging → select **`build`** (it depends on the other five, so it is the only one worth requiring)
+- ✅ Do not allow bypassing the above settings ← without this, an admin pushing to `main` skips the check, which is exactly the current workflow
+
+Or in one command:
+
+```bash
+gh api -X PUT repos/morsel90/Travel-Wallet/branches/main/protection \
+  -H "Accept: application/vnd.github+json" \
+  -f 'required_status_checks[strict]=true' \
+  -f 'required_status_checks[contexts][]=build' \
+  -F 'enforce_admins=true' \
+  -F 'required_pull_request_reviews=null' \
+  -F 'restrictions=null'
+```
+
+⚠️ Once this is on, pushing directly to `main` is refused and work must go through a PR — which is what guideline 15 always described but was never actually true.
 
 ### Storybook
 
@@ -798,6 +862,26 @@ Two decisions worth keeping:
 
 In production the service worker precaches all chunks and covers this, but a real window remains: a first visit that loses connectivity before the SW finishes activating.
 
+### 🆕 `NaN` is blocked in two layers, and a non-finite value is treated as zero rather than thrown
+
+Financial invariant tests found a live path that put `NaN` into every displayed number. `handleAddExpense` checked that the amount *string* was non-empty, not that it was a valid number, and never checked `exchangeRate` at all. So clearing the exchange-rate field — or typing a lone `.` in the amount, which survives sanitising because `ExpenseSection` only strips non-`[0-9.]` and `'.'` is a truthy string — produced `parseFloat(…) === NaN`.
+
+The damage was not an error message but silent corruption: the optimistic write put `NaN` in the local cache immediately, so **every balance and settlement became `NaN`**, then `firestore.rules` rejected the write (`amount >= 0` is false for `NaN`) and the user got a permissions message unrelated to the cause. **Offline it was not rejected at all** — the write sat pending in IndexedDB and the numbers stayed `NaN` until connectivity returned.
+
+Both layers are needed and neither is redundant:
+
+1. **Input boundary** (`useExpenseActions.handleAddExpense`) — `Number.isFinite` on the amount and the rate, before the submit lock closes, so a rejected value leaves the form open and re-submittable. This stops `NaN` from ever being written.
+2. **Pure functions** (`splitEven`, `splitByShares`, `calculateTotalSpent`, `calculateTotalDeposited`) — a non-finite input is treated as `0`. This protects against documents already corrupt in Firestore, which the boundary guard cannot reach.
+
+**Why zero and not a thrown error:** the pure functions run on every expense on every render. Throwing takes the whole tree down to `ErrorBoundary` because of one bad document — the same failure mode as the offline lazy-chunk crash. Returning zeros also preserves array length, which `calculateBalances` depends on when it pairs `shares[i]` with `participants[i]`.
+
+Two subtleties in the weight guard that are easy to reintroduce:
+
+- The old test was `typeof w === 'number' && w > 0`, which **accepts `Infinity`** — it is a number and it is greater than zero. `totalWeight` then became `Infinity` and `(totalHalalas × Infinity) / Infinity` is `NaN`. It must be `Number.isFinite(w)`. (`NaN` was excluded only by accident, because every comparison against `NaN` is false.)
+- The overflow check belongs on **`totalWeight`, not on each weight**: two weights of `1e308` are each perfectly finite and their sum is not.
+
+**The lesson worth keeping:** `handleQuickAddExpense` had guarded with `!Number.isFinite(amount)` since the beginning while `handleAddExpense` did not — the same file contradicted itself. When one of two paths through the same operation has a guard, go look at the other path.
+
 ### `useExpenses` listens to the whole collection on purpose — do not paginate it
 
 `useExpenses.ts` opens an `onSnapshot` on the entire expenses collection rather than loading pages. Paginating it (cursor + Virtuoso `endReached`) looks like an obvious win and is not:
@@ -828,9 +912,7 @@ Three independent systems that must be deployed separately:
 
 **Functions runtime:** Node 22. The version is pinned in **two** places and both must agree — `firebase.json` (`runtime: "nodejs22"`, which is what the deploy actually reads) and `functions/package.json` (`engines.node`). Changing only the latter does nothing. CI uses Node 22 as well, so the frontend is built on the same major the functions run on.
 
-**Vercel rewrites** (`vercel.json`): `/api/verifyTripPin` and `/api/manageTrip` are proxied to their Cloud Function URLs to avoid CORS. The client always calls the `/api/...` path, never the function URL directly. Adding a function means adding a rewrite here too, otherwise the call 404s in production while working fine locally.
-
-🆕 **`vite.config.js` mirrors those rewrites for the dev server**, because `/api/*` does not exist outside Vercel. Without it, `npm run dev` returns HTML for the PIN call, JSON parsing fails, and the UI reports «رمز الرحلة غير صحيح» for a perfectly correct PIN — with the gate then hiding the whole app including the admin sign-in button. In `--mode e2e` the same proxy points at the Functions emulator instead.
+🆕 **`vercel.json` holds no rewrites** — it is a `$schema` line and nothing else. Functions are reached through `httpsCallable`, which derives the URL from `projectId` and handles CORS itself. **Adding a Cloud Function therefore needs no frontend deployment config at all**; deploy the function and call it. (Historically both were proxied through `/api/*` rewrites pointing at literal function URLs, which silently pinned every build to one Firebase project — see *Environment Variables*.)
 
 🆕 **Two firebase-tools versions may exist on one machine** (a global install and the project's devDependency). `npm run` puts `node_modules/.bin` first, but a bare `firebase …` typed in a terminal may not resolve there. Use `npx firebase deploy …` so deploys use the pinned version. `scripts/run-with-emulators.mjs` resolves the local binary explicitly for the same reason — a newer global CLI wants a newer emulator jar and will try to download it.
 
@@ -857,9 +939,9 @@ Three independent systems that must be deployed separately:
 | A saved segment vanished from the list | `normalizeItinerary` drops malformed segments on read — `firestore.rules` cannot validate list items, so a segment written directly via the SDK with a missing field is filtered out instead of crashing the UI | Re-add it through the admin panel, which validates before writing |
 | Itinerary disappeared after running `create-trip.mjs` | Fixed — the script now merges. Only data written before that fix can be affected | Re-add via the admin panel |
 | Trips list empty / "تعذّر جلب قائمة الرحلات" for an admin | A `list` query on `trips/` is only satisfiable by `isAdmin()`; the admin claim may not be on the current token yet | Sign out and back in, or force `getIdToken(true)` — the claim is only refreshed on a new token |
-| "إنشاء الرحلة" fails with 404 | `manageTrip` is deployed but the `/api/manageTrip` rewrite is missing from `vercel.json`, or the frontend was deployed without it | Add the rewrite and redeploy the frontend |
+| "إنشاء الرحلة" fails with `functions/not-found` | 🆕 `manageTrip` is not deployed to the project this build points at (check `VITE_FIREBASE_PROJECT_ID`) | `npx firebase deploy --only functions --project <that project>`. No `vercel.json` change is involved any more |
 | "هذا الإجراء متاح للمسؤول فقط" when creating a trip | `manageTrip` re-checks `request.auth.token.admin` server-side and does not trust the client | Run `scripts/set-admin.mjs grant <email>`, then re-login |
-| 🆕 "رمز الرحلة غير صحيح" on `localhost` with a correct PIN | `/api/verifyTripPin` is a Vercel rewrite that does not exist under `npm run dev`; the dev server returned HTML instead | Fixed by the `/api` proxy in `vite.config.js`. Restart the dev server — `server.proxy` is read only at startup |
+| 🆕 "رمز الرحلة غير صحيح" on `localhost` with a correct PIN | Was caused by the old `/api/verifyTripPin` rewrite not existing under `npm run dev`, so the dev server returned HTML | No longer possible — `httpsCallable` needs no proxy. If it recurs, the PIN really is wrong, or `.env.local` points at a project where this trip has no `tripSecrets` doc |
 | 🆕 Admin mode lost after switching trips | Trip switching is a full page reload, and `signInAnonymously` used to run unconditionally on every load, replacing the admin session | Fixed in `useAuth`. If it recurs, verify the deployed build actually contains the fix (`git log origin/main..main`) |
 | 🆕 Nothing happens when adding a second expense offline | The submit lock waited for a server confirmation that never comes while offline | Fixed in `useExpenseActions` — released when the write is issued |
 | 🆕 App shows "حدث خطأ غير متوقع" right after the first expense of a trip, offline | A `React.lazy` chunk (`ChartsSection`) was requested for the first time with no connectivity | Mitigated by `utils/preload.ts`; the service worker covers it in production |
@@ -867,6 +949,9 @@ Three independent systems that must be deployed separately:
 | 🆕 The expense form and bottom input bar have disappeared | The trip's `status` is `completed` or `archived` | Expected — a banner at the top of the page says which. Set it back to `active` from the admin panel if it was a mistake |
 | 🆕 A trip vanished from "my trips" | It was archived; archived trips are hidden unless you have that trip open | Open it directly via `?trip=X`, or set it back to `active`/`completed` |
 | 🆕 Writes fail with a permission error right after changing a trip's status | Expected: the rules read `trips/{tripId}.status` on every write, so the change takes effect immediately for everyone | Not a bug. Check the status in the admin panel |
+| 🆕 «أدخل مبلغاً صحيحاً» / «سعر الصرف غير صالح» on submit | The amount or rate field holds something that is not a number — most often a lone `.`, or an emptied rate field | Expected. Fix the field; the form stays open with your values. Before this guard the expense was written with `amount: NaN` and every balance showed `NaN` |
+| 🆕 All balances suddenly show `NaN` | A pre-existing expense document holds a non-finite `amount` (written before the guard) | The calculations now treat it as `0`, so the rest of the ledger is correct. Find the document and fix or soft-delete it |
+| 🆕 `npm test` fails with "Cannot find module 'fast-check'" | The invariants suite added a devDependency | `npm install` |
 | 🆕 `npm run test:rules` / `test:e2e` fail with "Unable to locate a Java Runtime" | The Firestore emulator is a JVM process | Install a JDK (`brew install openjdk` + link it), then re-run |
 | 🆕 Emulator fails downloading `cloud-firestore-emulator-*.jar` | A newer firebase-tools (often a *global* install) wants a newer jar and cannot reach `storage.googleapis.com` | Run through `npm run …` so the pinned local version is used; it reuses the cached jar |
 | 🆕 E2E fails with "Port 5173 is already in use" | A leftover `vite`/`npm run dev` from another terminal | `lsof -i :5173` then kill it; do not run a dev server alongside `npm run test:e2e` |
@@ -879,7 +964,7 @@ Three independent systems that must be deployed separately:
 1. **No direct `lucide-react` imports in components** — use `src/icons.ts` re-exports only.
 2. **No `recharts`** — charts are pure HTML/CSS in `ChartsSection.tsx`.
 3. **No `enableIndexedDbPersistence`** — use `persistentLocalCache` (modern API).
-4. **No direct Cloud Function URL** — always use the Vercel rewrite path `/api/verifyTripPin`.
+4. 🆕 **No hand-rolled `fetch` to a Cloud Function, and no literal function URL** — always `httpsCallable(functions, 'name')`. A hardcoded URL (or a rewrite pointing at one) pins the build to one Firebase project and silently breaks staging; that is exactly the bug that forced this change.
 5. **Soft delete only** — `deletedAt` timestamps, never permanent deletion (`allow delete: if false` in rules). Two exceptions, both deliberate: `travelerNames/{shortName}` is a claim rather than data (soft-deleting a traveler frees the name for reuse), and 🆕 an **empty** trip may be deleted through `manageTrip` server-side — never from the client, and never when it holds any traveler or expense.
 6. **Traveler writes are batched with their name claim** — adding, trashing or restoring a traveler must write `travelers/{id}` and `travelerNames/{shortName}` in one `writeBatch`. A traveler without a claim is a traveler whose name nobody else is prevented from taking.
 7. **Modals go in `src/components/modals/`**, are registered in `useModals.ts` (`ModalState` union) and rendered lazily by `ModalManager.tsx` — not directly in App.tsx.
@@ -890,10 +975,11 @@ Three independent systems that must be deployed separately:
 12. **Run scripts with Admin SDK** — `serviceAccountKey.json` required, never expose admin operations to clients.
 13. **Never write `trips/{tripId}` without merge** — the doc holds independent sections (name, bankDetails, itinerary). Use `useTripAdminActions`, which always merges; a full `set()` silently drops whatever it omits.
 14. **Secrets stay server-side** — `tripSecrets/{tripId}` is `read, write: if false` and must remain so. PIN handling belongs in `functions/index.js` or an Admin SDK script, never in the client.
-15. **CI pipeline** — all PRs must pass: lint → typecheck → test → rules → e2e → build. Run `npm run lint` locally before pushing; ESLint bans `any` (`no-explicit-any`) and empty `catch {}` blocks (`no-empty`), which are easy to introduce accidentally.
+15. **CI pipeline** — all PRs must pass: lint → typecheck → test → rules → e2e → build. ESLint bans `any` (`no-explicit-any`) and empty `catch {}` blocks (`no-empty`), which are easy to introduce accidentally. 🆕 You no longer need to remember to run anything: `.githooks/pre-push` runs lint/typecheck/test before every push. **Do not reach for `--no-verify` as a habit** — the one commit that skipped this discipline (`c51e9f8`) left `main` red for two days. And see *The push gate* under *Testing*: until branch protection is enabled on GitHub, nothing on the server actually refuses a red push.
 16. 🆕 **Context fields go where their volatility says**, not where their topic says — see `src/context/UIContext.ts`. A changing value placed in `UIActionsContext` reintroduces the per-keystroke re-render with no visible symptom.
 17. 🆕 **Never gate a screen on a condition that excludes the person who uses it.** The "my trips" picker originally required `needsTripPin && !isAdmin`, which hid it from every member of the default trip *and* from admins entirely — i.e. from everyone who would ever open it. Ask "who does this condition exclude?" before shipping visibility logic.
 18. 🆕 **Verify the negative case for anything that reports success/failure.** The emulator wrapper (`scripts/run-with-emulators.mjs`) had three separate bugs — including one where failing tests reported success — and none would have surfaced by only checking that a passing run exits 0.
-19. 🆕 **Before debugging production behaviour, confirm the fix is actually deployed** (`git log origin/main..main`). A meaningful amount of time was lost diagnosing a bug that was already fixed locally but never pushed.
+19. 🆕 **Money never enters the app unvalidated, and never leaves the pure functions non-finite.** Any new numeric input path needs `Number.isFinite` at the boundary; any new calculation must hold the four rules in `utils/calculations.invariants.test.ts`. Add the rule there before the code, and never weaken a rule to make it pass — either the behaviour is wrong, or the rule is worded wrong and needs a comment explaining the correct wording.
+20. 🆕 **Before debugging production behaviour, confirm the fix is actually deployed** (`git log origin/main..main`). A meaningful amount of time was lost diagnosing a bug that was already fixed locally but never pushed.
 
 </div>

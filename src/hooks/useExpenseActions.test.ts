@@ -168,6 +168,58 @@ describe('useExpenseActions — الإضافة المحلية (بلا مستخد
     expect(next[0]).toMatchObject({ description: 'قهوة', amount: 20, category: 'أخرى', participants: [1, 2] })
   })
 
+  // 🆕 حارس القيم غير المنتهية عند حدود الإدخال — «قاعدة ٤» في
+  // utils/calculations.invariants.test.ts. المسار السريع كان محروساً منذ البداية
+  // (انظر الاختبار أعلاه) والمسار الرئيسي مكشوفاً: كان يفحص أن النص غير فارغ لا
+  // أنه رقم صالح، ولا يفحص سعر الصرف إطلاقاً.
+  it.each([
+    ['نقطة وحدها في حقل المبلغ', { amount: '.', exchangeRate: '1' }, 'أدخل مبلغاً صحيحاً.'],
+    ['نقطتان في حقل المبلغ', { amount: '..', exchangeRate: '1' }, 'أدخل مبلغاً صحيحاً.'],
+    ['حقل سعر الصرف مُفرَغ', { amount: '100', exchangeRate: '' }, 'سعر الصرف غير صالح — أدخل رقماً أكبر من صفر.'],
+    ['سعر صرف نقطة وحدها', { amount: '100', exchangeRate: '.' }, 'سعر الصرف غير صالح — أدخل رقماً أكبر من صفر.'],
+    ['سعر صرف صفر', { amount: '100', exchangeRate: '0' }, 'سعر الصرف غير صالح — أدخل رقماً أكبر من صفر.'],
+  ])('handleAddExpense يرفض %s ولا يكتب شيئاً', (_label, patch, message) => {
+    const { result, setExpenses, setSyncError } = setup()
+    act(() => result.current.setNewExpense({
+      ...result.current.newExpense, description: 'عشاء', ...patch,
+    }))
+    act(() => result.current.handleAddExpense(fakeEvent()))
+
+    expect(setSyncError).toHaveBeenCalledWith(message)
+    // الأهم: لا كتابة محلية ولا إلى Firestore — لأن كتابة NaN محلياً تُصيّر كل
+    // الأرصدة والتسويات NaN فوراً، وترفضها firestore.rules برسالة صلاحيات مربكة.
+    expect(setExpenses).not.toHaveBeenCalled()
+    expect(mocks.setDoc).not.toHaveBeenCalled()
+    expect(mocks.batchCommit).not.toHaveBeenCalled()
+    // والنموذج يبقى مفتوحاً بقيم المستخدم ليصحّح بدل أن تختفي
+    expect(result.current.newExpense.description).toBe('عشاء')
+  })
+
+  it('handleAddExpense يقبل الأرقام الصالحة على الحدود (صفر، وكسر يبدأ بنقطة)', () => {
+    const { result, setExpenses } = setup()
+    act(() => result.current.setNewExpense({
+      ...result.current.newExpense, description: 'عشاء', amount: '.5', exchangeRate: '3.75',
+    }))
+    act(() => result.current.handleAddExpense(fakeEvent()))
+    const next = setExpenses.mock.calls[0][0]([])
+    expect(next[0]).toMatchObject({ originalAmount: 0.5, exchangeRate: 3.75, amount: 1.875 })
+  })
+
+  it('handleAddExpense لا يحرّر قفل الإرسال عند رفض القيمة', () => {
+    // الرفض يقع قبل غلق القفل أصلاً، فيجب أن يبقى النموذج قابلاً للإرسال بعد
+    // التصحيح مباشرة — لا أن يعلق كما وقع في عطل الإرسال دون اتصال.
+    const { result, setExpenses } = setup()
+    act(() => result.current.setNewExpense({
+      ...result.current.newExpense, description: 'عشاء', amount: '.',
+    }))
+    act(() => result.current.handleAddExpense(fakeEvent()))
+    expect(setExpenses).not.toHaveBeenCalled()
+
+    act(() => result.current.setNewExpense({ ...result.current.newExpense, amount: '100' }))
+    act(() => result.current.handleAddExpense(fakeEvent()))
+    expect(setExpenses).toHaveBeenCalledTimes(1)
+  })
+
   it('confirmDelete المحلي يحذف من القائمة ويعرض تنبيهاً بزر تراجع', () => {
     const { result, setExpenses, showToast } = setup()
     act(() => result.current.requestDeleteExpense('e1'))

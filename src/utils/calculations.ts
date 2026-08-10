@@ -18,6 +18,16 @@ import { matchesTraveler } from './participants'
  */
 export function splitEven(total: number, n: number): number[] {
   if (n <= 0) return []
+  // 🆕 مبلغ غير منتهٍ (NaN أو ±Infinity) يُعامَل كصفر بدل أن يُمرَّر.
+  // بدونه: Math.round(NaN * 100) = NaN فتخرج المصفوفة كلها NaN، وInfinity أسوأ
+  // لأن Infinity - Infinity = NaN أيضاً. ويكفي مستند مصروف واحد فاسد في Firestore
+  // لتصير كل الأرصدة والتسويات المعروضة NaN.
+  // لماذا صفر ولا نرمي استثناءً: هذا مسار *قراءة* يعمل على كل مصروف في كل عرض،
+  // فالرمي يُسقط الشجرة كلها إلى ErrorBoundary بسبب مستند واحد. والصفر يحفظ طول
+  // المصفوفة، وهو شرط لازم لأن calculateBalances تقابل shares[i] بـ participants[i].
+  // الحماية الحقيقية عند حدود الإدخال (hooks/useExpenseActions.ts)؛ هذه شبكة أمان
+  // للبيانات الفاسدة الموجودة أصلاً.
+  if (!Number.isFinite(total)) return Array.from({ length: n }, () => 0)
   const totalHalalas = Math.round(total * 100)
   const base         = Math.floor(totalHalalas / n)
   const remainder    = totalHalalas - base * n   // عدد المشاركين الذين يأخذون هللة إضافية
@@ -41,14 +51,21 @@ export function splitByShares(
 ): number[] {
   const n = participantIds.length
   if (n <= 0) return []
+  if (!Number.isFinite(total)) return Array.from({ length: n }, () => 0)  // 🆕 انظر splitEven
   if (!shares || Object.keys(shares).length === 0) return splitEven(total, n)
 
   const weights = participantIds.map(id => {
     const w = shares[String(id)]
-    return typeof w === 'number' && w > 0 ? w : 1
+    // 🆕 Number.isFinite بدل typeof: الشرط القديم `typeof w === 'number' && w > 0`
+    // كان يقبل Infinity — فهي عدد وهي أكبر من صفر فعلاً — فيصير totalWeight
+    // لانهائياً و(totalHalalas × Infinity) / Infinity = NaN. أما NaN فكان يسقط
+    // بالمصادفة لا بالقصد، لأن كل مقارنة مع NaN كاذبة.
+    return Number.isFinite(w) && w > 0 ? w : 1
   })
   const totalWeight = weights.reduce((s, w) => s + w, 0)
-  if (totalWeight <= 0) return splitEven(total, n)
+  // 🆕 !Number.isFinite: كل وزن قد يكون منتهياً ويفيض *مجموعها* إلى Infinity
+  // (وزنان بقيمة 1e308 مثلاً)، فالفحص على المجموع لا على الآحاد.
+  if (!Number.isFinite(totalWeight) || totalWeight <= 0) return splitEven(total, n)
 
   const totalHalalas = Math.round(total * 100)
   const rawShares    = weights.map(w => (totalHalalas * w) / totalWeight)
@@ -104,7 +121,9 @@ export function calculateBalances(travelers: Traveler[], expenses: Expense[]): T
  * @returns {number} إجمالي الأموال التي أُنفقت.
  */
 export function calculateTotalSpent(expenses: Expense[]): number {
-  return expenses.reduce((sum, exp) => sum + exp.amount, 0)
+  // 🆕 مستند واحد بمبلغ غير منتهٍ كان يكفي لعرض NaN في إحصائيات الترويسة، حتى بعد
+  // تحصين splitEven — لأن هذا المجموع لا يمرّ بالتقسيم أصلاً.
+  return expenses.reduce((sum, exp) => sum + (Number.isFinite(exp.amount) ? exp.amount : 0), 0)
 }
 
 /**
@@ -112,7 +131,7 @@ export function calculateTotalSpent(expenses: Expense[]): number {
  * @returns {number} إجمالي المبالغ المدفوعة مقدماً في الصندوق.
  */
 export function calculateTotalDeposited(travelers: Traveler[]): number {
-  return travelers.reduce((sum, t) => sum + t.deposited, 0)
+  return travelers.reduce((sum, t) => sum + (Number.isFinite(t.deposited) ? t.deposited : 0), 0)
 }
 
 // ─── دوال مشتقة لتصوّر الأرصدة بياناً (Chart Data) ────────────────────────────

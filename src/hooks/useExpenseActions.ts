@@ -97,6 +97,32 @@ export function useExpenseActions({
     if (isSubmittingExpenseRef.current) return
     if (!newExpense.description || !newExpense.amount || !newExpense.participants.length) return
 
+    // 🆕 حارس القيم غير المنتهية — انظر «قاعدة ٤» في utils/calculations.invariants.test.ts
+    //
+    // الشرط أعلاه يفحص أن النص غير فارغ، لا أنه رقم صالح. و«سعر الصرف» لم يكن
+    // مفحوصاً إطلاقاً. فكان يكفي إفراغ حقل سعر الصرف — أو كتابة نقطة وحدها في
+    // حقل المبلغ، لأن التنقية في ExpenseSection تُزيل غير [0-9.] فتُبقي '.' وهي
+    // نص صادق — ليصير parseFloat = NaN ويمضي المصروف بمبلغ NaN.
+    //
+    // وأثره ليس رسالة خطأ بل إفساد صامت: التحديث المتفائل يكتب NaN محلياً فوراً،
+    // فتصير *كل* الأرصدة والتسويات NaN، ثم ترفض firestore.rules الكتابة
+    // (amount >= 0 كاذبة مع NaN) فيتراجع Firestore وتظهر رسالة صلاحيات لا علاقة
+    // لها بالسبب. ودون اتصال لا تُرفض أصلاً — تبقى معلّقة في IndexedDB وتبقى كل
+    // الأرقام NaN حتى يعود الاتصال.
+    //
+    // handleQuickAddExpense كان يحرس بهذا الشرط نفسه منذ البداية؛ هذا المسار وحده
+    // كان مكشوفاً.
+    const amountValue  = parseFloat(newExpense.amount)
+    const exchangeRate = parseFloat(newExpense.exchangeRate)
+    if (!Number.isFinite(amountValue) || amountValue < 0) {
+      setSyncError('أدخل مبلغاً صحيحاً.')
+      return
+    }
+    if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
+      setSyncError('سعر الصرف غير صالح — أدخل رقماً أكبر من صفر.')
+      return
+    }
+
     const wasEditing = !!editingExpense
     const now = Date.now()
 
@@ -107,14 +133,14 @@ export function useExpenseActions({
 
     isSubmittingExpenseRef.current = true
 
-    const amountSAR  = parseFloat(newExpense.amount) * parseFloat(newExpense.exchangeRate)
+    const amountSAR  = amountValue * exchangeRate
     const payload: Omit<Expense, 'id'> = {
       date:           newExpense.date,
       description:    newExpense.description,
       amount:         amountSAR,
-      originalAmount: parseFloat(newExpense.amount),
+      originalAmount: amountValue,
       currency:       newExpense.currency,
-      exchangeRate:   parseFloat(newExpense.exchangeRate),
+      exchangeRate:   exchangeRate,
       participants:   newExpense.participants,
       category:       newExpense.category,
       createdAt:      editingExpense?.createdAt ?? now,
