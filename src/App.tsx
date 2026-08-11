@@ -1,640 +1,260 @@
-import { useState, useMemo, useRef, lazy, Suspense, useCallback, useEffect } from 'react'
-import { exportTripToExcel }                   from './utils/reports'
-import { calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from './utils/calculations'
-import { Virtuoso }                            from 'react-virtuoso'
-import { AnimatePresence }                     from 'framer-motion'
-import type { ToastMessage, SortOrder } from './types'
-
-import {
-  useAuth, useAdminAuth, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
-  useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
-  useTripAdminActions, useAllTrips, useMyTrips,
-} from './hooks'
+import { AnimatePresence } from 'framer-motion'
+import { exportTripToExcel } from './utils/reports'
 import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from './utils/tripId'
-import { useFilteredExpenses } from './hooks/useFilteredExpenses'
+import { haptic } from './utils/haptics'
+import { useAppCoordinator } from './hooks/useAppCoordinator'
 
-import { DataContext } from './context/DataContext'
-import { UIActionsContext, UIFormContext } from './context/UIContext'
+import ErrorBoundary        from './components/ErrorBoundary'
+import Header               from './components/Header'
+import Toast                from './components/Toast'
+import { ConfirmModal }     from './components/Modal'
+import { ExpenseForm }      from './components/ExpenseSection'
+import { BankDetailsCard }  from './components/Misc'
+import { NextSegmentWidget } from './components/NextSegmentWidget'
+import UpdatePrompt         from './components/UpdatePrompt'
+import OnboardingBanner     from './components/OnboardingBanner'
+import TripGate             from './components/TripGate'
+import TripPicker           from './components/TripPicker'
+import AuthFlow             from './components/AuthFlow'
+import ModalManager         from './components/ModalManager'
+import PullToRefresh        from './components/PullToRefresh'
+import SmartInputBar        from './components/SmartInputBar'
+import { AppProviders }     from './components/AppProviders'
+import { AppErrorFallback } from './components/AppErrorFallback'
+import { StatusBanners }    from './components/StatusBanners'
+import { TravelersPanel }   from './components/TravelersPanel'
+import { ChartsPanel }      from './components/ChartsPanel'
+import { ExpensesPanel }    from './components/ExpensesPanel'
 
-import ErrorBoundary                     from './components/ErrorBoundary'
-import Header                            from './components/Header'
-import Toast                             from './components/Toast'
-import { ConfirmModal }                  from './components/Modal'
-import { TravelerCard, AddTravelerForm } from './components/TravelerSection'
-import { ExpenseForm, ExpenseListItem }  from './components/ExpenseSection'
-import { BankDetailsCard }               from './components/Misc'
-import { NextSegmentWidget }             from './components/NextSegmentWidget'
-import UpdatePrompt                      from './components/UpdatePrompt'
-import OnboardingBanner                  from './components/OnboardingBanner'
-import TripGate                          from './components/TripGate'
-import TripPicker                        from './components/TripPicker'
-import AuthFlow, { authImporters }        from './components/AuthFlow'
-import ModalManager, { modalImporters }   from './components/ModalManager'
-import PullToRefresh                     from './components/PullToRefresh'
-import SmartInputBar                     from './components/SmartInputBar'
-import EmptyState                        from './components/EmptyState'
-import { TravelerCardSkeleton, ExpenseListItemSkeleton, ChartsSectionSkeleton } from './components/Skeleton'
-import { haptic }                        from './utils/haptics'
-import { onIdle, preloadAll }            from './utils/preload'
-import { acceptsExpenses, closedTripNotice } from './utils/tripStatus'
-import { describeWriteError, writeErrorCode } from './utils/writeErrors'
-import { Users, Receipt, AlertTriangle, Download, Search, WifiOff, Plus, BarChart3, Settings, Lock } from './icons'
-
-// ⚠️ دالة الاستيراد مُسمّاة لتُعاد في التحميل المسبق بنفس المُعرّف حرفياً —
-// انظر ModalManager.tsx وutils/preload.ts.
-const importChartsSection = () => import('./components/charts/ChartsSection')
-const ChartsSection       = lazy(importChartsSection)
-
-// 🆕 كل الأجزاء المؤجّلة في التطبيق، للتحميل المسبق الهادئ بعد أول عرض.
-// ChartsSection أهمها: لا تُطلب إلا عند أول مصروف في الرحلة، فتسجيل ذلك المصروف
-// أثناء انقطاع الاتصال كان يُسقط التطبيق كاملاً إلى ErrorBoundary.
-const LAZY_IMPORTERS = [importChartsSection, ...modalImporters, ...authImporters]
-
+// ─── App ──────────────────────────────────────────────────────────────────────
+// مسؤوليتان اثنتان لا ثالث لهما:
+//   ١. التوجيه — أي شاشة تُعرض (رحلاتي ← بوابة الرمز ← التطبيق). الترتيب مقصود.
+//   ٢. التركيب — توصيل ناتج useAppCoordinator بالأقسام المرئية.
+//
+// كل ما عدا ذلك انتقل: التركيب إلى hooks/useAppCoordinator.ts، وقيم السياق إلى
+// components/AppProviders.tsx، والتخطيط إلى أقسام components/*Panel.tsx.
 export default function App() {
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [syncError, setSyncError] = useState<string | null>(null)
+  const { session, ledger, trip, rates, status, picker, tripAdminPanel, filter, modals, expense, traveler, deposit, admin } =
+    useAppCoordinator()
 
-  const { user, isAdmin, needsTripPin, pinCheckLoading, pinError, rateLimitSeconds, verifyTripPin, joinedTripIds } = useAuth()
-  const isOnline = useOnlineStatus()
-  const hasAccess = isAdmin || (!pinCheckLoading && !needsTripPin)
-
-  // 🆕 شاشة «رحلاتي» — تُعرض حين يُفتح التطبيق بلا `?trip=`، أي بلا رحلة مقصودة.
-  // (منطق العرض الكامل مُجمَّع أدناه بعد useAllTrips، لأن المسؤول يرى كل الرحلات.)
-  const [showTripPicker, setShowTripPicker] = useState(false)
-  const { trips: myTrips, loading: myTripsLoading, error: myTripsError } = useMyTrips(joinedTripIds, user)
-
-  const { ratesUpdatedAt, CURRENCIES } = useExchangeRates()
-  const { expenses,  setExpenses,  expensesLoaded,  refreshExpenses }  = useExpenses(hasAccess ? user : null, { setIsSyncing, setSyncError })
-  const { travelers, setTravelers, travelersLoaded, refreshTravelers } = useTravelers(hasAccess ? user : null, setIsSyncing)
-  // اسم الرحلة يُحرَّر الآن من واجهة إدارة الرحلات (التي تقرأه من useAllTrips)،
-  // فلا تحتاجه هذه الشاشة — تفاصيل البنك للبطاقة، والمسار للويدجت والتقارير.
-  const { bankDetails, itinerary, status: tripStatus } = useTripConfig(hasAccess ? user : null)
-
-  // 🆕 دورة حياة الرحلة. ⚠️ هذه إخفاء وتفسير فقط — الحماية الحقيقية في
-  // firestore.rules (tripAcceptsExpenses/tripAcceptsWrites). الغرض ألا يضغط
-  // المستخدم زراً سترفضه القواعد بخطأ صلاحيات غامض.
-  const canAddExpenses = acceptsExpenses(tripStatus)
-  const tripClosedNotice = closedTripNotice(tripStatus)
-
-  const isInitialLoading = !expensesLoaded || !travelersLoaded
-
-  const activeExpenses = useMemo(() => expenses.filter(e => !e.deletedAt), [expenses])
-  const activeTravelers = useMemo(() => travelers.filter(t => !t.deletedAt), [travelers])
-
-  const deletedExpenses = useMemo(() => expenses.filter(e => e.deletedAt), [expenses])
-  const deletedTravelers = useMemo(() => travelers.filter(t => t.deletedAt), [travelers])
-
-  const { balances, totalSpent, totalDeposited, totalRemaining } = useBalances(activeTravelers, activeExpenses)
-
-  const settlements    = useMemo(() => calculateSettlements(balances), [balances])
-  const categoryTotals = useMemo(() => calculateCategoryTotals(activeExpenses), [activeExpenses])
-  const spendingTrend  = useMemo(() => calculateSpendingTrend(activeExpenses), [activeExpenses])
-
-  const {
-    searchQuery, setSearchQuery,
-    sortOrder, setSortOrder,
-    filteredExpenses
-  } = useFilteredExpenses(activeExpenses, activeTravelers)
-
-  const [toast,      setToast]      = useState<ToastMessage | null>(null)
-  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
-
-  const {
-    modal,
-    openReports, openTrashBin, openTripAdmin, openDeleteTraveler, openDeposit, openDepositHistory, closeModal,
-  } = useModals()
-
-  const depositTraveler = modal.type === 'deposit' ? modal.traveler : null
-
-  const showToast = useCallback((msg: ToastMessage, durationMs = 2500) => {
-    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current)
-    setToast(msg)
-    if (durationMs !== Infinity) {
-      toastTimeoutRef.current = setTimeout(() => setToast(null), durationMs)
-    }
-  }, [])
-
-  const { showAdminSignIn, openAdminSignIn, handleAdminSignOut, adminModalProps } = useAdminAuth({ showToast })
-
-  // 🆕 يعتمد على كود خطأ Firestore لا على البحث في نص الرسالة: النص غير موثوق
-  // (يتغيّر بين إصدارات SDK وقد يكون مترجَماً)، والكود ثابت ومحدَّد.
-  // fallback يُستخدم فقط حين لا يكون الخطأ من Firestore أصلاً — انظر utils/writeErrors.ts.
-  const handleFirestoreError = useCallback((err: unknown, fallback: string) => {
-    const code = writeErrorCode(err)
-    setSyncError(code ? describeWriteError(err, 'generic').text : fallback)
-  }, [])
-
-  const handlePullToRefresh = useCallback(async () => {
-    try {
-      await Promise.all([refreshExpenses(), refreshTravelers()])
-    } catch (err) {
-      handleFirestoreError(err, 'تعذر تحديث البيانات — تحقّق من اتصالك وحاول مجدداً.')
-    }
-  }, [refreshExpenses, refreshTravelers, handleFirestoreError])
-
-  const {
-    newExpense, setNewExpense, isAddingExpense, editingExpense, expenseToDelete, setExpenseToDelete,
-    openExpenseForm, cancelExpenseForm, handleAddExpense, handleQuickAddExpense, startEditExpense, requestDeleteExpense,
-    confirmDelete, handleRestoreExpense, toggleParticipant, toggleAllParticipants,
-  } = useExpenseActions({
-    activeTravelers, user, isAdmin, setExpenses, showToast, handleFirestoreError, setSyncError,
-    isFirstExpense: activeExpenses.length === 0,
-  })
-
-  const {
-    isAddingTraveler,
-    newTravelerName, setNewTravelerName,
-    newTravelerDeposit, setNewTravelerDeposit,
-    startAddTraveler, cancelAddTraveler,
-    handleAddTraveler, handleRestoreTraveler, confirmDeleteTraveler,
-  } = useTravelerActions({
-    travelers, activeTravelers, user, setTravelers, showToast, handleFirestoreError, setSyncError, closeModal,
-  })
-
-  const {
-    depositAmount, setDepositAmount,
-    depositMode, setDepositMode,
-    depositReason, setDepositReason,
-    handleAddDeposit, closeDeposit,
-  } = useDepositActions({
-    depositTraveler, user, setTravelers, showToast, handleFirestoreError, closeModal,
-  })
-
-  // إدارة الرحلات — لا نشترك في قائمة الرحلات إلا للمسؤول: استعلام القائمة على
-  // trips/ يرضيه isAdmin() وحده، فطلبه لعضو عادي مجرّد خطأ صلاحيات في الكونسول.
-  const { trips, loading: tripsLoading, error: tripsError } = useAllTrips(isAdmin)
-  const {
-    isSaving: isSavingTrip,
-    saveBankDetails, saveItinerary, saveTripName, saveTripStatus, createTrip, resetTripPin, deleteTrip,
-  } = useTripAdminActions({ isAdmin, showToast, handleFirestoreError })
-
-  // ─── شاشة «رحلاتي» ────────────────────────────────────────────────────────
-  // 🆕 المسؤول يرى كل الرحلات (استعلام القائمة يرضيه isAdmin وحده)، والعضو
-  // العادي يرى ما انضم له فقط. بدون هذا التفريق كانت الشاشة تختفي عن المسؤول
-  // تماماً: هو يتجاوز رمز الرحلة أصلاً فقد لا يملك خريطة trips في توكنه إطلاقاً.
-  // 🆕 المؤرشفة تُخفى من القائمة — هذا هو الفرق العملي الوحيد بينها وبين
-  // المنتهية. تبقى الرحلة المفتوحة حالياً ظاهرة دائماً ولو كانت مؤرشفة، وإلا
-  // اختفت من تحت المستخدم بينما هو داخلها.
-  const pickerTrips = useMemo(() => {
-    const source = isAdmin ? trips.map(t => ({ id: t.id, name: t.name, status: t.status })) : myTrips
-    return source.filter(t => t.status !== 'archived' || t.id === TRIP_ID)
-  }, [isAdmin, trips, myTrips])
-  const pickerLoading = isAdmin ? tripsLoading : myTripsLoading
-  const pickerError   = isAdmin ? tripsError   : myTripsError
-
-  // تُعرض حين فُتح التطبيق بلا `?trip=` — أي بلا رحلة مقصودة — أو حين طلبها
-  // المستخدم صراحةً من الهيدر. اختيار رحلة ينقل إلى `?trip=X` فيصبح المعرّف
-  // صريحاً ولا تظهر الشاشة مجدداً.
-  //
-  // ⚠️ لا نشترط needsTripPin هنا: كان ذلك يخفي الشاشة عن كل عضو في الرحلة
-  // الافتراضية (وهم الأغلبية) لأنه لا يُطالَب برمز أصلاً، فلا يراها أحد عملياً.
-  const isPickerVisible =
-    showTripPicker ||
-    (!HAS_EXPLICIT_TRIP_ID && !pinCheckLoading && !pickerLoading && pickerTrips.length > 0)
-
-  const hasUnsavedData = useCallback(() => {
-    const hasExpenseData = isAddingExpense && (
-      newExpense.description.trim() !== '' ||
-      newExpense.amount !== '' ||
-      newExpense.currency !== 'SAR' ||
-      newExpense.exchangeRate !== '1'
-    )
-    const hasTravelerData = isAddingTraveler && (
-      newTravelerName.trim() !== '' ||
-      newTravelerDeposit !== ''
-    )
-    const hasDepositData = depositTraveler !== null && depositAmount !== ''
-    return hasExpenseData || hasTravelerData || hasDepositData
-  }, [isAddingExpense, newExpense, isAddingTraveler, newTravelerName, newTravelerDeposit, depositTraveler, depositAmount])
-
-  const dataContextValue = useMemo(() => ({
-    travelers: activeTravelers,
-    expenses: activeExpenses,
-    user,
-    isAdmin,
-    currencies: CURRENCIES,
-    ratesUpdatedAt
-  }), [activeTravelers, activeExpenses, user, isAdmin, CURRENCIES, ratesUpdatedAt])
-
-  // ⚠️ قيمتان منفصلتان لا واحدة — انظر شرح الفصل في context/UIContext.ts.
-  //
-  // هذه القيمة يجب أن تبقى ثابتة الهوية قدر الإمكان: كل ما فيها دوال، وأكثرها
-  // `useCallback` بلا اعتماديات. تتغير عملياً عند تغيّر قائمة المسافرين النشطين
-  // فقط (نادر). لا تُضف إليها أي قيمة متغيّرة — سيُبطل ذلك الفصل بصمت ويعيد
-  // إعادة الرسم الواسعة عند كل ضغطة مفتاح.
-  const uiActionsValue = useMemo(() => ({
-    cancelExpenseForm,
-    startEditExpense,
-    requestDeleteExpense,
-    openDeposit,
-    requestDeleteTraveler: openDeleteTraveler,
-    openDepositHistory,
-  }), [
-    cancelExpenseForm, startEditExpense, requestDeleteExpense,
-    openDeposit, openDeleteTraveler, openDepositHistory,
-  ])
-
-  // وهذه تتغير مع كل حرف يُكتب في نموذج المصروف — وهذا صحيح ومقصود: مستهلكها
-  // الوحيد ExpenseForm، وهو نسخة واحدة يجب أن تعكس ما يُكتب فيها فوراً.
-  const uiFormValue = useMemo(() => ({
-    expenseForm: newExpense,
-    setExpenseForm: setNewExpense,
-    isExpenseFormOpen: isAddingExpense,
-    isEditingExpense: !!editingExpense,
-    submitExpense: handleAddExpense,
-    toggleParticipant,
-    toggleAllParticipants,
-  }), [
-    newExpense, setNewExpense, isAddingExpense, editingExpense,
-    handleAddExpense, toggleParticipant, toggleAllParticipants,
-  ])
-
-  // 🆕 سحب الأجزاء المؤجّلة بهدوء بعد أن يصبح التطبيق تفاعلياً، حتى تكون حاضرة
-  // إن انقطع الاتصال لاحقاً. لولا هذا، أول مصروف يُسجَّل في رحلة أثناء الانقطاع
-  // يستدعي ChartsSection لأول مرة فيفشل استيرادها وتنهار الواجهة إلى
-  // ErrorBoundary (كشفه اختبار E2E فعلياً — انظر utils/preload.ts).
-  //
-  // ⚠️ يجب أن يبقى هذا الـ hook قبل أي `return` مشروط أدناه (قواعد الـ Hooks).
-  // ولا نسحب شيئاً قبل ثبوت الوصول: لا معنى لتحميل مودالات لمن لم يجتز البوابة.
-  useEffect(() => {
-    if (!hasAccess) return
-    return onIdle(() => preloadAll(LAZY_IMPORTERS))
-  }, [hasAccess])
+  // نسخة محلية ليضيّق TypeScript نوعها: الوصول عبر `expense.expenseToDelete`
+  // لا يُضيَّق عبر حدّ JSX، فكان سيتطلّب تأكيداً بـ `!` بلا داعٍ.
+  const { expenseToDelete } = expense
 
   // 🆕 من فتح التطبيق بلا `?trip=` لا رحلة مقصودة لديه، فمطالبته برمز الرحلة
   // الافتراضية مطالبةٌ برمز رحلة قد لا تعنيه إطلاقاً — نعرض رحلاته بدلاً منها.
   // أما من فتح رابط رحلة بعينها فيُطلب رمزها مباشرةً كما كان (مع منفذ للعودة
   // لقائمته إن كان عضواً في رحلات أخرى).
-  if (isPickerVisible) {
+  if (picker.isVisible) {
     return (
       <TripPicker
-        trips={pickerTrips}
-        loading={pickerLoading}
-        error={pickerError}
-        currentTripId={HAS_EXPLICIT_TRIP_ID && hasAccess ? TRIP_ID : undefined}
+        trips={picker.trips}
+        loading={picker.loading}
+        error={picker.error}
+        currentTripId={HAS_EXPLICIT_TRIP_ID && session.hasAccess ? TRIP_ID : undefined}
         // الرجوع متاح فقط حين فُتحت الشاشة اختيارياً من داخل التطبيق — أما حين
         // كانت شاشة البداية (لا رحلة مقصودة) فلا يوجد ما يُرجع إليه أصلاً.
-        onBack={showTripPicker ? () => setShowTripPicker(false) : undefined}
+        onBack={picker.wasOpenedManually ? picker.hide : undefined}
       />
     )
   }
 
-  if (!isAdmin && (pinCheckLoading || needsTripPin)) {
+  if (!session.isAdmin && (session.pinCheckLoading || session.needsTripPin)) {
     return (
       <TripGate
-        loading={pinCheckLoading}
-        error={pinError}
-        rateLimitSeconds={rateLimitSeconds}
-        onSubmit={verifyTripPin}
-        onShowMyTrips={joinedTripIds.length > 0 ? () => setShowTripPicker(true) : undefined}
+        loading={session.pinCheckLoading}
+        error={session.pinError}
+        rateLimitSeconds={session.rateLimitSeconds}
+        onSubmit={session.verifyTripPin}
+        onShowMyTrips={session.joinedTripIds.length > 0 ? picker.show : undefined}
       />
     )
   }
 
   return (
-    <DataContext.Provider value={dataContextValue}>
-      <UIActionsContext.Provider value={uiActionsValue}>
-      <UIFormContext.Provider value={uiFormValue}>
-        <ErrorBoundary
-          fallback={
-            <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50 text-center">
-              <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 max-w-md">
-                <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
-                <h1 className="text-xl font-bold text-slate-800 mb-2">عذراً، حدث خطأ غير متوقع في النظام!</h1>
-                <p className="text-sm text-slate-500 mb-6">يرجى إعادة تحميل الصفحة أو المحاولة لاحقاً.</p>
-                <button 
-                  onClick={() => window.location.reload()} 
-                  className="w-full bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm"
-                >
-                  إعادة تحميل الصفحة
-                </button>
-              </div>
-            </div>
-          }
-        >
-          <div className="min-h-screen pb-20 md:pb-8">
-            <Header
-              isSyncing={isSyncing} isAdmin={isAdmin}
-              onToggleAdmin={() => isAdmin ? handleAdminSignOut() : openAdminSignIn()}
-              stats={isInitialLoading ? null : { totalDeposited, totalSpent, totalRemaining }}
-              isOnline={isOnline}
-              // زر التبديل يظهر متى وُجدت رحلة أخرى غير المفتوحة حالياً
-              onShowMyTrips={pickerTrips.length > 1 ? () => setShowTripPicker(true) : undefined}
-              onStatClick={(stat) => {
-                haptic.light()
-                const id =
-                  stat === 'deposited' ? 'travelers-section' :
-                  stat === 'spent'     ? 'expenses-section'  :
-                                         'charts-section'
-                document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-              }}
-            />
+    <AppProviders
+      travelers={ledger.activeTravelers}
+      expenses={ledger.activeExpenses}
+      user={session.user}
+      isAdmin={session.isAdmin}
+      currencies={rates.currencies}
+      ratesUpdatedAt={rates.ratesUpdatedAt}
+      cancelExpenseForm={expense.cancelExpenseForm}
+      startEditExpense={expense.startEditExpense}
+      requestDeleteExpense={expense.requestDeleteExpense}
+      openDeposit={modals.openDeposit}
+      requestDeleteTraveler={modals.openDeleteTraveler}
+      openDepositHistory={modals.openDepositHistory}
+      expenseForm={expense.newExpense}
+      setExpenseForm={expense.setNewExpense}
+      isExpenseFormOpen={expense.isAddingExpense}
+      isEditingExpense={!!expense.editingExpense}
+      submitExpense={expense.handleAddExpense}
+      toggleParticipant={expense.toggleParticipant}
+      toggleAllParticipants={expense.toggleAllParticipants}
+    >
+      <ErrorBoundary fallback={<AppErrorFallback />}>
+        <div className="min-h-screen pb-20 md:pb-8">
+          <Header
+            isSyncing={status.isSyncing} isAdmin={session.isAdmin}
+            onToggleAdmin={() => session.isAdmin ? admin.handleAdminSignOut() : admin.openAdminSignIn()}
+            stats={ledger.isInitialLoading ? null : {
+              totalDeposited: ledger.totalDeposited,
+              totalSpent: ledger.totalSpent,
+              totalRemaining: ledger.totalRemaining,
+            }}
+            isOnline={session.isOnline}
+            // زر التبديل يظهر متى وُجدت رحلة أخرى غير المفتوحة حالياً
+            onShowMyTrips={picker.trips.length > 1 ? picker.show : undefined}
+            onStatClick={(stat) => {
+              haptic.light()
+              const id =
+                stat === 'deposited' ? 'travelers-section' :
+                stat === 'spent'     ? 'expenses-section'  :
+                                       'charts-section'
+              document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }}
+          />
 
-            <PullToRefresh onRefresh={handlePullToRefresh}>
+          <PullToRefresh onRefresh={status.handlePullToRefresh}>
             <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
 
               <OnboardingBanner />
 
-              {!isInitialLoading && (
-                <NextSegmentWidget itinerary={itinerary} />
+              {!ledger.isInitialLoading && (
+                <NextSegmentWidget itinerary={trip.itinerary} />
               )}
 
               {/* 🆕 رحلة منتهية أو مؤرشفة: نشرح سبب اختفاء أزرار الإدخال بدل
                   تركها تختفي بلا تفسير. القواعد هي التي تمنع فعلاً، وهذا إعلام. */}
-              {tripClosedNotice && (
-                <div className="bg-slate-100 text-slate-700 p-4 rounded-xl text-sm border border-slate-200 shadow-sm flex items-start gap-2">
-                  <Lock className="w-4 h-4 mt-0.5 shrink-0 text-slate-500" />
-                  {tripClosedNotice}
-                </div>
-              )}
+              <StatusBanners
+                tripClosedNotice={trip.tripClosedNotice}
+                isOnline={session.isOnline}
+                syncError={status.syncError}
+              />
 
-              {!isOnline && (
-                <div className="bg-amber-100 text-amber-800 p-4 rounded-xl text-sm border border-amber-200 shadow-sm flex items-start gap-2">
-                  <WifiOff className="w-4 h-4 mt-0.5 shrink-0" />
-                  أنت غير متصل بالإنترنت حالياً. أي إضافة أو تعديل أو حذف ستقوم به سيُحفظ محلياً تلقائياً ويُرسل بمجرد عودة الاتصال.
-                </div>
-              )}
+              <TravelersPanel
+                isInitialLoading={ledger.isInitialLoading}
+                isAdmin={session.isAdmin}
+                activeTravelers={ledger.activeTravelers}
+                balances={ledger.balances}
+                isAddingTraveler={traveler.isAddingTraveler}
+                onStartAddTraveler={traveler.startAddTraveler}
+                travelerForm={{
+                  name: traveler.newTravelerName, setName: traveler.setNewTravelerName,
+                  deposit: traveler.newTravelerDeposit, setDeposit: traveler.setNewTravelerDeposit,
+                  onSubmit: traveler.handleAddTraveler, onCancel: traveler.cancelAddTraveler,
+                }}
+              />
 
-              {syncError && (
-                <div className="bg-rose-100 text-rose-800 p-4 rounded-xl text-sm border border-rose-200 shadow-sm flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                  {syncError}
-                </div>
-              )}
-
-              <section id="travelers-section" className="scroll-mt-24">
-                <div className="flex justify-between items-center mb-4 px-1">
-                  <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                    <Users className="w-5 h-5 text-slate-500" /> أرصدة المسافرين
-                    {!isInitialLoading && (
-                      <span className="text-[11px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full tabular-nums">
-                        {activeTravelers.length}
-                      </span>
-                    )}
-                  </h2>
-                </div>
-
-                {!isInitialLoading && activeTravelers.length === 0 && !isAddingTraveler ? (
-                  <EmptyState
-                    Icon={Users}
-                    title="لا يوجد مسافرون بعد"
-                    description="أضف المسافرين المشاركين في الرحلة لتتمكّن من توزيع المصاريف وحساب من يدين لمن."
-                    actionLabel={isAdmin ? 'إضافة أول مسافر' : undefined}
-                    onAction={isAdmin ? startAddTraveler : undefined}
-                    ActionIcon={isAdmin ? Plus : undefined}
-                  />
-                ) : (
-                <div className={`grid gap-3 sm:gap-4 ${isAdmin ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`}>
-                  {isInitialLoading
-                    ? Array.from({ length: 4 }, (_, i) => <TravelerCardSkeleton key={i} />)
-                    : balances.map(traveler => (
-                        <TravelerCard key={traveler.id} traveler={traveler} />
-                      ))
-                  }
-                  
-                  {isAdmin && !isAddingTraveler && !isInitialLoading && (
-                    <button
-                      type="button"
-                      onClick={startAddTraveler}
-                      className="border-2 border-dashed border-slate-200 hover:border-teal-500 hover:bg-teal-50/40 rounded-xl p-4 flex flex-row sm:flex-col items-center justify-center gap-3 text-slate-500 hover:text-teal-600 transition-all shadow-sm bg-slate-50/10 group cursor-pointer min-h-[76px] sm:min-h-[120px]"
-                    >
-                      <div className="w-9 h-9 rounded-full bg-slate-100 group-hover:bg-teal-100 flex items-center justify-center text-slate-600 group-hover:text-teal-700 transition-colors shrink-0 shadow-sm">
-                        <Plus className="w-4 h-4" />
-                      </div>
-                      <span className="text-sm font-bold">إضافة مسافر جديد</span>
-                    </button>
-                  )}
-                </div>
-                )}
-
-                {isAddingTraveler && (
-                  <AddTravelerForm
-                    newTravelerName={newTravelerName}
-                    setNewTravelerName={setNewTravelerName}
-                    newTravelerDeposit={newTravelerDeposit}
-                    setNewTravelerDeposit={setNewTravelerDeposit}
-                    onSubmit={handleAddTraveler}
-                    cancelAddTraveler={cancelAddTraveler}
-                  />
-                )}
-              </section>
-
-              <div id="charts-section" className="scroll-mt-24">
-                {!isInitialLoading && activeExpenses.length > 0 && (
-                  <Suspense fallback={<ChartsSectionSkeleton />}>
-                    <ChartsSection
-                      settlements={settlements}
-                      categoryTotals={categoryTotals}
-                      spendingTrend={spendingTrend}
-                    />
-                  </Suspense>
-                )}
-
-                {!isInitialLoading && activeTravelers.length > 0 && activeExpenses.length === 0 && (
-                  <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                    <EmptyState
-                      Icon={BarChart3}
-                      title="لا توجد إحصائيات بعد"
-                      description="سجّل أول مصروف للرحلة لعرض ملخص التسويات وتوزيع المصاريف حسب الفئة وتطوّرها الزمني."
-                    />
-                  </section>
-                )}
-              </div>
+              <ChartsPanel
+                isInitialLoading={ledger.isInitialLoading}
+                hasExpenses={ledger.activeExpenses.length > 0}
+                hasTravelers={ledger.activeTravelers.length > 0}
+                settlements={ledger.settlements}
+                categoryTotals={ledger.categoryTotals}
+                spendingTrend={ledger.spendingTrend}
+              />
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="space-y-6 lg:col-span-1">
                   {/* نموذج المصروف يختفي كلياً في الرحلة المنتهية/المؤرشفة */}
-                  {canAddExpenses && (
+                  {trip.canAddExpenses && (
                     <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                       <ExpenseForm />
                     </section>
                   )}
-                  <BankDetailsCard bankDetails={bankDetails} />
+                  <BankDetailsCard bankDetails={trip.bankDetails} />
                 </div>
 
                 <div className="lg:col-span-2">
-                  <section id="expenses-section" className="scroll-mt-24">
-                    <div className="flex flex-wrap justify-between items-center gap-3 mb-4 px-1">
-                      <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                        <Receipt className="w-5 h-5 text-slate-500" /> سجل المصاريف
-                      </h2>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => { haptic.light(); openReports() }}
-                          className="flex items-center gap-1.5 text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-sm"
-                        >
-                          <BarChart3 className="w-3.5 h-3.5" /> التقارير
-                        </button>
-                        {isAdmin && (
-                          <button
-                            onClick={() => { haptic.light(); openTripAdmin() }}
-                            className="flex items-center gap-1.5 text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm"
-                          >
-                            <Settings className="w-3.5 h-3.5 text-slate-500" /> إدارة الرحلات
-                          </button>
-                        )}
-                        {isAdmin && (
-                          <button
-                            onClick={openTrashBin}
-                            className="flex items-center gap-1.5 text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm"
-                          >
-                            <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                            سلة المهملات
-                          </button>
-                        )}
-                        <button
-                          onClick={() => exportTripToExcel({ expenses: activeExpenses, travelers: activeTravelers, balances, settlements })} disabled={!activeExpenses.length}
-                          className="flex items-center gap-1.5 text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-40"
-                        >
-                          <Download className="w-3.5 h-3.5" /> تصدير Excel
-                        </button>
-                      </div>
-                    </div>
-
-                   <div className="flex gap-2 mb-3">
-                      <div className="relative flex-1">
-                       <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <input
-                          type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                          placeholder="بحث بالوصف أو المشارك..."
-                          className="w-full border border-slate-200 rounded-xl pr-9 ps-3 py-2 text-base focus:ring-2 focus:ring-teal-500 outline-none"
-                        />
-                      </div>
-                      <select
-                        value={sortOrder}
-                        onChange={(e) => setSortOrder(e.target.value as unknown as SortOrder)}
-                        className="border border-slate-200 rounded-xl px-2 py-2 text-base bg-white focus:ring-2 focus:ring-teal-500 outline-none"
-                      >
-                        <option value="date_desc">الأحدث أولاً</option>
-                        <option value="date_asc">الأقدم أولاً</option>
-                        <option value="amount_desc">الأعلى مبلغاً</option>
-                        <option value="amount_asc">الأقل مبلغاً</option>
-                      </select>
-                    </div>
-
-                    <ErrorBoundary
-                      fallback={
-                        <div className="p-8 text-center text-rose-600 bg-rose-50 rounded-2xl border border-rose-100 font-medium text-sm flex items-center justify-center gap-2">
-                          <AlertTriangle className="w-4 h-4 shrink-0" />
-                          حدث خطأ غير متوقع أثناء عرض قائمة المصاريف، يرجى المحاولة لاحقاً.
-                        </div>
-                      }
-                    >
-                      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                        {isInitialLoading ? (
-                          <div>{Array.from({ length: 5 }, (_, i) => <ExpenseListItemSkeleton key={i} />)}</div>
-                        ) : activeExpenses.length === 0 ? (
-                          <EmptyState
-                            Icon={Receipt}
-                            title={canAddExpenses ? 'لا توجد مصاريف بعد' : 'لا توجد مصاريف في هذه الرحلة'}
-                            description={canAddExpenses
-                              ? 'ابدأ بتسجيل أول مصروف للرحلة، وسيتولّى التطبيق حساب حصة كل مسافر تلقائياً.'
-                              : 'أُغلقت هذه الرحلة دون تسجيل أي مصروف فيها.'}
-                            actionLabel={canAddExpenses ? 'سجّل أول مصروف' : undefined}
-                            onAction={canAddExpenses ? () => openExpenseForm() : undefined}
-                            ActionIcon={canAddExpenses ? Plus : undefined}
-                          />
-                        ) : filteredExpenses.length === 0 ? (
-                          <div className="p-8 text-center text-slate-400 font-medium">لا توجد نتائج لـ "{searchQuery}"</div>
-                        ) : (
-                          <Virtuoso
-                            useWindowScroll
-                            data={filteredExpenses}
-                            itemContent={(_index, exp) => (
-                              <div className="border-b border-slate-100 last:border-none">
-                                <ExpenseListItem expense={exp} />
-                              </div>
-                            )}
-                            scrollSeekConfiguration={{
-                              enter: velocity => Math.abs(velocity) > 900,
-                              exit: velocity => Math.abs(velocity) < 30,
-                            }}
-                            components={{
-                              ScrollSeekPlaceholder: () => <ExpenseListItemSkeleton />,
-                            }}
-                          />
-                        )}
-                      </div>
-                    </ErrorBoundary>
-
-                    {searchQuery && filteredExpenses.length > 0 && (
-                      <p className="text-xs text-slate-400 mt-2 px-1">
-                        {filteredExpenses.length} من {activeExpenses.length} مصروف
-                      </p>
-                    )}
-                  </section>
+                  <ExpensesPanel
+                    isInitialLoading={ledger.isInitialLoading}
+                    isAdmin={session.isAdmin}
+                    canAddExpenses={trip.canAddExpenses}
+                    activeExpenses={ledger.activeExpenses}
+                    filteredExpenses={filter.filteredExpenses}
+                    searchQuery={filter.searchQuery}
+                    setSearchQuery={filter.setSearchQuery}
+                    sortOrder={filter.sortOrder}
+                    setSortOrder={filter.setSortOrder}
+                    onOpenReports={modals.openReports}
+                    onOpenTripAdmin={modals.openTripAdmin}
+                    onOpenTrashBin={modals.openTrashBin}
+                    onExport={() => exportTripToExcel({
+                      expenses: ledger.activeExpenses, travelers: ledger.activeTravelers,
+                      balances: ledger.balances, settlements: ledger.settlements,
+                    })}
+                    onOpenExpenseForm={expense.openExpenseForm}
+                  />
                 </div>
               </div>
             </main>
-            </PullToRefresh>
+          </PullToRefresh>
 
-            <SmartInputBar
-                 visible={!isInitialLoading && !isAddingExpense && canAddExpenses}
-                 onQuickAdd={handleQuickAddExpense}
-                 onExpand={openExpenseForm}
-             />
+          <SmartInputBar
+            visible={!ledger.isInitialLoading && !expense.isAddingExpense && trip.canAddExpenses}
+            onQuickAdd={expense.handleQuickAddExpense}
+            onExpand={expense.openExpenseForm}
+          />
 
-            <ModalManager
-              modal={modal}
-              closeModal={closeModal}
-              closeDeposit={closeDeposit}
-              confirmDeleteTraveler={confirmDeleteTraveler}
-              reports={{
-                travelers: activeTravelers,
-                expenses: activeExpenses,
-                balances,
-                settlements,
-                categoryTotals,
-                itinerary,
-              }}
-              deposit={{
-                amount: depositAmount, setAmount: setDepositAmount,
-                mode: depositMode, setMode: setDepositMode,
-                reason: depositReason, setReason: setDepositReason,
-                onSubmit: handleAddDeposit,
-              }}
-              trash={{
-                deletedExpenses,
-                deletedTravelers,
-                onRestoreExpense: handleRestoreExpense,
-                onRestoreTraveler: handleRestoreTraveler,
-              }}
-              tripAdmin={{
-                currentTripId: TRIP_ID,
-                trips,
-                loading: tripsLoading,
-                error: tripsError,
-                isSaving: isSavingTrip,
-                onSaveTripName: saveTripName,
-                onSaveBankDetails: saveBankDetails,
-                onSaveItinerary: saveItinerary,
-                onCreateTrip: createTrip,
-                onResetPin: resetTripPin,
-                onSaveTripStatus: saveTripStatus,
-                onDeleteTrip: deleteTrip,
-              }}
-            />
+          <ModalManager
+            modal={modals.modal}
+            closeModal={modals.closeModal}
+            closeDeposit={deposit.closeDeposit}
+            confirmDeleteTraveler={traveler.confirmDeleteTraveler}
+            reports={{
+              travelers: ledger.activeTravelers,
+              expenses: ledger.activeExpenses,
+              balances: ledger.balances,
+              settlements: ledger.settlements,
+              categoryTotals: ledger.categoryTotals,
+              itinerary: trip.itinerary,
+            }}
+            deposit={{
+              amount: deposit.depositAmount, setAmount: deposit.setDepositAmount,
+              mode: deposit.depositMode, setMode: deposit.setDepositMode,
+              reason: deposit.depositReason, setReason: deposit.setDepositReason,
+              onSubmit: deposit.handleAddDeposit,
+            }}
+            trash={{
+              deletedExpenses: ledger.deletedExpenses,
+              deletedTravelers: ledger.deletedTravelers,
+              onRestoreExpense: expense.handleRestoreExpense,
+              onRestoreTraveler: traveler.handleRestoreTraveler,
+            }}
+            tripAdmin={{
+              currentTripId: TRIP_ID,
+              trips: tripAdminPanel.trips,
+              loading: tripAdminPanel.loading,
+              error: tripAdminPanel.error,
+              isSaving: tripAdminPanel.isSaving,
+              onSaveTripName: tripAdminPanel.saveTripName,
+              onSaveBankDetails: tripAdminPanel.saveBankDetails,
+              onSaveItinerary: tripAdminPanel.saveItinerary,
+              onCreateTrip: tripAdminPanel.createTrip,
+              onResetPin: tripAdminPanel.resetTripPin,
+              onSaveTripStatus: tripAdminPanel.saveTripStatus,
+              onDeleteTrip: tripAdminPanel.deleteTrip,
+            }}
+          />
 
-            <AnimatePresence>
-              {expenseToDelete !== null && (
-                <ConfirmModal
-                  key="confirm-delete-expense"
-                  title="تأكيد الحذف?"
-                  onConfirm={() => confirmDelete(expenseToDelete)}
-                  onCancel={() => setExpenseToDelete(null)}
-                />
-              )}
-            </AnimatePresence>
-            <AuthFlow open={showAdminSignIn} modalProps={adminModalProps} />
+          <AnimatePresence>
+            {expenseToDelete !== null && (
+              <ConfirmModal
+                key="confirm-delete-expense"
+                title="تأكيد الحذف?"
+                onConfirm={() => expense.confirmDelete(expenseToDelete)}
+                onCancel={() => expense.setExpenseToDelete(null)}
+              />
+            )}
+          </AnimatePresence>
+          <AuthFlow open={admin.showAdminSignIn} modalProps={admin.adminModalProps} />
 
-            {toast && <Toast message={toast} />}
-            <UpdatePrompt hasUnsavedData={hasUnsavedData} />
-          </div>
-        </ErrorBoundary>
-      </UIFormContext.Provider>
-      </UIActionsContext.Provider>
-    </DataContext.Provider>
+          {status.toast && <Toast message={status.toast} />}
+          <UpdatePrompt hasUnsavedData={status.hasUnsavedData} />
+        </div>
+      </ErrorBoundary>
+    </AppProviders>
   )
 }

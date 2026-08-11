@@ -12,6 +12,8 @@ Clearing the exchange-rate field (or typing a lone `.` in the amount) produced `
 
 Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the balances only sum to zero by coincidence. See *Testing*.
 
+**`App.tsx` split: 639 → 260 lines.** Hook wiring moved to `hooks/useAppCoordinator.ts`, the three context values to `components/AppProviders.tsx`, and the layout to five panel components. `App.tsx` now does routing and composition only. A characterization test (`src/App.test.tsx`, 17 cases) was written against the *old* file and proven green **before** anything moved, then left untouched — it still passes. See *Design Decisions*.
+
 **Documentation drift fixed.** The `httpsCallable` migration removed the `vercel.json` rewrites and the `/api` dev proxy, but only the *Environment Variables* section was updated. Six other places still described `/api/*` as the live call path — the directory tree, the dev-setup note, the whole *API Reference*, the E2E description, the *Deployment* section and two Troubleshooting rows — plus guideline 4, which instructed the opposite of what the code now does. All corrected against `vercel.json` (a `$schema` line and nothing else) and `vite.config.js` (no proxy). Nothing in the app was wrong; the map was.
 
 **A push gate, and why `main` was red for two days.** Running the new suite surfaced three *unrelated* failures in `useMyTrips.test.ts`, live since `c51e9f8` — `status` was added to `MyTrip` without updating the `toEqual` assertions. The cause was not the CI definition, which is correct, but that **this repo has zero merge commits**: everything is pushed straight to `main`, so the `pull_request:` trigger has never fired and CI can only report after the fact. Added `.githooks/pre-push` (wired through `prepare`, so a fresh clone gets it) and documented the branch-protection settings that actually enforce it. See *The push gate* under *Testing*.
@@ -149,7 +151,7 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 
 ```
 ├── src/
-│   ├── App.tsx                    # Root orchestrator (~610 lines — a known refactor candidate, see Design Decisions)
+│   ├── App.tsx                    # 🆕 ~260 lines — routing + composition only (was 639, see Design Decisions)
 │   ├── main.tsx                  # React entry point
 │   ├── firebase.ts               # Firebase init (auth, db, functions) — config from import.meta.env
 │   ├── vite-env.d.ts             # Types for import.meta.env (typo in a var name becomes a compile error)
@@ -183,7 +185,8 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 │   │   ├── useOnlineStatus.ts    # navigator.onLine tracking
 │   │   ├── useCountdown.ts       # Generic countdown timer
 │   │   ├── useDebounce.ts        # Generic debounce hook
-│   │   └── useHeaderCollapse.ts  # Scroll direction tracking for sticky header
+│   │   ├── useHeaderCollapse.ts  # Scroll direction tracking for sticky header
+│   │   └── useAppCoordinator.ts  # 🆕 All hook wiring + derived values — the seam App.tsx used to be
 │   │
 │   ├── context/
 │   │   ├── DataContext.ts        # Read-only data context
@@ -196,6 +199,12 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 │   │   ├── SmartInputBar.tsx     # Fixed bottom input bar (quick expense)
 │   │   ├── TravelerSection.tsx   # Traveler cards + add form + profile modal
 │   │   ├── ExpenseSection.tsx    # Expense form + filtered virtual list
+│   │   ├── AppProviders.tsx      # 🆕 The three context values + providers — the volatility split lives here
+│   │   ├── AppErrorFallback.tsx  # 🆕 App-wide and expense-list error screens
+│   │   ├── StatusBanners.tsx     # 🆕 Closed-trip / offline / sync-error banners
+│   │   ├── TravelersPanel.tsx    # 🆕 Traveler cards + add form (extracted from App.tsx)
+│   │   ├── ChartsPanel.tsx       # 🆕 Lazy ChartsSection + its empty state; exports chartsImporters
+│   │   ├── ExpensesPanel.tsx     # 🆕 Toolbar + search + virtual list (extracted from App.tsx)
 │   │   ├── ModalManager.tsx      # Renders the 5 general modals from useModals state (lazy)
 │   │   ├── AuthFlow.tsx          # Lazy wrapper for the admin sign-in modal (view-only)
 │   │   ├── NextSegmentWidget.tsx # "Next leg" card — first future itinerary segment
@@ -280,7 +289,9 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 
 | File | Purpose |
 |---|---|
-| `src/App.tsx` | Root component: orchestrates auth flow, state, modals, and layout. The "controller" of the app. |
+| `src/App.tsx` | 🆕 Two jobs only: **routing** (picker → PIN gate → app, in that order) and **composition**. No hook wiring, no context values, no layout. |
+| `src/hooks/useAppCoordinator.ts` | 🆕 Every hook call and derived value, returned as named groups (`session`, `ledger`, `trip`, `rates`, `status`, `picker`, …). Order inside is load-bearing — later hooks consume earlier results. |
+| `src/components/AppProviders.tsx` | 🆕 Builds and provides the three context values. Read `context/UIContext.ts` before touching it — the volatility split is a performance guarantee whose breakage is silent. |
 | `src/types.ts` | All interfaces: `Traveler`, `Expense`, `ExpenseFormData`, `Settlement`, `ToastMessage`, etc. |
 | `src/hooks/useExpenseActions.ts` | All expense CRUD: form submission, quick add, optimistic updates, retry logic, rate limiting. |
 | `src/hooks/useAuth.ts` | Auth state machine: anonymous sign-in, admin claim detection, PIN verification via Cloud Function, rate limit countdown. |
@@ -701,6 +712,7 @@ Pure utilities and every hook. Hooks are tested with `renderHook`, mocking `fire
 - `utils/`: `calculations`, `reportData`, `reports`, `itinerary`, `tripId`, `travelerName`, `writeErrors`, `preload`
 - `hooks/`: `useAuth`, `useExpenseActions`, `useTravelerActions`, `useDepositActions`, `useMyTrips`, `useModals`, `useBalances`, `useFilteredExpenses`, `useDebounce`, `useCountdown`, `useOnlineStatus`, `useHeaderCollapse`
 - `components/EmptyState.test.tsx`
+- 🆕 `App.test.tsx` — a **characterization test**: it describes behaviour as it is, not as it should be, and exists to make refactors of `App.tsx` safe. Pins gate ordering, the status banners, the closed-trip hiding of both expense inputs, the empty states, and that empty states stay hidden while loading. ⚠️ If it fails during a refactor, the refactor changed behaviour — changing the expectation to make it pass destroys the only reason it exists.
 
 🆕 **Financial invariants (`utils/calculations.invariants.test.ts`)** — a fourth kind of test inside layer 1, using **fast-check** for property-based generation. A unit test says "this input gives this output"; an invariant says "whatever the input, this must hold" — so it covers what you did *not* think of, which is what breaks an arithmetic app. Four rules: sum of shares equals the expense amount; the ledger equation (`remaining = deposited − attributed`, and nothing created or lost); settlements equal `min(debt, credit)`; and no `NaN`/`Infinity`/impossible share anywhere. On failure fast-check shrinks to the smallest reproducing case.
 
@@ -882,6 +894,29 @@ Two subtleties in the weight guard that are easy to reintroduce:
 
 **The lesson worth keeping:** `handleQuickAddExpense` had guarded with `!Number.isFinite(amount)` since the beginning while `handleAddExpense` did not — the same file contradicted itself. When one of two paths through the same operation has a guard, go look at the other path.
 
+### 🆕 `App.tsx` was split by *kind of work*, and the characterization test came first
+
+639 lines became 260. The split is not by topic but by what the code *is*:
+
+| Kind of work | Where it lives now |
+|---|---|
+| Hook wiring + derived values | `hooks/useAppCoordinator.ts` |
+| The three context values | `components/AppProviders.tsx` |
+| Layout | `components/{Travelers,Charts,Expenses}Panel.tsx`, `StatusBanners`, `AppErrorFallback` |
+| Routing + composition | `App.tsx` — all that remains |
+
+**The test was written first, against the 639-line version, and never edited afterwards.** That ordering is the whole safety argument: a characterization test proven green on the old code distinguishes "my test is wrong" from "the refactor broke something". Written after the fact it proves only that the new code matches itself. `src/App.test.tsx` still passes unmodified — that, not the line count, is what says behaviour was preserved.
+
+Three decisions worth keeping:
+
+**Routing stayed in `App.tsx`.** Extracting an `<AppGate>` was considered and rejected: `App` without the routing decision is a wrapper with no responsibility, and "which screen shows" is exactly what a root file should say. What *did* move is the visibility computation (`picker.isVisible`), which is logic.
+
+**The preload `useEffect` moved into the coordinator.** It must run before any conditional `return` (Rules of Hooks); in `App.tsx` that was guarded by a warning comment, in the coordinator it is guaranteed by structure.
+
+**`LAZY_IMPORTERS` is assembled from per-owner exports.** `chartsImporters` now sits beside its `lazy()` in `ChartsPanel.tsx`, matching `modalImporters` and `authImporters`. Adding a lazy chunk means exporting its importer from its own file — `App.tsx` no longer needs to know any of them exist.
+
+⚠️ **One real cost of the pattern:** grouping the return into objects loses TypeScript narrowing. `expense.expenseToDelete !== null` does not narrow `expense.expenseToDelete` across a JSX boundary, so it needs a local binding (`const { expenseToDelete } = expense`). Prefer that over `!` — the assertion would survive a later change that makes the value genuinely nullable.
+
 ### `useExpenses` listens to the whole collection on purpose — do not paginate it
 
 `useExpenses.ts` opens an `onSnapshot` on the entire expenses collection rather than loading pages. Paginating it (cursor + Virtuoso `endReached`) looks like an obvious win and is not:
@@ -980,6 +1015,8 @@ Three independent systems that must be deployed separately:
 17. 🆕 **Never gate a screen on a condition that excludes the person who uses it.** The "my trips" picker originally required `needsTripPin && !isAdmin`, which hid it from every member of the default trip *and* from admins entirely — i.e. from everyone who would ever open it. Ask "who does this condition exclude?" before shipping visibility logic.
 18. 🆕 **Verify the negative case for anything that reports success/failure.** The emulator wrapper (`scripts/run-with-emulators.mjs`) had three separate bugs — including one where failing tests reported success — and none would have surfaced by only checking that a passing run exits 0.
 19. 🆕 **Money never enters the app unvalidated, and never leaves the pure functions non-finite.** Any new numeric input path needs `Number.isFinite` at the boundary; any new calculation must hold the four rules in `utils/calculations.invariants.test.ts`. Add the rule there before the code, and never weaken a rule to make it pass — either the behaviour is wrong, or the rule is worded wrong and needs a comment explaining the correct wording.
-20. 🆕 **Before debugging production behaviour, confirm the fix is actually deployed** (`git log origin/main..main`). A meaningful amount of time was lost diagnosing a bug that was already fixed locally but never pushed.
+20. 🆕 **Keep `App.tsx` to routing and composition.** New hook wiring or derived state goes in `hooks/useAppCoordinator.ts`; new context fields go in `components/AppProviders.tsx` (placed by volatility, per guideline 16); new layout goes in a `*Panel.tsx` component. If `App.tsx` starts growing again, something was put in the wrong place.
+21. 🆕 **Before refactoring anything untested, pin it first.** Write the characterization test against the *current* code and prove it green **before** moving a line — see `src/App.test.tsx`. A test written after the move only proves the new code agrees with itself.
+22. 🆕 **Before debugging production behaviour, confirm the fix is actually deployed** (`git log origin/main..main`). A meaningful amount of time was lost diagnosing a bug that was already fixed locally but never pushed.
 
 </div>
