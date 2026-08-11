@@ -780,6 +780,26 @@ gh pr create --fill && gh pr merge --squash --auto   # merges itself once `build
 
 `gh` is **not** a project dependency and may not be installed (`brew install gh && gh auth login`). Without it, `git push` prints a `.../pull/new/<branch>` URL — open it, **Create pull request**, then **Enable auto-merge** for the same effect.
 
+### 🆕 Hunting a regression with `git bisect`
+
+```bash
+git bisect start HEAD <last-known-good-sha>
+git bisect run npm test        # ~3s per step, ~6 steps for the whole history
+git bisect reset
+```
+
+This works well here, and it is worth knowing *why* so nobody "improves" it away:
+
+- **The linear history is an advantage, not the debt it looks like.** `bisect` is a binary search over a list. Merge commits make it *worse*: you land on a merge and cannot tell which parent introduced the fault, and `--first-parent` hides the individual commits that would have told you. Squash-merging PRs keeps the history linear while making each commit a coherent reviewed unit — the ideal input.
+- **The commits are small.** Median 2 files changed; only 7 of 55 exceed 10 files. Landing on a typical commit narrows the fault to a couple of files immediately.
+- **The suite is what makes it work.** `bisect` is only as good as the check you run at each step, and `npm test` is 318 tests in ~3 seconds with no emulator. Use `npm run test:rules` or `test:e2e` in a bisect only when the fault is genuinely in the rules or the browser — both need Java and take minutes per step.
+
+⚠️ **Two commits poison an automated bisect: `c51e9f8` and `a3bf1f3`.** `npm test` fails on both for an unrelated reason (`status` was added to `MyTrip` without updating `useMyTrips.test.ts`; fixed in `c9b0277`). Crossing that range, `bisect run` reports a false "bad" and points at the wrong commit. Use `git bisect skip` there, or bound the search to one side of it.
+
+That two-day red window is the real cost of the old push-straight-to-`main` habit — not the linear history. It cannot happen again: see *The push gate* above.
+
+⚠️ **Bisecting across `c0139c7` gives poor resolution** (45 files, ~11k lines: a feature plus its tests plus CI plus rules). Keeping PRs small is what preserves resolution going forward, since squash-merge collapses each PR to a single commit.
+
 ### Storybook
 
 ```bash
