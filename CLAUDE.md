@@ -16,7 +16,7 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 
 **Documentation drift fixed.** The `httpsCallable` migration removed the `vercel.json` rewrites and the `/api` dev proxy, but only the *Environment Variables* section was updated. Six other places still described `/api/*` as the live call path — the directory tree, the dev-setup note, the whole *API Reference*, the E2E description, the *Deployment* section and two Troubleshooting rows — plus guideline 4, which instructed the opposite of what the code now does. All corrected against `vercel.json` (a `$schema` line and nothing else) and `vite.config.js` (no proxy). Nothing in the app was wrong; the map was.
 
-**A push gate, and why `main` was red for two days.** Running the new suite surfaced three *unrelated* failures in `useMyTrips.test.ts`, live since `c51e9f8` — `status` was added to `MyTrip` without updating the `toEqual` assertions. The cause was not the CI definition, which is correct, but that **this repo has zero merge commits**: everything is pushed straight to `main`, so the `pull_request:` trigger has never fired and CI can only report after the fact. Added `.githooks/pre-push` (wired through `prepare`, so a fresh clone gets it) and documented the branch-protection settings that actually enforce it. See *The push gate* under *Testing*.
+**A push gate, and why `main` was red for two days.** Running the new suite surfaced three *unrelated* failures in `useMyTrips.test.ts`, live since `c51e9f8` — `status` was added to `MyTrip` without updating the `toEqual` assertions. The cause was not the CI definition, which is correct, but that **this repo has zero merge commits**: everything is pushed straight to `main`, so the `pull_request:` trigger has never fired and CI can only report after the fact. Added `.githooks/pre-push` (wired through `prepare`, so a fresh clone gets it) and enabled a **repository ruleset on `main`** — verified by having a direct push refused with `GH013`. Direct pushes to `main` are now impossible; work goes through a PR. See *The push gate* under *Testing*.
 
 ---
 
@@ -747,24 +747,38 @@ Two layers now close it:
 
 `test:rules` and `test:e2e` are deliberately **not** in the hook: both need Java and emulators and take minutes, and a hook that slow gets routinely bypassed, which makes it worth nothing. They stay in CI.
 
-**2. Branch protection (needs to be enabled once, on GitHub).** The hook is a courtesy that `--no-verify` defeats; only the server can actually refuse. Settings › Branches › Add rule for `main`:
+**2. A repository ruleset on `main` (🆕 enabled and verified, 2026-08-11).** The hook is a courtesy that `--no-verify` defeats; only the server can actually refuse. Settings › Rules › Rulesets → ruleset named `main`:
 
-- ✅ Require status checks to pass before merging → select **`build`** (it depends on the other five, so it is the only one worth requiring)
-- ✅ Do not allow bypassing the above settings ← without this, an admin pushing to `main` skips the check, which is exactly the current workflow
+| Setting | Value | Why |
+|---|---|---|
+| Enforcement status | **Active** | `Disabled` creates a ruleset that does nothing |
+| Target branches | **Default** | an unconfigured target matches no branch |
+| Bypass list | **empty** | with an entry for the owner, the gate is decorative — direct pushes by the one person who pushes would skip it |
+| Require a pull request | ✅, **Required approvals: `0`** | ⚠️ any value above 0 locks the repo: GitHub forbids approving your own PR, and this is a single-maintainer repo |
+| Require status checks | ✅ **`build`** | it depends on the other five jobs, so requiring it requires them all |
+| Restrict deletions, Block force pushes | ✅ | |
 
-Or in one command:
+**Require branches to be up to date before merging is deliberately off.** It guards against a semantic conflict when `main` moves while a PR is open; with one maintainer and short-lived branches that risk is negligible, and the cost is a forced re-sync on every such change.
 
-```bash
-gh api -X PUT repos/morsel90/Travel-Wallet/branches/main/protection \
-  -H "Accept: application/vnd.github+json" \
-  -f 'required_status_checks[strict]=true' \
-  -f 'required_status_checks[contexts][]=build' \
-  -F 'enforce_admins=true' \
-  -F 'required_pull_request_reviews=null' \
-  -F 'restrictions=null'
+**The negative case was verified, not assumed** (guideline 18) — an empty commit pushed straight to `main` was refused:
+
+```
+remote: error: GH013: Repository rule violations found for refs/heads/main.
+remote: - Required status check "build" is expected.
+remote: - Changes must be made through a pull request.
 ```
 
-⚠️ Once this is on, pushing directly to `main` is refused and work must go through a PR — which is what guideline 15 always described but was never actually true.
+Note the order in that run: the local hook ran, went green, and allowed the push — then the server refused it. The hook knows nothing about repository rules; its job is to catch red code before it costs a CI cycle. Refusal is the server's job alone.
+
+The workflow from here:
+
+```bash
+git checkout -b fix/something
+git push -u origin fix/something
+gh pr create --fill && gh pr merge --squash --auto   # merges itself once `build` is green
+```
+
+`gh` is **not** a project dependency and may not be installed (`brew install gh && gh auth login`). Without it, `git push` prints a `.../pull/new/<branch>` URL — open it, **Create pull request**, then **Enable auto-merge** for the same effect.
 
 ### Storybook
 
@@ -1010,7 +1024,7 @@ Three independent systems that must be deployed separately:
 12. **Run scripts with Admin SDK** — `serviceAccountKey.json` required, never expose admin operations to clients.
 13. **Never write `trips/{tripId}` without merge** — the doc holds independent sections (name, bankDetails, itinerary). Use `useTripAdminActions`, which always merges; a full `set()` silently drops whatever it omits.
 14. **Secrets stay server-side** — `tripSecrets/{tripId}` is `read, write: if false` and must remain so. PIN handling belongs in `functions/index.js` or an Admin SDK script, never in the client.
-15. **CI pipeline** — all PRs must pass: lint → typecheck → test → rules → e2e → build. ESLint bans `any` (`no-explicit-any`) and empty `catch {}` blocks (`no-empty`), which are easy to introduce accidentally. 🆕 You no longer need to remember to run anything: `.githooks/pre-push` runs lint/typecheck/test before every push. **Do not reach for `--no-verify` as a habit** — the one commit that skipped this discipline (`c51e9f8`) left `main` red for two days. And see *The push gate* under *Testing*: until branch protection is enabled on GitHub, nothing on the server actually refuses a red push.
+15. **CI pipeline** — all PRs must pass: lint → typecheck → test → rules → e2e → build. ESLint bans `any` (`no-explicit-any`) and empty `catch {}` blocks (`no-empty`), which are easy to introduce accidentally. 🆕 You no longer need to remember to run anything: `.githooks/pre-push` runs lint/typecheck/test before every push. **Do not reach for `--no-verify` as a habit** — the one commit that skipped this discipline (`c51e9f8`) left `main` red for two days. 🆕 And it no longer helps: a ruleset on `main` refuses direct pushes outright, so **all work goes through a PR**. This guideline finally describes what actually happens. See *The push gate* under *Testing*.
 16. 🆕 **Context fields go where their volatility says**, not where their topic says — see `src/context/UIContext.ts`. A changing value placed in `UIActionsContext` reintroduces the per-keystroke re-render with no visible symptom.
 17. 🆕 **Never gate a screen on a condition that excludes the person who uses it.** The "my trips" picker originally required `needsTripPin && !isAdmin`, which hid it from every member of the default trip *and* from admins entirely — i.e. from everyone who would ever open it. Ask "who does this condition exclude?" before shipping visibility logic.
 18. 🆕 **Verify the negative case for anything that reports success/failure.** The emulator wrapper (`scripts/run-with-emulators.mjs`) had three separate bugs — including one where failing tests reported success — and none would have surfaced by only checking that a passing run exits 0.
