@@ -778,6 +778,8 @@ git push -u origin fix/something
 gh pr create --fill && gh pr merge --squash --auto   # merges itself once `build` is green
 ```
 
+`gh` is **not** a project dependency and may not be installed (`brew install gh && gh auth login`). Without it, `git push` prints a `.../pull/new/<branch>` URL — open it, **Create pull request**, then **Enable auto-merge** for the same effect.
+
 ### Storybook
 
 ```bash
