@@ -186,6 +186,9 @@ export function useAppCoordinator() {
     session: {
       user, isAdmin, hasAccess, isOnline,
       needsTripPin, pinCheckLoading, pinError, rateLimitSeconds, verifyTripPin, joinedTripIds,
+      // 🆕 جلسة مجهولة = العضويات مرتبطة بهذا المتصفح وحده. تُستهلك في
+      // TripPicker لعرض شريط ترقية الحساب. المسؤول ليس مجهولاً أصلاً.
+      isAnonymous: user?.isAnonymous === true,
     },
     /** الأرقام المشتقّة — مدخلات كل ما يُعرض ويُصدَّر. */
     ledger: {

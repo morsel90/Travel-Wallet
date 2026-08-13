@@ -195,6 +195,7 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 │   ├── components/
 │   │   ├── TripGate.tsx          # PIN entry screen with rate limit countdown (+ escape link to "my trips")
 │   │   ├── TripPicker.tsx        # 🆕 "My trips" list — shown when the URL names no trip
+│   │   ├── SaveAccountBanner.tsx # 🆕 Optional "save your account" offer, shown only to anonymous users
 │   │   ├── Header.tsx            # Sticky collapsible header with stats pills
 │   │   ├── SmartInputBar.tsx     # Fixed bottom input bar (quick expense)
 │   │   ├── TravelerSection.tsx   # Traveler cards + add form + profile modal
@@ -306,7 +307,7 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 | `src/constants.ts` | `CURRENCY_LABELS` (160 currencies), `FALLBACK_RATES`, `EXPENSE_CATEGORIES`, `BANK_DETAILS`. |
 | `src/utils/calculations.ts` | Pure functions for balances, settlements, category totals, spending trend. Fully tested. |
 | `src/utils/xlsx.ts` | Pure-JS OOXML XLSX generator — no dependencies. |
-| `functions/index.js` | `verifyTripPin` (rate-limited PIN verification, grants the `trips` claim) + `manageTrip` (create / resetPin / delete). |
+| `functions/index.js` | `verifyTripPin` (rate-limited PIN verification, grants the `trips` claim) + `manageTrip` (create / resetPin / delete) + 🆕 `mergeAnonymousTrips` (rescues memberships when linking hits an existing account). |
 | `firestore.rules` | Security rules: `isAdmin()`, `isMember(tripId)`, `withinExpenseRateLimit`, immutable deposit logs. |
 | `src/context/UIContext.ts` | 🆕 Two contexts split by volatility. Read the comment there before adding a field — putting a changing value in the actions context silently undoes the split. |
 | `src/hooks/useMyTrips.ts` | 🆕 The user's own trips. Reads each `trips/{id}` with its own `getDoc` — a `list` query is admin-only and would fail for members. |
@@ -436,6 +437,13 @@ await httpsCallable<
 >(functions, 'manageTrip')({ mode, tripId, pin, name })
 ```
 
+```ts
+// 🆕 hooks/useAccountLink.ts — only on the account-conflict path
+await httpsCallable<{ previousIdToken: string }, { merged: number }>(
+  functions, 'mergeAnonymousTrips',
+)({ previousIdToken })
+```
+
 Failures arrive as `FirebaseError` with a `functions/…` code (`unauthenticated`,
 `permission-denied`, `resource-exhausted` for the PIN rate limit), not as an HTTP status.
 
@@ -457,6 +465,14 @@ could delete directly, that emptiness check could simply be bypassed, orphaning
 It deletes `trips/{tripId}` and `tripSecrets/{tripId}` in one atomic batch, which
 also frees the trip id for reuse — the actual need behind it (a trip created with
 a typo'd id). Archiving would not free the id, which is why it wasn't chosen.
+
+🆕 **Trip membership lives in the token, and that has a ceiling.** `verifyTripPin` writes `trips: { [tripId]: true }` into the custom claims, and `isMember()` in `firestore.rules` reads it straight from the token — a **free** read. Storing membership in Firestore instead would force a billed `get()` into nearly every rule, on every read and every write, against a 10-read-per-request budget that expense creation already spends two of. The trade is deliberate.
+
+Its cost is a hard limit: Firebase caps custom claims at **1000 bytes**. With a 16-character trip id each membership costs ~25 bytes, so `assertClaimsFitTokenLimit` refuses at **38 trips** (913 bytes), leaving 111 bytes of headroom. The budget is 900 rather than 1000 so that adding `admin: true` — or any future claim — does not turn a near-limit account into a broken one.
+
+⚠️ **Without that guard the failure is actively misleading:** authentication does *not* break and existing tokens keep working. What fails is the *join* — `setCustomUserClaims` throws, and the user sees an opaque `internal` error naming nothing. Now they get `resource-exhausted` with a sentence that says what happened.
+
+**When a real user approaches 38 trips**, the fix is `users/{uid}.joinedTrips` in Firestore — priced honestly in `docs/PLAN-account-linking.md`, and deliberately not built before it is needed.
 
 🆕 **PIN rate limiting is scoped per trip.** The key is `anon_${ip}_${tripId}` (or
 `auth_${uid}_${tripId}`), so exceeding the limit on one trip no longer locks the
@@ -711,7 +727,7 @@ Layers 2 and 3 need **Java** (the Firestore emulator is a JVM process) and a cac
 Pure utilities and every hook. Hooks are tested with `renderHook`, mocking `firebase/firestore` and `src/firestore.ts` — none of them need React context, because hooks take their data as parameters and the contexts only carry results *outward*.
 
 - `utils/`: `calculations`, `reportData`, `reports`, `itinerary`, `tripId`, `travelerName`, `writeErrors`, `preload`
-- `hooks/`: `useAuth`, `useExpenseActions`, `useTravelerActions`, `useDepositActions`, `useMyTrips`, `useModals`, `useBalances`, `useFilteredExpenses`, `useDebounce`, `useCountdown`, `useOnlineStatus`, `useHeaderCollapse`
+- `hooks/`: `useAuth`, `useExpenseActions`, `useTravelerActions`, `useDepositActions`, `useMyTrips`, `useModals`, `useBalances`, `useFilteredExpenses`, `useDebounce`, `useCountdown`, `useOnlineStatus`, `useHeaderCollapse`, 🆕 `useAccountLink`
 - `components/EmptyState.test.tsx`
 - 🆕 `App.test.tsx` — a **characterization test**: it describes behaviour as it is, not as it should be, and exists to make refactors of `App.tsx` safe. Pins gate ordering, the status banners, the closed-trip hiding of both expense inputs, the empty states, and that empty states stay hidden while loading. ⚠️ If it fails during a refactor, the refactor changed behaviour — changing the expectation to make it pass destroys the only reason it exists.
 
@@ -982,6 +998,25 @@ All four are now closed. Their share of the data therefore falls toward zero as 
 
 This is the number to compare future runs against. The point is not that 1.75% is small; it is that **the count of 2 cannot grow while the denominator does**, so the guard's relevance decays on its own. That is what "closed population" buys, and it is why no migration was run: rewriting live documents with no database backup (see `RECOVERY.md` §4) costs more than the branch it would let us delete.
 
+### 🆕 Account linking preserves the `uid`, which is why it costs almost nothing
+
+An anonymous `uid` is the **only** key to trip membership: `verifyTripPin` writes it into the custom claims and `isMember()` reads it from the token. Clearing browser data therefore loses every trip — and PINs are stored hashed and never shown again, so a member who does not remember the PIN loses access permanently.
+
+`linkWithPopup` keeps the same `uid`. So `createdByUid` on every expense stays correct, the `trips` claim survives untouched, and **`firestore.rules` does not change by a single character**. That last point is the design-health signal: a feature that touches identity without touching the rules is a feature added at the edge.
+
+**Google, not Email/Password** — even though Email/Password is already enabled for admin sign-in. Google is one button; email drags in a registration form, verification and a reset flow, which is several times the UI for the same result.
+
+**⚠️ The conflict path is the part that gets skipped.** If the chosen Google account already has a session (exactly the second-device case), `linkWithPopup` fails with `auth/credential-already-in-use`, the client signs in to the existing account — and **the `uid` changes**, orphaning the anonymous session's memberships. `mergeAnonymousTrips` recovers them.
+
+The proof of ownership needs no new mechanism: the anonymous session's **ID token is itself the proof** — signed by Firebase, unforgeable, and `verifyIdToken` checks signature and expiry together. The client captures it *before* the switch and holds it in a local variable for seconds. ⚠️ Never persist it: storing it turns a short-lived proof into a stealable secret for no gain.
+
+Two things the merge deliberately does not do:
+
+1. **It does not move `createdByUid`.** The user cannot edit expenses recorded under the old session (an admin can). The alternative is rewriting live financial documents with no database backup — see `RECOVERY.md` §4.
+2. **It does not delete the old anonymous account.** Keeping it preserves the ability to diagnose a bad merge, and anonymous accounts cost effectively nothing.
+
+**The banner is an offer, not a gate.** PIN entry remains the full default path. Forcing registration would kill the product's core property — joining a trip in seconds.
+
 ### `useExpenses` listens to the whole collection on purpose — do not paginate it
 
 `useExpenses.ts` opens an `onSnapshot` on the entire expenses collection rather than loading pages. Paginating it (cursor + Virtuoso `endReached`) looks like an obvious win and is not:
@@ -1006,7 +1041,7 @@ Three independent systems that must be deployed separately:
 |---|---|---|
 | Frontend | `vercel --prod` | SPA hosted on Vercel |
 | Firestore Rules | `firebase deploy --only firestore:rules` | Security rules |
-| Cloud Functions | `firebase deploy --only functions` | `verifyTripPin`, `manageTrip` |
+| Cloud Functions | `firebase deploy --only functions` | `verifyTripPin`, `manageTrip`, `mergeAnonymousTrips` |
 
 **Important:** After updating `firestore.rules` or `functions/index.js`, existing users may need to re-enter their trip PIN (custom claim format changed). Always create the trip via `scripts/create-trip.mjs` before deploying new rules.
 
@@ -1041,6 +1076,7 @@ Three independent systems that must be deployed separately:
 | Trips list empty / "تعذّر جلب قائمة الرحلات" for an admin | A `list` query on `trips/` is only satisfiable by `isAdmin()`; the admin claim may not be on the current token yet | Sign out and back in, or force `getIdToken(true)` — the claim is only refreshed on a new token |
 | "إنشاء الرحلة" fails with `functions/not-found` | 🆕 `manageTrip` is not deployed to the project this build points at (check `VITE_FIREBASE_PROJECT_ID`) | `npx firebase deploy --only functions --project <that project>`. No `vercel.json` change is involved any more |
 | "هذا الإجراء متاح للمسؤول فقط" when creating a trip | `manageTrip` re-checks `request.auth.token.admin` server-side and does not trust the client | Run `scripts/set-admin.mjs grant <email>`, then re-login |
+| 🆕 "بلغت الحد الأقصى لعدد الرحلات على هذا الحساب" | The account's custom claims hit the 900-byte budget — 38 trips with typical ids. Expected, not a bug | Existing trips keep working and auth is unaffected; only *joining a new one* is refused. Free a slot, or implement `users/{uid}` — see `docs/PLAN-account-linking.md` |
 | 🆕 "رمز الرحلة غير صحيح" on `localhost` with a correct PIN | Was caused by the old `/api/verifyTripPin` rewrite not existing under `npm run dev`, so the dev server returned HTML | No longer possible — `httpsCallable` needs no proxy. If it recurs, the PIN really is wrong, or `.env.local` points at a project where this trip has no `tripSecrets` doc |
 | 🆕 Admin mode lost after switching trips | Trip switching is a full page reload, and `signInAnonymously` used to run unconditionally on every load, replacing the admin session | Fixed in `useAuth`. If it recurs, verify the deployed build actually contains the fix (`git log origin/main..main`) |
 | 🆕 Nothing happens when adding a second expense offline | The submit lock waited for a server confirmation that never comes while offline | Fixed in `useExpenseActions` — released when the write is issued |

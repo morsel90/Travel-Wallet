@@ -38,6 +38,31 @@ function hashPin(pin, salt) {
   return crypto.createHash('sha256').update(salt + pin).digest('hex');
 }
 
+// 🆕 حدّ Firebase لحجم الـ custom claims هو 1000 بايت. عضوية الرحلات تُخزَّن في
+// الـ claims (`trips: { [tripId]: true }`) لأن firestore.rules تقرأها من التوكن
+// مباشرةً — وهي قراءة **مجانية**، بخلاف تخزينها في Firestore الذي يفرض get()
+// مفوتراً في كل قاعدة تقريباً. المقايضة مقصودة، لكن لها سقف.
+//
+// القياس بمعرّف بطول `travelapp-87206` (16 حرفاً): ~25 بايت لكل رحلة، فالسقف
+// ~39 رحلة. معرّفات أطول تُخفّضه.
+//
+// ⚠️ طريقة الفشل بلا هذا الحارس مضلّلة: المصادقة **لا** تنكسر والتوكنات القائمة
+// تبقى صالحة تماماً — الذي يفشل هو *الانضمام*، إذ يرمي setCustomUserClaims
+// خطأً يصل للمستخدم كـ `internal` غامض لا علاقة له بالسبب.
+const CLAIMS_BYTE_BUDGET = 900;
+
+function assertClaimsFitTokenLimit(claims) {
+  const size = Buffer.byteLength(JSON.stringify(claims));
+  if (size > CLAIMS_BYTE_BUDGET) {
+    // الميزانية 900 لا 1000 عمداً: تترك مجالاً لـ `admin: true` ولأي claim
+    // يُضاف مستقبلاً، فلا يتحول التوسعة الصغيرة إلى عطل عند الحدّ مباشرةً.
+    throw new HttpsError(
+      'resource-exhausted',
+      'بلغت الحد الأقصى لعدد الرحلات على هذا الحساب. تواصل مع المسؤول لإزالة رحلة قديمة.',
+    );
+  }
+}
+
 // 🆕 وظيفة حماية من محاولات التخمين المستمرة (Rate Limiting)
 //
 // ⚠️ المفتاح يشمل tripId عمداً (يجب أن يكون مُتحقَّقاً من صيغته قبل الاستدعاء —
@@ -179,12 +204,98 @@ exports.verifyTripPin = onCall(
     const userRecord = await admin.auth().getUser(request.auth.uid);
     const existingTrips = (userRecord.customClaims && userRecord.customClaims.trips) || {};
 
-    await admin.auth().setCustomUserClaims(request.auth.uid, {
+    const nextClaims = {
       ...userRecord.customClaims,
       trips: { ...existingTrips, [tripId]: true },
-    });
+    };
+    assertClaimsFitTokenLimit(nextClaims);
+
+    await admin.auth().setCustomUserClaims(request.auth.uid, nextClaims);
 
     return { success: true };
+
+  }
+);
+
+/**
+ * 🆕 mergeAnonymousTrips: نقل عضويات الرحلات من جلسة مجهولة سابقة إلى الحساب
+ * الدائم الذي سجّل الدخول للتوّ.
+ *
+ * ── متى تُستدعى ───────────────────────────────────────────────────────────────
+ * عند ترقية حساب مجهول إلى دائم، `linkWithPopup` يحتفظ بنفس الـ uid فتبقى كل
+ * العضويات والمصاريف صحيحة بلا أي نقل — وهذه هي الحالة الشائعة ولا تمرّ من هنا.
+ *
+ * لكن إن كان لحساب Google المختار جلسة سابقة (أي أن المستخدم ربط حسابه من جهاز
+ * آخر قبلاً — وهو بالضبط سيناريو تعدد الأجهزة) يفشل الربط بـ
+ * `auth/credential-already-in-use`، فيسجّل العميل الدخول بالحساب القائم — وعندها
+ * **يتغيّر الـ uid** وتُيتَّم عضويات الجلسة المجهولة. هذه الدالة تنقذها.
+ *
+ * ── لماذا ID token وليس آلية إثبات جديدة ────────────────────────────────────
+ * السؤال الأمني الوحيد هنا: كيف نتأكد أن المستدعي كان فعلاً يملك تلك الجلسة
+ * المجهولة؟ الجواب جاهز: توكن تلك الجلسة **هو بذاته** الإثبات — موقَّع من
+ * Firebase، ولا يمكن تزويره، و`verifyIdToken` يتحقق من التوقيع والصلاحية معاً.
+ * فلا حاجة لمستند «دمج معلّق» ولا رمز لمرة واحدة ولا أي حالة إضافية.
+ *
+ * ⚠️ العميل يلتقط التوكن **قبل** تسجيل الدخول بالحساب الجديد، ويحتفظ به في
+ * متغيّر بالذاكرة لثوانٍ فقط. لا يُخزَّن في localStorage ولا في Firestore: تخزينه
+ * يحوّله إلى سرٍّ قابل للسرقة بلا أي مقابل.
+ *
+ * ── ما لا تفعله عمداً ────────────────────────────────────────────────────────
+ * ١. لا تنقل `createdByUid` على المصاريف. النتيجة أن المستخدم لا يستطيع تعديل
+ *    مصاريفه المسجَّلة بالجلسة القديمة (المسؤول يستطيع). البديل إعادة كتابة
+ *    مستندات مالية حيّة بلا نسخة احتياطية — كلفة ومخاطرة لا تستحقهما راحة تعديل.
+ * ٢. لا تحذف الحساب المجهول القديم. الحذف يفقد إمكانية التشخيص إن ساء الدمج،
+ *    والحسابات المجهولة بلا تكلفة تُذكر.
+ */
+exports.mergeAnonymousTrips = onCall(
+  { region: 'us-central1', maxInstances: 5 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+    }
+
+    const previousIdToken = request.data && request.data.previousIdToken;
+    if (typeof previousIdToken !== 'string' || !previousIdToken) {
+      throw new HttpsError('invalid-argument', 'التوكن السابق مفقود.');
+    }
+
+    let decoded;
+    try {
+      decoded = await admin.auth().verifyIdToken(previousIdToken);
+    } catch (err) {
+      // توكن منتهٍ أو مزوَّر أو من مشروع آخر — الرفض هو الصواب، ولا نُفصح عن السبب.
+      console.warn(`[mergeAnonymousTrips] rejected token for ${request.auth.uid}: ${err.code || err.message}`);
+      throw new HttpsError('permission-denied', 'تعذّر التحقق من الجلسة السابقة.');
+    }
+
+    // نفس الحساب = الربط نجح دون تغيّر uid، فلا شيء يُنقل. ليست حالة خطأ.
+    if (decoded.uid === request.auth.uid) {
+      return { merged: 0 };
+    }
+
+    const previousTrips = (decoded.trips && typeof decoded.trips === 'object' && !Array.isArray(decoded.trips))
+      ? decoded.trips
+      : {};
+
+    const userRecord = await admin.auth().getUser(request.auth.uid);
+    const existingTrips = (userRecord.customClaims && userRecord.customClaims.trips) || {};
+
+    // ⚠️ العضويات القائمة أولاً في ترتيب الدمج: الحساب الدائم هو المرجع، والجلسة
+    // المجهولة تُضيف ولا تُلغي. القيم كلها `true` فالفرق نظري اليوم، لكن الترتيب
+    // يبقى صحيحاً إن حملت القيمة يوماً معنى أدق من مجرد العضوية.
+    const mergedTrips = { ...previousTrips, ...existingTrips };
+    const nextClaims = { ...userRecord.customClaims, trips: mergedTrips };
+
+    // الدمج يجمع مجموعتين، فهو أكثر موضع مرشَّح لتجاوز حدّ حجم الـ claims.
+    assertClaimsFitTokenLimit(nextClaims);
+
+    const addedCount = Object.keys(mergedTrips).length - Object.keys(existingTrips).length;
+    if (addedCount > 0) {
+      await admin.auth().setCustomUserClaims(request.auth.uid, nextClaims);
+    }
+
+    console.log(`[mergeAnonymousTrips] ${decoded.uid} → ${request.auth.uid}: +${addedCount}`);
+    return { merged: addedCount };
   }
 );
 

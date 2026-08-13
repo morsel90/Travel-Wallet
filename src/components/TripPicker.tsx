@@ -1,5 +1,6 @@
 import { Luggage, ChevronLeft, Loader2, AlertTriangle, PieChart, ArrowRight } from '../icons'
 import type { MyTrip } from '../hooks/useMyTrips'
+import { SaveAccountBanner } from './SaveAccountBanner'
 import { TRIP_STATUS_LABEL } from '../types'
 import { tripUrl } from '../utils/tripId'
 import { haptic } from '../utils/haptics'
@@ -28,9 +29,11 @@ interface TripPickerProps {
   currentTripId?: string
   /** يُمرَّر فقط حين فُتحت الشاشة اختيارياً من داخل رحلة — لا حين كانت شاشة البداية. */
   onBack?: () => void
+  /** 🆕 جلسة مجهولة؟ عندها يُعرض شريط ترقية الحساب — انظر SaveAccountBanner. */
+  isAnonymous?: boolean
 }
 
-const TripPicker = ({ trips, loading, error, currentTripId, onBack }: TripPickerProps) => {
+const TripPicker = ({ trips, loading, error, currentTripId, onBack, isAnonymous = false }: TripPickerProps) => {
   // التبديل بين الرحلات يتطلب إعادة تحميل كاملة: TRIP_ID يُقرأ مرة واحدة عند
   // تحميل الوحدة (utils/tripId.ts)، فلا يوجد تبديل حيّ داخل نفس الجلسة.
   const openTrip = (tripId: string) => {
@@ -56,6 +59,12 @@ const TripPicker = ({ trips, loading, error, currentTripId, onBack }: TripPicker
           )}
         </div>
       </header>
+
+      {/* ⚠️ خارج شرط التحميل عمداً: التحذير يخصّ الحساب لا القائمة، فإخفاؤه
+          أثناء الجلب يجعله يظهر ويختفي بلا سبب مفهوم للمستخدم. */}
+      <div className="w-full max-w-md mx-auto">
+        <SaveAccountBanner isAnonymous={isAnonymous} tripCount={trips.length} />
+      </div>
 
       <main className="flex-1 w-full max-w-md mx-auto px-4 py-6">
         {loading ? (
