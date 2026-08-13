@@ -334,6 +334,39 @@ describe('useAuth', () => {
     await act(async () => { await result.current.verifyTripPin('0000') })
 
     expect(result.current.rateLimitSeconds).toBeNull()
-    expect(result.current.pinError).toBe('رمز الرحلة غير صحيح، حاول مرة أخرى.')
+    // 🆕 كان هذا التوكيد يطلب «رمز الرحلة غير صحيح» — أي أنه كان يثبّت العرَض
+    // الذي أُصلح: رسالة واحدة تُخفي كل الأسباب. الغرض المعلن في اسم الاختبار
+    // (ألّا يُفسَّر كحظر معدّل) محفوظ في التوكيد أعلاه ولم يتغيّر.
+    expect(result.current.pinError).toContain('خطأ في الخادم')
+    expect(result.current.pinError).not.toContain('رمز الرحلة غير صحيح')
+  })
+
+  // ⚠️ الحالة التي كلّف غموضها ساعتين في 2026-08-13: امتداد متصفح يُسقط ترويسة
+  // Authorization ⇒ الدالة ترمي unauthenticated ⇒ كانت الواجهة تقول «رمز الرحلة
+  // غير صحيح»، فأُرسل التشخيص إلى الرمز وقاعدة البيانات بينما كان كلاهما سليماً.
+  it('unauthenticated يذكر مانع الإعلانات ولا يُلقي اللوم على الرمز', async () => {
+    mocks.authObj.currentUser = mkUser({})
+    mocks.callVerifyFn.mockRejectedValue(
+      functionsError('functions/unauthenticated', 'يجب تسجيل الدخول أولاً.')
+    )
+
+    const { result } = renderHook(() => useAuth())
+    await act(async () => { await result.current.verifyTripPin('2026') })
+
+    expect(result.current.pinError).toContain('مانع إعلانات')
+    expect(result.current.pinError).not.toContain('رمز الرحلة غير صحيح')
+    expect(result.current.rateLimitSeconds).toBeNull()
+  })
+
+  it('permission-denied يبقى «رمز غير صحيح» — كتمان وجود الرحلة مقصود', async () => {
+    mocks.authObj.currentUser = mkUser({})
+    mocks.callVerifyFn.mockRejectedValue(
+      functionsError('functions/permission-denied', 'رمز الرحلة غير صحيح.')
+    )
+
+    const { result } = renderHook(() => useAuth())
+    await act(async () => { await result.current.verifyTripPin('0000') })
+
+    expect(result.current.pinError).toContain('رمز الرحلة غير صحيح')
   })
 })

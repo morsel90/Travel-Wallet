@@ -243,6 +243,7 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 │       ├── itinerary.ts         # Pure: segment draft validation, normalize/sort, findNextSegment
 │       ├── travelerName.ts      # Pure: deriveShortName, isValidNameKey, newTravelerId
 │       ├── writeErrors.ts       # Pure: Firestore error code → real cause + is a retry worthwhile
+│       ├── callableErrors.ts    # 🆕 Pure: Cloud Function error code → real cause (ad blocker, network, wrong PIN)
 │       ├── haptics.ts           # Vibration API + visual flash overlay
 │       ├── preload.ts           # 🆕 Idle-time preloading of lazy chunks (onIdle + preloadAll)
 │       ├── cn.ts                # Tailwind class merge (clsx alternative)
@@ -726,7 +727,7 @@ Layers 2 and 3 need **Java** (the Firestore emulator is a JVM process) and a cac
 #### 1. Unit tests (`src/**/*.test.ts`)
 Pure utilities and every hook. Hooks are tested with `renderHook`, mocking `firebase/firestore` and `src/firestore.ts` — none of them need React context, because hooks take their data as parameters and the contexts only carry results *outward*.
 
-- `utils/`: `calculations`, `reportData`, `reports`, `itinerary`, `tripId`, `travelerName`, `writeErrors`, `preload`
+- `utils/`: `calculations`, `reportData`, `reports`, `itinerary`, `tripId`, `travelerName`, `writeErrors`, 🆕 `callableErrors`, `preload`
 - `hooks/`: `useAuth`, `useExpenseActions`, `useTravelerActions`, `useDepositActions`, `useMyTrips`, `useModals`, `useBalances`, `useFilteredExpenses`, `useDebounce`, `useCountdown`, `useOnlineStatus`, `useHeaderCollapse`, 🆕 `useAccountLink`
 - `components/EmptyState.test.tsx`
 - 🆕 `App.test.tsx` — a **characterization test**: it describes behaviour as it is, not as it should be, and exists to make refactors of `App.tsx` safe. Pins gate ordering, the status banners, the closed-trip hiding of both expense inputs, the empty states, and that empty states stay hidden while loading. ⚠️ If it fails during a refactor, the refactor changed behaviour — changing the expectation to make it pass destroys the only reason it exists.
@@ -816,6 +817,28 @@ This works well here, and it is worth knowing *why* so nobody "improves" it away
 That two-day red window is the real cost of the old push-straight-to-`main` habit — not the linear history. It cannot happen again: see *The push gate* above.
 
 ⚠️ **Bisecting across `c0139c7` gives poor resolution** (45 files, ~11k lines: a feature plus its tests plus CI plus rules). Keeping PRs small is what preserves resolution going forward, since squash-merge collapses each PR to a single commit.
+
+### 🆕 Diagnosing a failing Cloud Function call
+
+**Ask this before anything else: does it fail on another device, browser or network?**
+
+A two-hour hunt on 2026-08-13 went through five wrong theories — the Anonymous provider, Cloud Run IAM, the service worker, an outdated `firebase-functions`, the Cloud Run auth toggle — before the decisive fact surfaced: **the app worked fine on other phones.** That one sentence eliminated every server-side theory at once. The cause was an ad blocker on a single machine stripping the `Authorization` header from the cross-origin call.
+
+⚠️ **DevTools "Copy as cURL" cannot detect this.** It shows the header, because it reflects what the page *intended* to send — an extension modifies the request afterwards. The header appears present in DevTools and absent at the server, and both are telling the truth.
+
+**Then read the response body — the exact wording names the layer that failed:**
+
+| Response body | What it means | Where to look |
+|---|---|---|
+| `{"message":"يجب تسجيل الدخول أولاً."}` (Arabic) | Our code ran; `request.auth` was undefined, i.e. **no `Authorization` header arrived** | Between browser and function: extensions, proxies |
+| `{"message":"Unauthenticated"}` (English) | The header arrived and `firebase-functions` **rejected the token** | The token itself, or `admin.initializeApp()` |
+| An HTML/text page from Google, without our message | The request **never reached our code** | Cloud Run IAM — `allUsers` needs `roles/run.invoker` |
+
+The framework's own source makes this precise: `checkAuthToken` returns `MISSING` when `req.header("Authorization")` is falsy (execution continues, our code throws the Arabic message) and `INVALID` when verification throws (the framework throws the English one). So `verifications.auth` in the Cloud Logging entry says the same thing as the response body.
+
+✅ **The UI no longer hides this.** `callVerify` used to swallow every error except `resource-exhausted` and show «رمز الرحلة غير صحيح» — the same sentence for a wrong PIN, a missing trip, an unauthenticated call and an infrastructure fault. That is the same failure mode `utils/writeErrors.ts` exists to prevent for writes, and it is what made this take two hours.
+
+`utils/callableErrors.ts` now translates the code into its real cause, and `unauthenticated` names the ad blocker explicitly — the one cause a user can fix unaided. ⚠️ **"Wrong PIN" and "no such trip" stay merged on purpose**: the server returns one `permission-denied` for both so that trip existence cannot be probed by guessing `?trip=`. That merge is security; the rest was noise. `callableErrors.test.ts` pins both halves of that line.
 
 ### Storybook
 
@@ -1077,6 +1100,7 @@ Three independent systems that must be deployed separately:
 | "إنشاء الرحلة" fails with `functions/not-found` | 🆕 `manageTrip` is not deployed to the project this build points at (check `VITE_FIREBASE_PROJECT_ID`) | `npx firebase deploy --only functions --project <that project>`. No `vercel.json` change is involved any more |
 | "هذا الإجراء متاح للمسؤول فقط" when creating a trip | `manageTrip` re-checks `request.auth.token.admin` server-side and does not trust the client | Run `scripts/set-admin.mjs grant <email>`, then re-login |
 | 🆕 "بلغت الحد الأقصى لعدد الرحلات على هذا الحساب" | The account's custom claims hit the 900-byte budget — 38 trips with typical ids. Expected, not a bug | Existing trips keep working and auth is unaffected; only *joining a new one* is refused. Free a slot, or implement `users/{uid}` — see `docs/PLAN-account-linking.md` |
+| 🆕 "رمز الرحلة غير صحيح" with a correct PIN, on **one machine only** | An ad blocker or privacy extension is stripping the `Authorization` header from the cross-origin call. DevTools "Copy as cURL" still shows the header — it reflects intent, not what left the browser | Disable the extension, or allowlist the app's domain. **Ask "does it work on another device?" before investigating anything else** — see *Diagnosing a failing Cloud Function call* |
 | 🆕 "رمز الرحلة غير صحيح" on `localhost` with a correct PIN | Was caused by the old `/api/verifyTripPin` rewrite not existing under `npm run dev`, so the dev server returned HTML | No longer possible — `httpsCallable` needs no proxy. If it recurs, the PIN really is wrong, or `.env.local` points at a project where this trip has no `tripSecrets` doc |
 | 🆕 Admin mode lost after switching trips | Trip switching is a full page reload, and `signInAnonymously` used to run unconditionally on every load, replacing the admin session | Fixed in `useAuth`. If it recurs, verify the deployed build actually contains the fix (`git log origin/main..main`) |
 | 🆕 Nothing happens when adding a second expense offline | The submit lock waited for a server confirmation that never comes while offline | Fixed in `useExpenseActions` — released when the write is issued |
@@ -1118,6 +1142,7 @@ Three independent systems that must be deployed separately:
 19. 🆕 **Money never enters the app unvalidated, and never leaves the pure functions non-finite.** Any new numeric input path needs `Number.isFinite` at the boundary; any new calculation must hold the four rules in `utils/calculations.invariants.test.ts`. Add the rule there before the code, and never weaken a rule to make it pass — either the behaviour is wrong, or the rule is worded wrong and needs a comment explaining the correct wording.
 20. 🆕 **Keep `App.tsx` to routing and composition.** New hook wiring or derived state goes in `hooks/useAppCoordinator.ts`; new context fields go in `components/AppProviders.tsx` (placed by volatility, per guideline 16); new layout goes in a `*Panel.tsx` component. If `App.tsx` starts growing again, something was put in the wrong place.
 21. 🆕 **Before refactoring anything untested, pin it first.** Write the characterization test against the *current* code and prove it green **before** moving a line — see `src/App.test.tsx`. A test written after the move only proves the new code agrees with itself.
-22. 🆕 **Before debugging production behaviour, confirm the fix is actually deployed** (`git log origin/main..main`). A meaningful amount of time was lost diagnosing a bug that was already fixed locally but never pushed.
+22. 🆕 **Scope a bug before explaining it.** For anything failing in production, first establish *where* it fails: another device, another browser, another network. A theory explains one observation; a scope test eliminates whole families of them at once. Skipping this cost two hours and five wrong theories on 2026-08-13 — see *Diagnosing a failing Cloud Function call*.
+23. 🆕 **Before debugging production behaviour, confirm the fix is actually deployed** (`git log origin/main..main`). A meaningful amount of time was lost diagnosing a bug that was already fixed locally but never pushed.
 
 </div>

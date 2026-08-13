@@ -3,6 +3,7 @@ import { onAuthStateChanged, signInAnonymously, User } from 'firebase/auth'
 import { httpsCallable } from 'firebase/functions'
 import { auth, functions } from '../firebase'
 import { TRIP_ID } from '../utils/tripId'
+import { describeCallableError } from '../utils/callableErrors'
 
 // عقد استدعاء verifyTripPin — يطابق ما تقرأه الدالة في functions/index.js
 interface VerifyTripPinRequest { pin: string; tripId: string }
@@ -92,7 +93,11 @@ export function useAuth(): UseAuth {
   // (connectFunctionsEmulator في firebase.ts) بلا أي وسيط أو إعداد إضافي.
   const callVerify = useCallback(async (pin: string): Promise<{ success: boolean, retryAfter?: number, message?: string }> => {
     try {
-      if (!auth.currentUser) return { success: false }
+      if (!auth.currentUser) {
+        // ⚠️ ليست حالة «رمز خاطئ»: لم يُستدعَ الخادم أصلاً. تحدث حين يفشل الدخول
+        // المجهول (مزوّد Anonymous معطَّل، أو تخزين المتصفح محجوب).
+        return { success: false, message: 'تعذّر تجهيز الجلسة. أعد تحميل الصفحة وحاول مجدداً.' }
+      }
       // تحديث التوكن قبل الاستدعاء: الـ SDK يرفق التوكن المخزَّن، فالتحديث هنا
       // يضمن أن ما يُرسَل حديث (يهم بعد منح صلاحية أو عضوية رحلة جديدة).
       await auth.currentUser.getIdToken(true)
@@ -100,6 +105,9 @@ export function useAuth(): UseAuth {
       const verify = httpsCallable<VerifyTripPinRequest, VerifyTripPinResponse>(functions, 'verifyTripPin')
       const result = await verify({ pin: String(pin).trim(), tripId: TRIP_ID })
 
+      // ردٌّ ناجح (200) بلا success — لا يحدث اليوم لأن الدالة ترمي عند كل فشل،
+      // لكنه يبقى حارساً. بلا رسالة عمداً: يسقط إلى نص الرمز الخاطئ، وهو أقرب
+      // وصف لردٍّ وصل من الخادم دون أن يُقرّ التحقق.
       if (result.data?.success !== true) return { success: false }
 
       // التوكن الجديد يحمل claim العضوية التي منحتها الدالة للتوّ
@@ -118,7 +126,12 @@ export function useAuth(): UseAuth {
           message: fnError.message || 'تجاوزت عدد المحاولات.',
         }
       }
-      return { success: false }
+
+      // 🆕 لا نبتلع بقية الأكواد تحت «رمز الرحلة غير صحيح». كانت رسالة واحدة
+      // تُخفي ستة أسباب، فأرسلت تشخيص عطل 2026-08-13 في الاتجاه الخاطئ ساعتين
+      // (امتداد متصفح يُسقط ترويسة Authorization ⇒ unauthenticated).
+      // انظر utils/callableErrors.ts، وقاعدة المساهمة ١٠.
+      return { success: false, message: describeCallableError(error).text }
     }
   }, [])
 
@@ -145,7 +158,9 @@ export function useAuth(): UseAuth {
         setRateLimitSeconds(result.retryAfter)
         setPinError(result.message || 'تجاوزت عدد المحاولات المسموحة.')
       } else {
-        setPinError('رمز الرحلة غير صحيح، حاول مرة أخرى.')
+        // 🆕 الرسالة تأتي مترجَمة من callVerify (utils/callableErrors.ts).
+        // خط الرجوع هو نص الرمز الخاطئ لأنه الحالة الأشيع بفارق كبير.
+        setPinError(result.message || 'رمز الرحلة غير صحيح، حاول مرة أخرى.')
       }
     }
     setPinCheckLoading(false)
