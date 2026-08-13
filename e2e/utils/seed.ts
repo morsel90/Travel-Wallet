@@ -68,8 +68,25 @@ export async function seedTrip({ tripId, pin, adminEmail, adminPassword }: SeedT
   let uid: string
   try {
     uid = (await auth.getUserByEmail(adminEmail)).uid
-  } catch {
-    uid = (await auth.createUser({ email: adminEmail, password: adminPassword, emailVerified: true })).uid
+  } catch (error) {
+    // إخبار TypeScript أن الخطأ قد يحتوي على خاصية code
+    const err = error as { code?: string }
+    
+    if (err.code === 'auth/user-not-found') {
+      try {
+        uid = (await auth.createUser({ email: adminEmail, password: adminPassword, emailVerified: true })).uid
+      } catch (createError) {
+        const cErr = createError as { code?: string }
+        // إذا قام Worker آخر بإنشاء المستخدم في هذه اللحظة، استرجع الـ UID ببساطة
+        if (cErr.code === 'auth/email-already-exists') {
+          uid = (await auth.getUserByEmail(adminEmail)).uid
+        } else {
+          throw createError
+        }
+      }
+    } else {
+      throw error
+    }
   }
   await auth.setCustomUserClaims(uid, { admin: true })
 }
