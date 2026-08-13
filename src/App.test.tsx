@@ -31,7 +31,9 @@ vi.mock('./utils/tripId', () => ({ TRIP_ID: 'trip-1', HAS_EXPLICIT_TRIP_ID: true
 // قيم الخطافات قابلة للتعديل لكل اختبار — تُقرأ داخل المحاكاة عند كل استدعاء.
 const h = vi.hoisted(() => ({
   auth: {
-    user: { uid: 'u1' }, isAdmin: false, needsTripPin: false, pinCheckLoading: false,
+    // isAnonymous اختياري لأن المنسّق يقرؤه بـ `user?.isAnonymous === true`
+    user: { uid: 'u1' } as { uid: string; isAnonymous?: boolean },
+    isAdmin: false, needsTripPin: false, pinCheckLoading: false,
     pinError: null, rateLimitSeconds: null, verifyTripPin: vi.fn(), joinedTripIds: [] as string[],
   },
   isOnline: true,
@@ -113,7 +115,8 @@ vi.mock('./hooks/useFilteredExpenses', () => ({
 
 beforeEach(() => {
   h.auth = {
-    user: { uid: 'u1' }, isAdmin: false, needsTripPin: false, pinCheckLoading: false,
+    user: { uid: 'u1' } as { uid: string; isAnonymous?: boolean },
+    isAdmin: false, needsTripPin: false, pinCheckLoading: false,
     pinError: null, rateLimitSeconds: null, verifyTripPin: vi.fn(), joinedTripIds: [],
   }
   h.isOnline = true
@@ -258,6 +261,36 @@ describe('App — الحالات الفارغة', () => {
     h.tripStatus = 'archived'
     render(<App />)
     expect(await screen.findByText('لا توجد مصاريف في هذه الرحلة')).toBeInTheDocument()
+  })
+})
+
+// ─── شريط حفظ الحساب ──────────────────────────────────────────────────────────
+// ⚠️ هذه ليست اختبارات تثبيت للسلوك القديم بل حراسة لإصلاح: كان الشريط في
+// TripPicker وحده، وتلك الشاشة لا تظهر لمن يفتح رابط رحلة ولديه رحلة واحدة —
+// أي لأغلب الأعضاء، وهم بالضبط من صُنع لأجلهم (قاعدة المساهمة ١٧).
+
+describe('App — شريط حفظ الحساب', () => {
+  it('يظهر في الشاشة الرئيسية لجلسة مجهولة', async () => {
+    h.auth = { ...h.auth, user: { uid: 'u1', isAnonymous: true } }
+    render(<App />)
+    await screen.findByText('أرصدة المسافرين')
+    expect(screen.getByText(/محفوظة على هذا المتصفح وحده/)).toBeInTheDocument()
+    expect(screen.getByText(/حفظ الحساب عبر Google/)).toBeInTheDocument()
+  })
+
+  it('لا يظهر لحساب دائم — لا شيء يُرقَّى', async () => {
+    h.auth = { ...h.auth, user: { uid: 'u1', isAnonymous: false } }
+    render(<App />)
+    await screen.findByText('أرصدة المسافرين')
+    expect(screen.queryByText(/محفوظة على هذا المتصفح وحده/)).not.toBeInTheDocument()
+  })
+
+  it('لا يظهر أثناء التحميل الأولي — تحذير قبل وصول البيانات بلا معنى', async () => {
+    h.auth = { ...h.auth, user: { uid: 'u1', isAnonymous: true } }
+    h.expensesLoaded = false
+    render(<App />)
+    await screen.findByText('أرصدة المسافرين')
+    expect(screen.queryByText(/محفوظة على هذا المتصفح وحده/)).not.toBeInTheDocument()
   })
 })
 

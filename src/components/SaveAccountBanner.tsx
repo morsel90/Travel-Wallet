@@ -26,8 +26,11 @@ export const SaveAccountBanner = ({ isAnonymous, tripCount }: SaveAccountBannerP
 
   if (!isAnonymous) return null
 
+  // ⚠️ بلا هوامش خارجية عمداً: المكوّن يُستهلك في موضعين بتخطيطين مختلفين
+  // (الشاشة الرئيسية داخل space-y-6، وTripPicker بهوامشه الخاصة). ترك التباعد
+  // لموضع الاستدعاء يمنع تراكم الهوامش في أحدهما.
   return (
-    <div className="mx-4 mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4 shadow-sm">
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 shadow-sm">
       <div className="flex items-start gap-2.5">
         <Lock className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
         <div className="flex-1 min-w-0">

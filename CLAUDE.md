@@ -1040,6 +1040,8 @@ Two things the merge deliberately does not do:
 
 **The banner is an offer, not a gate.** PIN entry remains the full default path. Forcing registration would kill the product's core property — joining a trip in seconds.
 
+⚠️ **It renders on the main screen *and* in `TripPicker`, and that is not duplication.** It was placed in `TripPicker` alone at first — and `TripPicker` only appears automatically when the app is opened with no `?trip=`, while the header's "my trips" button requires more than one trip. So a member who opens a trip link and belongs to one trip — most members — never saw it. The offer was gated behind a condition that excluded the people it was built for, which is guideline 17 violated inside the feature that documents it. `App.test.tsx` now pins that it reaches the main screen.
+
 ### `useExpenses` listens to the whole collection on purpose — do not paginate it
 
 `useExpenses.ts` opens an `onSnapshot` on the entire expenses collection rather than loading pages. Paginating it (cursor + Virtuoso `endReached`) looks like an obvious win and is not:

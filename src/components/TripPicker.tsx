@@ -62,7 +62,7 @@ const TripPicker = ({ trips, loading, error, currentTripId, onBack, isAnonymous 
 
       {/* ⚠️ خارج شرط التحميل عمداً: التحذير يخصّ الحساب لا القائمة، فإخفاؤه
           أثناء الجلب يجعله يظهر ويختفي بلا سبب مفهوم للمستخدم. */}
-      <div className="w-full max-w-md mx-auto">
+      <div className="w-full max-w-md mx-auto px-4 pt-4">
         <SaveAccountBanner isAnonymous={isAnonymous} tripCount={trips.length} />
       </div>
 

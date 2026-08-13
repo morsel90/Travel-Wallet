@@ -22,6 +22,7 @@ import SmartInputBar        from './components/SmartInputBar'
 import { AppProviders }     from './components/AppProviders'
 import { AppErrorFallback } from './components/AppErrorFallback'
 import { StatusBanners }    from './components/StatusBanners'
+import { SaveAccountBanner } from './components/SaveAccountBanner'
 import { TravelersPanel }   from './components/TravelersPanel'
 import { ChartsPanel }      from './components/ChartsPanel'
 import { ExpensesPanel }    from './components/ExpensesPanel'
@@ -133,6 +134,19 @@ export default function App() {
                 isOnline={session.isOnline}
                 syncError={status.syncError}
               />
+
+              {/* ⚠️ الموضع هنا لازم لا تكرار تجميلي: كان الشريط في TripPicker
+                  وحده، وتلك الشاشة لا تظهر تلقائياً إلا حين يُفتح التطبيق بلا
+                  `?trip=`. فمن يفتح رابط رحلة ولديه رحلة واحدة — وهو حال أغلب
+                  الأعضاء — لم يكن يراها أبداً، ولا يجد زر «رحلاتي» في الهيدر
+                  لأنه مشروط بوجود أكثر من رحلة. أي أن العرض كان مقيّداً بشرط
+                  يستثني من صُنع لأجله (قاعدة المساهمة ١٧). */}
+              {!ledger.isInitialLoading && (
+                <SaveAccountBanner
+                  isAnonymous={session.isAnonymous}
+                  tripCount={picker.trips.length}
+                />
+              )}
 
               <TravelersPanel
                 isInitialLoading={ledger.isInitialLoading}
