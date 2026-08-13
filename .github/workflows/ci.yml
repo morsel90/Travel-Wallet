@@ -68,6 +68,12 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
+      
+      # تم إضافة هذه الخطوة لتثبيت حزم الواجهة الخلفية المطلوبة لعمل المحاكي
+      - name: Install Functions Dependencies
+        run: npm ci
+        working-directory: ./functions
+        
       - run: npm run typecheck:e2e
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
