@@ -309,6 +309,15 @@ exports.manageTrip = onCall(
         name: name || tripId,
         bankDetails: { bankName: '', beneficiary: '', iban: '' },
         itinerary: [],
+        // 🆕 status يُكتب صراحةً رغم أن غيابه يعني 'active' في القواعد وفي
+        // utils/tripStatus.ts. السبب ليس تغيير سلوك — لا شيء يتغيّر اليوم — بل
+        // إغلاق المجموعة: بدونه *كل* رحلة جديدة تفتقد الحقل، فيصير السقوط إلى
+        // 'active' سلوكاً دائماً لكل البيانات لا تسامحاً مع بيانات ما قبل
+        // الميزة، ولا يمكن أبداً معرفة متى تصبح الحالة القديمة فارغة.
+        // بكتابته هنا يصير عدد المستندات بلا `status` ثابتاً لا يزيد — تماماً
+        // كما فعلت قاعدة isOwnCreation مع createdByUid. انظر
+        // scripts/audit-legacy-docs.mjs: هو ما يخبرك متى يصبح حذف الحارس آمناً.
+        status: 'active',
       });
     }
     batch.set(db.collection('tripSecrets').doc(tripId), { salt, pinHash });

@@ -251,6 +251,7 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 │   └── index.js                 # Cloud Functions: verifyTripPin (rate-limited) + manageTrip (create/resetPin/delete)
 │
 ├── scripts/
+│   ├── audit-legacy-docs.mjs    # 🆕 Read-only: counts documents still needing each legacy fallback
 │   ├── create-trip.mjs          # Admin SDK script: create/update trip + PIN
 │   ├── set-admin.mjs            # Admin SDK script: grant/revoke admin claim
 │   ├── list-trips.mjs           # Admin SDK script: list existing trips
@@ -898,6 +899,8 @@ Two decisions worth keeping:
 
 **A missing `status` is `active` — in the rules and in the client.** This is not leniency, it is the migration strategy: every pre-existing trip lacks the field, and any stricter reading would have frozen all of them the moment the rules were deployed. The same principle already governs `createdByUid` on legacy expenses.
 
+🆕 **But that was only half true until 2026-08-11.** `manageTrip`'s `create` wrote `name`, `bankDetails` and `itinerary` and **no `status`** — so every *newly created* trip lacked the field too. The fallback was therefore not accommodating legacy data, it was the permanent behaviour for all data, and the legacy population could never close. `create` now writes `status: 'active'` explicitly. Nothing changes at runtime; what changes is that the count of trips without the field is now **fixed and can only shrink**, exactly as `isOwnCreation` did for `createdByUid`. See `scripts/audit-legacy-docs.mjs`.
+
 ⚠️ When changing the meaning of a state, change `firestore.rules` and `utils/tripStatus.ts` **together**. If they disagree the UI either promises something the server refuses, or hides something it would have allowed — and both look like random breakage. `src/utils/tripStatus.test.ts` pins the shared semantics.
 
 ### 🆕 Lazy chunks are preloaded once the app is idle
@@ -950,6 +953,34 @@ Three decisions worth keeping:
 **`LAZY_IMPORTERS` is assembled from per-owner exports.** `chartsImporters` now sits beside its `lazy()` in `ChartsPanel.tsx`, matching `modalImporters` and `authImporters`. Adding a lazy chunk means exporting its importer from its own file — `App.tsx` no longer needs to know any of them exist.
 
 ⚠️ **One real cost of the pattern:** grouping the return into objects loses TypeScript narrowing. `expense.expenseToDelete !== null` does not narrow `expense.expenseToDelete` across a JSX boundary, so it needs a local binding (`const { expenseToDelete } = expense`). Prefer that over `!` — the assertion would survive a later change that makes the value genuinely nullable.
+
+### 🆕 Legacy-data fallbacks: closed populations, and why there is no `schemaVersion`
+
+Three places accept documents written before a field existed. The question that matters is not whether they should exist, but **whether their population can still grow** — because a fallback whose population is frozen shrinks into irrelevance on its own, while one that keeps growing is permanent behaviour wearing a migration costume.
+
+| Fallback | Guard lives in | Can the population still grow? |
+|---|---|---|
+| `createdByUid` absent | `preservesCreator` in `firestore.rules` | **No** — `isOwnCreation` requires the field on every create |
+| `participants` holding strings | `utils/participants.ts`, `Array<number \| string>` in `types.ts` | **No** — the client writes numeric ids only (`toIds`) |
+| `status` absent | `firestore.rules`, `utils/tripStatus.ts` | **No, since 2026-08-11** — `manageTrip` now writes it; before that, every new trip lacked it |
+| `bankDetails` absent | `useTripConfig.ts` → `BANK_DETAILS` | **No** — `create` writes empty strings, and `??` does not fire on `''` |
+
+All four are now closed. Their share of the data therefore falls toward zero as new records accumulate — the opposite of the usual "legacy debt compounds" trajectory.
+
+**Why no `schemaVersion` field.** The real debt was never the guards; it was having **no way to prove a guard is no longer needed**, so it stays forever out of uncertainty rather than necessity. `schemaVersion` solves that by taxing every write and every rule forever. `scripts/audit-legacy-docs.mjs` answers the same question — for each guard, how many documents still need it — at zero cost on the write path, because the question is asked once every few months, not on every read.
+
+⚠️ **Before deleting a guard whose counter reads zero:** an offline write can arrive days later (`persistentLocalCache`), and any device on an old bundle still writes the old shape. Run the audit on **every** environment, wait, run it again, then delete.
+
+**Measured baseline — production, 2026-08-11** (1 trip, 114 expenses):
+
+| Guard | Documents still needing it |
+|---|---|
+| `createdByUid` absent | **2 of 114 expenses (1.75%)** |
+| `participants` holding strings | 0 |
+| `bankDetails` absent | 0 — so the personal fallback in `constants.ts` is currently reachable by nobody |
+| `status` absent | 1 of 1 trip — the original trip, which predates the field |
+
+This is the number to compare future runs against. The point is not that 1.75% is small; it is that **the count of 2 cannot grow while the denominator does**, so the guard's relevance decays on its own. That is what "closed population" buys, and it is why no migration was run: rewriting live documents with no database backup (see `RECOVERY.md` §4) costs more than the branch it would let us delete.
 
 ### `useExpenses` listens to the whole collection on purpose — do not paginate it
 
