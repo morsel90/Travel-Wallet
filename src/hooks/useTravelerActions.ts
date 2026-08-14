@@ -3,10 +3,11 @@
 import { useState, useCallback } from 'react'
 import type { Dispatch, SetStateAction, FormEvent } from 'react'
 import type { User } from 'firebase/auth'
-import { writeBatch } from 'firebase/firestore'
+import { doc, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase'
-import { travelerDoc, travelerNameDoc } from '../firestore'
+import { travelerDoc, travelerNameDoc, depositLogsCol } from '../firestore'
 import { haptic } from '../utils/haptics'
+import { INITIAL_DEPOSIT_REASON } from '../utils/deposits'
 import { deriveShortName, isValidNameKey, newTravelerId } from '../utils/travelerName'
 import type { Traveler, ToastMessage } from '../types'
 
@@ -137,9 +138,38 @@ export function useTravelerActions({
 
     // المسافر وحجز اسمه معاً: نجاح الحجز هو ما يمنع التكرار، وفشله يمنع إنشاء
     // المسافر أصلاً بدل أن نحصل على اسمين متطابقين.
+    //
+    // 🆕 والرصيد الابتدائي يمرّ من المسار الموثَّق لا من حقل الإنشاء:
+    //
+    // المستند يُنشأ بصفر (تفرضه firestore.rules)، ثم تُكتب حركة إيداع في
+    // depositLogs ويُحدَّث الرصيد — **في نفس الدفعة الذرّية**. فإما أن يوجد
+    // المسافر برصيده وسطرِه معاً، أو لا يوجد شيء. مسافرٌ برصيد بلا سطر تدقيق هو
+    // بالضبط الحالة التي وُجد هذا التغيير لإغلاقها، ونفس مبدأ القاعدة ٦ مع
+    // حجز الاسم.
+    //
+    // ⚠️ التجربة لا تتغيّر بحرف: نفس النموذج ونفس الحقل ونفس النتيجة. ما يُضاف
+    // هو أن «٣٠٠٠ ريال ظهرت» صار لها جواب: من، ومتى، وبأي سبب.
     const batch = writeBatch(db)
-    batch.set(travelerDoc(id), traveler)
+    batch.set(travelerDoc(id), { ...traveler, deposited: 0 })
     batch.set(travelerNameDoc(shortName), { travelerId: id })
+
+    if (deposited > 0) {
+      // ⚠️ `changedByUid` يجب أن يطابق المنفِّذ فعلاً — القاعدة تفرضه، وهو ما
+      // يمنع نسبة الحركة لغير صاحبها (نفس مبدأ createdByUid على المصاريف).
+      batch.set(doc(depositLogsCol(id)), {
+        travelerId:        id,
+        previousDeposited: 0,
+        newDeposited:      deposited,
+        delta:             deposited,
+        mode:              'set' as const,
+        reason:            INITIAL_DEPOSIT_REASON,
+        changedByEmail:    user.email ?? '',
+        changedByUid:      user.uid,
+        createdAt:         Date.now(),
+      })
+      batch.update(travelerDoc(id), { deposited })
+    }
+
     batch.commit().catch(err => handleFirestoreError(err, nameConflictMessage(shortName)))
   }, [newTravelerName, newTravelerDeposit, activeTravelers, user, setTravelers, handleFirestoreError, setSyncError])
 

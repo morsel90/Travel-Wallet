@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('firebase/firestore', () => ({
+  doc: vi.fn((col: unknown) => ({ __newDocIn: col })),
   writeBatch: vi.fn(() => ({
     set: mocks.batchSet, update: mocks.batchUpdate, delete: mocks.batchDelete, commit: mocks.batchCommit,
   })),
@@ -24,6 +25,7 @@ vi.mock('../firebase', () => ({ db: {} }))
 vi.mock('../firestore', () => ({
   travelerDoc: vi.fn((id: number) => ({ __travelerDoc: id })),
   travelerNameDoc: vi.fn((shortName: string) => ({ __travelerNameDoc: shortName })),
+  depositLogsCol: vi.fn((travelerId: number) => ({ __depositLogsCol: travelerId })),
 }))
 
 vi.mock('../utils/haptics', () => ({ haptic: mocks.haptic }))
@@ -143,6 +145,68 @@ describe('useTravelerActions — إضافة مسافر', () => {
       })
       act(() => result.current.handleAddTraveler(fakeEvent()))
       expect(setTravelers.mock.calls[0][0]([])[0]).toMatchObject({ deposited: 0 })
+    })
+  })
+
+  // ⚠️ هذه هي C1: كان أي عضو يستطيع إنشاء مسافر برصيد ابتدائي عشوائي **بلا أي
+  // سطر تدقيق** — بينما تعديل نفس الحقل لاحقاً محكوم بـ isAdmin() ويكتب سطراً
+  // غير قابل للتعديل. فمن أراد إضافة مال بلا أثر لا يفتح نافذة الإيداع.
+  describe('الرصيد الابتدائي يمرّ من المسار الموثَّق', () => {
+    it('ينشئ المسافر بصفر ويكتب حركة إيداع وتحديث الرصيد في نفس الدفعة', () => {
+      const { result } = setup({ user: fakeUser })
+      act(() => {
+        result.current.setNewTravelerName('فهد القحطاني')
+        result.current.setNewTravelerDeposit('3000')
+      })
+      act(() => result.current.handleAddTraveler(fakeEvent()))
+
+      // المستند يُنشأ بصفر — القاعدة تفرضه، والرصيد يصل عبر الحركة لا عبر الإنشاء
+      const travelerWrite = mocks.batchSet.mock.calls.find(
+        c => (c[0] as { __travelerDoc?: number }).__travelerDoc !== undefined,
+      )
+      expect(travelerWrite?.[1]).toMatchObject({ name: 'فهد القحطاني', deposited: 0 })
+
+      // سطر التدقيق: من، وكم، ولماذا
+      const logWrite = mocks.batchSet.mock.calls.find(
+        c => (c[1] as { travelerId?: number })?.travelerId !== undefined,
+      )
+      expect(logWrite?.[1]).toMatchObject({
+        previousDeposited: 0,
+        newDeposited: 3000,
+        delta: 3000,
+        mode: 'set',
+        changedByUid: 'user-1',
+      })
+      expect((logWrite?.[1] as { reason: string }).reason).toContain('رصيد ابتدائي')
+
+      // ثم يصل الرصيد فعلاً
+      expect(mocks.batchUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ __travelerDoc: expect.any(Number) }),
+        { deposited: 3000 },
+      )
+      expect(mocks.batchCommit).toHaveBeenCalledTimes(1)
+    })
+
+    it('بلا رصيد ابتدائي: لا سطر تدقيق ولا تحديث — دفعة الإنشاء وحدها', () => {
+      const { result } = setup({ user: fakeUser })
+      act(() => result.current.setNewTravelerName('فهد القحطاني'))
+      act(() => result.current.handleAddTraveler(fakeEvent()))
+
+      // المسافر + حجز الاسم فقط
+      expect(mocks.batchSet).toHaveBeenCalledTimes(2)
+      expect(mocks.batchUpdate).not.toHaveBeenCalled()
+    })
+
+    // ⚠️ الذرّية هي الضمان كله: مسافرٌ برصيد بلا سطر تدقيق هو الحالة التي وُجد
+    // هذا التغيير لإغلاقها. دفعة واحدة تعني وجودهما معاً أو عدمهما معاً.
+    it('كل الكتابات في دفعة واحدة — لا commit ثانٍ', () => {
+      const { result } = setup({ user: fakeUser })
+      act(() => {
+        result.current.setNewTravelerName('فهد القحطاني')
+        result.current.setNewTravelerDeposit('3000')
+      })
+      act(() => result.current.handleAddTraveler(fakeEvent()))
+      expect(mocks.batchCommit).toHaveBeenCalledTimes(1)
     })
   })
 

@@ -8,6 +8,7 @@ import { doc, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase'
 import { travelerDoc, depositLogsCol } from '../firestore'
 import { haptic } from '../utils/haptics'
+import { applyDepositMode } from '../utils/deposits'
 import type { Traveler, DepositMode, ToastMessage } from '../types'
 
 interface UseDepositActionsParams {
@@ -51,10 +52,9 @@ export function useDepositActions({
 
     const previousDeposited = depositTraveler.deposited
     const travelerId = depositTraveler.id
-    const newAmount =
-      depositMode === 'set'      ? amt :
-      depositMode === 'subtract' ? Math.max(0, previousDeposited - amt) :
-                                   previousDeposited + amt
+    // 🆕 المنطق نفسه، مستخرَجاً إلى دالة نقية يشاركها مسار الرصيد الابتدائي —
+    // وهو ما يجعل «الرصيد = مجموع الحركات الموثّقة» قابلاً للاختبار أصلاً.
+    const newAmount = applyDepositMode(previousDeposited, depositMode, amt)
 
     closeDeposit()
     showToast({ text: 'تم تحديث الرصيد', type: 'success' })

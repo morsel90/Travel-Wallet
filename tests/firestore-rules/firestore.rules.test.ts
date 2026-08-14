@@ -16,7 +16,7 @@ import {
 } from '@firebase/rules-unit-testing'
 import type { RulesTestContext, RulesTestEnvironment } from '@firebase/rules-unit-testing'
 import {
-  collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc,
+  collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc, writeBatch,
 } from 'firebase/firestore'
 import type { Firestore } from 'firebase/firestore'
 
@@ -265,6 +265,75 @@ describe('المسافرون — إنشاء وتعديل', () => {
   it('المسؤول يستطيع تعديل مسافر', async () => {
     await seed(db => setDoc(travelerDoc(db, 1), validTraveler()))
     await assertSucceeds(updateDoc(travelerDoc(adminDb(), 1), { deposited: 500 }))
+  })
+})
+
+// 🆕 الرصيد الابتدائي: `deposited` هو الطرف الدائن الوحيد في الدفتر، وتعديله
+// لاحقاً محكوم بـ isAdmin() ويكتب سطراً غير قابل للتعديل. أما الإنشاء فكان
+// يقبل أي مبلغ من أي عضو بلا سجلّ — فمن أراد إضافة مال بلا أثر لا يفتح نافذة
+// الإيداع بل يُنشئ مسافراً.
+describe('الرصيد الابتدائي — deposited == 0 عند الإنشاء', () => {
+  it('عضو عادي: إنشاء برصيد ابتدائي > 0 يُرفض', async () => {
+    await assertFails(setDoc(travelerDoc(memberDb(), 10), validTraveler({ id: 10, deposited: 3000 })))
+  })
+
+  // ⚠️ الشرط الأهم: لا استثناء للمسؤول. ليس لأنه غير موثوق، بل لأن السجلّ
+  // **له** لا ضدّه — هو ما يحتجّ به حين يُسأل بعد شهر عن رقم.
+  it('المسؤول أيضاً: إنشاء برصيد ابتدائي > 0 يُرفض — لا استثناء للصلاحية', async () => {
+    await assertFails(setDoc(travelerDoc(adminDb(), 11), validTraveler({ id: 11, deposited: 3000 })))
+  })
+
+  it('الإنشاء بصفر يُقبل — الوظيفة لم تُلغَ بل نُقلت للمسار الموثَّق', async () => {
+    await assertSucceeds(setDoc(travelerDoc(memberDb(), 12), validTraveler({ id: 12, deposited: 0 })))
+  })
+
+  it('المسؤول يبقى قادراً على تعديل الرصيد لاحقاً — الاشتراط على الإنشاء وحده', async () => {
+    await seed(db => setDoc(travelerDoc(db, 13), validTraveler({ id: 13, deposited: 0 })))
+    await assertSucceeds(updateDoc(travelerDoc(adminDb(), 13), { ...validTraveler({ id: 13, deposited: 5000 }) }))
+  })
+
+  // ⚠️ هذا الاختبار يحسم سؤالاً تقنياً لا سؤال صلاحية: هل تقبل Firestore
+  // دفعةً تُنشئ المستند بصفر ثم تُحدّثه في نفس الدفعة؟ عليه يقوم التصميم كله —
+  // فإن جُمعت العمليتان وقُيّمتا كإنشاء واحد بالقيمة النهائية، لرُفضت الدفعة
+  // وللزم تقسيمها إلى دفعتين (بأثر مقبول: مسافر بصفر بلا سطر، وهي حالة آمنة).
+  it('دفعة واحدة: إنشاء بصفر + سطر تدقيق + تحديث الرصيد — تُقبل من المسؤول', async () => {
+    const db = adminDb('admin-1')
+    const batch = writeBatch(db)
+    batch.set(travelerDoc(db, 14), validTraveler({ id: 14, deposited: 0 }))
+    batch.set(travelerNameDoc(db, 'مسافر14'), { travelerId: 14 })
+    batch.set(doc(depositLogsCol(db, 14)), {
+      travelerId: 14,
+      previousDeposited: 0,
+      newDeposited: 3000,
+      delta: 3000,
+      mode: 'set',
+      reason: 'رصيد ابتدائي عند إضافة المسافر',
+      changedByEmail: '',
+      changedByUid: 'admin-1',
+      createdAt: Date.now(),
+    })
+    batch.update(travelerDoc(db, 14), { deposited: 3000 })
+    await assertSucceeds(batch.commit())
+  })
+
+  // العضو غير المسؤول لا يستطيع كتابة سطر التدقيق ولا تحديث الرصيد، فدفعته
+  // تفشل كاملةً — وهو المطلوب: لا رصيد ابتدائي بلا توثيق، ولا توثيق بلا صلاحية.
+  it('نفس الدفعة من عضو عادي تفشل كاملةً', async () => {
+    const db = memberDb('member-1')
+    const batch = writeBatch(db)
+    batch.set(travelerDoc(db, 15), validTraveler({ id: 15, deposited: 0 }))
+    batch.set(doc(depositLogsCol(db, 15)), {
+      travelerId: 15,
+      previousDeposited: 0,
+      newDeposited: 3000,
+      delta: 3000,
+      mode: 'set',
+      reason: 'رصيد ابتدائي عند إضافة المسافر',
+      changedByEmail: '',
+      changedByUid: 'member-1',
+      createdAt: Date.now(),
+    })
+    await assertFails(batch.commit())
   })
 })
 

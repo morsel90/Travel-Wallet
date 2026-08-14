@@ -237,6 +237,7 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 │   │
 │   └── utils/
 │       ├── calculations.ts       # Pure: splitEven, splitByShares, calculateBalances, settlements, etc.
+│       ├── deposits.ts          # 🆕 Pure: applyDepositMode + replayDepositLogs — makes the ledger invariant testable
 │       ├── participants.ts       # matchesTraveler, toDisplayNames, toIds
 │       ├── reportData.ts         # buildTravelerReport, buildAccountStatement, buildDailySummary
 │       ├── reports.ts           # Excel row builders + exportTripToExcel + exportTravelerToExcel
@@ -1063,6 +1064,33 @@ Two things the merge deliberately does not do:
 
 Rendering is already virtualized by React Virtuoso, so a long list costs memory and network, not DOM.
 
+### 🆕 Every change to `deposited` is an audited movement — including the first one
+
+`deposited` is the **only credit side of the ledger**: expenses subtract, and nothing adds but this field. So every write to it is a financial movement.
+
+Until 2026-08-14 the same movement had two paths with completely different guarantees:
+
+| | Create with an initial balance | Edit via the deposit modal |
+|---|---|---|
+| Who can | **any member** (`isMember` in the rules) | admin only |
+| Audit row | **none** | immutable `depositLogs` entry |
+| Who did it | **unrecorded** — `travelers` has no `createdByUid` | `changedByUid`, pinned to the caller |
+| Why | — | `reason` |
+
+So anyone wanting to add money without a trace didn't open the deposit modal — they created a traveler. And because `depositLogs` is admin-only-readable, not even the admin could see that an initial balance had ever existed.
+
+**The fix does not remove the feature.** `firestore.rules` now requires `deposited == 0` on create, and the client writes the initial balance as a real deposit movement — traveler at 0, plus a `depositLogs` row, plus the balance update, **in one atomic batch**. Same form, same field, same result; an audit row is added.
+
+⚠️ **No exception for admins.** Not because they are untrusted — the audit log is *for* them: it is what they point at when asked about a number a month later. Same reasoning that keeps `isOwnCreation` binding on admins.
+
+**Why `createdByUid` on `travelers` was rejected as the fix:** it answers "who created this traveler", not "how much appeared and why". The question asked during a dispute is the second one.
+
+**What made the invariant testable at all:** `utils/deposits.ts` extracts `applyDepositMode` and `replayDepositLogs` as pure functions, shared by both write paths. Before that, the mode arithmetic lived inside a form handler, so "current balance = sum of logged movements" could not be asserted anywhere. It now is, over random operation sequences.
+
+⚠️ **`subtract` clamps at zero**, so `delta` is not always `-amount`. The log therefore derives `delta` from the two balances, never from the input — deriving it from the input breaks the consistency rule on the first over-subtraction.
+
+⚠️ **Transition cost, accepted deliberately.** A device holding an old bundle that queues an offline traveler-create with `deposited > 0` will have that write **refused** when it syncs. Per the optimistic-write design above, the SDK reverts the local mutation rather than getting stuck — the row disappears rather than hanging as `_pending`. The window is one reload wide. **Historical documents are untouched**: rules apply to new writes only, and existing travelers keep balances with no matching log row, exactly as `createdByUid` treated legacy expenses.
+
 ### 🆕 The membership roster is an index, not a source of access
 
 `trips/{tripId}/members/{uid}` was added on 2026-08-14 because the token-claims design has a second cost that was never priced. This file documented the trade honestly — membership in the token is a *free* read in `isMember()`, versus a billed `get()` in nearly every rule — and it computed the ceiling (38 trips). What it did not say is that the same decision makes membership **unenumerable, and therefore unmanageable**.
@@ -1187,6 +1215,9 @@ Three independent systems that must be deployed separately:
 | 🆕 The members tab is empty although people have joined | They joined before the roster existed (2026-08-14). Membership lived only in their claims, which cannot be queried | `node scripts/backfill-member-roster.mjs --apply`. Those rows show "تاريخ الانضمام غير معروف" — the date was never stored anywhere |
 | 🆕 "تعذّر جلب قائمة الأعضاء" for an admin | The roster is `read: if isAdmin()`, and the admin claim may not be on the current token yet | Sign out and back in — the claim only refreshes on a new token. Same cause as the empty trips list |
 | 🆕 Removing an admin from a trip appears to do nothing | Correct: `admin: true` is global and bypasses trip membership, so there was no trip-scoped access to revoke | Expected — the toast says so. Revoke admin with `scripts/set-admin.mjs revoke <email>` instead |
+| 🆕 «الرصيد الابتدائي غير صالح» when adding a traveler | The field holds something non-finite — most often a stray `Infinity`, a lone `.`, or a negative | Expected. Fix it or leave it empty (empty means zero). Before this guard the traveler was written with a non-finite balance and every derived total showed it |
+| 🆕 A traveler added while offline on an old tab vanished after reconnecting | Its create carried `deposited > 0`, which the rules now refuse; the SDK reverted the local copy | Expected for one reload after the 2026-08-14 deploy. Reload the tab and re-add — the balance now goes through the audited path |
+| 🆕 An old traveler's balance has no matching row in the deposit history | Their balance predates the audited-initial-balance change | Expected and not repaired: historical documents are never rewritten. Only balances changed after that date are fully reconstructable |
 
 ---
 
