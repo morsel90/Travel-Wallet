@@ -19,14 +19,23 @@ import type { DepositLogEntry, DepositMode } from '../types'
  * في أول عملية خصم تتجاوز الرصيد.
  */
 export function applyDepositMode(previous: number, mode: DepositMode, amount: number): number {
-  // القاعدة ١٩: أي مبلغ يدخل حساباً يجب أن يكون منتهياً. المدخل غير المنتهي
-  // يُترك الرصيد على حاله بدل تسميمه.
-  if (!Number.isFinite(previous) || !Number.isFinite(amount)) {
-    return Number.isFinite(previous) ? previous : 0
-  }
+  // القاعدة ١٩ — وحارسان مختلفان لا حارس واحد:
+  //
+  //   • **الرصيد السابق** غير المنتهي مستندٌ تالف في قاعدة البيانات، فيُقرأ
+  //     كصفر ثم **تُطبَّق العملية عليه** — نفس معالجة calculateBalances. إلغاء
+  //     العملية هنا يعني أن إضافة ٣٠٠ إلى رصيد تالف تُنتج صفراً لا ٣٠٠، أي
+  //     نُسقط حركة صحيحة عقوبةً على فساد سابق.
+  //   • **المبلغ** غير المنتهي مدخلٌ فاسد الآن، فلا عملية أصلاً — يبقى الرصيد
+  //     على حاله المطهَّر بدل تسميمه.
+  //
+  // ⚠️ دمجهما في شرط واحد كان أول ما كتبتُه، وكشفه اختبار «رصيد سابق غير منتهٍ
+  // يُعامَل كصفر»: الاسم يصف السلوك الصحيح والتنفيذ كان يخالفه.
+  const safePrevious = Number.isFinite(previous) ? previous : 0
+  if (!Number.isFinite(amount)) return safePrevious
+
   if (mode === 'set')      return Math.max(0, amount)
-  if (mode === 'subtract') return Math.max(0, previous - amount)
-  return previous + amount
+  if (mode === 'subtract') return Math.max(0, safePrevious - amount)
+  return safePrevious + amount
 }
 
 /**
