@@ -2,20 +2,23 @@
 
 <div dir="rtl" style="text-align: right">
 
-**الحالة:** ✅ **المراحل ٠ و١ و٢ منفَّذة** (2026-08-11).
+**الحالة:** ✅ **المراحل ٠ و١ و٢ منفَّذة ومؤكَّدة تعمل في الإنتاج** (نُفِّذت
+2026-08-11، وتحقّق الربط الفعلي عبر Google في الإنتاج بنجاح بتاريخ 2026-08-14
+بعد ضبط نطاق Vercel في Authorized Domains — انظر `RECOVERY.md` §٢).
 تبقى مؤجَّلاً بوعي: `users/{uid}` — انظر §ما لا تفعله هذه الخطة.
 
 | المرحلة | الملفات | الحالة |
 |---|---|---|
 | ٠ حارس حجم الـ claims | `functions/index.js` (`assertClaimsFitTokenLimit`) | ✅ يرفض عند ٣٨ رحلة (٩١٣ بايت) |
-| ١ الربط | `hooks/useAccountLink.ts`، `components/SaveAccountBanner.tsx` | ✅ |
-| ٢ مسار التعارض | `functions/index.js` (`mergeAnonymousTrips`) | ✅ |
+| ١ الربط | `hooks/useAccountLink.ts`، `components/SaveAccountBanner.tsx` | ✅ مؤكَّد في الإنتاج 2026-08-14 — الشريط يظهر في الشاشة الرئيسية *و* في رحلاتي، والربط ناجح فعلياً |
+| ٢ مسار التعارض | `functions/index.js` (`mergeAnonymousTrips`) | ✅ منفَّذ — لم يُختبَر بعد بسيناريو جهاز ثانٍ فعلي في الإنتاج |
 
-⚠️ **يتطلب خطوة يدوية واحدة قبل أن تعمل:** تفعيل مزوّد **Google** في
-Firebase Console › Authentication › Sign-in method. بدونه يفشل الربط بـ
-`auth/operation-not-allowed`.
+⚠️ **تطلّب خطوتين يدويتين قبل أن يعمل** — كلتاهما أُنجزتا: تفعيل مزوّد **Google**
+في Firebase Console › Authentication › Sign-in method (بدونه يفشل الربط بـ
+`auth/operation-not-allowed`)، وإضافة نطاق Vercel إلى Authorized Domains في
+نفس الصفحة (بدونه يفشل بـ `auth/unauthorized-domain`).
 
-**التاريخ:** 2026-08-11
+**التاريخ:** 2026-08-11 (تنفيذ) · 2026-08-14 (تأكيد الإنتاج)
 
 ---
 

@@ -37,7 +37,7 @@
 | GitHub (`morsel90/Travel-Wallet`) | Mohammed Alathim | `mostqbel.morsel@gmail.com` | المالك وحده يعدّل ruleset الحماية |
 | Firebase — مشروع الإنتاج `travelapp-87206` | Mohammed Alathim | `alathemmohammed@gmail.com` | |
 | Vercel (استضافة الواجهة) | Mohammed Alathim | `alathemmohammed@gmail.com` | متغيّرات `VITE_*` مخزّنة في لوحته |
-| نطاق مخصّص (إن وُجد) | غير محدد | غير محدد | |
+| نطاق مخصّص | — | — | 🆕 لا يوجد نطاق مخصّص بعد؛ التطبيق يعمل على نطاق Vercel الافتراضي (`*.vercel.app`)، وهو المضاف في Firebase Console › Authentication › Settings › Authorized domains لتفعيل `linkWithPopup` (تسجيل دخول Google). عند إضافة نطاق مخصّص لاحقاً: أضِفه هناك أيضاً، وإلا فشل الربط بـ `auth/unauthorized-domain` |
 
 **تفعيل التحقق بخطوتين على GitHub وGoogle ضروري — واحتفظ برموز الاسترداد
 (recovery codes) في مكان منفصل عن الجهاز.** فقدان الوصول إلى بريد الحساب يعني

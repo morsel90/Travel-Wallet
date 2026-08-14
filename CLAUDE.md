@@ -2,7 +2,25 @@
 
 <div dir="rtl" style="text-align: right">
 
-## آخر تحديث: 2026-08-11
+## آخر تحديث: 2026-08-14
+
+### What changed on 2026-08-14
+
+**Account linking shipped, and its PR exposed two CI bugs that only manifest under real parallelism.** The `docs/PLAN-account-linking.md` work (`mergeAnonymousTrips`, `useAccountLink`, `SaveAccountBanner` on both the main screen and `TripPicker`) was the first PR to actually run the `e2e` job end-to-end since the push gate went up — and it failed twice, for reasons that had nothing to do with the feature itself.
+
+1. **`e2e` job failed on a missing module inside the Functions emulator.** `functions/` has its own `package.json` and therefore its own `node_modules`; the root `npm ci` never touches it. Every earlier E2E run had gotten away with this by luck of what the seeded functions happened to import. `.github/workflows/ci.yml`'s `e2e` job now runs `npm ci` with `working-directory: ./functions` before `typecheck:e2e`, mirroring what the root job already does for the app.
+
+2. **`seedTrip` in `e2e/utils/seed.ts` raced itself.** Playwright runs spec files in parallel workers, and more than one file seeds the same `adminEmail`. The existing look-up (`getUserByEmail` → if not found, `createUser`) has a window: two workers can both see "not found" and both call `createUser`, and the loser gets a real `auth/email-already-exists` from the emulator — not the benign "already seeded" case the code assumed. `seedTrip` now catches that specific error during `createUser` and falls back to `getUserByEmail` to recover the winner's `uid`, so a genuine race resolves instead of failing the run.
+
+Both fixed directly on `main` by the maintainer (`7e1990a`, `70cc7c5`) rather than through me — worth noting only because neither was caught by local `npm run test:e2e`, which runs one worker's timing by chance and had never hit the interleaving CI's parallel runners produce reliably.
+
+**Google sign-in's authorized domain was configured** (Firebase Console › Authentication › Settings › Authorized domains) — required for `linkWithPopup` in `useAccountLink.ts`; without it every link attempt fails with `auth/unauthorized-domain` before the popup even opens. See `RECOVERY.md` §2 for where that domain is now recorded.
+
+**Confirmed working in production, same day:** `SaveAccountBanner` renders on both surfaces (main screen and `TripPicker`) as intended by the 2026-08-11 fix, and `linkWithPopup` completes successfully end-to-end now that both the Google provider and the authorized domain are set. The `unauthenticated`/ad-blocker message in `callableErrors.ts` was not re-observed live — no ad blocker was active to trigger it at test time — but it doesn't need to be: it's a pure string mapping covered by 16 assertions in `callableErrors.test.ts`, and the underlying failure mode (`auth: "MISSING"`) was already reproduced against the real function during the 2026-08-13 investigation, before the message was fixed. `docs/PLAN-account-linking.md` and `firestore.rules` diff status are updated to match.
+
+---
+
+## آخر تحديث سابق: 2026-08-11
 
 ### What changed on 2026-08-11
 
@@ -252,13 +270,12 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 ├── functions/
 │   └── index.js                 # Cloud Functions: verifyTripPin (rate-limited) + manageTrip (create/resetPin/delete)
 │
-├── scripts/
+├── scripts/                     # 🆕 every script here needs a service-account key — see serviceAccount.mjs
+│   ├── serviceAccount.mjs       # 🆕 Shared: resolves + loads the key (FIREBASE_SERVICE_ACCOUNT or the default path)
+│   ├── set-admin.mjs            # 🔒 Admin SDK script: grant/revoke admin claim — NO in-app equivalent, and must never have one
+│   ├── create-trip.mjs          # Admin SDK script: create/update trip + PIN — fallback for when manageTrip isn't deployed yet
 │   ├── audit-legacy-docs.mjs    # 🆕 Read-only: counts documents still needing each legacy fallback
-│   ├── create-trip.mjs          # Admin SDK script: create/update trip + PIN
-│   ├── set-admin.mjs            # Admin SDK script: grant/revoke admin claim
-│   ├── list-trips.mjs           # Admin SDK script: list existing trips
-│   ├── backfill-traveler-names.mjs # One-off migration: claim docs for pre-existing travelers
-│   ├── add-flights.mjs          # ⚠️ Admin SDK script: writes itinerary — data hardcoded, edit before each run
+│   ├── backfill-traveler-names.mjs # Claim docs for pre-existing travelers; its dry run doubles as a travelerNames integrity audit
 │   └── run-with-emulators.mjs   # 🆕 Runs a command inside the emulators with a trustworthy exit code
 │
 ├── tests/                       # 🆕 firestore.rules tests (emulator, NOT app code)
@@ -676,7 +693,7 @@ Admin panel → select the trip → **حذف الرحلة** tab. You must type t
 Requires deploying functions (`npx firebase deploy --only functions`) — it is server-side logic, not a rules change.
 
 ### List existing trips
-The admin panel lists every trip with its id, name and segment count, and each row has an **فتح** link to `?trip=X`. `scripts/list-trips.mjs` remains as a CLI equivalent.
+The admin panel lists every trip with its id, name and segment count, and each row has an **فتح** link to `?trip=X`. (`scripts/list-trips.mjs` was deleted on 2026-08-14 — the panel had fully replaced it.)
 
 Members (non-admins) get their own list via the 🆕 **"my trips"** picker — the trips in their token's `trips` claim. Opening the app with no `?trip=` shows it; picking a trip navigates to `?trip=X`. Admins see *all* trips there instead, via `useAllTrips`.
 
@@ -687,7 +704,7 @@ Use the in-app admin panel: sign in as admin → **إدارة الرحلة** but
 
 The itinerary is edited locally and saved in one explicit write, because the field is stored as a whole array: saving on every keystroke would mean a stream of writes to the same doc and a bigger window to lose an edit when two admins are editing at once.
 
-`scripts/add-flights.mjs` still exists for bulk entry but is no longer the primary path — it hardcodes its data and overwrites the whole array.
+🆕 There is no script path any more: `scripts/add-flights.mjs` was **deleted** on 2026-08-14. It wrote with `update({ itinerary })`, replacing the whole array — so running it would silently erase every segment added from the panel. See *Scripts* under *Design Decisions* for why deleting beat keeping it as a "bulk entry" option.
 
 `scripts/create-trip.mjs` writes with `{ merge: true }`, so re-running it to change bank details no longer wipes an existing itinerary. It still replaces the PIN every run, which signs every member of that trip out — the prompt says so before proceeding.
 
@@ -1056,6 +1073,27 @@ Two things the merge deliberately does not do:
 
 Rendering is already virtualized by React Virtuoso, so a long list costs memory and network, not DOM.
 
+### 🆕 Scripts: which ones the admin panel replaced, and which can never be replaced
+
+Once the admin panel could create trips, reset PINs, list trips and edit itineraries, most of `scripts/` became a second way to do what the app already does — and a second way that is *worse*, because a script bypasses `firestore.rules` entirely (Admin SDK) and carries no validation the panel enforces.
+
+Two were deleted on 2026-08-14:
+
+| Deleted | Replaced by | Why deleting beat keeping |
+|---|---|---|
+| `add-flights.mjs` | Itinerary editor in `TripDetailPanel` | It wrote `update({ itinerary })` — a **whole-array replace**. Running it after any panel edit silently erased every segment. It also hardcoded its trip id *and* its data, so "bulk entry" meant editing the script before every run. |
+| `list-trips.mjs` | Trips list in `TripAdminView` | Pure read-only duplicate of a screen that shows strictly more (name, segment count, an open link). |
+
+⚠️ **`add-flights.mjs` also held real booking data in a public repo** — flight numbers and a PNR. Deleting the file does not remove it from git history; that is separate work, and was judged not worth a history rewrite because the trip had already ended.
+
+**The three that stay, and the distinct reason for each:**
+
+1. **`set-admin.mjs` — can never have an in-app equivalent.** The `admin` claim is granted with `setCustomUserClaims`, which needs the Admin SDK. A UI that grants admin is a privilege-escalation path by definition, and it is also the **bootstrap**: with no admin there is no admin panel, so this script is step one of `RECOVERY.md` §3.
+2. **`create-trip.mjs` — a genuine fallback, not a duplicate.** The panel creates trips through `manageTrip`. In a fresh environment where functions are not deployed yet, there is no other way to create a trip at all.
+3. **`backfill-traveler-names.mjs` — kept for its *dry run*, not its migration.** The migration is one-off, but the default (no `--apply`) mode reports duplicate `shortName` claims and names that cannot be document ids. That is an ongoing integrity audit of `travelerNames`, which nothing else checks — the same reasoning that justifies `audit-legacy-docs.mjs`.
+
+**The rule this leaves behind:** a script earns its place only if it does something the app *cannot* — bootstrap, disaster recovery, or read-only auditing. A script that merely duplicates a screen is a rules-bypassing path to the same data, and drifts out of sync with the validation the screen enforces.
+
 ---
 
 ## Deployment
@@ -1118,6 +1156,9 @@ Three independent systems that must be deployed separately:
 | 🆕 Emulator fails downloading `cloud-firestore-emulator-*.jar` | A newer firebase-tools (often a *global* install) wants a newer jar and cannot reach `storage.googleapis.com` | Run through `npm run …` so the pinned local version is used; it reuses the cached jar |
 | 🆕 E2E fails with "Port 5173 is already in use" | A leftover `vite`/`npm run dev` from another terminal | `lsof -i :5173` then kill it; do not run a dev server alongside `npm run test:e2e` |
 | 🆕 `wrong-pin` E2E test fails with a rate-limit message | Too many PIN attempts accumulated on that trip's counter within 15 minutes | The test clears counters via `clearPinRateLimits()`; if changed, keep that call |
+| 🆕 CI `e2e` job fails on a missing module inside the Functions emulator (passes locally) | `functions/` has its own `node_modules`; the root `npm ci` doesn't install it | Fixed 2026-08-14 — the `e2e` job now runs `npm ci` with `working-directory: ./functions` before `typecheck:e2e`. If it recurs, check that step wasn't removed |
+| 🆕 `e2e` run fails intermittently with `auth/email-already-exists` from `seedTrip` | Two Playwright workers seeded the same `adminEmail` concurrently and both saw "not found" before either created the user | Fixed 2026-08-14 in `e2e/utils/seed.ts` — `createUser`'s `auth/email-already-exists` now falls back to `getUserByEmail` instead of throwing |
+| 🆕 `useAccountLink`'s Google popup fails immediately with `auth/unauthorized-domain` | The app's domain isn't in Firebase Console › Authentication › Settings › Authorized domains | Add it there. Every environment that calls `linkWithPopup` (prod domain, and any Vercel preview domain you test linking on) needs its own entry |
 
 ---
 
