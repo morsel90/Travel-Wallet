@@ -63,6 +63,52 @@ function assertClaimsFitTokenLimit(claims) {
   }
 }
 
+// ─── 🆕 سجلّ عضوية الرحلة ────────────────────────────────────────────────────
+//
+// trips/{tripId}/members/{uid}
+//
+// **لماذا وُجد أصلاً:** العضوية تعيش في custom claims حساب العضو نفسه، وFirebase
+// Auth **لا يقبل استعلاماً على الـ claims**. فبلا هذا السجلّ لا أحد — لا التطبيق
+// ولا المسؤول — يستطيع معرفة *من* في الرحلة؛ التعداد يوجب المرور على
+// listUsers() لكل مستخدمي المشروع. أي أن العضوية كانت غير قابلة للتعداد ومن ثمّ
+// غير قابلة للإدارة: الأداة الوحيدة لإخراج عضو كانت تغيير الرمز، وهو طرد الجميع.
+//
+// ⚠️ **والـ claim يبقى مصدر الحقيقة للوصول، وهذا ليس تفصيلاً.** `isMember()` في
+// firestore.rules تقرأ من التوكن — قراءة **مجانية**. لو صار هذا السجلّ مرجع
+// الوصول لفرض `get()` مفوتراً في كل قاعدة تقريباً (انظر «ما لا تفعله هذه الخطة»
+// في docs/PLAN-member-management.md). فهو **فهرس إداري** يُقرأ نادراً بصلاحية
+// المسؤول، لا مصدر صلاحية. صفر كلفة على المسار الساخن.
+//
+// ⚠️ **الفشل هنا لا يُفشل الانضمام.** الـ claim كُتب قبل هذه الدالة، فالعضو صار
+// عضواً فعلاً؛ وإسقاط الانضمام لأن فهرساً لم يُكتب يحرم المستخدم من رحلته لسبب
+// لا يخصّه. الخطأ يُسجَّل في Cloud Logging، والسطر الناقص يُستدرك لاحقاً بـ
+// scripts/backfill-member-roster.mjs.
+async function recordMembership(tripId, userRecord, extra = {}) {
+  try {
+    const ref = db.collection('trips').doc(tripId)
+      .collection('members').doc(userRecord.uid);
+
+    const snap = await ref.get();
+    const now = Date.now();
+
+    // ⚠️ joinedAt يُكتب **مرة واحدة فقط**. إعادة إدخال الرمز ليست حدثاً نادراً:
+    // كل تغيير لرمز الرحلة يُخرج جميع الأعضاء ويجبرهم على إدخاله من جديد. فلو
+    // كُتب في كل تحقّق لضاعت تواريخ الانضمام كلها عند أول إعادة ضبط للرمز —
+    // أي لفقد الحقل معناه تماماً في اللحظة التي تحتاجه فيها.
+    const payload = { lastVerifiedAt: now, ...extra };
+    if (!snap.exists) payload.joinedAt = now;
+
+    // متاحان للحسابات الدائمة وحدها؛ الجلسة المجهولة بلا بريد ولا اسم. وFirestore
+    // يرفض قيمة undefined، فيُحذف الحقل بدل كتابته فارغاً.
+    if (userRecord.email) payload.email = userRecord.email;
+    if (userRecord.displayName) payload.displayName = userRecord.displayName;
+
+    await ref.set(payload, { merge: true });
+  } catch (err) {
+    console.error(`[recordMembership] تعذّر تسجيل ${userRecord.uid} في ${tripId}:`, err);
+  }
+}
+
 // 🆕 وظيفة حماية من محاولات التخمين المستمرة (Rate Limiting)
 //
 // ⚠️ المفتاح يشمل tripId عمداً (يجب أن يكون مُتحقَّقاً من صيغته قبل الاستدعاء —
@@ -212,6 +258,10 @@ exports.verifyTripPin = onCall(
 
     await admin.auth().setCustomUserClaims(request.auth.uid, nextClaims);
 
+    // 🆕 بعد كتابة الـ claim لا قبلها: الـ claim هو ما يجعل الانضمام حقيقياً،
+    // وهذا فهرس له. والدالة تبتلع أخطاءها عمداً — انظر تعليقها.
+    await recordMembership(tripId, userRecord);
+
     return { success: true };
 
   }
@@ -292,8 +342,20 @@ exports.mergeAnonymousTrips = onCall(
     const addedCount = Object.keys(mergedTrips).length - Object.keys(existingTrips).length;
     if (addedCount > 0) {
       await admin.auth().setCustomUserClaims(request.auth.uid, nextClaims);
+
+      // 🆕 الرحلات المنقولة تحتاج سطرها في السجلّ أيضاً، وإلا صار للحساب الدائم
+      // وصولٌ لا يظهر في أي قائمة — وهو بالضبط العمى الذي وُجد السجلّ لإنهائه.
+      const newlyAdded = Object.keys(mergedTrips).filter(id => !(id in existingTrips));
+      await Promise.all(
+        newlyAdded.map(id => recordMembership(id, userRecord, { mergedFrom: decoded.uid })),
+      );
     }
 
+    // ⚠️ **سطر الجلسة المجهولة يبقى، ولا يُحذف.** الدمج لا يمسح claims الحساب
+    // القديم (انظر «ما لا يفعله الدمج» في docs/PLAN-account-linking.md)، فذلك
+    // الـ uid ما زال يملك وصولاً فعلياً. حذف سطره يجعل السجلّ يكذب: شخصٌ يدخل
+    // ولا يظهر في القائمة. `mergedFrom` على السطر الجديد هو ما يربط الاثنين،
+    // فتعرف لوحة الإدارة أنهما شخص واحد بدل أن تعرضهما كعضوين.
     console.log(`[mergeAnonymousTrips] ${decoded.uid} → ${request.auth.uid}: +${addedCount}`);
     return { merged: addedCount };
   }
@@ -390,8 +452,18 @@ exports.manageTrip = onCall(
         );
       }
 
-      // المستندان معاً في كتابة ذرّية: لا يبقى رمز بلا رحلة ولا العكس
+      // ⚠️ 🆕 **Firestore لا يحذف المجموعات الفرعية مع مستندها.** حذف
+      // trips/{tripId} وحده يترك trips/{tripId}/members/… يتيمة: مستندات حيّة
+      // تحت مسار مستند غير موجود، لا تظهر في أي واجهة ولا تُحذف أبداً.
+      //
+      // وهذه الحالة قابلة للوصول فعلاً لا نظرية: شرط الحذف هو خلوّ الرحلة من
+      // **مسافرين ومصاريف**، والانضمام بالرمز لا يستلزم إضافة مسافر. فرحلة
+      // انضمّ إليها عشرة ولم يسجّل أحدهم مصروفاً تُعدّ فارغة وتُحذف.
+      const members = await tripRef.collection('members').get();
+
+      // المستندات معاً في كتابة ذرّية: لا يبقى رمز بلا رحلة ولا العكس
       const deleteBatch = db.batch();
+      members.docs.forEach(doc => deleteBatch.delete(doc.ref));
       deleteBatch.delete(tripRef);
       deleteBatch.delete(db.collection('tripSecrets').doc(tripId));
       await deleteBatch.commit();
@@ -437,5 +509,88 @@ exports.manageTrip = onCall(
     console.log(`[manageTrip] ${mode} on ${tripId} by ${request.auth.uid}`);
 
     return { success: true, tripId };
+  }
+);
+/**
+ * 🆕 manageMember: إزالة عضو من رحلة واحدة.
+ *
+ * **لماذا دالة خادمية ولا يمكن أن تكون قاعدة؟** العضوية تعيش في custom claims
+ * حساب العضو المستهدَف، وتعديل claims حساب آخر يوجب Admin SDK. لا سبيل لفعله
+ * من العميل تحت أي قاعدة.
+ *
+ * وقبل هذه الدالة كانت الأداة الوحيدة لإخراج شخص هي تغيير رمز الرحلة — أي إخراج
+ * **الجميع** وإجبار كل عضو على إدخال الرمز الجديد.
+ *
+ * ⚠️ **الإزالة ليست فورية: حتى ساعة.** توكن Firebase صالح ٦٠ دقيقة، و
+ * firestore.rules تقرأ العضوية منه لا من قاعدة البيانات. فالمُزال يحتفظ بوصوله
+ * حتى تنتهي صلاحية توكنه الحالي. وهذا ليس خللاً بل الوجه الآخر لكون isMember()
+ * قراءةً مجانية — والواجهة تقول ذلك للمسؤول صراحةً بدل إخفائه.
+ *
+ * ورُفض revokeRefreshTokens رغم أنه يجعلها فورية: أثره على **الحساب كله**، فيُخرج
+ * العضو من كل رحلاته لا من هذه وحدها — عقوبة جانبية على رحلات لا علاقة لها
+ * بالقرار. انظر docs/PLAN-member-management.md.
+ */
+exports.manageMember = onCall(
+  {
+    region: 'us-central1',
+    maxInstances: 5,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+    }
+    if (request.auth.token.admin !== true) {
+      throw new HttpsError('permission-denied', 'هذا الإجراء متاح للمسؤول فقط.');
+    }
+
+    const tripId = String(request.data?.tripId ?? '').trim();
+    const uid = String(request.data?.uid ?? '').trim();
+    const mode = String(request.data?.mode ?? '').trim(); // 'remove'
+
+    if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
+      throw new HttpsError('invalid-argument', 'معرّف الرحلة غير صالح.');
+    }
+    if (!uid || uid.length > 128) {
+      throw new HttpsError('invalid-argument', 'معرّف المستخدم غير صالح.');
+    }
+    if (mode !== 'remove') {
+      throw new HttpsError('invalid-argument', 'نوع العملية غير معروف.');
+    }
+
+    let userRecord;
+    try {
+      userRecord = await admin.auth().getUser(uid);
+    } catch {
+      // الحساب محذوف من Auth لكن سطره باقٍ في السجلّ — ننظّف السطر ولا نفشل.
+      await db.collection('trips').doc(tripId).collection('members').doc(uid).delete();
+      return { success: true, uid, tripId, claimRemoved: false, stillHasAccess: false };
+    }
+
+    const existingClaims = userRecord.customClaims || {};
+    const existingTrips = existingClaims.trips || {};
+
+    // ⚠️ **الحالة السالبة الحاكمة (القاعدة ١٨): لا تُمسّ بقية رحلاته.** خطأ هنا
+    // يمسح عضويات لا علاقة لها بالقرار، وهو فشل صامت تماماً — لا رسالة ولا خطأ،
+    // ولا يظهر إلا حين يفتح المستخدم رحلة أخرى بعد أيام فيجدها تطلب الرمز.
+    // ولهذا نبني الخريطة بالحذف من نسخة، لا بإعادة تركيبها من مصدر آخر.
+    const nextTrips = { ...existingTrips };
+    const wasMember = nextTrips[tripId] === true;
+    delete nextTrips[tripId];
+
+    if (wasMember) {
+      await admin.auth().setCustomUserClaims(uid, { ...existingClaims, trips: nextTrips });
+    }
+
+    // يُحذف دائماً ولو لم يكن عضواً في الـ claims — سطر بلا عضوية سجلٌّ يكذب،
+    // وتنظيفه هو الغرض في تلك الحالة بالذات.
+    await db.collection('trips').doc(tripId).collection('members').doc(uid).delete();
+
+    // ⚠️ المسؤول لا يستمد وصوله من عضوية الرحلة بل من claim عالمي (admin: true)،
+    // فإزالته من الرحلة لا تحجب عنه شيئاً. نُبلغ العميل بذلك بدل إيهام المسؤول
+    // بأن الإجراء فعل ما لم يفعله.
+    const stillHasAccess = existingClaims.admin === true;
+
+    console.log(`[manageMember] remove ${uid} from ${tripId} by ${request.auth.uid} (wasMember=${wasMember})`);
+    return { success: true, uid, tripId, claimRemoved: wasMember, stillHasAccess };
   }
 );

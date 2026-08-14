@@ -251,6 +251,7 @@ export default function App() {
               onResetPin: tripAdminPanel.resetTripPin,
               onSaveTripStatus: tripAdminPanel.saveTripStatus,
               onDeleteTrip: tripAdminPanel.deleteTrip,
+              onRemoveMember: tripAdminPanel.removeMember,
             }}
           />
 

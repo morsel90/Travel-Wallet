@@ -4,6 +4,7 @@ export {
   Unlock,
   Loader2,
   Users,
+  UserMinus,
   Receipt,
   Building2,
   Copy,

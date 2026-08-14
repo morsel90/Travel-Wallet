@@ -17,4 +17,5 @@ export { useTripConfig }       from './useTripConfig' // 🆕 إعدادات ا�
 export { useTripAdminActions } from './useTripAdminActions' // 🆕 كتابة إعدادات أي رحلة (البنك/المسار/الرمز) من واجهة الإدارة — للمسؤول فقط
 export { useAllTrips }         from './useAllTrips' // 🆕 قائمة كل الرحلات — استعلام يرضيه isAdmin() وحده
 export { useMyTrips }          from './useMyTrips'  // 🆕 رحلات المستخدم المنضم لها (شاشة «رحلاتي») — قراءة مستند كل رحلة على حدة
+export { useTripMembers }      from './useTripMembers' // 🆕 أعضاء رحلة بعينها من السجلّ — للمسؤول وحده (الـ claims لا تُستعلَم)
 export { useHeaderCollapse }   from './useHeaderCollapse' // 🆕 تتبّع اتجاه التمرير لتقليص/توسيع الهيدر (Sticky + Collapsible)
