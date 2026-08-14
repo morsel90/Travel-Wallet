@@ -615,6 +615,12 @@ artifacts/{tripId}/public/data/
 trips/{tripId}                    — Trip config (name, bankDetails, itinerary[])
                                     Admin-writable from the app (validated by isValidTripConfig);
                                     delete stays forbidden — it would orphan artifacts/{tripId}
+trips/{tripId}/members/{uid}      — 🆕 Membership roster. Written ONLY by the functions
+                                    (verifyTripPin on join, mergeAnonymousTrips on merge);
+                                    `allow write: if false`, read admin-only.
+                                    { joinedAt, lastVerifiedAt, email?, displayName?,
+                                      mergedFrom?, backfilledAt? }
+                                    ⚠️ An index, NOT a source of access — see Design Decisions
 tripSecrets/{tripId}              — PIN hash + salt (no client access, function only)
 rateLimits/verify_{key}          — PIN verify rate limits (function only)
 ```
@@ -1055,6 +1061,27 @@ Two things the merge deliberately does not do:
 **When to revisit:** if a single trip approaches ~2000 expenses, or first paint on a real device becomes visibly slow. The fix then is *not* pagination first — it is a summary document (balances and totals) maintained by a Cloud Function on expense writes. Once the math no longer needs every document, paginating the list becomes safe. In that order.
 
 Rendering is already virtualized by React Virtuoso, so a long list costs memory and network, not DOM.
+
+### 🆕 The membership roster is an index, not a source of access
+
+`trips/{tripId}/members/{uid}` was added on 2026-08-14 because the token-claims design has a second cost that was never priced. This file documented the trade honestly — membership in the token is a *free* read in `isMember()`, versus a billed `get()` in nearly every rule — and it computed the ceiling (38 trips). What it did not say is that the same decision makes membership **unenumerable, and therefore unmanageable**.
+
+Firebase Auth accepts no query over custom claims. So before this roster existed, the question "who is in this trip?" had no answer at all — not for the app, not for the admin. Enumerating meant paging `listUsers()` over every user in the project and reading each one's claims. The practical consequence: the only way to remove one person from a trip was to reset the PIN, which ejects **everyone**.
+
+**The claim remains the source of truth for access.** The roster is written *after* `setCustomUserClaims` succeeds, and nothing reads it to decide permission. This is load-bearing: `isMember()` still reads the token, so the hot path costs exactly what it did before — zero extra reads on any read or write.
+
+⚠️ **Never add a rule that derives access from this path.** Doing so reintroduces the billed `get()` the whole design exists to avoid, against a 10-read budget that expense creation already spends two of.
+
+Four details that are easy to get wrong:
+
+1. **`joinedAt` is written once and never overwritten.** Re-entering a PIN is not rare — every PIN reset forces every member to re-enter. Writing it on each verification would erase every join date at the first reset, i.e. destroy the field's meaning exactly when it becomes useful.
+2. **A failed roster write does not fail the join.** The claim was already set, so the person *is* a member; dropping their join because an index write failed would punish them for something unrelated. The error goes to Cloud Logging and `scripts/backfill-member-roster.mjs` repairs the gap.
+3. **Trip deletion must delete the subcollection explicitly.** Firestore does not cascade. And this is reachable, not theoretical: deletion requires the trip to be empty of *travelers and expenses*, and joining requires neither — so a trip ten people joined and nobody spent in is "empty" and deletable.
+4. **`mergeAnonymousTrips` writes roster rows too, and leaves the old anonymous ones alone.** The merge does not clear the old account's claims, so that uid still has real access; deleting its row would make the roster lie. `mergedFrom` links the two so the admin sees one person, not two.
+
+**Backfill deliberately leaves `joinedAt` absent** rather than approximating it from `metadata.creationTime` — account creation is not trip join, and they differ for anyone in more than one trip. An invented-but-plausible timestamp is worse than a missing one, because nothing downstream can tell it was invented.
+
+**Still missing on purpose:** nothing *reads* the roster yet — no admin screen, no removal. That is phase 1 of `docs/PLAN-member-management.md`. Phase 0 shipped alone because the roster only records what happens *after* it exists; every day without it is a join whose date is unrecoverable.
 
 ---
 

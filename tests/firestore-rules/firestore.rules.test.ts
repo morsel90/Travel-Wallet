@@ -82,6 +82,8 @@ const depositLogsCol  = (db: Firestore, travelerId: number, tripId = TRIP_ID) =>
 const rateLimitDoc    = (db: Firestore, uid: string, tripId = TRIP_ID) => doc(db, 'artifacts', tripId, 'public', 'data', 'rateLimits', uid)
 const tripConfigDoc   = (db: Firestore, tripId = TRIP_ID) => doc(db, 'trips', tripId)
 const tripSecretsDoc  = (db: Firestore, tripId = TRIP_ID) => doc(db, 'tripSecrets', tripId)
+const tripMemberDoc   = (db: Firestore, uid: string, tripId = TRIP_ID) => doc(db, 'trips', tripId, 'members', uid)
+const tripMembersCol  = (db: Firestore, tripId = TRIP_ID) => collection(db, 'trips', tripId, 'members')
 const pinRateLimitDoc = (db: Firestore, key = 'k1') => doc(db, 'rateLimits', key)
 
 // ─── حمولات صالحة (تطابق isValidExpense/isValidTraveler/isValidDepositLog) ───
@@ -464,6 +466,48 @@ describe('إدارة الرحلات — trips/{tripId}', () => {
   it('لا أحد يستطيع حذف مستند الرحلة من العميل — حتى المسؤول', async () => {
     await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة تجريبية' }))
     await assertFails(deleteDoc(tripConfigDoc(adminDb())))
+  })
+})
+
+// 🆕 السجلّ فهرس إداري لا مصدر صلاحية: تكتبه الدوال بـ Admin SDK وحدها، ويقرأه
+// المسؤول وحده. وهو يحمل «متى انضم» و«من هو»، ويُتّخذ عليه قرار إزالة عضو — فأي
+// كتابة من عميل تعني تزوير المُدخَل الذي يُبنى عليه ذلك القرار.
+describe('سجلّ عضوية الرحلة — trips/{tripId}/members', () => {
+  beforeEach(async () => {
+    await seed(db => setDoc(tripMemberDoc(db, 'member-1'), { joinedAt: 1_700_000_000_000 }))
+  })
+
+  it('المسؤول يقرأ السجلّ — وهو الغرض كله: معرفة من في الرحلة', async () => {
+    await assertSucceeds(getDocs(tripMembersCol(adminDb())))
+    await assertSucceeds(getDoc(tripMemberDoc(adminDb(), 'member-1')))
+  })
+
+  // ⚠️ حتى سطر العضو نفسه: القرار مبدئياً «المسؤول وحده». السماح للعضو بقراءة
+  // سطره إضافة غير كاسرة متى لزمت، لكن الافتراضي يبقى الأضيق.
+  it('عضو الرحلة لا يقرأ السجلّ ولا حتى سطره هو', async () => {
+    await assertFails(getDocs(tripMembersCol(memberDb())))
+    await assertFails(getDoc(tripMemberDoc(memberDb('member-1'), 'member-1')))
+  })
+
+  it('عضو رحلة أخرى ومجهول: لا شيء', async () => {
+    await assertFails(getDocs(tripMembersCol(otherTripMemberDb())))
+    await assertFails(getDocs(tripMembersCol(anonDb())))
+  })
+
+  it('لا كتابة من أي عميل — بما فيه المسؤول ومَن السطرُ سطرُه', async () => {
+    await assertFails(setDoc(tripMemberDoc(adminDb(), 'member-2'), { joinedAt: Date.now() }))
+    await assertFails(setDoc(tripMemberDoc(memberDb('member-1'), 'member-1'), { joinedAt: 1 }))
+    await assertFails(updateDoc(tripMemberDoc(adminDb(), 'member-1'), { joinedAt: 1 }))
+    await assertFails(deleteDoc(tripMemberDoc(adminDb(), 'member-1')))
+  })
+
+  // ⚠️ الحالة التي تنكسر بصمت لو نُسي match المتداخل: قواعد المستند الأب لا تسري
+  // على مجموعاته الفرعية في Firestore. فلو حُذفت كتلة members لسقط المسار إلى
+  // «مرفوض افتراضياً» — ويبدو ذلك آمناً، لكنه يعطّل قراءة المسؤول بلا أي إشارة.
+  it('عضو الرحلة يقرأ مستند الرحلة نفسه لكن لا يرث ذلك على السجلّ', async () => {
+    await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة' }))
+    await assertSucceeds(getDoc(tripConfigDoc(memberDb())))
+    await assertFails(getDoc(tripMemberDoc(memberDb(), 'member-1')))
   })
 })
 

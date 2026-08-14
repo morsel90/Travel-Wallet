@@ -63,6 +63,52 @@ function assertClaimsFitTokenLimit(claims) {
   }
 }
 
+// ─── 🆕 سجلّ عضوية الرحلة ────────────────────────────────────────────────────
+//
+// trips/{tripId}/members/{uid}
+//
+// **لماذا وُجد أصلاً:** العضوية تعيش في custom claims حساب العضو نفسه، وFirebase
+// Auth **لا يقبل استعلاماً على الـ claims**. فبلا هذا السجلّ لا أحد — لا التطبيق
+// ولا المسؤول — يستطيع معرفة *من* في الرحلة؛ التعداد يوجب المرور على
+// listUsers() لكل مستخدمي المشروع. أي أن العضوية كانت غير قابلة للتعداد ومن ثمّ
+// غير قابلة للإدارة: الأداة الوحيدة لإخراج عضو كانت تغيير الرمز، وهو طرد الجميع.
+//
+// ⚠️ **والـ claim يبقى مصدر الحقيقة للوصول، وهذا ليس تفصيلاً.** `isMember()` في
+// firestore.rules تقرأ من التوكن — قراءة **مجانية**. لو صار هذا السجلّ مرجع
+// الوصول لفرض `get()` مفوتراً في كل قاعدة تقريباً (انظر «ما لا تفعله هذه الخطة»
+// في docs/PLAN-member-management.md). فهو **فهرس إداري** يُقرأ نادراً بصلاحية
+// المسؤول، لا مصدر صلاحية. صفر كلفة على المسار الساخن.
+//
+// ⚠️ **الفشل هنا لا يُفشل الانضمام.** الـ claim كُتب قبل هذه الدالة، فالعضو صار
+// عضواً فعلاً؛ وإسقاط الانضمام لأن فهرساً لم يُكتب يحرم المستخدم من رحلته لسبب
+// لا يخصّه. الخطأ يُسجَّل في Cloud Logging، والسطر الناقص يُستدرك لاحقاً بـ
+// scripts/backfill-member-roster.mjs.
+async function recordMembership(tripId, userRecord, extra = {}) {
+  try {
+    const ref = db.collection('trips').doc(tripId)
+      .collection('members').doc(userRecord.uid);
+
+    const snap = await ref.get();
+    const now = Date.now();
+
+    // ⚠️ joinedAt يُكتب **مرة واحدة فقط**. إعادة إدخال الرمز ليست حدثاً نادراً:
+    // كل تغيير لرمز الرحلة يُخرج جميع الأعضاء ويجبرهم على إدخاله من جديد. فلو
+    // كُتب في كل تحقّق لضاعت تواريخ الانضمام كلها عند أول إعادة ضبط للرمز —
+    // أي لفقد الحقل معناه تماماً في اللحظة التي تحتاجه فيها.
+    const payload = { lastVerifiedAt: now, ...extra };
+    if (!snap.exists) payload.joinedAt = now;
+
+    // متاحان للحسابات الدائمة وحدها؛ الجلسة المجهولة بلا بريد ولا اسم. وFirestore
+    // يرفض قيمة undefined، فيُحذف الحقل بدل كتابته فارغاً.
+    if (userRecord.email) payload.email = userRecord.email;
+    if (userRecord.displayName) payload.displayName = userRecord.displayName;
+
+    await ref.set(payload, { merge: true });
+  } catch (err) {
+    console.error(`[recordMembership] تعذّر تسجيل ${userRecord.uid} في ${tripId}:`, err);
+  }
+}
+
 // 🆕 وظيفة حماية من محاولات التخمين المستمرة (Rate Limiting)
 //
 // ⚠️ المفتاح يشمل tripId عمداً (يجب أن يكون مُتحقَّقاً من صيغته قبل الاستدعاء —
@@ -212,6 +258,10 @@ exports.verifyTripPin = onCall(
 
     await admin.auth().setCustomUserClaims(request.auth.uid, nextClaims);
 
+    // 🆕 بعد كتابة الـ claim لا قبلها: الـ claim هو ما يجعل الانضمام حقيقياً،
+    // وهذا فهرس له. والدالة تبتلع أخطاءها عمداً — انظر تعليقها.
+    await recordMembership(tripId, userRecord);
+
     return { success: true };
 
   }
@@ -292,8 +342,20 @@ exports.mergeAnonymousTrips = onCall(
     const addedCount = Object.keys(mergedTrips).length - Object.keys(existingTrips).length;
     if (addedCount > 0) {
       await admin.auth().setCustomUserClaims(request.auth.uid, nextClaims);
+
+      // 🆕 الرحلات المنقولة تحتاج سطرها في السجلّ أيضاً، وإلا صار للحساب الدائم
+      // وصولٌ لا يظهر في أي قائمة — وهو بالضبط العمى الذي وُجد السجلّ لإنهائه.
+      const newlyAdded = Object.keys(mergedTrips).filter(id => !(id in existingTrips));
+      await Promise.all(
+        newlyAdded.map(id => recordMembership(id, userRecord, { mergedFrom: decoded.uid })),
+      );
     }
 
+    // ⚠️ **سطر الجلسة المجهولة يبقى، ولا يُحذف.** الدمج لا يمسح claims الحساب
+    // القديم (انظر «ما لا يفعله الدمج» في docs/PLAN-account-linking.md)، فذلك
+    // الـ uid ما زال يملك وصولاً فعلياً. حذف سطره يجعل السجلّ يكذب: شخصٌ يدخل
+    // ولا يظهر في القائمة. `mergedFrom` على السطر الجديد هو ما يربط الاثنين،
+    // فتعرف لوحة الإدارة أنهما شخص واحد بدل أن تعرضهما كعضوين.
     console.log(`[mergeAnonymousTrips] ${decoded.uid} → ${request.auth.uid}: +${addedCount}`);
     return { merged: addedCount };
   }
@@ -390,8 +452,18 @@ exports.manageTrip = onCall(
         );
       }
 
-      // المستندان معاً في كتابة ذرّية: لا يبقى رمز بلا رحلة ولا العكس
+      // ⚠️ 🆕 **Firestore لا يحذف المجموعات الفرعية مع مستندها.** حذف
+      // trips/{tripId} وحده يترك trips/{tripId}/members/… يتيمة: مستندات حيّة
+      // تحت مسار مستند غير موجود، لا تظهر في أي واجهة ولا تُحذف أبداً.
+      //
+      // وهذه الحالة قابلة للوصول فعلاً لا نظرية: شرط الحذف هو خلوّ الرحلة من
+      // **مسافرين ومصاريف**، والانضمام بالرمز لا يستلزم إضافة مسافر. فرحلة
+      // انضمّ إليها عشرة ولم يسجّل أحدهم مصروفاً تُعدّ فارغة وتُحذف.
+      const members = await tripRef.collection('members').get();
+
+      // المستندات معاً في كتابة ذرّية: لا يبقى رمز بلا رحلة ولا العكس
       const deleteBatch = db.batch();
+      members.docs.forEach(doc => deleteBatch.delete(doc.ref));
       deleteBatch.delete(tripRef);
       deleteBatch.delete(db.collection('tripSecrets').doc(tripId));
       await deleteBatch.commit();
