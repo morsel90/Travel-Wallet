@@ -9,7 +9,9 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Building2, Route, KeyRound, Save, Plane, Car, Train, Bus,
   Pencil, Trash2, Plus, ArrowUp, ArrowDown, Loader2, AlertTriangle, Lock,
+  Users, UserMinus,
 } from '../../icons'
+import { useTripMembers } from '../../hooks/useTripMembers'
 import SegmentForm from './SegmentForm'
 import EmptyState from '../EmptyState'
 import {
@@ -32,15 +34,18 @@ interface TripDetailPanelProps {
   onSaveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
   /** حذف نهائي — الخادم يرفضه إن كانت الرحلة تحوي أي بيانات. */
   onDeleteTrip: (tripId: string) => Promise<boolean>
+  /** 🆕 إزالة عضو — تمسح عضوية هذه الرحلة وحدها من claims المستهدَف. */
+  onRemoveMember: (tripId: string, uid: string) => Promise<boolean>
   /** يُستدعى بعد نجاح الحذف — الرحلة لم تعد موجودة فلا يصح إبقاء لوحتها مفتوحة. */
   onDeleted: () => void
 }
 
-type DetailTab = 'bank' | 'itinerary' | 'pin' | 'danger'
+type DetailTab = 'bank' | 'itinerary' | 'members' | 'pin' | 'danger'
 
 const TABS: Array<{ key: DetailTab; label: string; Icon: typeof Building2 }> = [
   { key: 'bank',      label: 'الاسم والحساب', Icon: Building2 },
   { key: 'itinerary', label: 'مسار الرحلة',   Icon: Route },
+  { key: 'members',   label: 'الأعضاء',       Icon: Users },
   { key: 'pin',       label: 'رمز الدخول',    Icon: KeyRound },
   { key: 'danger',    label: 'حذف الرحلة',    Icon: Trash2 },
 ]
@@ -70,9 +75,15 @@ const STATUS_HELP: Record<TripStatus, string> = {
 
 export default function TripDetailPanel({
   trip, isSaving, onSaveTripName, onSaveBankDetails, onSaveItinerary, onResetPin,
-  onSaveTripStatus, onDeleteTrip, onDeleted,
+  onSaveTripStatus, onDeleteTrip, onRemoveMember, onDeleted,
 }: TripDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>('bank')
+
+  // 🆕 لا نقرأ السجلّ إلا والتبويب مفتوح: القراءة مقصورة على المسؤول، والقائمة
+  // لا تتغيّر إلا بفعله هو في هذه الشاشة نفسها — فلا داعي لجلبها مع كل رحلة يفتحها.
+  const { members, error: membersError, refresh: refreshMembers } =
+    useTripMembers(trip.id, activeTab === 'members')
+  const [removingUid, setRemovingUid] = useState<string | null>(null)
 
   const [nameForm, setNameForm] = useState(trip.name)
   const [bankForm, setBankForm] = useState<BankDetails>(trip.bankDetails)
@@ -115,6 +126,14 @@ export default function TripDetailPanel({
   const saveNameAndBank = async () => {
     if (nameForm !== trip.name) await onSaveTripName(trip.id, nameForm)
     await onSaveBankDetails(trip.id, bankForm)
+  }
+
+  const submitRemoveMember = async (uid: string) => {
+    setRemovingUid(null)
+    const ok = await onRemoveMember(trip.id, uid)
+    // إعادة الجلب عند النجاح وحده: الفشل يترك السطر موجوداً فعلاً، وإخفاؤه
+    // يوهم بأن الإزالة تمّت.
+    if (ok) refreshMembers()
   }
 
   const startAdd = () => { setEditingId(null); setDraftError(null); setDraft(emptySegmentDraft()) }
@@ -451,6 +470,119 @@ export default function TripDetailPanel({
             </div>
           )}
         </>
+      )}
+
+      {activeTab === 'members' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <Users className="w-4 h-4 text-teal-600" /> أعضاء الرحلة
+            {members && <span className="text-xs font-normal text-slate-400">({members.length})</span>}
+          </h3>
+
+          {/* ⚠️ التأخير يُقال هنا لا يُخفى: العضوية تُقرأ من التوكن وهو صالح ٦٠
+              دقيقة، فالإزالة لا تُغلق الباب فوراً. مسؤول يظنّها فورية قد يعتمد
+              عليها في حالة تسرّب — والصمت هنا أسوأ من القيد نفسه. */}
+          <div className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1.5">
+            <p className="font-bold">الإزالة قد تستغرق حتى ساعة لتصبح فعّالة.</p>
+            <p>
+              جلسة العضو صالحة ٦٠ دقيقة، والصلاحية تُقرأ منها. لقطع الوصول فوراً غيّر رمز
+              الرحلة — لكن ذلك يُخرج كل الأعضاء ويطالبهم بالرمز الجديد.
+            </p>
+          </div>
+
+          {membersError && (
+            <p role="alert" className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-2.5">
+              تعذّر جلب قائمة الأعضاء. القراءة متاحة للمسؤول وحده — جرّب تسجيل الخروج والدخول لتحديث صلاحيتك.
+            </p>
+          )}
+
+          {!members && !membersError && (
+            <div className="flex items-center justify-center gap-2 text-slate-500 py-8">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm font-bold">جارٍ جلب الأعضاء...</span>
+            </div>
+          )}
+
+          {members?.length === 0 && (
+            <EmptyState
+              Icon={Users}
+              title="لا أحد في السجلّ بعد"
+              description="يُسجَّل العضو تلقائياً عند إدخاله رمز الرحلة. ومن انضمّ قبل إضافة السجلّ يظهر بعد تشغيل سكربت الترحيل."
+            />
+          )}
+
+          {members && members.length > 0 && (
+            <div className="space-y-2">
+              {members.map(m => {
+                const isConfirming = removingUid === m.uid
+                return (
+                  <div
+                    key={m.uid}
+                    className={`rounded-xl border p-3 transition-colors ${
+                      isConfirming ? 'border-rose-300 bg-rose-50' : 'border-slate-200 bg-slate-50/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-slate-800 truncate">
+                          {m.displayName || m.email || 'عضو بجلسة مجهولة'}
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5" dir="ltr">{m.uid}</p>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          {/* غياب joinedAt يُعرض «غير معروف» لا 1970: السطور
+                              المُرحَّلة لا تعرف التاريخ، ولا مكان يحفظه. */}
+                          {m.joinedAt
+                            ? `انضمّ: ${new Date(m.joinedAt).toLocaleDateString(DT_LOCALE, { day: 'numeric', month: 'short', year: 'numeric' })}`
+                            : 'تاريخ الانضمام غير معروف (سطر مُرحَّل)'}
+                          {m.mergedFrom && ' · نُقلت عضويته من جلسة سابقة'}
+                        </p>
+                      </div>
+
+                      {!isConfirming && (
+                        <button
+                          type="button"
+                          onClick={() => setRemovingUid(m.uid)}
+                          disabled={isSaving}
+                          className="flex items-center gap-1.5 text-rose-700 hover:bg-rose-100 border border-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-40 shrink-0"
+                        >
+                          <UserMinus className="w-3.5 h-3.5" /> إزالة
+                        </button>
+                      )}
+                    </div>
+
+                    {isConfirming && (
+                      <div className="mt-3 pt-3 border-t border-rose-200 space-y-2.5">
+                        <p className="text-xs text-rose-900">
+                          <span className="font-bold">تُزال عضويته من هذه الرحلة وحدها.</span>{' '}
+                          رحلاته الأخرى لا تتأثر، ومصاريفه المسجَّلة تبقى كما هي — إزالة شخص من
+                          الرحلة ليست محو أثره من الدفتر.
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void submitRemoveMember(m.uid)}
+                            disabled={isSaving}
+                            className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-40"
+                          >
+                            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserMinus className="w-3.5 h-3.5" />}
+                            تأكيد الإزالة
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRemovingUid(null)}
+                            className="px-3 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+                          >
+                            إلغاء
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       )}
 
       {activeTab === 'pin' && (

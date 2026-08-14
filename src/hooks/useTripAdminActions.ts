@@ -35,6 +35,18 @@ interface ManageTripRequest {
 }
 interface ManageTripResponse { success: boolean; tripId: string }
 
+// 🆕 عقد استدعاء manageMember
+interface ManageMemberRequest { mode: 'remove'; tripId: string; uid: string }
+interface ManageMemberResponse {
+  success: boolean
+  uid: string
+  tripId: string
+  /** false إن لم يكن عضواً في الـ claims أصلاً — نُظِّف سطر السجلّ فقط. */
+  claimRemoved: boolean
+  /** true إن كان المستهدَف مسؤولاً: صلاحيته عالمية ولا تمرّ بعضوية الرحلة. */
+  stillHasAccess: boolean
+}
+
 interface UseTripAdminActionsParams {
   isAdmin: boolean
   showToast: (msg: ToastMessage, durationMs?: number) => void
@@ -52,6 +64,8 @@ export interface UseTripAdminActionsResult {
   resetTripPin: (tripId: string, pin: string) => Promise<boolean>
   /** حذف نهائي — للرحلات الفارغة فقط، والخادم هو من يفرض ذلك (انظر functions/index.js). */
   deleteTrip: (tripId: string) => Promise<boolean>
+  /** 🆕 إزالة عضو من رحلة واحدة — لا تمسّ بقية رحلاته، ولا تُلغي مصاريفه. */
+  removeMember: (tripId: string, uid: string) => Promise<boolean>
 }
 
 export function useTripAdminActions({
@@ -193,5 +207,62 @@ export function useTripAdminActions({
     [callManageTrip]
   )
 
-  return { isSaving, saveBankDetails, saveItinerary, saveTripName, saveTripStatus, createTrip, resetTripPin, deleteTrip }
+  // 🆕 إزالة عضو — دالة مستقلة عن callManageTrip لأن عقدها مختلف (uid بدل
+  // pin/name) ولأن رسالة نجاحها مشروطة بما أعادته الدالة، لا نصاً ثابتاً.
+  const removeMember = useCallback(async (tripId: string, uid: string): Promise<boolean> => {
+    if (!isAdmin) {
+      showToast({ text: 'هذا الإجراء متاح للمسؤول فقط.', type: 'error' }, 3000)
+      return false
+    }
+
+    setIsSaving(true)
+    try {
+      const user = auth.currentUser
+      if (!user) throw new Error('غير مسجّل الدخول.')
+      await user.getIdToken(true)
+
+      const manageMember = httpsCallable<ManageMemberRequest, ManageMemberResponse>(functions, 'manageMember')
+      const { data } = await manageMember({ mode: 'remove', tripId, uid })
+
+      haptic.success()
+
+      // ⚠️ الرسالة تقول الحقيقة كاملةً بدل «تمت الإزالة» المطمئنة:
+      //
+      //   • المسؤول لا يستمد وصوله من عضوية الرحلة بل من claim عالمي، فإزالته
+      //     منها لا تحجب عنه شيئاً — وإخفاء ذلك يوهم بأن الإجراء فعل ما لم يفعله.
+      //   • ومن أُزيل فعلاً يحتفظ بوصوله حتى ساعة: التوكن صالح ٦٠ دقيقة و
+      //     firestore.rules تقرأ العضوية منه. هذا ثمن كون isMember() مجانية،
+      //     ولا يجوز أن يكتشفه المسؤول بنفسه بعد أن يظنّ الباب أُغلق.
+      if (data.stillHasAccess) {
+        showToast({
+          text: 'أُزيل من قائمة الرحلة، لكنه مسؤول — وصلاحيته عامة ولا تمرّ بعضوية الرحلة.',
+          type: 'success',
+        }, 6000)
+      } else if (!data.claimRemoved) {
+        showToast({ text: 'لم يكن عضواً فعلياً — نُظِّف سطره من القائمة.', type: 'success' }, 4000)
+      } else {
+        showToast({
+          text: 'تمت الإزالة. قد يبقى وصوله فعّالاً حتى ساعة حتى تنتهي صلاحية جلسته.',
+          type: 'success',
+        }, 6000)
+      }
+      return true
+    } catch (err) {
+      haptic.error()
+      const message = (err as { message?: string })?.message
+      const isFunctionsError = typeof (err as { code?: string })?.code === 'string'
+        && String((err as { code?: string }).code).startsWith('functions/')
+
+      if (isFunctionsError && message) {
+        showToast({ text: message, type: 'error' }, 4000)
+      } else {
+        handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
+      }
+      return false
+    } finally {
+      setIsSaving(false)
+    }
+  }, [isAdmin, showToast, handleFirestoreError])
+
+  return { isSaving, saveBankDetails, saveItinerary, saveTripName, saveTripStatus, createTrip, resetTripPin, deleteTrip, removeMember }
 }

@@ -511,3 +511,86 @@ exports.manageTrip = onCall(
     return { success: true, tripId };
   }
 );
+/**
+ * 🆕 manageMember: إزالة عضو من رحلة واحدة.
+ *
+ * **لماذا دالة خادمية ولا يمكن أن تكون قاعدة؟** العضوية تعيش في custom claims
+ * حساب العضو المستهدَف، وتعديل claims حساب آخر يوجب Admin SDK. لا سبيل لفعله
+ * من العميل تحت أي قاعدة.
+ *
+ * وقبل هذه الدالة كانت الأداة الوحيدة لإخراج شخص هي تغيير رمز الرحلة — أي إخراج
+ * **الجميع** وإجبار كل عضو على إدخال الرمز الجديد.
+ *
+ * ⚠️ **الإزالة ليست فورية: حتى ساعة.** توكن Firebase صالح ٦٠ دقيقة، و
+ * firestore.rules تقرأ العضوية منه لا من قاعدة البيانات. فالمُزال يحتفظ بوصوله
+ * حتى تنتهي صلاحية توكنه الحالي. وهذا ليس خللاً بل الوجه الآخر لكون isMember()
+ * قراءةً مجانية — والواجهة تقول ذلك للمسؤول صراحةً بدل إخفائه.
+ *
+ * ورُفض revokeRefreshTokens رغم أنه يجعلها فورية: أثره على **الحساب كله**، فيُخرج
+ * العضو من كل رحلاته لا من هذه وحدها — عقوبة جانبية على رحلات لا علاقة لها
+ * بالقرار. انظر docs/PLAN-member-management.md.
+ */
+exports.manageMember = onCall(
+  {
+    region: 'us-central1',
+    maxInstances: 5,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+    }
+    if (request.auth.token.admin !== true) {
+      throw new HttpsError('permission-denied', 'هذا الإجراء متاح للمسؤول فقط.');
+    }
+
+    const tripId = String(request.data?.tripId ?? '').trim();
+    const uid = String(request.data?.uid ?? '').trim();
+    const mode = String(request.data?.mode ?? '').trim(); // 'remove'
+
+    if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
+      throw new HttpsError('invalid-argument', 'معرّف الرحلة غير صالح.');
+    }
+    if (!uid || uid.length > 128) {
+      throw new HttpsError('invalid-argument', 'معرّف المستخدم غير صالح.');
+    }
+    if (mode !== 'remove') {
+      throw new HttpsError('invalid-argument', 'نوع العملية غير معروف.');
+    }
+
+    let userRecord;
+    try {
+      userRecord = await admin.auth().getUser(uid);
+    } catch {
+      // الحساب محذوف من Auth لكن سطره باقٍ في السجلّ — ننظّف السطر ولا نفشل.
+      await db.collection('trips').doc(tripId).collection('members').doc(uid).delete();
+      return { success: true, uid, tripId, claimRemoved: false, stillHasAccess: false };
+    }
+
+    const existingClaims = userRecord.customClaims || {};
+    const existingTrips = existingClaims.trips || {};
+
+    // ⚠️ **الحالة السالبة الحاكمة (القاعدة ١٨): لا تُمسّ بقية رحلاته.** خطأ هنا
+    // يمسح عضويات لا علاقة لها بالقرار، وهو فشل صامت تماماً — لا رسالة ولا خطأ،
+    // ولا يظهر إلا حين يفتح المستخدم رحلة أخرى بعد أيام فيجدها تطلب الرمز.
+    // ولهذا نبني الخريطة بالحذف من نسخة، لا بإعادة تركيبها من مصدر آخر.
+    const nextTrips = { ...existingTrips };
+    const wasMember = nextTrips[tripId] === true;
+    delete nextTrips[tripId];
+
+    if (wasMember) {
+      await admin.auth().setCustomUserClaims(uid, { ...existingClaims, trips: nextTrips });
+    }
+
+    // يُحذف دائماً ولو لم يكن عضواً في الـ claims — سطر بلا عضوية سجلٌّ يكذب،
+    // وتنظيفه هو الغرض في تلك الحالة بالذات.
+    await db.collection('trips').doc(tripId).collection('members').doc(uid).delete();
+
+    // ⚠️ المسؤول لا يستمد وصوله من عضوية الرحلة بل من claim عالمي (admin: true)،
+    // فإزالته من الرحلة لا تحجب عنه شيئاً. نُبلغ العميل بذلك بدل إيهام المسؤول
+    // بأن الإجراء فعل ما لم يفعله.
+    const stillHasAccess = existingClaims.admin === true;
+
+    console.log(`[manageMember] remove ${uid} from ${tripId} by ${request.auth.uid} (wasMember=${wasMember})`);
+    return { success: true, uid, tripId, claimRemoved: wasMember, stillHasAccess };
+  }
+);

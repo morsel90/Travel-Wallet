@@ -44,3 +44,8 @@ export const tripDocById = (tripId: string) => doc(db, 'trips', tripId)
 // isAdmin() هو الشرط الوحيد الذي يتحقق دون النظر لمحتوى المستند (isMember
 // يعتمد على معرّف كل رحلة على حدة، فلا يُرضي استعلام قائمة عامًّا).
 export const tripsCol = () => collection(db, 'trips')
+
+// 🆕 سجلّ عضوية رحلة بعينها. تكتبه الدوال وحدها (`allow write: if false`)،
+// ويقرأه المسؤول وحده. وهو **فهرس إداري لا مصدر صلاحية**: isMember() تبقى تقرأ
+// العضوية من التوكن — قراءة مجانية — ولا يجوز اشتقاق أي وصول من هذا المسار.
+export const tripMembersCol = (tripId: string) => collection(db, 'trips', tripId, 'members')

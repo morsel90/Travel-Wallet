@@ -250,7 +250,7 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 │       └── tripId.ts           # TRIP_ID + HAS_EXPLICIT_TRIP_ID from ?trip= query param
 │
 ├── functions/
-│   └── index.js                 # Cloud Functions: verifyTripPin (rate-limited) + manageTrip (create/resetPin/delete)
+│   └── index.js                 # Cloud Functions: verifyTripPin + manageTrip + mergeAnonymousTrips + 🆕 manageMember
 │
 ├── scripts/
 │   ├── audit-legacy-docs.mjs    # 🆕 Read-only: counts documents still needing each legacy fallback
@@ -308,7 +308,7 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 | `src/constants.ts` | `CURRENCY_LABELS` (160 currencies), `FALLBACK_RATES`, `EXPENSE_CATEGORIES`, `BANK_DETAILS`. |
 | `src/utils/calculations.ts` | Pure functions for balances, settlements, category totals, spending trend. Fully tested. |
 | `src/utils/xlsx.ts` | Pure-JS OOXML XLSX generator — no dependencies. |
-| `functions/index.js` | `verifyTripPin` (rate-limited PIN verification, grants the `trips` claim) + `manageTrip` (create / resetPin / delete) + 🆕 `mergeAnonymousTrips` (rescues memberships when linking hits an existing account). |
+| `functions/index.js` | `verifyTripPin` (rate-limited PIN verification, grants the `trips` claim) + `manageTrip` (create / resetPin / delete) + `mergeAnonymousTrips` (rescues memberships when linking hits an existing account) + 🆕 `manageMember` (removes one trip from another user's claims — the only way, since claims live on the target's account). |
 | `firestore.rules` | Security rules: `isAdmin()`, `isMember(tripId)`, `withinExpenseRateLimit`, immutable deposit logs. |
 | `src/context/UIContext.ts` | 🆕 Two contexts split by volatility. Read the comment there before adding a field — putting a changing value in the actions context silently undoes the split. |
 | `src/hooks/useMyTrips.ts` | 🆕 The user's own trips. Reads each `trips/{id}` with its own `getDoc` — a `list` query is admin-only and would fail for members. |
@@ -1081,7 +1081,29 @@ Four details that are easy to get wrong:
 
 **Backfill deliberately leaves `joinedAt` absent** rather than approximating it from `metadata.creationTime` — account creation is not trip join, and they differ for anyone in more than one trip. An invented-but-plausible timestamp is worse than a missing one, because nothing downstream can tell it was invented.
 
-**Still missing on purpose:** nothing *reads* the roster yet — no admin screen, no removal. That is phase 1 of `docs/PLAN-member-management.md`. Phase 0 shipped alone because the roster only records what happens *after* it exists; every day without it is a join whose date is unrecoverable.
+### 🆕 Removing a member is eventually-consistent, and the UI says so
+
+`manageMember` (mode `remove`) deletes **one** trip key from the target's claims and deletes their roster row. It must be a function: claims live on the *target's* account, so no client rule can reach them.
+
+**The removed member keeps access for up to an hour.** Firebase ID tokens last 60 minutes and `isMember()` reads the token, so revocation cannot be instant. This is the exact flip side of that read being free — the same trade documented above, showing its cost on the other end.
+
+`revokeRefreshTokens` would make it immediate and was rejected: it acts on the whole **account**, ejecting the person from every trip they belong to, not the one they were removed from. A side effect on unrelated trips is a bigger wrong than an hour of stale access.
+
+⚠️ **The admin panel states the delay in the tab itself**, and points at PIN reset as the immediate-but-blunt alternative. Hiding it would be the worst option: an admin removing someone after a PIN leak needs to know the door is not yet shut. Same principle as `utils/tripStatus.ts` — the UI explains what the server will actually do.
+
+Three results the caller must distinguish, and the toast does:
+
+| Server returns | Meaning | Why it can't just say "removed" |
+|---|---|---|
+| `claimRemoved: true` | Real removal | Must mention the up-to-an-hour delay |
+| `stillHasAccess: true` | Target is an admin | `admin: true` is global and bypasses trip membership entirely — removing them from the trip changes nothing about their access |
+| `claimRemoved: false` | Roster row with no matching claim | Nothing was revoked; a stale index row was cleaned up |
+
+**Removal does not touch their expenses, their traveler, or `createdByUid`.** Taking someone out of a trip is not erasing their financial trace from it — whoever paid, paid. Same principle that makes `createdByUid` immutable and deposit logs append-only.
+
+⚠️ **The negative case that matters (guideline 18): removal must not touch the target's *other* trips.** The claim map is rebuilt by deleting one key from a copy, never reassembled from another source. Getting this wrong wipes memberships unrelated to the decision, and it fails silently — no error, no symptom, until that person opens a different trip days later and is asked for a PIN.
+
+**Still missing on purpose:** no invite records, no per-trip organizer role. Those are phases 2–3 of `docs/PLAN-member-management.md`.
 
 ---
 
@@ -1093,7 +1115,7 @@ Three independent systems that must be deployed separately:
 |---|---|---|
 | Frontend | `vercel --prod` | SPA hosted on Vercel |
 | Firestore Rules | `firebase deploy --only firestore:rules` | Security rules |
-| Cloud Functions | `firebase deploy --only functions` | `verifyTripPin`, `manageTrip`, `mergeAnonymousTrips` |
+| Cloud Functions | `firebase deploy --only functions` | `verifyTripPin`, `manageTrip`, `mergeAnonymousTrips`, 🆕 `manageMember` |
 
 **Important:** After updating `firestore.rules` or `functions/index.js`, existing users may need to re-enter their trip PIN (custom claim format changed). Always create the trip via `scripts/create-trip.mjs` before deploying new rules.
 
@@ -1145,6 +1167,10 @@ Three independent systems that must be deployed separately:
 | 🆕 Emulator fails downloading `cloud-firestore-emulator-*.jar` | A newer firebase-tools (often a *global* install) wants a newer jar and cannot reach `storage.googleapis.com` | Run through `npm run …` so the pinned local version is used; it reuses the cached jar |
 | 🆕 E2E fails with "Port 5173 is already in use" | A leftover `vite`/`npm run dev` from another terminal | `lsof -i :5173` then kill it; do not run a dev server alongside `npm run test:e2e` |
 | 🆕 `wrong-pin` E2E test fails with a rate-limit message | Too many PIN attempts accumulated on that trip's counter within 15 minutes | The test clears counters via `clearPinRateLimits()`; if changed, keep that call |
+| 🆕 A removed member can still open the trip | Expected for up to 60 minutes — `isMember()` reads the ID token, and tokens live an hour | Wait it out, or reset the PIN for an immediate cut (which ejects everyone). The members tab says this before you click |
+| 🆕 The members tab is empty although people have joined | They joined before the roster existed (2026-08-14). Membership lived only in their claims, which cannot be queried | `node scripts/backfill-member-roster.mjs --apply`. Those rows show "تاريخ الانضمام غير معروف" — the date was never stored anywhere |
+| 🆕 "تعذّر جلب قائمة الأعضاء" for an admin | The roster is `read: if isAdmin()`, and the admin claim may not be on the current token yet | Sign out and back in — the claim only refreshes on a new token. Same cause as the empty trips list |
+| 🆕 Removing an admin from a trip appears to do nothing | Correct: `admin: true` is global and bypasses trip membership, so there was no trip-scoped access to revoke | Expected — the toast says so. Revoke admin with `scripts/set-admin.mjs revoke <email>` instead |
 
 ---
 
