@@ -93,6 +93,59 @@ describe('useTravelerActions — إضافة مسافر', () => {
     expect(setTravelers).toHaveBeenCalledTimes(1)
   })
 
+  // ⚠️ الرصيد الابتدائي مبلغ مالي يخضع للقاعدة ١٩. والحارس القديم
+  // `parseFloat(x) || 0` كان يمرّر Infinity لأنها قيمة صادقة — فتُكتب في
+  // Firestore (القواعد تقبل `Infinity >= 0`) ويصير كل ما يُشتق منها غير منتهٍ.
+  describe('الرصيد الابتدائي — حارس القاعدة ١٩', () => {
+    it.each(['Infinity', '-Infinity', 'abc', '.', '-5'])(
+      'يرفض «%s» ولا يلمس Firestore ولا الحالة المحلية',
+      raw => {
+        const { result, setTravelers, setSyncError } = setup()
+        act(() => {
+          result.current.setNewTravelerName('فهد القحطاني')
+          result.current.setNewTravelerDeposit(raw)
+        })
+        act(() => result.current.handleAddTraveler(fakeEvent()))
+
+        expect(setSyncError).toHaveBeenCalledWith(expect.stringContaining('الرصيد الابتدائي'))
+        expect(setTravelers).not.toHaveBeenCalled()
+        expect(mocks.batchCommit).not.toHaveBeenCalled()
+        expect(mocks.haptic.error).toHaveBeenCalled()
+      },
+    )
+
+    it('يُبقي النموذج مفتوحاً بقيمه بعد الرفض فيمكن التصحيح', () => {
+      const { result } = setup()
+      act(() => {
+        result.current.setNewTravelerName('فهد القحطاني')
+        result.current.setNewTravelerDeposit('Infinity')
+      })
+      act(() => result.current.handleAddTraveler(fakeEvent()))
+
+      expect(result.current.newTravelerName).toBe('فهد القحطاني')
+      expect(result.current.newTravelerDeposit).toBe('Infinity')
+    })
+
+    it('الحقل الفارغ يعني صفراً لا خطأً — الرصيد الابتدائي اختياري', () => {
+      const { result, setTravelers, setSyncError } = setup()
+      act(() => result.current.setNewTravelerName('فهد القحطاني'))
+      act(() => result.current.handleAddTraveler(fakeEvent()))
+
+      expect(setSyncError).not.toHaveBeenCalled()
+      expect(setTravelers.mock.calls[0][0]([])[0]).toMatchObject({ deposited: 0 })
+    })
+
+    it('صفر صريح مقبول', () => {
+      const { result, setTravelers } = setup()
+      act(() => {
+        result.current.setNewTravelerName('فهد القحطاني')
+        result.current.setNewTravelerDeposit('0')
+      })
+      act(() => result.current.handleAddTraveler(fakeEvent()))
+      expect(setTravelers.mock.calls[0][0]([])[0]).toMatchObject({ deposited: 0 })
+    })
+  })
+
   it('محلياً (بلا مستخدم): يضيف مسافراً بالاسم المختصر والإيداع المحوَّل رقمياً', () => {
     const { result, setTravelers } = setup()
     act(() => {

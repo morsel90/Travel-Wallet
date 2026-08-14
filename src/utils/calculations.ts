@@ -94,11 +94,24 @@ export function splitByShares(
  * @returns {TravelerBalance[]} مصفوفة ببيانات المسافرين موضح فيها ما أنفقه كل شخص وما تبقى له/عليه.
  */
 export function calculateBalances(travelers: Traveler[], expenses: Expense[]): TravelerBalance[] {
-  const balances: TravelerBalance[] = travelers.map(t => ({
-    ...t,
-    totalExpenses: 0,
-    remaining: t.deposited,
-  }))
+  // 🆕 الرصيد المُودَع يُطهَّر هنا كما تُطهَّر المبالغ في splitEven/splitByShares.
+  //
+  // ⚠️ كان `remaining: t.deposited` مباشرةً — وهي آخر ثغرة في القاعدة ٤: مستندٌ
+  // في Firestore يحمل deposited غير منتهٍ (كُتب قبل حارس الإدخال، أو من جهاز على
+  // حزمة قديمة) يجعل remaining غير منتهٍ، ومنه «المتبقّي» في الترويسة وكشف
+  // الحساب و«إجمالي المودَع» في كل تقرير.
+  //
+  // ⚠️ **ويُطهَّر الحقلان معاً لا remaining وحده.** لو طُهِّر remaining فقط
+  // لعرض الجدول deposited غير منتهٍ بجانب remaining منتهٍ، فتنكسر القاعدة ٢
+  // (remaining = deposited − totalExpenses) على بيانات تالفة — أي نُصلح قاعدة
+  // بكسر أخرى. الصفر يحفظ القاعدتين معاً.
+  //
+  // ولا يُعاد كتابة المستند: نفس مبدأ الدوال النقية — القراءة دفاعية والإصلاح
+  // قرار بشري (انظر صفّ «كل الأرصدة تظهر NaN» في جدول استكشاف الأخطاء).
+  const balances: TravelerBalance[] = travelers.map(t => {
+    const deposited = Number.isFinite(t.deposited) ? t.deposited : 0
+    return { ...t, deposited, totalExpenses: 0, remaining: deposited }
+  })
 
   expenses.forEach(exp => {
     const n = exp.participants.length

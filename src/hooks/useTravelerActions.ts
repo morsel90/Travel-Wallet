@@ -101,8 +101,29 @@ export function useTravelerActions({
       return
     }
 
+    // 🆕 الرصيد الابتدائي مبلغ مالي، فيخضع للقاعدة ١٩ كغيره.
+    //
+    // ⚠️ كان `parseFloat(newTravelerDeposit) || 0`، وهو حارس يبدو كافياً وليس
+    // كذلك: `||` يلتقط NaN و0 و'' — لكنه **يمرّر Infinity** لأنها قيمة صادقة
+    // (truthy). فكتابة "Infinity" في الحقل تُنشئ مسافراً بـ deposited غير
+    // منتهٍ، وقواعد Firestore تقبله (`Infinity >= 0` صحيح)، فيصير رصيده و
+    // remaining و«إجمالي المودَع» في كل تقرير غير منتهٍ.
+    //
+    // وهذا هو بعينه العطل الذي أُصلح في handleAddExpense في 2026-08-11؛ مسار
+    // المسافر لم يُشمل حينها. نفس الدرس المكتوب هناك: حين يعتمد مساران على نفس
+    // الحقيقة، افحص الثاني.
+    //
+    // الحقل اختياري — الفارغ يعني صفراً — لذا نتحقق فقط إن كُتب فيه شيء.
+    const depositRaw = newTravelerDeposit.trim()
+    const deposited = depositRaw === '' ? 0 : parseFloat(depositRaw)
+    if (!Number.isFinite(deposited) || deposited < 0) {
+      haptic.error()
+      setSyncError('الرصيد الابتدائي غير صالح — أدخل رقماً موجباً أو اترك الحقل فارغاً.')
+      return
+    }
+
     const id = newTravelerId()
-    const traveler: Traveler = { id, name: newTravelerName.trim(), shortName, deposited: parseFloat(newTravelerDeposit) || 0, deletedAt: null }
+    const traveler: Traveler = { id, name: newTravelerName.trim(), shortName, deposited, deletedAt: null }
 
     setNewTravelerName('')
     setNewTravelerDeposit('')

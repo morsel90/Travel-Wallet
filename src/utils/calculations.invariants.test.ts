@@ -552,6 +552,52 @@ describe('قاعدة ٤ — القيم غير المنتهية محجوزة عن
     )
   })
 
+  // ⚠️ هذه الثغرة عاشت حتى تدقيق الإصدار 2026-08-14 **لأن هذا الملف نفسه لم
+  // يكن يولّدها**: كل مولّدات المسافرين هنا تُنتج deposited منتهياً، فقاعدة ٤ لم
+  // تُختبر قط على هذا المدخل. تحصين المصاريف وحدها لا يغطّي الطرف الآخر من
+  // معادلة الدفتر — والدرس أن الحارس لا يُقاس بعدد الدوال التي يغطّيها بل
+  // بعدد **المداخل** التي تصل إليها.
+  it('رصيد مُودَع غير منتهٍ لا يُفسد الأرصدة ولا التسويات', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(NaN, Infinity, -Infinity),
+        money(1, 100_000),
+        money(1, 100_000),
+        (poison, healthy, amount) => {
+          const travelers = [mkTraveler(1, poison), mkTraveler(2, healthy)]
+          const balances = calculateBalances(travelers, [
+            mkExpense({ amount, participants: [1, 2] }),
+          ])
+
+          for (const b of balances) {
+            expect(Number.isFinite(b.deposited)).toBe(true)
+            expect(Number.isFinite(b.remaining)).toBe(true)
+            expect(Number.isFinite(b.totalExpenses)).toBe(true)
+            // ⚠️ القاعدة ٢ يجب أن تصمد على البيانات التالفة أيضاً: تطهير
+            // remaining دون deposited كان سيكسرها بينما يُصلح القاعدة ٤.
+            expect(b.remaining).toBeCloseTo(b.deposited - b.totalExpenses, 9)
+          }
+
+          // المسافر السليم لا يتأثر بجاره التالف
+          expect(balances[1].deposited).toBe(healthy)
+
+          for (const s of calculateSettlements(balances)) {
+            expect(Number.isFinite(s.amount)).toBe(true)
+          }
+        },
+      ),
+      RUNS,
+    )
+  })
+
+  it('كشف الحساب يبدأ من رصيد منتهٍ حتى لو كان المستند تالفاً', () => {
+    // buildAccountStatement يأخذ opening من balance.deposited، فتطهيره في
+    // calculateBalances هو ما يحمي الكشف والتقارير وتصدير Excel معاً.
+    const balances = calculateBalances([mkTraveler(1, Infinity)], [])
+    expect(balances[0].deposited).toBe(0)
+    expect(balances[0].remaining).toBe(0)
+  })
+
   it('إجمالي المصروفات والإيداعات يتجاهل القيم غير المنتهية', () => {
     // هذان المجموعان لا يمرّان بالتقسيم، فتحصين splitEven وحده لا يغطيهما —
     // وكانا يعرضان NaN في إحصائيات الترويسة.
