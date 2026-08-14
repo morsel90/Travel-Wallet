@@ -9,9 +9,11 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Building2, Route, KeyRound, Save, Plane, Car, Train, Bus,
   Pencil, Trash2, Plus, ArrowUp, ArrowDown, Loader2, AlertTriangle, Lock,
-  Users, UserMinus,
+  Users, UserMinus, Copy, Check, Download,
 } from '../../icons'
 import { useTripMembers } from '../../hooks/useTripMembers'
+import { tripUrl } from '../../utils/tripId'
+import QrCode from './QrCode'
 import SegmentForm from './SegmentForm'
 import EmptyState from '../EmptyState'
 import {
@@ -84,6 +86,7 @@ export default function TripDetailPanel({
   const { members, error: membersError, refresh: refreshMembers } =
     useTripMembers(trip.id, activeTab === 'members')
   const [removingUid, setRemovingUid] = useState<string | null>(null)
+  const [linkCopied, setLinkCopied] = useState(false)
 
   const [nameForm, setNameForm] = useState(trip.name)
   const [bankForm, setBankForm] = useState<BankDetails>(trip.bankDetails)
@@ -126,6 +129,31 @@ export default function TripDetailPanel({
   const saveNameAndBank = async () => {
     if (nameForm !== trip.name) await onSaveTripName(trip.id, nameForm)
     await onSaveBankDetails(trip.id, bankForm)
+  }
+
+  const inviteUrl = tripUrl(trip.id)
+
+  const copyInviteLink = () => {
+    navigator.clipboard.writeText(inviteUrl)
+    setLinkCopied(true)
+    window.setTimeout(() => setLinkCopied(false), 2000)
+  }
+
+  // تنزيل الـ QR كـ SVG: نُسلسِل العقدة المرسومة فعلاً بدل إعادة توليدها، فما
+  // يُحفَظ هو نفسه ما رآه المسؤول على الشاشة حرفياً.
+  const downloadQr = () => {
+    const svg = document.getElementById(`qr-${trip.id}`)
+    if (!svg) return
+    const blob = new Blob(
+      ['<?xml version="1.0" encoding="UTF-8"?>\n', new XMLSerializer().serializeToString(svg)],
+      { type: 'image/svg+xml' },
+    )
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${trip.id}-qr.svg`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const submitRemoveMember = async (uid: string) => {
@@ -475,9 +503,66 @@ export default function TripDetailPanel({
       {activeTab === 'members' && (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
           <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <Users className="w-4 h-4 text-teal-600" /> أعضاء الرحلة
-            {members && <span className="text-xs font-normal text-slate-400">({members.length})</span>}
+            <Plus className="w-4 h-4 text-teal-600" /> دعوة أعضاء
           </h3>
+
+          <div className="flex flex-col sm:flex-row gap-4 items-center">
+            <div className="bg-white border border-slate-200 rounded-xl p-2 shrink-0">
+              <QrCode value={inviteUrl} size={168} />
+            </div>
+
+            <div className="min-w-0 flex-1 w-full space-y-2.5">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                امسح الرمز أو شارك الرابط، ثم أعطِ المدعوّ رمز الدخول.
+              </p>
+
+              <p
+                dir="ltr"
+                className="text-[11px] bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-600 break-all"
+              >
+                {inviteUrl}
+              </p>
+
+              {/* ⚠️ الرمز ليس داخل الـ QR، وليس ذلك نقصاً: الخادم لا يملكه أصلاً
+                  (يُخزَّن مُجزَّأً ولا يُسترجع). ولإدراجه يلزم أن يكتبه المسؤول
+                  هنا ثم يُدفن في صورة تُعاد مشاركتها — أي تحويل الرابط والرمز من
+                  عاملين منفصلين إلى أثر واحد يُلتقط بصورة شاشة. الفصل مقصود. */}
+              <p className="text-[11px] text-slate-400">
+                الرابط وحده لا يكفي للدخول — رمز الرحلة يبقى منفصلاً عنه عمداً.
+              </p>
+
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={copyInviteLink}
+                  className="flex items-center gap-1.5 border border-slate-200 hover:bg-slate-50 px-3 py-2 rounded-lg text-xs font-bold text-slate-700 transition-colors"
+                >
+                  {linkCopied ? <Check className="w-3.5 h-3.5 text-teal-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  {linkCopied ? 'نُسخ' : 'نسخ الرابط'}
+                </button>
+                <button
+                  type="button"
+                  onClick={downloadQr}
+                  className="flex items-center gap-1.5 border border-slate-200 hover:bg-slate-50 px-3 py-2 rounded-lg text-xs font-bold text-slate-700 transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" /> تنزيل الرمز
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* نسخة مخفية بمعرّف ثابت للتنزيل — العنصر المعروض داخل تخطيط مرن،
+              وإسناد معرّف له يخلط العرض بالتصدير. */}
+          <div className="hidden">
+            <QrCode value={inviteUrl} size={512} id={`qr-${trip.id}`} />
+          </div>
+
+          <div className="border-t border-slate-100 pt-4">
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <Users className="w-4 h-4 text-teal-600" /> أعضاء الرحلة
+              {members && <span className="text-xs font-normal text-slate-400">({members.length})</span>}
+            </h3>
+          </div>
 
           {/* ⚠️ التأخير يُقال هنا لا يُخفى: العضوية تُقرأ من التوكن وهو صالح ٦٠
               دقيقة، فالإزالة لا تُغلق الباب فوراً. مسؤول يظنّها فورية قد يعتمد

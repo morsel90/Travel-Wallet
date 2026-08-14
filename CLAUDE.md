@@ -77,6 +77,7 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 | State | React Context (DataContext + UIActionsContext + UIFormContext) | — |
 | Styling | Tailwind CSS | ^3.4.1 |
 | Icons | Lucide React | ^0.383.0 |
+| QR encoding | qrcode-generator | ^2.0.4 |
 | Animations | Framer Motion | ^11.2.10 |
 | Virtual List | React Virtuoso | ^4.18.10 |
 | Backend | Firebase Auth + Firestore | ^10.8.1 |
@@ -91,7 +92,7 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 | Deployment (frontend) | Vercel SPA | — |
 | Deployment (backend) | Firebase CLI | — |
 
-**No external charting library** — all charts are pure HTML/CSS. **No external XLSX library** — OOXML generated inline via `src/utils/xlsx.ts`.
+**No external charting library** — all charts are pure HTML/CSS. **No external XLSX library** — OOXML generated inline via `src/utils/xlsx.ts`. 🆕 **QR encoding *is* a dependency** — see *Design Decisions* for why that is consistent rather than an exception.
 
 ---
 
@@ -1103,7 +1104,22 @@ Three results the caller must distinguish, and the toast does:
 
 ⚠️ **The negative case that matters (guideline 18): removal must not touch the target's *other* trips.** The claim map is rebuilt by deleting one key from a copy, never reassembled from another source. Getting this wrong wipes memberships unrelated to the decision, and it fails silently — no error, no symptom, until that person opens a different trip days later and is asked for a PIN.
 
-**Still missing on purpose:** no invite records, no per-trip organizer role. Those are phases 2–3 of `docs/PLAN-member-management.md`.
+### 🆕 The QR code is a dependency, and that is consistent with guidelines 1–2
+
+Guidelines 1 and 2 are not a blanket ban on dependencies. `recharts` was rejected because HTML/CSS bars do the job; SheetJS was rejected because the OOXML we need is one page of code. Both replacements are *verifiable by looking at them*.
+
+QR encoding is not that. It is Reed–Solomon error correction over GF(256), automatic version/capacity selection, and mask evaluation — and **its correctness cannot be proven without a scanner**. A code that is wrong by one module looks completely normal and simply never reads. Hand-rolling it would be exactly the situation guideline 18 warns about: a thing that reports success while being broken.
+
+`qrcode-generator` is ~15KB, has no dependencies of its own, and ships TypeScript declarations. What the dependency buys is verification we do not otherwise have.
+
+Two implementation details worth keeping:
+
+- **One `<path>`, not one `<rect>` per module.** A typical trip URL yields a 33×33 grid; a rect each is over a thousand DOM nodes for a static image. `components/admin/QrCode.tsx` emits a single path.
+- **`QrCode.test.tsx` tests structure, not readability**, and says so at the top. It pins the quiet margin (4 modules — scanners fail without it), the light/dark contrast, the `xmlns` needed for the exported file to open outside a browser, and that the path scales with input length. Whether the code actually *scans* is settled by a phone, once.
+
+⚠️ **The PIN is deliberately not encoded in the QR.** The server cannot supply it — it is stored hashed and never retrievable — so including it would mean the admin typing the secret into a form to bury it in a shareable image. That collapses the link and the PIN from two separate factors into one artifact that survives a screenshot. The QR carries `?trip=X` and nothing else.
+
+**Still missing on purpose:** no invite records, no per-trip organizer role. That is phase 3 of `docs/PLAN-member-management.md`.
 
 ---
 
