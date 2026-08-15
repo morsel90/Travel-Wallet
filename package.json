@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:rules": "tsc --noEmit -p tests/tsconfig.json",
     "typecheck:e2e": "tsc --noEmit -p e2e/tsconfig.json",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "git config core.hooksPath .githooks || true",
