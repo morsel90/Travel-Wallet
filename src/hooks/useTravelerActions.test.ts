@@ -199,16 +199,34 @@ describe('useTravelerActions — إضافة مسافر', () => {
       expect(mocks.batchUpdate).not.toHaveBeenCalled()
     })
 
-    // ⚠️ الذرّية هي الضمان كله: مسافرٌ برصيد بلا سطر تدقيق هو الحالة التي وُجد
-    // هذا التغيير لإغلاقها. دفعة واحدة تعني وجودهما معاً أو عدمهما معاً.
-    it('كل الكتابات في دفعة واحدة — لا commit ثانٍ', () => {
+    // ⚠️ دفعتان لا واحدة — قيد في Firestore لا اختيار: العمليتان على المستند
+    // الواحد تُقيَّمان إنشاءً واحداً بالقيمة النهائية، فتُرفض. انظر اختبار
+    // القواعد «دفعة واحدة تُنشئ بصفر ثم تُحدّث نفس المستند: تُرفض».
+    //
+    // والضمان المقصود محفوظ: السطر والرصيد في دفعة واحدة، فلا يوجد رصيد بلا
+    // سطر يفسّره. وأسوأ فشل ممكن مسافرٌ بصفر بلا سطر — حالة صادقة لا مال بلا أثر.
+    it('دفعتان: الإنشاء، ثم سطر التدقيق والرصيد معاً', async () => {
       const { result } = setup({ user: fakeUser })
       act(() => {
         result.current.setNewTravelerName('فهد القحطاني')
         result.current.setNewTravelerDeposit('3000')
       })
-      act(() => result.current.handleAddTraveler(fakeEvent()))
+      await act(async () => { result.current.handleAddTraveler(fakeEvent()) })
+
+      expect(mocks.batchCommit).toHaveBeenCalledTimes(2)
+    })
+
+    it('الدفعة الثانية لا تُرسَل إن فشل الإنشاء — لا سطر تدقيق لمسافر غير موجود', async () => {
+      mocks.batchCommit.mockRejectedValueOnce(new Error('name taken'))
+      const { result, handleFirestoreError } = setup({ user: fakeUser })
+      act(() => {
+        result.current.setNewTravelerName('فهد القحطاني')
+        result.current.setNewTravelerDeposit('3000')
+      })
+      await act(async () => { result.current.handleAddTraveler(fakeEvent()) })
+
       expect(mocks.batchCommit).toHaveBeenCalledTimes(1)
+      expect(handleFirestoreError).toHaveBeenCalled()
     })
   })
 

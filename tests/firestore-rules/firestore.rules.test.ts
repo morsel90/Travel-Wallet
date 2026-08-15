@@ -292,17 +292,38 @@ describe('الرصيد الابتدائي — deposited == 0 عند الإنشا
     await assertSucceeds(updateDoc(travelerDoc(adminDb(), 13), { ...validTraveler({ id: 13, deposited: 5000 }) }))
   })
 
-  // ⚠️ هذا الاختبار يحسم سؤالاً تقنياً لا سؤال صلاحية: هل تقبل Firestore
-  // دفعةً تُنشئ المستند بصفر ثم تُحدّثه في نفس الدفعة؟ عليه يقوم التصميم كله —
-  // فإن جُمعت العمليتان وقُيّمتا كإنشاء واحد بالقيمة النهائية، لرُفضت الدفعة
-  // وللزم تقسيمها إلى دفعتين (بأثر مقبول: مسافر بصفر بلا سطر، وهي حالة آمنة).
-  it('دفعة واحدة: إنشاء بصفر + سطر تدقيق + تحديث الرصيد — تُقبل من المسؤول', async () => {
+  // ⚠️ **حقيقة في Firestore يجب أن تبقى موثَّقة، لا مجرد اختبار.**
+  //
+  // التصميم الأول كان دفعة واحدة: إنشاء بصفر ثم تحديث نفس المستند. وهي **تُرفض**
+  // لأن Firestore تجمع العمليتين على المستند الواحد وتُقيّمهما **إنشاءً واحداً
+  // بالقيمة النهائية** — فيصطدم بشرط `deposited == 0`. رسالة الرفض تقول ذلك
+  // حرفياً: `false for 'create'`، لا `for 'update'`.
+  //
+  // ولهذا انقسم الكتابة إلى دفعتين في useTravelerActions. من يحاول «تحسينها»
+  // إلى دفعة واحدة سيكسر إضافة المسافر برصيد ابتدائي كلياً — وهذا الاختبار هو
+  // ما يمنعه.
+  it('دفعة واحدة تُنشئ بصفر ثم تُحدّث نفس المستند: تُرفض — العمليتان تُقيَّمان كإنشاء واحد', async () => {
     const db = adminDb('admin-1')
     const batch = writeBatch(db)
     batch.set(travelerDoc(db, 14), validTraveler({ id: 14, deposited: 0 }))
-    batch.set(travelerNameDoc(db, 'مسافر14'), { travelerId: 14 })
-    batch.set(doc(depositLogsCol(db, 14)), {
-      travelerId: 14,
+    batch.update(travelerDoc(db, 14), { deposited: 3000 })
+    await assertFails(batch.commit())
+  })
+
+  // الشكل المُنفَّذ فعلاً: دفعتان متعاقبتان.
+  it('دفعتان: الإنشاء بصفر، ثم سطر التدقيق والرصيد معاً — كلتاهما تُقبل من المسؤول', async () => {
+    const db = adminDb('admin-1')
+
+    const createBatch = writeBatch(db)
+    createBatch.set(travelerDoc(db, 16), validTraveler({ id: 16, deposited: 0 }))
+    createBatch.set(travelerNameDoc(db, 'مسافر16'), { travelerId: 16 })
+    await assertSucceeds(createBatch.commit())
+
+    // ⚠️ السطر والرصيد في دفعة واحدة — هذا هو الضمان الذي يهمّ: لا رصيد بلا
+    // سطر يفسّره. والاتجاه المعاكس (سطر بلا رصيد) مستحيل لأنهما معاً.
+    const depositBatch = writeBatch(db)
+    depositBatch.set(doc(depositLogsCol(db, 16)), {
+      travelerId: 16,
       previousDeposited: 0,
       newDeposited: 3000,
       delta: 3000,
@@ -312,8 +333,8 @@ describe('الرصيد الابتدائي — deposited == 0 عند الإنشا
       changedByUid: 'admin-1',
       createdAt: Date.now(),
     })
-    batch.update(travelerDoc(db, 14), { deposited: 3000 })
-    await assertSucceeds(batch.commit())
+    depositBatch.update(travelerDoc(db, 16), { deposited: 3000 })
+    await assertSucceeds(depositBatch.commit())
   })
 
   // العضو غير المسؤول لا يستطيع كتابة سطر التدقيق ولا تحديث الرصيد، فدفعته

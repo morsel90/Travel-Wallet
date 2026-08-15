@@ -1079,7 +1079,11 @@ Until 2026-08-14 the same movement had two paths with completely different guara
 
 So anyone wanting to add money without a trace didn't open the deposit modal — they created a traveler. And because `depositLogs` is admin-only-readable, not even the admin could see that an initial balance had ever existed.
 
-**The fix does not remove the feature.** `firestore.rules` now requires `deposited == 0` on create, and the client writes the initial balance as a real deposit movement — traveler at 0, plus a `depositLogs` row, plus the balance update, **in one atomic batch**. Same form, same field, same result; an audit row is added.
+**The fix does not remove the feature.** `firestore.rules` now requires `deposited == 0` on create, and the client writes the initial balance as a real deposit movement — traveler at 0, then a `depositLogs` row plus the balance update. Same form, same field, same result; an audit row is added.
+
+⚠️ **Two batches, not one — this is a Firestore constraint, not a choice.** The obvious design is a single batch that creates the doc at 0 and then updates it. Firestore **collapses both operations on the same document and evaluates them as one `create` carrying the final value**, which then fails `deposited == 0`. The rejection message says so literally: `false for 'create'`, not `for 'update'`. A rules test pins this so nobody "simplifies" it back and silently breaks adding a traveler with a balance.
+
+**The guarantee that matters survives the split:** the log row and the balance update are in *one* batch, so a balance can never exist without a row explaining it. The worst possible failure is a traveler at 0 with no row — an honest, safe state (no money appeared without a trace), which the admin fixes from the deposit modal. The reverse — a row with no balance — is impossible.
 
 ⚠️ **No exception for admins.** Not because they are untrusted — the audit log is *for* them: it is what they point at when asked about a number a month later. Same reasoning that keeps `isOwnCreation` binding on admins.
 
