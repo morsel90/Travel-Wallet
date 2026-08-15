@@ -21,7 +21,7 @@ export default function TrashBinModal({
   const [activeTab, setActiveTab] = useState<'expenses' | 'travelers'>('expenses')
 
   return (
-    <Modal maxWidth="max-w-2xl" onClose={onClose}>
+    <Modal maxWidth="max-w-2xl" onClose={onClose} label="سلة المهملات">
       {/* زر الإغلاق الموحد باستخدام أيقونة النظام */}
       <button
         type="button"
