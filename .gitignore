@@ -47,3 +47,12 @@ ui-debug.log
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# 🆕 أداة graphify المحلية — رسم بياني للمعرفة يُولَّد من الكود، وذاكرة
+# تخزين مؤقت له (AST/دلالية). مُنشأ محلياً بـ `graphify update .`، وليس
+# مصدراً — نفس منطق dist/ وnode_modules/. إعادة توليده أرخص من مزامنته.
+/graphify-out/
+
+# إعدادات Claude Code/Cowork المحلية (مفاتيح جلسات، أقفال مهام مجدولة) — خاصة
+# بالجهاز لا بالمشروع.
+/.claude/
