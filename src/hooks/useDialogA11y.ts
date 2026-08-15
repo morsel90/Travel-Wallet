@@ -32,10 +32,19 @@ export function useDialogA11y(
     // النافذة نفسها، فتُفقد الإشارة إلى ما فتحها.
     const previouslyFocused = document.activeElement as HTMLElement | null
 
+    // ⚠️ **لا تستعمل offsetParent للتحقق من الظهور هنا.** كانت أول صياغة
+    // `el.offsetParent !== null`، وهي خاطئة لسببين معاً:
+    //
+    //   • `offsetParent` يعود null لكل عنصر `position: fixed` — والنافذة داخل
+    //     غلاف `fixed inset-0`. فبحسب بنية الصفحة قد يُفرَّغ المُرشِّح في متصفح
+    //     حقيقي، فيصير الحصر معطّلاً **بلا أي عرَض ظاهر**.
+    //   • وفي jsdom يعود null دائماً (لا تخطيط)، فلا يمكن اختبار الحصر أصلاً.
+    //
+    // والفحص الصحيح لما يهمّ فعلاً هو `hidden` و`aria-hidden` — وكلاهما يعمل في
+    // البيئتين. أما المحدِّد نفسه فيستبعد `[disabled]` و`tabindex="-1"` أصلاً.
     const focusables = () =>
       Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE))
-        // العنصر المخفي لا يُركَّز عليه، وإدخاله في الحلقة يجعل Tab يبدو معطّلاً
-        .filter(el => el.offsetParent !== null || el === document.activeElement)
+        .filter(el => !el.hasAttribute('hidden') && el.getAttribute('aria-hidden') !== 'true')
 
     // أول حقل إن وُجد، وإلا الحاوية نفسها (لهذا تحمل tabIndex={-1}).
     const first = focusables()[0]

@@ -1128,6 +1128,8 @@ Adding `role="dialog"` alone would have been worse than nothing: it announces a 
 
 **The tests assert behaviour, not attributes** (`Modal.test.tsx`): that Escape actually closes, that Tab actually wraps, that focus actually returns. An attribute written without the behaviour behind it passes code review and fails the first user.
 
+⚠️ **And they immediately earned it.** The first draft filtered the focusable list with `el.offsetParent !== null` to skip hidden elements. That is wrong twice over: `offsetParent` is `null` for **any `position: fixed` element**, and the modal lives inside a `fixed inset-0` overlay — so depending on the DOM shape the filter could empty the list in a real browser and disable the trap **with no visible symptom**. It is also always `null` in jsdom, which has no layout, so the trap could not be tested at all. Visibility is now checked with `hidden` / `aria-hidden`, which behave identically in both. A test that could not run would have hidden a bug that could not be seen.
+
 ### 🆕 The QR code is a dependency, and that is consistent with guidelines 1–2
 
 Guidelines 1 and 2 are not a blanket ban on dependencies. `recharts` was rejected because HTML/CSS bars do the job; SheetJS was rejected because the OOXML we need is one page of code. Both replacements are *verifiable by looking at them*.
