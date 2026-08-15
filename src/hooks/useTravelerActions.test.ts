@@ -189,7 +189,8 @@ describe('useTravelerActions — إضافة مسافر', () => {
         expect.objectContaining({ __travelerDoc: expect.any(Number) }),
         { deposited: 3000 },
       )
-      expect(mocks.batchCommit).toHaveBeenCalledTimes(1)
+      // عدد الدفعات يخصّ الاختبار المجاور «دفعتان: الإنشاء، ثم سطر التدقيق
+      // والرصيد معاً» — هذا الاختبار يخصّ *محتوى* الحركة وحده.
     })
 
     it('بلا رصيد ابتدائي: لا سطر تدقيق ولا تحديث — دفعة الإنشاء وحدها', () => {
