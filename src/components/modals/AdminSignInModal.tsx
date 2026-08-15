@@ -25,7 +25,7 @@ const AdminSignInModal = ({
   authError, onSubmit, onClose, onForgotPassword,
   isSendingResetEmail, resetCooldownSeconds,
 }: AdminSignInModalProps) => (
-  <Modal maxWidth="max-w-xs" onClose={onClose}>
+  <Modal maxWidth="max-w-xs" onClose={onClose} label="تسجيل الدخول للمسؤول">
     <button type="button" onClick={onClose} className="absolute top-4 left-4 text-slate-400 hover:text-slate-600 transition-colors">
       <X className="w-5 h-5" />
     </button>

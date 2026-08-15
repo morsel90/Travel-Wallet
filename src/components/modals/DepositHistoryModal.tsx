@@ -41,7 +41,7 @@ const DepositHistoryModal = ({ travelerId, travelerName, onClose }: DepositHisto
   }, [travelerId])
 
   return (
-    <Modal maxWidth="max-w-md" onClose={onClose}>
+    <Modal maxWidth="max-w-md" onClose={onClose} label={`سجل تعديلات رصيد ${travelerName}`}>
       <button type="button" onClick={onClose} className="absolute top-4 left-4 text-slate-400 hover:text-slate-600 transition-colors">
         <X className="w-5 h-5" />
       </button>

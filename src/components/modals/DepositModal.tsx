@@ -39,7 +39,7 @@ const DepositModal = ({
   traveler, amount, setAmount,
   mode, setMode, reason, setReason, onSubmit, onClose,
 }: DepositModalProps) => (
-  <Modal onClose={onClose}>
+  <Modal onClose={onClose} label={`تعديل رصيد ${traveler.name}`}>
     <h3 className="font-bold mb-4">تعديل رصيد {traveler.name}</h3>
     <div className="flex gap-2 mb-4">
       {DEPOSIT_MODES.map(({ key, label, Icon }) => (

@@ -187,6 +187,7 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 │   │   ├── useCountdown.ts       # Generic countdown timer
 │   │   ├── useDebounce.ts        # Generic debounce hook
 │   │   ├── useHeaderCollapse.ts  # Scroll direction tracking for sticky header
+│   │   ├── useDialogA11y.ts     # 🆕 Escape / focus trap / focus enter + restore — used by Modal.tsx
 │   │   └── useAppCoordinator.ts  # 🆕 All hook wiring + derived values — the seam App.tsx used to be
 │   │
 │   ├── context/
@@ -1103,6 +1104,29 @@ Three results the caller must distinguish, and the toast does:
 **Removal does not touch their expenses, their traveler, or `createdByUid`.** Taking someone out of a trip is not erasing their financial trace from it — whoever paid, paid. Same principle that makes `createdByUid` immutable and deposit logs append-only.
 
 ⚠️ **The negative case that matters (guideline 18): removal must not touch the target's *other* trips.** The claim map is rebuilt by deleting one key from a copy, never reassembled from another source. Getting this wrong wipes memberships unrelated to the decision, and it fails silently — no error, no symptom, until that person opens a different trip days later and is asked for a PIN.
+
+### 🆕 A modal is four keyboard behaviours, not one attribute
+
+`Modal.tsx` had `onClick={onClose}` on the backdrop and a drag-to-dismiss gesture. Both need a pointer. Someone on a keyboard could **open a modal and have no way out of it** — and every modal in the app inherits from this one file: deposit, trash bin, traveler profile, admin sign-in, and both delete confirmations.
+
+Adding `role="dialog"` alone would have been worse than nothing: it announces a dialog to a screen reader while the dialog still cannot be left. The four behaviours in `hooks/useDialogA11y.ts` each fix a separate failure:
+
+| | Without it |
+|---|---|
+| **Escape closes** | No pointer-free exit exists at all |
+| **Focus trap** | Tab walks out to elements that are visually covered and look disabled |
+| **Focus enters on open** | Focus stays on the button behind the modal, so the first Tab lands somewhere arbitrary |
+| **Focus returns on close** | Focus drops to `<body>`; the user restarts from the top of the page after every modal |
+
+⚠️ **`aria-modal="true"` is separate from the focus trap and both are needed.** The trap stops the Tab key; `aria-modal` is what stops a screen reader from browsing the covered page in its own reading mode, which does not use Tab at all.
+
+⚠️ **Capture the previously-focused element *before* moving focus.** Afterwards `document.activeElement` is the dialog itself, and the reference to whatever opened it is gone.
+
+⚠️ **Check `isConnected` before restoring focus.** The opener may have been removed while the modal was open — a delete-confirmation opened from a traveler card, then the card disappears. Calling `focus()` on an orphaned node throws in some browsers.
+
+**`label` is a required prop, deliberately.** Each modal renders its own heading in its own shape, so deriving `aria-labelledby` automatically would force every modal to know about an id this component generates. Making it required is what stops a *future* modal from shipping unnamed — the case where a screen reader announces "dialog" and nothing else.
+
+**The tests assert behaviour, not attributes** (`Modal.test.tsx`): that Escape actually closes, that Tab actually wraps, that focus actually returns. An attribute written without the behaviour behind it passes code review and fails the first user.
 
 ### 🆕 The QR code is a dependency, and that is consistent with guidelines 1–2
 

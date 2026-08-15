@@ -1,10 +1,21 @@
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
+import { useDialogA11y } from '../hooks/useDialogA11y'
 
 interface ModalProps {
   children: ReactNode
   maxWidth?: string
   onClose: () => void
+  /**
+   * 🆕 اسم النافذة لقارئ الشاشة — **مطلوب**.
+   *
+   * ⚠️ لا يُشتقّ من العنوان الظاهر تلقائياً: كل نافذة ترسم عنوانها داخل
+   * `children` بشكل مختلف، فربطه بـ aria-labelledby يفرض على كل نافذة أن تعرف
+   * معرّفاً تولّده هذه. جعله خاصية صريحة أوضح وأقلّ هشاشة — وكونه إلزامياً
+   * يمنع نافذة جديدة من الوصول بلا اسم، وهي الحالة التي يسمعها المستخدم
+   * «مربع حوار» بلا أي سياق.
+   */
+  label: string
 }
 
 // ─── Modal / Bottom Sheet ───────────────────────────────────────────────────
@@ -24,7 +35,12 @@ interface ModalProps {
 // <AnimatePresence>{condition && <DepositModal .../>}</AnimatePresence>)
 // حتى تُشغَّل حركة الخروج (exit) قبل إزالة العنصر من الشجرة فعلياً — بدونها
 // يختفي بلا أي حركة إغلاق (نفس مبدأ AnimatePresence في أي React app).
-export const Modal = ({ children, maxWidth = 'max-w-sm', onClose }: ModalProps) => (
+export const Modal = ({ children, maxWidth = 'max-w-sm', onClose, label }: ModalProps) => {
+  const panelRef = useRef<HTMLDivElement>(null)
+  // Escape، وحصر التركيز، ودخوله وعودته — انظر hooks/useDialogA11y.ts
+  useDialogA11y(panelRef, onClose)
+
+  return (
   <motion.div
     className="fixed inset-0 bg-slate-900/60 flex items-end sm:items-center justify-center z-[9999]"
     initial={{ opacity: 0 }}
@@ -33,7 +49,16 @@ export const Modal = ({ children, maxWidth = 'max-w-sm', onClose }: ModalProps) 
     onClick={onClose}
   >
     <motion.div
-      className={`bg-white rounded-t-3xl sm:rounded-2xl p-6 pt-3 sm:pt-6 w-full ${maxWidth} relative max-h-[92vh] overflow-y-auto`}
+      ref={panelRef}
+      // ⚠️ الثلاثة معاً لا واحد منها: role يقول إنه حوار، وaria-modal يخبر قارئ
+      // الشاشة أن ما خلفه غير متاح (وإلا تجوّل فيه رغم حصر التركيز البصري)،
+      // وtabIndex={-1} يجعل الحاوية نفسها قابلة للتركيز البرمجي حين لا يوجد
+      // داخلها أي عنصر تفاعلي.
+      role="dialog"
+      aria-modal="true"
+      aria-label={label}
+      tabIndex={-1}
+      className={`bg-white rounded-t-3xl sm:rounded-2xl p-6 pt-3 sm:pt-6 w-full ${maxWidth} relative max-h-[92vh] overflow-y-auto outline-none`}
       onClick={(e) => e.stopPropagation()}
       initial={{ y: '100%' }}
       animate={{ y: 0 }}
@@ -52,7 +77,8 @@ export const Modal = ({ children, maxWidth = 'max-w-sm', onClose }: ModalProps) 
       {children}
     </motion.div>
   </motion.div>
-)
+  )
+}
 
 interface ConfirmModalProps {
   title: string
@@ -69,12 +95,15 @@ export const ConfirmModal = ({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) => (
-  <Modal onClose={onCancel}>
+  // العنوان هو اسم النافذة نفسه هنا — نافذة التأكيد لا تحمل غيره.
+  <Modal onClose={onCancel} label={title}>
     <h3 className={`font-bold ${message ? 'mb-2' : 'mb-4'}`}>{title}</h3>
     {message && <p className="text-xs text-slate-500 mb-4">{message}</p>}
     <div className="flex gap-3">
-      <button onClick={onConfirm} className="flex-1 bg-rose-600 text-white py-2 rounded-xl font-bold">{confirmLabel}</button>
-      <button onClick={onCancel}  className="flex-1 bg-slate-100 text-slate-700 py-2 rounded-xl font-bold">إلغاء</button>
+      {/* ⚠️ type="button" صراحةً: الافتراضي في HTML هو submit، وهذه النافذة قد
+          تُعرض يوماً داخل <form> فيصير «إلغاء» إرسالاً صامتاً للنموذج. */}
+      <button type="button" onClick={onConfirm} className="flex-1 bg-rose-600 text-white py-2 rounded-xl font-bold">{confirmLabel}</button>
+      <button type="button" onClick={onCancel}  className="flex-1 bg-slate-100 text-slate-700 py-2 rounded-xl font-bold">إلغاء</button>
     </div>
   </Modal>
 )
