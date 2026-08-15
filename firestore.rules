@@ -280,7 +280,24 @@ service cloud.firestore {
       // المنتهية (completed) لتسوية الحسابات بعدها — وتُمنع في المؤرشفة وحدها.
       match /travelers/{travelerId} {
         allow read:   if isMember(appId) || isAdmin();
+        // 🆕 الرصيد الابتدائي يجب أن يكون صفراً عند الإنشاء — **ولا استثناء
+        // للمسؤول.**
+        //
+        // ⚠️ لم تكن هذه ثغرة صلاحيات فحسب بل **ثقب في دفتر الحسابات**:
+        // `deposited` هو الطرف الدائن الوحيد (المصاريف تُنقص ولا شيء يزيد
+        // سواه)، وتعديله لاحقاً محكوم بـ isAdmin() **ويكتب سطراً في
+        // depositLogs غير قابل للتعديل**. أما الإنشاء فكان يقبل أي مبلغ من أي
+        // عضو، بلا سجلّ، وبلا حتى حقل يقول من أنشأه. فمن أراد إضافة مبلغ بلا
+        // أثر لا يفتح نافذة الإيداع — يُنشئ مسافراً.
+        //
+        // والوظيفة **لم تُلغَ**: العميل ينشئ المسافر بصفر ثم يكتب حركة إيداع
+        // موثّقة في نفس الدفعة (انظر useTravelerActions). فالمستخدم يرى نفس
+        // النموذج ونفس النتيجة، ويُضاف سجلّ فقط.
+        //
+        // ⚠️ ولا يُشترط شيء على التعديل: هو محكوم بـ isAdmin() أصلاً، وسطر
+        // التدقيق يُكتب معه في نفس الدفعة. اشتراط الصفر هناك يجمّد الرصيد للأبد.
         allow create: if (isMember(appId) || isAdmin()) && isValidTraveler(request.resource.data)
+                        && request.resource.data.deposited == 0
                         && tripAcceptsWrites(appId);
         allow update: if isAdmin()    && isValidTraveler(request.resource.data)
                         && tripAcceptsWrites(appId);

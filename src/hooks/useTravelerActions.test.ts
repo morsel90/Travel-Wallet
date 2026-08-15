@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('firebase/firestore', () => ({
+  doc: vi.fn((col: unknown) => ({ __newDocIn: col })),
   writeBatch: vi.fn(() => ({
     set: mocks.batchSet, update: mocks.batchUpdate, delete: mocks.batchDelete, commit: mocks.batchCommit,
   })),
@@ -24,6 +25,7 @@ vi.mock('../firebase', () => ({ db: {} }))
 vi.mock('../firestore', () => ({
   travelerDoc: vi.fn((id: number) => ({ __travelerDoc: id })),
   travelerNameDoc: vi.fn((shortName: string) => ({ __travelerNameDoc: shortName })),
+  depositLogsCol: vi.fn((travelerId: number) => ({ __depositLogsCol: travelerId })),
 }))
 
 vi.mock('../utils/haptics', () => ({ haptic: mocks.haptic }))
@@ -93,6 +95,145 @@ describe('useTravelerActions — إضافة مسافر', () => {
     expect(setTravelers).toHaveBeenCalledTimes(1)
   })
 
+  // ⚠️ الرصيد الابتدائي مبلغ مالي يخضع للقاعدة ١٩. والحارس القديم
+  // `parseFloat(x) || 0` كان يمرّر Infinity لأنها قيمة صادقة — فتُكتب في
+  // Firestore (القواعد تقبل `Infinity >= 0`) ويصير كل ما يُشتق منها غير منتهٍ.
+  describe('الرصيد الابتدائي — حارس القاعدة ١٩', () => {
+    it.each(['Infinity', '-Infinity', 'abc', '.', '-5'])(
+      'يرفض «%s» ولا يلمس Firestore ولا الحالة المحلية',
+      raw => {
+        const { result, setTravelers, setSyncError } = setup()
+        act(() => {
+          result.current.setNewTravelerName('فهد القحطاني')
+          result.current.setNewTravelerDeposit(raw)
+        })
+        act(() => result.current.handleAddTraveler(fakeEvent()))
+
+        expect(setSyncError).toHaveBeenCalledWith(expect.stringContaining('الرصيد الابتدائي'))
+        expect(setTravelers).not.toHaveBeenCalled()
+        expect(mocks.batchCommit).not.toHaveBeenCalled()
+        expect(mocks.haptic.error).toHaveBeenCalled()
+      },
+    )
+
+    it('يُبقي النموذج مفتوحاً بقيمه بعد الرفض فيمكن التصحيح', () => {
+      const { result } = setup()
+      act(() => {
+        result.current.setNewTravelerName('فهد القحطاني')
+        result.current.setNewTravelerDeposit('Infinity')
+      })
+      act(() => result.current.handleAddTraveler(fakeEvent()))
+
+      expect(result.current.newTravelerName).toBe('فهد القحطاني')
+      expect(result.current.newTravelerDeposit).toBe('Infinity')
+    })
+
+    it('الحقل الفارغ يعني صفراً لا خطأً — الرصيد الابتدائي اختياري', () => {
+      const { result, setTravelers, setSyncError } = setup()
+      act(() => result.current.setNewTravelerName('فهد القحطاني'))
+      act(() => result.current.handleAddTraveler(fakeEvent()))
+
+      expect(setSyncError).not.toHaveBeenCalled()
+      expect(setTravelers.mock.calls[0][0]([])[0]).toMatchObject({ deposited: 0 })
+    })
+
+    it('صفر صريح مقبول', () => {
+      const { result, setTravelers } = setup()
+      act(() => {
+        result.current.setNewTravelerName('فهد القحطاني')
+        result.current.setNewTravelerDeposit('0')
+      })
+      act(() => result.current.handleAddTraveler(fakeEvent()))
+      expect(setTravelers.mock.calls[0][0]([])[0]).toMatchObject({ deposited: 0 })
+    })
+  })
+
+  // ⚠️ هذه هي C1: كان أي عضو يستطيع إنشاء مسافر برصيد ابتدائي عشوائي **بلا أي
+  // سطر تدقيق** — بينما تعديل نفس الحقل لاحقاً محكوم بـ isAdmin() ويكتب سطراً
+  // غير قابل للتعديل. فمن أراد إضافة مال بلا أثر لا يفتح نافذة الإيداع.
+  describe('الرصيد الابتدائي يمرّ من المسار الموثَّق', () => {
+    // ⚠️ `await act` لا `act` وحدها: سطر التدقيق يُكتب في الدفعة الثانية بعد
+    // نجاح الأولى، فالتأكيد المتزامن يقرأ الحالة قبل أن تُرسَل أصلاً — وهو ما
+    // كسر هذا الاختبار عند الانتقال إلى دفعتين، لا خطأ في الكود المفحوص.
+    it('ينشئ المسافر بصفر، ثم يكتب حركة الإيداع بمحتواها الصحيح', async () => {
+      const { result } = setup({ user: fakeUser })
+      act(() => {
+        result.current.setNewTravelerName('فهد القحطاني')
+        result.current.setNewTravelerDeposit('3000')
+      })
+      await act(async () => { result.current.handleAddTraveler(fakeEvent()) })
+
+      // المستند يُنشأ بصفر — القاعدة تفرضه، والرصيد يصل عبر الحركة لا عبر الإنشاء
+      const travelerWrite = mocks.batchSet.mock.calls.find(
+        c => (c[0] as { __travelerDoc?: number }).__travelerDoc !== undefined,
+      )
+      expect(travelerWrite?.[1]).toMatchObject({ name: 'فهد القحطاني', deposited: 0 })
+
+      // ⚠️ التمييز بـ mode لا بـ travelerId: **حجز الاسم يحمل travelerId أيضاً**
+      // (`{ travelerId: id }`)، فالبحث به يلتقط الحجز ويمرّ الاختبار على
+      // المستند الخطأ. كلّفني هذا تشغيلاً كاملاً.
+      const logWrite = mocks.batchSet.mock.calls.find(
+        c => (c[1] as { mode?: string })?.mode !== undefined,
+      )
+      expect(logWrite?.[1]).toMatchObject({
+        previousDeposited: 0,
+        newDeposited: 3000,
+        delta: 3000,
+        mode: 'set',
+        changedByUid: 'user-1',
+      })
+      expect((logWrite?.[1] as { reason: string }).reason).toContain('رصيد ابتدائي')
+
+      // ثم يصل الرصيد فعلاً
+      expect(mocks.batchUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ __travelerDoc: expect.any(Number) }),
+        { deposited: 3000 },
+      )
+      // عدد الدفعات يخصّ الاختبار المجاور «دفعتان: الإنشاء، ثم سطر التدقيق
+      // والرصيد معاً» — هذا الاختبار يخصّ *محتوى* الحركة وحده.
+    })
+
+    it('بلا رصيد ابتدائي: لا سطر تدقيق ولا تحديث — دفعة الإنشاء وحدها', () => {
+      const { result } = setup({ user: fakeUser })
+      act(() => result.current.setNewTravelerName('فهد القحطاني'))
+      act(() => result.current.handleAddTraveler(fakeEvent()))
+
+      // المسافر + حجز الاسم فقط
+      expect(mocks.batchSet).toHaveBeenCalledTimes(2)
+      expect(mocks.batchUpdate).not.toHaveBeenCalled()
+    })
+
+    // ⚠️ دفعتان لا واحدة — قيد في Firestore لا اختيار: العمليتان على المستند
+    // الواحد تُقيَّمان إنشاءً واحداً بالقيمة النهائية، فتُرفض. انظر اختبار
+    // القواعد «دفعة واحدة تُنشئ بصفر ثم تُحدّث نفس المستند: تُرفض».
+    //
+    // والضمان المقصود محفوظ: السطر والرصيد في دفعة واحدة، فلا يوجد رصيد بلا
+    // سطر يفسّره. وأسوأ فشل ممكن مسافرٌ بصفر بلا سطر — حالة صادقة لا مال بلا أثر.
+    it('دفعتان: الإنشاء، ثم سطر التدقيق والرصيد معاً', async () => {
+      const { result } = setup({ user: fakeUser })
+      act(() => {
+        result.current.setNewTravelerName('فهد القحطاني')
+        result.current.setNewTravelerDeposit('3000')
+      })
+      await act(async () => { result.current.handleAddTraveler(fakeEvent()) })
+
+      expect(mocks.batchCommit).toHaveBeenCalledTimes(2)
+    })
+
+    it('الدفعة الثانية لا تُرسَل إن فشل الإنشاء — لا سطر تدقيق لمسافر غير موجود', async () => {
+      mocks.batchCommit.mockRejectedValueOnce(new Error('name taken'))
+      const { result, handleFirestoreError } = setup({ user: fakeUser })
+      act(() => {
+        result.current.setNewTravelerName('فهد القحطاني')
+        result.current.setNewTravelerDeposit('3000')
+      })
+      await act(async () => { result.current.handleAddTraveler(fakeEvent()) })
+
+      expect(mocks.batchCommit).toHaveBeenCalledTimes(1)
+      expect(handleFirestoreError).toHaveBeenCalled()
+    })
+  })
+
   it('محلياً (بلا مستخدم): يضيف مسافراً بالاسم المختصر والإيداع المحوَّل رقمياً', () => {
     const { result, setTravelers } = setup()
     act(() => {
@@ -108,15 +249,28 @@ describe('useTravelerActions — إضافة مسافر', () => {
     expect(result.current.newTravelerName).toBe('')
   })
 
-  it('إيداع غير رقمي يُعامَل كصفر بدل NaN', () => {
-    const { result, setTravelers } = setup()
+  // ⚠️ **تغيير سلوك متعمّد، والاختبار حُدِّث لا لُيّ ليمرّ.**
+  //
+  // كان الاسم «إيداع غير رقمي يُعامَل كصفر بدل NaN»، وغرضه المعلن — ألا يُكتب
+  // NaN — محفوظ بالكامل بل أشدّ: صار المدخل غير الصالح **يُرفض** بدل أن يُحوَّل
+  // صامتاً إلى صفر.
+  //
+  // ولماذا الرفض أصحّ من التحويل: من كتب شيئاً في الحقل قصد شيئاً، وتحويله إلى
+  // صفر بلا كلمة يُنشئ مسافراً برصيد يخالف ما أراده صاحبه — في تطبيق مهمّته
+  // الأرقام. وهو أيضاً ما يفعله handleAddExpense مع مبلغ غير صالح، فالمساران
+  // صارا متّسقين بدل أن يتناقضا.
+  //
+  // (هذا ليس اختبار توصيف — App.test.tsx وحده كذلك — فتحديثه مشروع هنا.)
+  it('إيداع غير رقمي يُرفض بدل أن يُحوَّل صامتاً إلى صفر', () => {
+    const { result, setTravelers, setSyncError } = setup()
     act(() => {
       result.current.setNewTravelerName('نورة')
       result.current.setNewTravelerDeposit('غير رقم')
     })
     act(() => result.current.handleAddTraveler(fakeEvent()))
-    const next = setTravelers.mock.calls[0][0]([])
-    expect(next[0].deposited).toBe(0)
+
+    expect(setSyncError).toHaveBeenCalledWith(expect.stringContaining('الرصيد الابتدائي'))
+    expect(setTravelers).not.toHaveBeenCalled()
   })
 
   it('عبر Firestore: يكتب مستند المسافر وحجز الاسم بنفس المعرّف في دفعة واحدة', async () => {

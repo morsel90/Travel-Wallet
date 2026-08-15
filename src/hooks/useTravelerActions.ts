@@ -3,10 +3,11 @@
 import { useState, useCallback } from 'react'
 import type { Dispatch, SetStateAction, FormEvent } from 'react'
 import type { User } from 'firebase/auth'
-import { writeBatch } from 'firebase/firestore'
+import { doc, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase'
-import { travelerDoc, travelerNameDoc } from '../firestore'
+import { travelerDoc, travelerNameDoc, depositLogsCol } from '../firestore'
 import { haptic } from '../utils/haptics'
+import { INITIAL_DEPOSIT_REASON } from '../utils/deposits'
 import { deriveShortName, isValidNameKey, newTravelerId } from '../utils/travelerName'
 import type { Traveler, ToastMessage } from '../types'
 
@@ -101,8 +102,29 @@ export function useTravelerActions({
       return
     }
 
+    // 🆕 الرصيد الابتدائي مبلغ مالي، فيخضع للقاعدة ١٩ كغيره.
+    //
+    // ⚠️ كان `parseFloat(newTravelerDeposit) || 0`، وهو حارس يبدو كافياً وليس
+    // كذلك: `||` يلتقط NaN و0 و'' — لكنه **يمرّر Infinity** لأنها قيمة صادقة
+    // (truthy). فكتابة "Infinity" في الحقل تُنشئ مسافراً بـ deposited غير
+    // منتهٍ، وقواعد Firestore تقبله (`Infinity >= 0` صحيح)، فيصير رصيده و
+    // remaining و«إجمالي المودَع» في كل تقرير غير منتهٍ.
+    //
+    // وهذا هو بعينه العطل الذي أُصلح في handleAddExpense في 2026-08-11؛ مسار
+    // المسافر لم يُشمل حينها. نفس الدرس المكتوب هناك: حين يعتمد مساران على نفس
+    // الحقيقة، افحص الثاني.
+    //
+    // الحقل اختياري — الفارغ يعني صفراً — لذا نتحقق فقط إن كُتب فيه شيء.
+    const depositRaw = newTravelerDeposit.trim()
+    const deposited = depositRaw === '' ? 0 : parseFloat(depositRaw)
+    if (!Number.isFinite(deposited) || deposited < 0) {
+      haptic.error()
+      setSyncError('الرصيد الابتدائي غير صالح — أدخل رقماً موجباً أو اترك الحقل فارغاً.')
+      return
+    }
+
     const id = newTravelerId()
-    const traveler: Traveler = { id, name: newTravelerName.trim(), shortName, deposited: parseFloat(newTravelerDeposit) || 0, deletedAt: null }
+    const traveler: Traveler = { id, name: newTravelerName.trim(), shortName, deposited, deletedAt: null }
 
     setNewTravelerName('')
     setNewTravelerDeposit('')
@@ -116,10 +138,64 @@ export function useTravelerActions({
 
     // المسافر وحجز اسمه معاً: نجاح الحجز هو ما يمنع التكرار، وفشله يمنع إنشاء
     // المسافر أصلاً بدل أن نحصل على اسمين متطابقين.
-    const batch = writeBatch(db)
-    batch.set(travelerDoc(id), traveler)
-    batch.set(travelerNameDoc(shortName), { travelerId: id })
-    batch.commit().catch(err => handleFirestoreError(err, nameConflictMessage(shortName)))
+    //
+    // 🆕 والرصيد الابتدائي يمرّ من المسار الموثَّق لا من حقل الإنشاء:
+    //
+    // المستند يُنشأ بصفر (تفرضه firestore.rules)، ثم تُكتب حركة إيداع في
+    // depositLogs ويُحدَّث الرصيد — **في نفس الدفعة الذرّية**. فإما أن يوجد
+    // المسافر برصيده وسطرِه معاً، أو لا يوجد شيء. مسافرٌ برصيد بلا سطر تدقيق هو
+    // بالضبط الحالة التي وُجد هذا التغيير لإغلاقها، ونفس مبدأ القاعدة ٦ مع
+    // حجز الاسم.
+    //
+    // ⚠️ التجربة لا تتغيّر بحرف: نفس النموذج ونفس الحقل ونفس النتيجة. ما يُضاف
+    // هو أن «٣٠٠٠ ريال ظهرت» صار لها جواب: من، ومتى، وبأي سبب.
+    const createBatch = writeBatch(db)
+    createBatch.set(travelerDoc(id), { ...traveler, deposited: 0 })
+    createBatch.set(travelerNameDoc(shortName), { travelerId: id })
+    const created = createBatch.commit()
+
+    if (deposited === 0) {
+      created.catch(err => handleFirestoreError(err, nameConflictMessage(shortName)))
+      return
+    }
+
+    // ⚠️ **دفعتان لا دفعة واحدة، وهذا قيد في Firestore لا اختيار.**
+    //
+    // الشكل المرغوب كان دفعة واحدة تُنشئ المستند بصفر ثم تُحدّثه. لكن Firestore
+    // **تجمع العمليتين على نفس المستند وتُقيّمهما إنشاءً واحداً بالقيمة
+    // النهائية**، فتصطدم بقاعدة `deposited == 0` وتُرفض الدفعة كاملة. أثبته
+    // اختبار القواعد «دفعة واحدة: إنشاء بصفر + سطر تدقيق + تحديث الرصيد»
+    // بالرسالة `false for 'create'` — أي أن الإنشاء الصافي حمل المبلغ النهائي.
+    //
+    // والانقسام **لا يُضعف الضمان المقصود**: الحركة وسطرها في دفعة ذرّية واحدة،
+    // فلا يوجد أبداً رصيد بلا سطر يفسّره. أسوأ فشل ممكن هو مسافر بصفر بلا سطر —
+    // حالة صادقة وآمنة (لا مال ظهر بلا أثر)، يُصلحها المسؤول بنافذة الإيداع.
+    // الاتجاه المعاكس — سطر بلا رصيد — يستحيل لأن السطر والتحديث معاً.
+    created
+      .then(() => {
+        const depositBatch = writeBatch(db)
+        // ⚠️ `changedByUid` يجب أن يطابق المنفِّذ فعلاً — القاعدة تفرضه، وهو ما
+        // يمنع نسبة الحركة لغير صاحبها (نفس مبدأ createdByUid على المصاريف).
+        depositBatch.set(doc(depositLogsCol(id)), {
+          travelerId:        id,
+          previousDeposited: 0,
+          newDeposited:      deposited,
+          delta:             deposited,
+          mode:              'set' as const,
+          reason:            INITIAL_DEPOSIT_REASON,
+          changedByEmail:    user.email ?? '',
+          changedByUid:      user.uid,
+          createdAt:         Date.now(),
+        })
+        depositBatch.update(travelerDoc(id), { deposited })
+        return depositBatch.commit()
+      })
+      .catch(err => handleFirestoreError(
+        err,
+        // الرسالة تسمّي الحالة الفعلية بدل «تعذّر الحفظ»: المسافر موجود، والرصيد
+        // وحده لم يُسجَّل — وهو ما يحدّد للمسؤول ما عليه فعله.
+        `أُضيف المسافر، لكن لم يُسجَّل رصيده الابتدائي. عدّل رصيده من زر «تعديل الرصيد».`,
+      ))
   }, [newTravelerName, newTravelerDeposit, activeTravelers, user, setTravelers, handleFirestoreError, setSyncError])
 
   const confirmDeleteTraveler = useCallback((id: number) => {
