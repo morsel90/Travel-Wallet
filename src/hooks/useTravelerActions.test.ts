@@ -152,13 +152,16 @@ describe('useTravelerActions — إضافة مسافر', () => {
   // سطر تدقيق** — بينما تعديل نفس الحقل لاحقاً محكوم بـ isAdmin() ويكتب سطراً
   // غير قابل للتعديل. فمن أراد إضافة مال بلا أثر لا يفتح نافذة الإيداع.
   describe('الرصيد الابتدائي يمرّ من المسار الموثَّق', () => {
-    it('ينشئ المسافر بصفر ويكتب حركة إيداع وتحديث الرصيد في نفس الدفعة', () => {
+    // ⚠️ `await act` لا `act` وحدها: سطر التدقيق يُكتب في الدفعة الثانية بعد
+    // نجاح الأولى، فالتأكيد المتزامن يقرأ الحالة قبل أن تُرسَل أصلاً — وهو ما
+    // كسر هذا الاختبار عند الانتقال إلى دفعتين، لا خطأ في الكود المفحوص.
+    it('ينشئ المسافر بصفر، ثم يكتب حركة الإيداع بمحتواها الصحيح', async () => {
       const { result } = setup({ user: fakeUser })
       act(() => {
         result.current.setNewTravelerName('فهد القحطاني')
         result.current.setNewTravelerDeposit('3000')
       })
-      act(() => result.current.handleAddTraveler(fakeEvent()))
+      await act(async () => { result.current.handleAddTraveler(fakeEvent()) })
 
       // المستند يُنشأ بصفر — القاعدة تفرضه، والرصيد يصل عبر الحركة لا عبر الإنشاء
       const travelerWrite = mocks.batchSet.mock.calls.find(
