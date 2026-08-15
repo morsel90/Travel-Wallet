@@ -161,15 +161,28 @@ describe('useTravelerActions — إضافة مسافر', () => {
     expect(result.current.newTravelerName).toBe('')
   })
 
-  it('إيداع غير رقمي يُعامَل كصفر بدل NaN', () => {
-    const { result, setTravelers } = setup()
+  // ⚠️ **تغيير سلوك متعمّد، والاختبار حُدِّث لا لُيّ ليمرّ.**
+  //
+  // كان الاسم «إيداع غير رقمي يُعامَل كصفر بدل NaN»، وغرضه المعلن — ألا يُكتب
+  // NaN — محفوظ بالكامل بل أشدّ: صار المدخل غير الصالح **يُرفض** بدل أن يُحوَّل
+  // صامتاً إلى صفر.
+  //
+  // ولماذا الرفض أصحّ من التحويل: من كتب شيئاً في الحقل قصد شيئاً، وتحويله إلى
+  // صفر بلا كلمة يُنشئ مسافراً برصيد يخالف ما أراده صاحبه — في تطبيق مهمّته
+  // الأرقام. وهو أيضاً ما يفعله handleAddExpense مع مبلغ غير صالح، فالمساران
+  // صارا متّسقين بدل أن يتناقضا.
+  //
+  // (هذا ليس اختبار توصيف — App.test.tsx وحده كذلك — فتحديثه مشروع هنا.)
+  it('إيداع غير رقمي يُرفض بدل أن يُحوَّل صامتاً إلى صفر', () => {
+    const { result, setTravelers, setSyncError } = setup()
     act(() => {
       result.current.setNewTravelerName('نورة')
       result.current.setNewTravelerDeposit('غير رقم')
     })
     act(() => result.current.handleAddTraveler(fakeEvent()))
-    const next = setTravelers.mock.calls[0][0]([])
-    expect(next[0].deposited).toBe(0)
+
+    expect(setSyncError).toHaveBeenCalledWith(expect.stringContaining('الرصيد الابتدائي'))
+    expect(setTravelers).not.toHaveBeenCalled()
   })
 
   it('عبر Firestore: يكتب مستند المسافر وحجز الاسم بنفس المعرّف في دفعة واحدة', async () => {
