@@ -12,7 +12,10 @@
   },
   "dependencies": {
     "firebase-admin": "^12.1.0",
-    "firebase-functions": "^5.0.0"
+    "firebase-functions": "^7.3.2"
   },
-  "private": true
+  "private": true,
+  "allowScripts": {
+    "protobufjs@7.6.5": true
+  }
 }
