@@ -17,14 +17,18 @@
 //     مسار الرحلة عند تحديث تفاصيل البنك فقط.
 //   - merge يُنشئ المستند إن لم يكن موجوداً.
 import { useState, useCallback } from 'react'
-import { setDoc } from 'firebase/firestore'
+import { setDoc, getDocs } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, functions } from '../firebase'
-import { tripDocById } from '../firestore'
+import {
+  tripDocById, expensesColByTrip, travelersColByTrip, travelerNamesColByTrip, depositLogsColByTrip,
+} from '../firestore'
 import { haptic } from '../utils/haptics'
 import { MAX_SEGMENTS } from '../utils/itinerary'
+import { buildTripBackup, downloadTripBackup } from '../utils/backup'
 import { TRIP_STATUS_LABEL } from '../types'
-import type { BankDetails, ItinerarySegment, ToastMessage, TripStatus } from '../types'
+import type { BankDetails, DepositLogEntry, Expense, ItinerarySegment, ToastMessage, Traveler, TripStatus } from '../types'
+import type { TripSummary } from './useAllTrips'
 
 // عقد استدعاء manageTrip — يطابق ما تقرأه الدالة في functions/index.js
 interface ManageTripRequest {
@@ -66,6 +70,8 @@ export interface UseTripAdminActionsResult {
   deleteTrip: (tripId: string) => Promise<boolean>
   /** 🆕 إزالة عضو من رحلة واحدة — لا تمسّ بقية رحلاته، ولا تُلغي مصاريفه. */
   removeMember: (tripId: string, uid: string) => Promise<boolean>
+  /** 🆕 تنزيل نسخة JSON احتياطية لرحلة واحدة — انظر docs/PLAN-backup-recovery.md المرحلة ١. */
+  exportBackup: (trip: TripSummary) => Promise<boolean>
 }
 
 export function useTripAdminActions({
@@ -264,5 +270,63 @@ export function useTripAdminActions({
     }
   }, [isAdmin, showToast, handleFirestoreError])
 
-  return { isSaving, saveBankDetails, saveItinerary, saveTripName, saveTripStatus, createTrip, resetTripPin, deleteTrip, removeMember }
+  // 🆕 تنزيل نسخة احتياطية — قراءة فقط، بلا مسار كتابة جديد ولا دالة سحابية:
+  // isAdmin() في القواعد يمنح قراءة expenses/travelers/depositLogs لأي رحلة،
+  // لا الرحلة النشطة وحدها (نفس أساس فحص الخلوّ قبل الحذف). depositLogs تُجلب
+  // لكل مسافر على حدة (subcollection تحت كل مستند مسافر) بالتوازي — كلفة عدد
+  // القراءات مقبولة لأنه إجراء يدوي نادر، لا مسار ساخن.
+  const exportBackup = useCallback(async (trip: TripSummary): Promise<boolean> => {
+    if (!isAdmin) {
+      showToast({ text: 'هذا الإجراء متاح للمسؤول فقط.', type: 'error' }, 3000)
+      return false
+    }
+
+    setIsSaving(true)
+    try {
+      const [travelersSnap, expensesSnap, travelerNamesSnap] = await Promise.all([
+        getDocs(travelersColByTrip(trip.id)),
+        getDocs(expensesColByTrip(trip.id)),
+        getDocs(travelerNamesColByTrip(trip.id)),
+      ])
+
+      const travelers = travelersSnap.docs.map(d => d.data() as Traveler)
+      const expenses = expensesSnap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Expense, 'id'>) }))
+      const travelerNames = travelerNamesSnap.docs.map(d => ({
+        shortName: d.id,
+        travelerId: (d.data() as { travelerId: number }).travelerId,
+      }))
+
+      const depositLogsByTraveler = await Promise.all(
+        travelers.map(t => getDocs(depositLogsColByTrip(trip.id, t.id))),
+      )
+      const depositLogs = depositLogsByTraveler.flatMap(snap =>
+        snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<DepositLogEntry, 'id'>) })),
+      )
+
+      const backup = buildTripBackup({
+        tripId: trip.id,
+        trip: { name: trip.name, bankDetails: trip.bankDetails, itinerary: trip.itinerary, status: trip.status },
+        travelers, expenses, depositLogs, travelerNames,
+      })
+      downloadTripBackup(backup)
+
+      haptic.success()
+      showToast({
+        text: `تم تنزيل نسخة احتياطية لـ"${trip.name}" — ${travelers.length} مسافراً و${expenses.length} مصروفاً.`,
+        type: 'success',
+      }, 4000)
+      return true
+    } catch (err) {
+      haptic.error()
+      handleFirestoreError(err, 'تعذّر تنزيل النسخة الاحتياطية.')
+      return false
+    } finally {
+      setIsSaving(false)
+    }
+  }, [isAdmin, showToast, handleFirestoreError])
+
+  return {
+    isSaving, saveBankDetails, saveItinerary, saveTripName, saveTripStatus, createTrip, resetTripPin,
+    deleteTrip, removeMember, exportBackup,
+  }
 }

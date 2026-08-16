@@ -49,3 +49,18 @@ export const tripsCol = () => collection(db, 'trips')
 // ويقرأه المسؤول وحده. وهو **فهرس إداري لا مصدر صلاحية**: isMember() تبقى تقرأ
 // العضوية من التوكن — قراءة مجانية — ولا يجوز اشتقاق أي وصول من هذا المسار.
 export const tripMembersCol = (tripId: string) => collection(db, 'trips', tripId, 'members')
+
+// 🆕 نسخ معامَلة بـ tripId صريح من expensesCol/travelersCol/depositLogsCol
+// أعلاه — للنسخ الاحتياطي من لوحة إدارة الرحلات (docs/PLAN-backup-recovery.md
+// المرحلة ١)، حيث الرحلة المطلوب تصديرها قد لا تكون TRIP_ID النشطة. القواعد
+// تسمح بذلك أصلاً: allow read على expenses/travelers/depositLogs شرطها
+// isMember(appId) || isAdmin() — والشق الثاني لا يشير لمعرّف رحلة بعينه، وهو
+// نفس الأساس الذي يقوم عليه فحص الخلوّ قبل حذف رحلة (manageTrip mode=delete).
+export const expensesColByTrip = (tripId: string) =>
+  collection(db, 'artifacts', tripId, 'public', 'data', 'expenses')
+export const travelersColByTrip = (tripId: string) =>
+  collection(db, 'artifacts', tripId, 'public', 'data', 'travelers')
+export const travelerNamesColByTrip = (tripId: string) =>
+  collection(db, 'artifacts', tripId, 'public', 'data', 'travelerNames')
+export const depositLogsColByTrip = (tripId: string, travelerId: number) =>
+  collection(db, 'artifacts', tripId, 'public', 'data', 'travelers', String(travelerId), 'depositLogs')

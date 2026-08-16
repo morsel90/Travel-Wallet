@@ -35,13 +35,15 @@ interface TripAdminViewProps {
   onDeleteTrip: (tripId: string) => Promise<boolean>
   /** 🆕 إزالة عضو من الرحلة — تمرّ إلى TripDetailPanel كما هي. */
   onRemoveMember: (tripId: string, uid: string) => Promise<boolean>
+  /** 🆕 تنزيل نسخة JSON احتياطية — docs/PLAN-backup-recovery.md المرحلة ١. */
+  onExportBackup: (trip: TripSummary) => Promise<boolean>
   onClose: () => void
 }
 
 export default function TripAdminView({
   currentTripId, trips, loading, error, isSaving,
   onSaveTripName, onSaveBankDetails, onSaveItinerary, onCreateTrip, onResetPin,
-  onSaveTripStatus, onDeleteTrip, onRemoveMember, onClose,
+  onSaveTripStatus, onDeleteTrip, onRemoveMember, onExportBackup, onClose,
 }: TripAdminViewProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [isCreating, setIsCreating] = useState(false)
@@ -119,6 +121,7 @@ export default function TripAdminView({
             onSaveTripStatus={onSaveTripStatus}
             onDeleteTrip={onDeleteTrip}
             onRemoveMember={onRemoveMember}
+            onExportBackup={onExportBackup}
             // الرحلة لم تعد موجودة — نعود للقائمة بدل إبقاء لوحة تشير لمستند محذوف
             onDeleted={() => setSelectedId(null)}
           />
