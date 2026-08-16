@@ -141,45 +141,45 @@ async function checkRateLimit(request, tripId) {
   const limit = isAnonymous ? 15 : 20;
 
   const docRef = db.collection('rateLimits').doc(`verify_${key}`);
-  const snap = await docRef.get();
-  
-  // تعيين وقت الانتهاء في المستقبل (24 ساعة) لسياسة TTL
-  const expireAt = Timestamp.fromMillis(now + 24 * 60 * 60 * 1000);
 
-  if (!snap.exists) {
-    await docRef.set({
-      count: 1,
-      windowStart: now,
-      expireAt: expireAt
-    });
+  // ⚠️ القراءة والفحص والزيادة داخل معاملة واحدة (transaction) لا get() ثم
+  // update() منفصلتين. بدونها، طلبات متزامنة تصل والعدّاد قريب من الحدّ
+  // تقرأ كلّها نفس القيمة القديمة فتجتاز الفحص معاً، فيتجاوز عدد المحاولات
+  // الفعلي الحدّ المعلن — سباق (TOCTOU) يُضعف الحماية من تخمين رمز الرحلة.
+  // runTransaction تُسلسِل أي معاملات متزامنة تلمس نفس المستند (بإعادة
+  // المحاولة تلقائياً عند التعارض)، فلا يمكن لقراءتين أن تريا نفس القيمة
+  // القديمة معاً ثم تكتبا زيادتين مستقلّتين.
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(docRef);
+
+    // تعيين وقت الانتهاء في المستقبل (24 ساعة) لسياسة TTL
+    const expireAt = Timestamp.fromMillis(now + 24 * 60 * 60 * 1000);
+
+    if (!snap.exists) {
+      tx.set(docRef, { count: 1, windowStart: now, expireAt });
+      return { limited: false };
+    }
+
+    const data = snap.data();
+    const windowStart = data.windowStart;
+
+    // انتهت النافذة الزمنية
+    if (now - windowStart > WINDOW_MS) {
+      tx.set(docRef, { count: 1, windowStart: now, expireAt });
+      return { limited: false };
+    }
+
+    // تجاوز الحد
+    if (data.count >= limit) {
+      console.warn(`[RATE_LIMIT] Blocked: ${key}, count: ${data.count}`);
+      const retryAfterSeconds = Math.ceil((windowStart + WINDOW_MS - now) / 1000);
+      return { limited: true, retryAfter: retryAfterSeconds };
+    }
+
+    // زيادة العداد بشكل آمن وتفادي مشاكل التزامن
+    tx.update(docRef, { count: FieldValue.increment(1) });
     return { limited: false };
-  }
-  
-  const data = snap.data();
-  const windowStart = data.windowStart;
-  
-  // انتهت النافذة الزمنية
-  if (now - windowStart > WINDOW_MS) {
-    await docRef.set({
-      count: 1,
-      windowStart: now,
-      expireAt: expireAt
-    });
-    return { limited: false };
-  }
-  
-  // تجاوز الحد
-  if (data.count >= limit) {
-    console.warn(`[RATE_LIMIT] Blocked: ${key}, count: ${data.count}`);
-    const retryAfterSeconds = Math.ceil((windowStart + WINDOW_MS - now) / 1000);
-    return { limited: true, retryAfter: retryAfterSeconds };
-  }
-  
-  // زيادة العداد بشكل آمن وتفادي مشاكل التزامن
-  await docRef.update({ 
-    count: FieldValue.increment(1) 
   });
-  return { limited: false };
 }
 
 exports.verifyTripPin = onCall(
