@@ -11,10 +11,11 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import {
-  X, Settings, Plus, ArrowRight, ExternalLink, Luggage, Route, Loader2, AlertTriangle,
+  X, Settings, Plus, ArrowRight, ExternalLink, Luggage, Route, Loader2, AlertTriangle, Upload,
 } from '../../icons'
 import TripDetailPanel from './TripDetailPanel'
 import NewTripForm from './NewTripForm'
+import RestoreTripForm from './RestoreTripForm'
 import EmptyState from '../EmptyState'
 import { tripUrl } from '../../utils/tripId'
 import type { TripSummary } from '../../hooks/useAllTrips'
@@ -37,16 +38,19 @@ interface TripAdminViewProps {
   onRemoveMember: (tripId: string, uid: string) => Promise<boolean>
   /** 🆕 تنزيل نسخة JSON احتياطية — docs/PLAN-backup-recovery.md المرحلة ١. */
   onExportBackup: (trip: TripSummary) => Promise<boolean>
+  /** 🆕 استعادة رحلة من نسخة JSON — المرحلة ٢. */
+  onRestoreTrip: (tripId: string, pin: string, backup: unknown) => Promise<boolean>
   onClose: () => void
 }
 
 export default function TripAdminView({
   currentTripId, trips, loading, error, isSaving,
   onSaveTripName, onSaveBankDetails, onSaveItinerary, onCreateTrip, onResetPin,
-  onSaveTripStatus, onDeleteTrip, onRemoveMember, onExportBackup, onClose,
+  onSaveTripStatus, onDeleteTrip, onRemoveMember, onExportBackup, onRestoreTrip, onClose,
 }: TripAdminViewProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [isCreating, setIsCreating] = useState(false)
+  const [isRestoring, setIsRestoring] = useState(false)
 
   // نقرأ الرحلة المختارة من القائمة الحيّة في كل رسم — لا نسخة محلية، حتى
   // ينعكس أي تعديل محفوظ فوراً بدل بقاء اللوحة على بيانات قديمة.
@@ -129,17 +133,29 @@ export default function TripAdminView({
 
         {!loading && !selected && (
           <>
-            {!isCreating && (
-              <button
-                type="button"
-                onClick={() => setIsCreating(true)}
-                className="w-full border-2 border-dashed border-slate-200 hover:border-teal-500 hover:bg-teal-50/40 rounded-2xl p-4 flex items-center justify-center gap-3 text-slate-500 hover:text-teal-600 transition-all bg-white/40 group min-h-[68px]"
-              >
-                <span className="w-9 h-9 rounded-full bg-slate-100 group-hover:bg-teal-100 flex items-center justify-center text-slate-600 group-hover:text-teal-700 transition-colors shrink-0 shadow-sm">
-                  <Plus className="w-4 h-4" />
-                </span>
-                <span className="text-sm font-bold">إنشاء رحلة جديدة</span>
-              </button>
+            {!isCreating && !isRestoring && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsCreating(true)}
+                  className="border-2 border-dashed border-slate-200 hover:border-teal-500 hover:bg-teal-50/40 rounded-2xl p-4 flex items-center justify-center gap-3 text-slate-500 hover:text-teal-600 transition-all bg-white/40 group min-h-[68px]"
+                >
+                  <span className="w-9 h-9 rounded-full bg-slate-100 group-hover:bg-teal-100 flex items-center justify-center text-slate-600 group-hover:text-teal-700 transition-colors shrink-0 shadow-sm">
+                    <Plus className="w-4 h-4" />
+                  </span>
+                  <span className="text-sm font-bold">إنشاء رحلة جديدة</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsRestoring(true)}
+                  className="border-2 border-dashed border-slate-200 hover:border-amber-500 hover:bg-amber-50/40 rounded-2xl p-4 flex items-center justify-center gap-3 text-slate-500 hover:text-amber-700 transition-all bg-white/40 group min-h-[68px]"
+                >
+                  <span className="w-9 h-9 rounded-full bg-slate-100 group-hover:bg-amber-100 flex items-center justify-center text-slate-600 group-hover:text-amber-700 transition-colors shrink-0 shadow-sm">
+                    <Upload className="w-4 h-4" />
+                  </span>
+                  <span className="text-sm font-bold">استعادة من نسخة احتياطية</span>
+                </button>
+              </div>
             )}
 
             {isCreating && (
@@ -151,7 +167,15 @@ export default function TripAdminView({
               />
             )}
 
-            {trips.length === 0 && !isCreating ? (
+            {isRestoring && (
+              <RestoreTripForm
+                isSaving={isSaving}
+                onRestore={onRestoreTrip}
+                onCancel={() => setIsRestoring(false)}
+              />
+            )}
+
+            {trips.length === 0 && !isCreating && !isRestoring ? (
               <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <EmptyState
                   Icon={Luggage}

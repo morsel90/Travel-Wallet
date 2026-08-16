@@ -594,3 +594,286 @@ exports.manageMember = onCall(
     return { success: true, uid, tripId, claimRemoved: wasMember, stillHasAccess };
   }
 );
+
+// ─── 🆕 restoreTrip: استعادة رحلة من نسخة JSON احتياطية ─────────────────────
+//
+// docs/PLAN-backup-recovery.md المرحلة ٢. النسخة تُنزَّل من لوحة الإدارة
+// (المرحلة ١، src/utils/backup.ts) وتُرفَع هنا لإعادة بناء رحلة كاملة.
+//
+// ⚠️ **لماذا دالة خادمية بصلاحيات Admin SDK لا كتابة عميل مباشرة:** الاستعادة
+// تكتب حقولاً تفرض القواعد ثباتها أو تمنعها من العميل أصلاً — createdByUid
+// الأصلي (لا uid المسؤول المُستعيد)، deletedAt التاريخي، سجلّات depositLogs
+// كسجلّ تاريخي بحت. وAdmin SDK يتجاوز القواعد بالكامل، لذا **كل تحقّق تفرضه
+// القواعد عادة على الكتابات الحيّة يُعاد كتابته هنا يدوياً بدقة** — لا حارس
+// آخر يوقف نسخة JSON مُعدَّلة يدوياً (بالخطأ أو بنيّة) عن كتابة بيانات فاسدة.
+//
+// ⚠️ **مبسَّطة عمداً عن حاجز الاستبدال المقترح أصلاً في الخطة: لا استبدال
+// لرحلة حيّة تحت أي ظرف.** الاستعادة تُقبل فقط على رحلة غير موجودة أو فارغة
+// تماماً (بلا مسافر ولا مصروف) — نفس شرط manageTrip mode=delete بالضبط.
+// الكتابة فوق رحلة بها بيانات هي أخطر عملية ممكنة في هذا المستودع، ولا حاجة
+// فعلية لها اليوم: من يريد استعادة نسخة قديمة على رحلة تحوي بيانات حالية
+// يحذفها أولاً، وإن لم تكن فارغة فالمسار الآمن الوحيد المتبقّي معرّف جديد.
+//
+// ⚠️ **لا ذرّية كاملة عبر كل الكتابات.** حدّ Firestore ٥٠٠ عملية لكل دفعة —
+// رحلة كبيرة قد تحتاج أكثر من دفعة، والدفعات المتتالية ليست ذرّية فيما بينها.
+// فشل دفعة لاحقة يترك الرحلة في حالة استعادة جزئية **مرئية لا صامتة**: الدالة
+// ترمي خطأً صريحاً يذكر العدد الفعلي المكتوب قبل الفشل، بدل الإبلاغ بنجاح كاذب.
+//
+// ⚠️ **رمز PIN جديد إلزامي.** النسخة الاحتياطية لا تحوي tripSecrets أصلاً —
+// المرحلة ١ تستبعده عمداً لأنه لا يُقرأ من العميل تحت أي ظرف — فالاستعادة
+// تُنشئ رمزاً جديداً كجزء منها، تماماً كإنشاء رحلة جديدة (manageTrip mode=create).
+//
+// ⚠️ **changedByUid في سجلّات الإيداع يبقى كما في النسخة، لا uid المسؤول
+// الحالي.** القاعدة الحيّة تفرض تطابقهما لمنع انتحال هوية في كتابة مباشرة من
+// عضو حقيقي — لكن الاستعادة تعيد كتابة سجلّ تاريخي حقيقي؛ تغيير من كتبه فعلياً
+// إلى المسؤول المُستعيد يكذب على السجلّ الذي وُجد أصلاً ليكون مرجعاً موثوقاً
+// عند خلاف مالي. تحقَّق هنا من الشكل والنوع فقط، لا من هوية الكاتب.
+
+const BACKUP_SCHEMA_VERSION = 1;
+// ⚠️ يجب أن يطابق MAX_SEGMENTS في src/utils/itinerary.ts — نفس القيد الذي
+// تفرضه firestore.rules على itinerary في الكتابات الحيّة.
+const MAX_ITINERARY_SEGMENTS = 50;
+
+function isPlainObject(v) {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+function hasOnlyKeys(obj, allowed) {
+  return Object.keys(obj).every((k) => allowed.includes(k));
+}
+
+function isValidBankDetailsJs(b) {
+  if (!isPlainObject(b)) return false;
+  if (!hasOnlyKeys(b, ['bankName', 'beneficiary', 'iban'])) return false;
+  const limits = { bankName: 100, beneficiary: 100, iban: 40 };
+  return Object.keys(limits).every(
+    (k) => !(k in b) || (typeof b[k] === 'string' && b[k].length <= limits[k])
+  );
+}
+
+// نفس شرط isValidShares في firestore.rules بالضبط — لا تحقّق من نوع/مدى كل
+// قيمة وزن فردياً (splitByShares في utils/calculations.ts تتعامل دفاعياً مع
+// أي وزن غير صالح بمعاملته كوزن 1، فلا قيمة تالفة تُنتج حساباً خاطئاً فعلياً).
+function isValidSharesJs(shares, participants) {
+  if (!isPlainObject(shares)) return false;
+  const size = Object.keys(shares).length;
+  return size > 0 && size <= participants.length;
+}
+
+function isValidTravelerJs(d) {
+  if (!isPlainObject(d)) return false;
+  if (!hasOnlyKeys(d, ['id', 'name', 'shortName', 'deposited', 'deletedAt'])) return false;
+  if (!Number.isInteger(d.id)) return false;
+  if (typeof d.name !== 'string' || d.name.length < 1 || d.name.length > 100) return false;
+  if (typeof d.shortName !== 'string' || d.shortName.length < 1 || d.shortName.length > 50) return false;
+  if (typeof d.deposited !== 'number' || !Number.isFinite(d.deposited) || d.deposited < 0) return false;
+  if ('deletedAt' in d && d.deletedAt !== null && typeof d.deletedAt !== 'number') return false;
+  return true;
+}
+
+// ⚠️ 'id' في قائمة المفاتيح المسموحة هنا عمداً — وهذا يخالف isValidExpense في
+// firestore.rules التي لا تسمح به (معرّف المستند لا حقلاً داخله). السبب: هذه
+// الدالة تتحقق من شكل Expense في *النسخة الاحتياطية* (يطابق واجهة TS في
+// src/types.ts، وفيها id)، لا شكل مستند Firestore مباشرة — id يُنزَع قبل
+// الكتابة الفعلية (انظر استخدامها أدناه).
+function isValidExpenseJs(d) {
+  if (!isPlainObject(d)) return false;
+  if (!hasOnlyKeys(d, [
+    'id', 'date', 'description', 'amount', 'originalAmount', 'currency', 'exchangeRate',
+    'participants', 'createdAt', 'deletedAt', 'createdByUid', 'category', 'shares',
+  ])) return false;
+  if (typeof d.id !== 'string' || !d.id) return false;
+  if (typeof d.date !== 'string' || d.date.length > 10) return false;
+  if (typeof d.description !== 'string' || d.description.length < 1 || d.description.length > 200) return false;
+  if (typeof d.amount !== 'number' || !Number.isFinite(d.amount) || d.amount < 0) return false;
+  if (typeof d.originalAmount !== 'number' || !Number.isFinite(d.originalAmount) || d.originalAmount < 0) return false;
+  if (typeof d.currency !== 'string' || d.currency.length > 5) return false;
+  if (typeof d.exchangeRate !== 'number' || !Number.isFinite(d.exchangeRate) || d.exchangeRate <= 0) return false;
+  if (!Array.isArray(d.participants) || d.participants.length < 1 || d.participants.length > 50) return false;
+  if (!d.participants.every((p) => typeof p === 'number' || typeof p === 'string')) return false;
+  if (typeof d.createdAt !== 'number') return false;
+  if ('deletedAt' in d && d.deletedAt !== null && typeof d.deletedAt !== 'number') return false;
+  if ('createdByUid' in d && typeof d.createdByUid !== 'string') return false;
+  if ('category' in d && (typeof d.category !== 'string' || d.category.length > 50)) return false;
+  if ('shares' in d && !isValidSharesJs(d.shares, d.participants)) return false;
+  return true;
+}
+
+// ⚠️ نفس ملاحظة isValidExpenseJs أعلاه: 'id' مسموح هنا لأن هذا شكل
+// DepositLogEntry في النسخة الاحتياطية (به id)، لا شكل مستند Firestore
+// (بلا id) — يُنزَع قبل الكتابة الفعلية.
+function isValidDepositLogJs(d) {
+  if (!isPlainObject(d)) return false;
+  if (!hasOnlyKeys(d, [
+    'id', 'travelerId', 'previousDeposited', 'newDeposited', 'delta', 'mode', 'reason',
+    'changedByEmail', 'changedByUid', 'createdAt',
+  ])) return false;
+  if (typeof d.id !== 'string' || !d.id) return false;
+  if (!Number.isInteger(d.travelerId)) return false;
+  if (typeof d.previousDeposited !== 'number' || !Number.isFinite(d.previousDeposited)) return false;
+  if (typeof d.newDeposited !== 'number' || !Number.isFinite(d.newDeposited)) return false;
+  if (typeof d.delta !== 'number' || !Number.isFinite(d.delta)) return false;
+  if (!['add', 'subtract', 'set'].includes(d.mode)) return false;
+  if (d.reason !== null && (typeof d.reason !== 'string' || d.reason.length > 300)) return false;
+  if (typeof d.changedByEmail !== 'string' || !d.changedByEmail) return false;
+  if (typeof d.changedByUid !== 'string' || !d.changedByUid) return false;
+  if (typeof d.createdAt !== 'number') return false;
+  return true;
+}
+
+exports.restoreTrip = onCall(
+  { region: 'us-central1', maxInstances: 2, timeoutSeconds: 120 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+    }
+    if (request.auth.token.admin !== true) {
+      throw new HttpsError('permission-denied', 'هذا الإجراء متاح للمسؤول فقط.');
+    }
+
+    const tripId = String(request.data?.tripId ?? '').trim();
+    const pin = String(request.data?.pin ?? '').trim();
+    const backup = request.data?.backup;
+
+    if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
+      throw new HttpsError(
+        'invalid-argument',
+        'معرّف الرحلة غير صالح — إنجليزي/أرقام وشرطة (-) وشرطة سفلية (_) فقط، بطول 1-64 حرفاً.'
+      );
+    }
+    if (!pin || pin.length > MAX_PIN_INPUT_LENGTH) {
+      throw new HttpsError('invalid-argument', 'أدخل رمز الرحلة.');
+    }
+    if (pin.length < MIN_PIN_LENGTH) {
+      throw new HttpsError('invalid-argument', `رمز الرحلة قصير جداً — ${MIN_PIN_LENGTH} خانات على الأقل.`);
+    }
+
+    // ── التحقّق من بنية ملف النسخة الاحتياطية بالكامل قبل أي كتابة ──────────
+    if (!isPlainObject(backup)) {
+      throw new HttpsError('invalid-argument', 'ملف النسخة الاحتياطية غير صالح.');
+    }
+    if (backup.schemaVersion !== BACKUP_SCHEMA_VERSION) {
+      throw new HttpsError(
+        'invalid-argument',
+        `إصدار غير مدعوم لملف النسخة الاحتياطية (${JSON.stringify(backup.schemaVersion)}).`
+      );
+    }
+
+    const trip = backup.trip;
+    if (!isPlainObject(trip) || typeof trip.name !== 'string' || trip.name.length > 100) {
+      throw new HttpsError('invalid-argument', 'بيانات الرحلة داخل النسخة غير صالحة.');
+    }
+    if (!isValidBankDetailsJs(trip.bankDetails)) {
+      throw new HttpsError('invalid-argument', 'تفاصيل الحساب البنكي داخل النسخة غير صالحة.');
+    }
+    if (!Array.isArray(trip.itinerary) || trip.itinerary.length > MAX_ITINERARY_SEGMENTS) {
+      throw new HttpsError('invalid-argument', 'مسار الرحلة داخل النسخة غير صالح.');
+    }
+    if (!['active', 'completed', 'archived'].includes(trip.status)) {
+      throw new HttpsError('invalid-argument', 'حالة الرحلة داخل النسخة غير صالحة.');
+    }
+
+    const travelers = Array.isArray(backup.travelers) ? backup.travelers : [];
+    const expenses = Array.isArray(backup.expenses) ? backup.expenses : [];
+    const depositLogs = Array.isArray(backup.depositLogs) ? backup.depositLogs : [];
+    const travelerNames = Array.isArray(backup.travelerNames) ? backup.travelerNames : [];
+
+    if (!travelers.every(isValidTravelerJs)) {
+      throw new HttpsError('invalid-argument', 'أحد المسافرين داخل النسخة غير صالح.');
+    }
+    if (!expenses.every(isValidExpenseJs)) {
+      throw new HttpsError('invalid-argument', 'أحد المصاريف داخل النسخة غير صالح.');
+    }
+    if (!depositLogs.every(isValidDepositLogJs)) {
+      throw new HttpsError('invalid-argument', 'أحد سجلّات الإيداع داخل النسخة غير صالح.');
+    }
+
+    // ⚠️ سلامة مرجعية داخل النسخة نفسها — أبعد ممّا تتحقق منه firestore.rules
+    // للكتابات الحيّة (travelerNames وtravelers تُكتبان معاً من عميل موثوق في
+    // نفس اللحظة؛ هنا نعيد بناء الاثنتين من ملف واحد فيجب التحقق من تطابقهما).
+    const travelerIds = new Set(travelers.map((t) => t.id));
+    if (!travelerNames.every((n) =>
+      isPlainObject(n) && typeof n.shortName === 'string' && n.shortName
+        && Number.isInteger(n.travelerId) && travelerIds.has(n.travelerId)
+    )) {
+      throw new HttpsError('invalid-argument', 'أحد حجوزات الأسماء داخل النسخة غير صالح أو يشير لمسافر غير موجود.');
+    }
+    if (!depositLogs.every((l) => travelerIds.has(l.travelerId))) {
+      throw new HttpsError('invalid-argument', 'سجلّ إيداع يشير لمسافر غير موجود في النسخة.');
+    }
+
+    // ── الرحلة الهدف: غير موجودة، أو موجودة وفارغة تماماً ──────────────────
+    // نفس شرط manageTrip mode=delete بالضبط — انظر التعليق أعلى الدالة.
+    const tripRef = db.collection('trips').doc(tripId);
+    const dataRoot = db.collection('artifacts').doc(tripId).collection('public').doc('data');
+    const existing = await tripRef.get();
+    if (existing.exists) {
+      const [existingTravelers, existingExpenses] = await Promise.all([
+        dataRoot.collection('travelers').limit(1).get(),
+        dataRoot.collection('expenses').limit(1).get(),
+      ]);
+      if (!existingTravelers.empty || !existingExpenses.empty) {
+        throw new HttpsError(
+          'failed-precondition',
+          `لا يمكن الاستعادة إلى "${tripId}" لأنها تحوي مسافرين أو مصاريف بالفعل. الاستعادة متاحة للرحلات الفارغة أو غير الموجودة فقط.`
+        );
+      }
+    }
+
+    // ── الكتابة على دفعات لا تتجاوز ٥٠٠ عملية لكل دفعة (حدّ Firestore) ──────
+    const salt = crypto.randomBytes(16).toString('hex');
+    const pinHash = hashPin(pin, salt);
+
+    const ops = [];
+    ops.push({
+      ref: tripRef,
+      data: { name: trip.name || tripId, bankDetails: trip.bankDetails, itinerary: trip.itinerary, status: trip.status },
+    });
+    ops.push({ ref: db.collection('tripSecrets').doc(tripId), data: { salt, pinHash } });
+    for (const t of travelers) {
+      ops.push({ ref: dataRoot.collection('travelers').doc(String(t.id)), data: t });
+    }
+    for (const n of travelerNames) {
+      ops.push({ ref: dataRoot.collection('travelerNames').doc(n.shortName), data: { travelerId: n.travelerId } });
+    }
+    for (const e of expenses) {
+      const { id, ...rest } = e;
+      ops.push({ ref: dataRoot.collection('expenses').doc(id), data: rest });
+    }
+    for (const l of depositLogs) {
+      const { id, ...rest } = l;
+      ops.push({
+        ref: dataRoot.collection('travelers').doc(String(l.travelerId)).collection('depositLogs').doc(id),
+        data: rest,
+      });
+    }
+
+    const BATCH_LIMIT = 500;
+    let written = 0;
+    try {
+      for (let i = 0; i < ops.length; i += BATCH_LIMIT) {
+        const chunk = ops.slice(i, i + BATCH_LIMIT);
+        const batch = db.batch();
+        chunk.forEach(({ ref, data }) => batch.set(ref, data));
+        await batch.commit();
+        written += chunk.length;
+      }
+    } catch (err) {
+      console.error(`[restoreTrip] failed on ${tripId} after ${written}/${ops.length} writes:`, err);
+      throw new HttpsError(
+        'internal',
+        `تعذّرت الاستعادة بعد كتابة ${written} من ${ops.length} عنصراً — الرحلة "${tripId}" في حالة جزئية. راجع سجلّات الخادم قبل إعادة المحاولة.`
+      );
+    }
+
+    console.log(
+      `[restoreTrip] restored ${tripId} by ${request.auth.uid}: ` +
+      `${travelers.length} travelers, ${expenses.length} expenses, ${depositLogs.length} depositLogs`
+    );
+    return {
+      success: true,
+      tripId,
+      restored: { travelers: travelers.length, expenses: expenses.length, depositLogs: depositLogs.length },
+    };
+  }
+);
