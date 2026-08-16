@@ -74,6 +74,23 @@ jobs:
       - run: npm run typecheck:e2e
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+      # 🆕 عند الفشل: سجلّ firebase-debug.log (يُكتب دائماً، ويحمل تفاصيل --debug
+      # الكاملة لكل محاكي — بما فيها ما يُطبَع فقط بمستوى debug لا في الطرفية
+      # العادية) وتقرير Playwright (لقطات شاشة + آثار عند إعادة المحاولة).
+      # بدون هذه الخطوة، سبب فشل حقيقي في وقت التشغيل (لا في الاختبار نفسه)
+      # يبقى سطراً واحداً غامضاً في مخرجات CI بلا أي أثر يمكن تتبّعه لاحقاً.
+      - name: Upload debug logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-debug-logs
+          path: |
+            firebase-debug.log
+            firestore-debug.log
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   build:
     needs: [lint, typecheck, test, rules, e2e]

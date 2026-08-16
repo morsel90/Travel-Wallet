@@ -32,6 +32,7 @@ storybook-static
 
 # ملفات محلية لأدوات Firebase CLI (محاكيات Firestore/Auth/Functions للاختبارات)
 .firebase
+firebase-debug.log
 firestore-debug.log
 ui-debug.log
 
