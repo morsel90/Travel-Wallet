@@ -136,7 +136,8 @@ const validDepositLog = (changedByUid: string, overrides: Record<string, unknown
 
 describe('عضوية الرحلة — expenses', () => {
   it('مستخدم مجهول تماماً (بلا تسجيل دخول) يُمنع من القراءة والإضافة', async () => {
-    await assertFails(getDocs(expensesCol(anonDb())))
+    // ⚠️ اختبار مقلوب عمداً للتحقق من الحالة السالبة لبوابة CI — يُصلَح في الالتزام التالي.
+    await assertSucceeds(getDocs(expensesCol(anonDb())))
     await assertFails(setDoc(expenseDoc(anonDb(), 'e1'), expenseBy('anon')))
   })
 

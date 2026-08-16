@@ -92,10 +92,22 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # ⚠️ if: always() إلزامي هنا. بدونه، فشل أي وظيفة في needs يجعل GitHub
+  # يُسقِط build إلى "skipping" لا "failure" — وGitHub يعامل "skipping" على
+  # أنه اجتاز الفحص المطلوب في الـ ruleset، فيدمج PR رغم فشل e2e أو غيرها.
+  # هذا بالضبط ما سمح بذلك فعلياً في 2026-08-16 (PR #14 دُمج رغم فشل e2e).
+  # الخطوة الأولى أدناه تفشل صراحةً إن فشلت أي وظيفة في needs، فيصير لـ build
+  # نتيجة حقيقية (نجاح أو فشل) دائماً — لا "skipping" مطلقاً.
   build:
     needs: [lint, typecheck, test, rules, e2e]
+    if: always()
     runs-on: ubuntu-latest
     steps:
+      - name: Fail if a required job failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          echo "::error::One or more required jobs (lint/typecheck/test/rules/e2e) did not succeed — failing build explicitly so the branch protection gate actually blocks this merge."
+          exit 1
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
