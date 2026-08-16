@@ -38,16 +38,19 @@ interface TripDetailPanelProps {
   onDeleteTrip: (tripId: string) => Promise<boolean>
   /** 🆕 إزالة عضو — تمسح عضوية هذه الرحلة وحدها من claims المستهدَف. */
   onRemoveMember: (tripId: string, uid: string) => Promise<boolean>
+  /** 🆕 تنزيل نسخة JSON احتياطية — docs/PLAN-backup-recovery.md المرحلة ١. */
+  onExportBackup: (trip: TripSummary) => Promise<boolean>
   /** يُستدعى بعد نجاح الحذف — الرحلة لم تعد موجودة فلا يصح إبقاء لوحتها مفتوحة. */
   onDeleted: () => void
 }
 
-type DetailTab = 'bank' | 'itinerary' | 'members' | 'pin' | 'danger'
+type DetailTab = 'bank' | 'itinerary' | 'members' | 'backup' | 'pin' | 'danger'
 
 const TABS: Array<{ key: DetailTab; label: string; Icon: typeof Building2 }> = [
   { key: 'bank',      label: 'الاسم والحساب', Icon: Building2 },
   { key: 'itinerary', label: 'مسار الرحلة',   Icon: Route },
   { key: 'members',   label: 'الأعضاء',       Icon: Users },
+  { key: 'backup',    label: 'نسخة احتياطية', Icon: Download },
   { key: 'pin',       label: 'رمز الدخول',    Icon: KeyRound },
   { key: 'danger',    label: 'حذف الرحلة',    Icon: Trash2 },
 ]
@@ -77,7 +80,7 @@ const STATUS_HELP: Record<TripStatus, string> = {
 
 export default function TripDetailPanel({
   trip, isSaving, onSaveTripName, onSaveBankDetails, onSaveItinerary, onResetPin,
-  onSaveTripStatus, onDeleteTrip, onRemoveMember, onDeleted,
+  onSaveTripStatus, onDeleteTrip, onRemoveMember, onExportBackup, onDeleted,
 }: TripDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>('bank')
 
@@ -667,6 +670,36 @@ export default function TripDetailPanel({
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {activeTab === 'backup' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <Download className="w-4 h-4 text-teal-600" /> تنزيل نسخة احتياطية
+          </h3>
+
+          <p className="text-xs text-slate-600 leading-relaxed">
+            ملف JSON يحتوي كل بيانات هذه الرحلة القابلة لإعادة الاستيراد لاحقاً — المسافرون
+            والمصاريف وسجلّات الإيداع ومسار الرحلة. بخلاف تصدير Excel، هذا الملف يحتفظ بالمعرّفات
+            الداخلية وسجلّ الحذف اللين، وهو <span className="font-bold">الشيء الوحيد الذي ينجو من فقدان
+            الوصول لحساب Google/Firebase نفسه</span> — نسخ Firestore التلقائي يعيش داخل نفس المشروع.
+          </p>
+
+          <p className="text-[11px] text-slate-400">
+            لا يشمل رمز الدخول (PIN) — يبقى محظوراً على العميل دائماً تحت أي ظرف — ولا يعيد وصول
+            الأعضاء عند استعادته لاحقاً، لأن العضوية تعيش في حساب كل عضو لا في هذا الملف.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => void onExportBackup(trip)}
+            disabled={isSaving}
+            className="flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm disabled:opacity-40"
+          >
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            تنزيل نسخة احتياطية (JSON)
+          </button>
         </div>
       )}
 

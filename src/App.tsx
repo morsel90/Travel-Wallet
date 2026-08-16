@@ -252,6 +252,7 @@ export default function App() {
               onSaveTripStatus: tripAdminPanel.saveTripStatus,
               onDeleteTrip: tripAdminPanel.deleteTrip,
               onRemoveMember: tripAdminPanel.removeMember,
+              onExportBackup: tripAdminPanel.exportBackup,
             }}
           />
 
