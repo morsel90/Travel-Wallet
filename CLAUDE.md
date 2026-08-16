@@ -2,7 +2,21 @@
 
 <div dir="rtl" style="text-align: right">
 
-## آخر تحديث: 2026-08-11
+## آخر تحديث: 2026-08-16
+
+### What changed on 2026-08-16
+
+**Rate-limit race condition in `verifyTripPin`, found and fixed.** A full fresh security audit (no prior "Final Release Audit" findings list was recoverable — see guideline 23) found `checkRateLimit` in `functions/index.js` reading the attempt counter with `get()` then writing the increment with a separate `update()` — a check-then-act race. Concurrent PIN-guess requests arriving while the counter sat one below the limit could all read the same pre-increment value and all pass, letting a burst exceed the stated 15/20-attempt window and weakening brute-force protection on trip PINs as short as 4 characters. Fixed by wrapping the read-check-write in `db.runTransaction()`, which Firestore serializes automatically. Deployed to production and verified live.
+
+**`main` was red on `e2e` for 15+ hours, and the real cause was two layers deep.** `afdad97` (the `firebase-functions` v5→v7.3.2 upgrade) broke `verifyTripPin` in the Firestore emulator specifically — the function crashed with "unhandled error" on its very first invocation, cascading into every e2e test that needs the PIN gate. Confirmed **not** a code bug: calling `verifyTripPin.run()` directly (bypassing the emulator's HTTP/CORS layer entirely) succeeded perfectly with the exact same code, and production deploys of that code already worked. The actual fault was firebase-tools 13.x's CORS/OPTIONS handling for `onCall` under firebase-functions v7 — fixed by upgrading `firebase-tools` to `^14.27.0`. e2e now passes in ~2m48s (was retrying for 6+ minutes before failing).
+
+**And the reason nobody noticed for 15 hours: the push gate had a real hole.** `build`'s `needs: [lint, typecheck, test, rules, e2e]` meant that when a dependency failed, GitHub reported `build` as **"skipping"**, not "failure" — and the repository ruleset's required-status-check treats "skipping" as satisfying the requirement. This is exactly how the broken `e2e` state rode into `main` unnoticed. Fixed with `if: always()` on `build` plus an explicit first step that fails (`exit 1`) if any `needs.*.result` is `failure` or `cancelled`. **Verified as a real negative case, not assumed** (guideline 18): a PR was pushed with one Firestore rules test deliberately inverted (`assertFails` → `assertSucceeds`), confirmed `build` now shows `fail` in 4 seconds instead of skipping, and confirmed the merge button is actually refused ("the base branch policy prohibits the merge") before the inverted test was reverted for a clean merge.
+
+**Backup/restore has a real plan now:** `docs/PLAN-backup-recovery.md`. The trigger was a direct question this file already answered honestly but incompletely — *what happens if an admin deletes a trip by mistake, a migration script goes wrong, corruption slips in, or 500 expenses get edited badly?* Answer for three of those four: nothing recovers them today, and Excel export does not count — it drops `deletedAt`, `createdByUid`, internal ids, and everything outside one trip's Firestore-scoped read, so it cannot be re-imported, only rebuilt by hand. The plan is three independent stages, each solving a scenario the others don't: **Stage 0** (proposed, zero app code) turns on Firestore's own daily backup schedule via `gcloud firestore backups schedules create` — the actual fix for corruption, bad migrations, and mass-edit mistakes, documented with the restore command in `RECOVERY.md` §4. **Stage 1** (proposed) is a client-only per-trip JSON download in the admin panel — the one thing Stage 0 cannot cover, since a Firestore backup lives inside the same GCP project and is lost with it; a JSON file on the admin's own machine survives losing the Google account entirely. **Stage 2** (proposed, not designed to build-ready detail) is restore-from-JSON via a new Cloud Function, deliberately the last piece: writing bulk financial data past the rules Admin-SDK-side is the single riskiest operation shape in this codebase, and the plan documents five guardrails (empty-trip-or-explicit-confirm, full re-validation since Admin SDK bypasses rules, 500-write batch limits, a mandatory new PIN since the hash is never exported, and no pretense of restoring access via `members/{uid}` since that's an index not a source of truth) without committing to exact code yet.
+
+---
+
+## آخر تحديث سابق: 2026-08-11
 
 ### What changed on 2026-08-11
 
