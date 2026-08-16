@@ -212,3 +212,59 @@ describe('exportBackup', () => {
     expect(mocks.downloadTripBackup).not.toHaveBeenCalled()
   })
 })
+
+// ⚠️ التحقق الفعلي من صحة بنية backup خادمي بالكامل (restoreTrip في
+// functions/index.js، مُختبَر مباشرةً ضد محاكيَي Auth+Firestore الحقيقيين —
+// انظر ملاحظات الالتزام). هنا نختبر الوسيط فقط: الصلاحية، تمرير العقد
+// الصحيح، ورسالة النجاح/الفشل — لا منطق التحقق نفسه.
+describe('restoreTrip', () => {
+  const fakeBackup = { schemaVersion: 1, tripId: 'trip-1', trip: {}, travelers: [], expenses: [] }
+
+  it('غير المسؤول لا يستدعي الدالة إطلاقاً', async () => {
+    const { result } = setup(false)
+    let ok
+    await act(async () => { ok = await result.current.restoreTrip('trip-1', '1234', fakeBackup) })
+
+    expect(ok).toBe(false)
+    expect(mocks.callable).not.toHaveBeenCalled()
+  })
+
+  it('يستدعي restoreTrip بالمعرّف والرمز والنسخة كما هي — بلا فحص شكلها محلياً', async () => {
+    mocks.callable.mockResolvedValue({ data: { success: true, tripId: 'trip-1', restored: { travelers: 2, expenses: 5, depositLogs: 1 } } })
+    const { result } = setup()
+    await act(async () => { await result.current.restoreTrip('trip-1', '1234', fakeBackup) })
+
+    expect(mocks.httpsCallable).toHaveBeenCalledWith({}, 'restoreTrip')
+    expect(mocks.callable).toHaveBeenCalledWith({ tripId: 'trip-1', pin: '1234', backup: fakeBackup })
+  })
+
+  it('رسالة النجاح تذكر أعداد ما استُعيد فعلياً', async () => {
+    mocks.callable.mockResolvedValue({ data: { success: true, tripId: 'trip-1', restored: { travelers: 2, expenses: 5, depositLogs: 1 } } })
+    const { result } = setup()
+    await act(async () => { await result.current.restoreTrip('trip-1', '1234', fakeBackup) })
+
+    const text = showToast.mock.calls[0][0].text
+    expect(text).toContain('2')
+    expect(text).toContain('5')
+  })
+
+  it('رسالة رفض الخادم (رحلة غير فارغة مثلاً) تُعرض كما هي', async () => {
+    mocks.callable.mockRejectedValue(
+      Object.assign(new Error('لا يمكن الاستعادة إلى "trip-1" لأنها تحوي مسافرين أو مصاريف بالفعل.'), { code: 'functions/failed-precondition' }),
+    )
+    const { result } = setup()
+    let ok
+    await act(async () => { ok = await result.current.restoreTrip('trip-1', '1234', fakeBackup) })
+
+    expect(ok).toBe(false)
+    expect(showToast.mock.calls[0][0].text).toBe('لا يمكن الاستعادة إلى "trip-1" لأنها تحوي مسافرين أو مصاريف بالفعل.')
+  })
+
+  it('يحرّر علم الحفظ بعد الفشل', async () => {
+    mocks.callable.mockRejectedValue(new Error('boom'))
+    const { result } = setup()
+    await act(async () => { await result.current.restoreTrip('trip-1', '1234', fakeBackup) })
+
+    expect(result.current.isSaving).toBe(false)
+  })
+})

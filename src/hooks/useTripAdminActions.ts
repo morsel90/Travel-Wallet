@@ -51,6 +51,17 @@ interface ManageMemberResponse {
   stillHasAccess: boolean
 }
 
+// 🆕 عقد استدعاء restoreTrip — docs/PLAN-backup-recovery.md المرحلة ٢.
+// backup: unknown عمداً — الشكل الحقيقي (TripBackup) يُتحقَّق منه خادمياً
+// بالكامل (Admin SDK يتجاوز القواعد)، فلا قيمة في تضييق النوع هنا فقط ليُخدَع
+// لاحقاً بملف عُدِّل يدوياً بشكل يطابق TripBackup ظاهرياً لكنه فاسد فعلياً.
+interface RestoreTripRequest { tripId: string; pin: string; backup: unknown }
+interface RestoreTripResponse {
+  success: boolean
+  tripId: string
+  restored: { travelers: number; expenses: number; depositLogs: number }
+}
+
 interface UseTripAdminActionsParams {
   isAdmin: boolean
   showToast: (msg: ToastMessage, durationMs?: number) => void
@@ -72,6 +83,8 @@ export interface UseTripAdminActionsResult {
   removeMember: (tripId: string, uid: string) => Promise<boolean>
   /** 🆕 تنزيل نسخة JSON احتياطية لرحلة واحدة — انظر docs/PLAN-backup-recovery.md المرحلة ١. */
   exportBackup: (trip: TripSummary) => Promise<boolean>
+  /** 🆕 استعادة رحلة من نسخة JSON — رحلة فارغة أو غير موجودة فقط. المرحلة ٢. */
+  restoreTrip: (tripId: string, pin: string, backup: unknown) => Promise<boolean>
 }
 
 export function useTripAdminActions({
@@ -325,8 +338,52 @@ export function useTripAdminActions({
     }
   }, [isAdmin, showToast, handleFirestoreError])
 
+  // 🆕 استعادة — دالة مستقلة عن callManageTrip لأن عقدها مختلف تماماً (backup
+  // كامل بدل pin/name فقط) ولأن الخادم يعيد إحصاءً (restored) يستحق إظهاره في
+  // رسالة النجاح، لا نصاً ثابتاً. كل التحقق الفعلي خادمي — انظر restoreTrip في
+  // functions/index.js؛ العميل هنا لا يفحص شكل backup إطلاقاً.
+  const restoreTripFn = useCallback(async (tripId: string, pin: string, backup: unknown): Promise<boolean> => {
+    if (!isAdmin) {
+      showToast({ text: 'هذا الإجراء متاح للمسؤول فقط.', type: 'error' }, 3000)
+      return false
+    }
+
+    setIsSaving(true)
+    try {
+      const user = auth.currentUser
+      if (!user) throw new Error('غير مسجّل الدخول.')
+      await user.getIdToken(true)
+
+      const restoreTripCallable = httpsCallable<RestoreTripRequest, RestoreTripResponse>(functions, 'restoreTrip')
+      const { data } = await restoreTripCallable({ tripId, pin, backup })
+
+      haptic.success()
+      showToast({
+        text: `تمت الاستعادة — ${data.restored.travelers} مسافراً، ${data.restored.expenses} مصروفاً، ${data.restored.depositLogs} سجلّ إيداع.`,
+        type: 'success',
+      }, 5000)
+      return true
+    } catch (err) {
+      haptic.error()
+      // رسائل restoreTrip العربية (رحلة غير فارغة، بنية نسخة غير صالحة…) تصل
+      // كما وصلت رسائل manageTrip/manageMember — نعرضها كما هي.
+      const message = (err as { message?: string })?.message
+      const isFunctionsError = typeof (err as { code?: string })?.code === 'string'
+        && String((err as { code?: string }).code).startsWith('functions/')
+
+      if (isFunctionsError && message) {
+        showToast({ text: message, type: 'error' }, 5000)
+      } else {
+        handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
+      }
+      return false
+    } finally {
+      setIsSaving(false)
+    }
+  }, [isAdmin, showToast, handleFirestoreError])
+
   return {
     isSaving, saveBankDetails, saveItinerary, saveTripName, saveTripStatus, createTrip, resetTripPin,
-    deleteTrip, removeMember, exportBackup,
+    deleteTrip, removeMember, exportBackup, restoreTrip: restoreTripFn,
   }
 }

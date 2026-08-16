@@ -45,4 +45,6 @@ export {
   KeyRound,     // 🆕 تغيير رمز الرحلة (PIN)
   Luggage,      // 🆕 أيقونة بطاقة الرحلة في قائمة الإدارة
   ChevronLeft,  // 🆕 مؤشّر فتح الرحلة في شاشة «رحلاتي» (RTL: يشير للأمام)
+  Upload,       // 🆕 اختيار ملف نسخة احتياطية للاستعادة (RestoreTripForm)
+  FileJson,     // 🆕 مؤشّر ملف JSON مُختار بنجاح (RestoreTripForm)
 } from 'lucide-react'
