@@ -16,7 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:rules": "node scripts/run-with-emulators.mjs --only firestore --project demo-travelapp-rules -- vitest run --config vitest.rules.config.ts",
-    "test:e2e": "node scripts/run-with-emulators.mjs --only auth,firestore,functions --project demo-travelapp-e2e -- playwright test",
+    "test:e2e": "node scripts/run-with-emulators.mjs --debug --only auth,firestore,functions --project demo-travelapp-e2e -- playwright test",
     "e2e:install": "playwright install --with-deps chromium",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
@@ -54,7 +54,7 @@
     "eslint-plugin-storybook": "^10.5.7",
     "fast-check": "^3.23.2",
     "firebase-admin": "^14.1.0",
-    "firebase-tools": "^13.29.1",
+    "firebase-tools": "^14.27.0",
     "jsdom": "^29.1.1",
     "postcss": "^8.4.35",
     "prettier": "^3.3.2",
