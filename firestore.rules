@@ -47,6 +47,20 @@ service cloud.firestore {
         && request.auth.token.trips[appId] == true;
     }
 
+    // 🆕 منظّم الرحلة (docs/PLAN-member-management.md المرحلة ٣): دور مخزَّن في
+    // سجلّ العضوية trips/{tripId}/members/{uid}.role — منفصل تماماً عن
+    // admin: true العالمي. تعيينه وإلغاؤه من manageMember (Cloud Function،
+    // مسؤول عالمي حصراً) لا من أي كتابة عميل، فهذا الـ get() يقرأ حقلاً لا
+    // يمكن لأي عميل تزويره.
+    //
+    // ⚠️ الكلفة get() واحدة، وتقع على الكتابات الإدارية النادرة وحدها (تعديل
+    // اسم/بنك/مسار/حالة الرحلة، وقراءة سجلّ الأعضاء) — لا على أي مسار ساخن مثل
+    // إنشاء مصروف. نفس مبدأ tripStatus() أعلاه.
+    function isOrganizer(tripId) {
+      let ref = /databases/$(database)/documents/trips/$(tripId)/members/$(request.auth.uid);
+      return isSignedIn() && exists(ref) && get(ref).data.get('role', 'member') == 'organizer';
+    }
+
     // التحقّق من بنية المصروف — تم السماح بحقل deletedAt الاختياري كـ number (Unix timestamp)
     // وحقل createdByUid الاختياري (uid صاحب المصروف) — انظر isExpenseOwner أدناه
     // وحقل category الاختياري (فئة المصروف — للرسم البياني في src/components/charts/)
@@ -364,9 +378,15 @@ service cloud.firestore {
     // الحذف يبقى ممنوعاً: حذف مستند الرحلة يتيم بيانات artifacts/{tripId} كاملة
     // ويقطع الوصول عن كل أعضائها دون أي طريقة استرجاع من الواجهة.
     match /trips/{tripId} {
-      allow read:           if isMember(tripId) || isAdmin();
-      allow create, update: if isAdmin() && isValidTripConfig(request.resource.data);
-      allow delete:         if false;
+      allow read:   if isMember(tripId) || isAdmin();
+      // 🆕 الإنشاء يبقى للمسؤول العالمي حصراً — منظّم رحلة لا يُنشئ رحلات جديدة
+      // (docs/PLAN-member-management.md المرحلة ٣: "دون: إنشاء رحلات، ولا حذفها").
+      allow create: if isAdmin() && isValidTripConfig(request.resource.data);
+      // 🆕 التحديث متاح للمسؤول أو لمنظّم *هذه* الرحلة تحديداً — نفس الحقول
+      // المسموحة بالضبط (isValidTripConfig لا تميّز بينهما)، فمنظّم يعدّل الاسم
+      // والبنك والمسار وحالة الرحلة، تماماً كما تفعل TripDetailPanel.tsx اليوم.
+      allow update: if (isAdmin() || isOrganizer(tripId)) && isValidTripConfig(request.resource.data);
+      allow delete: if false;
 
       // ─── 🆕 سجلّ عضوية الرحلة ───────────────────────────────────────────────
       //
@@ -382,15 +402,15 @@ service cloud.firestore {
       // ⚠️ ولا يرث القواعد أعلاه: قواعد المستند الأب لا تسري على مجموعاته الفرعية
       // في Firestore. لذا يجب النص على كل شيء هنا صراحةً.
       match /members/{uid} {
-        // المسؤول وحده مبدئياً. إتاحته لأعضاء الرحلة قرار منتج منفصل: قائمة
-        // المسافرين تكشف *من* في الرحلة أصلاً، لكن ربط الشخص بحسابه معلومة جديدة.
-        // (السماح للعضو بقراءة سطره هو وحده إضافة تافهة وغير كاسرة متى لزمت.)
-        allow read: if isAdmin();
+        // 🆕 المسؤول، أو منظّم *هذه* الرحلة (يحتاج القائمة ليعرف من يُزيل).
+        // إتاحته لأعضاء عاديين يبقى قراراً منتج منفصل: قائمة المسافرين تكشف
+        // *من* في الرحلة أصلاً، لكن ربط الشخص بحسابه معلومة جديدة.
+        allow read: if isAdmin() || isOrganizer(tripId);
 
-        // 🔒 لا كتابة من أي عميل تحت أي ظرف — بما فيهم المسؤول. الكاتب الوحيد هو
-        // Admin SDK داخل الدوال، وهو يتجاوز هذه القواعد أصلاً. عميلٌ يستطيع
-        // الكتابة هنا يستطيع تزوير «متى انضم» و«من هو» — وهذا سجلّ يُتّخذ قراراً
-        // إدارياً بناءً عليه (من يُزال من الرحلة).
+        // 🔒 لا كتابة من أي عميل تحت أي ظرف — بما فيهم المسؤول والمنظّم نفسه.
+        // الكاتب الوحيد هو Admin SDK داخل الدوال، وهو يتجاوز هذه القواعد أصلاً.
+        // عميلٌ يستطيع الكتابة هنا يستطيع تزوير «متى انضم» و«من هو» وحتى دوره —
+        // وهذا سجلّ يُتّخذ قراراً إدارياً بناءً عليه (من يُزال، ومن يُعيَّن منظّماً).
         allow write: if false;
       }
     }

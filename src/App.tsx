@@ -186,6 +186,7 @@ export default function App() {
                   <ExpensesPanel
                     isInitialLoading={ledger.isInitialLoading}
                     isAdmin={session.isAdmin}
+                    isOrganizer={session.isOrganizer}
                     canAddExpenses={trip.canAddExpenses}
                     activeExpenses={ledger.activeExpenses}
                     filteredExpenses={filter.filteredExpenses}
@@ -240,6 +241,7 @@ export default function App() {
             }}
             tripAdmin={{
               currentTripId: TRIP_ID,
+              viewerRole: tripAdminPanel.viewerRole,
               trips: tripAdminPanel.trips,
               loading: tripAdminPanel.loading,
               error: tripAdminPanel.error,
@@ -252,6 +254,7 @@ export default function App() {
               onSaveTripStatus: tripAdminPanel.saveTripStatus,
               onDeleteTrip: tripAdminPanel.deleteTrip,
               onRemoveMember: tripAdminPanel.removeMember,
+              onSetMemberRole: tripAdminPanel.setMemberRole,
               onExportBackup: tripAdminPanel.exportBackup,
               onRestoreTrip: tripAdminPanel.restoreTrip,
             }}

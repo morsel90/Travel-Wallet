@@ -3,7 +3,7 @@ import type { ToastMessage } from '../types'
 import {
   useAuth, useAdminAuth, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
-  useTripAdminActions, useAllTrips, useMyTrips,
+  useTripAdminActions, useAllTrips, useMyTrips, useMyTripRole,
 } from './index'
 import { useFilteredExpenses } from './useFilteredExpenses'
 import { calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from '../utils/calculations'
@@ -49,7 +49,13 @@ export function useAppCoordinator() {
   const { travelers, setTravelers, travelersLoaded, refreshTravelers } = useTravelers(hasAccess ? user : null, setIsSyncing)
   // اسم الرحلة يُحرَّر من واجهة إدارة الرحلات (التي تقرأه من useAllTrips)، فلا
   // تحتاجه هذه الشاشة — تفاصيل البنك للبطاقة، والمسار للويدجت والتقارير.
-  const { bankDetails, itinerary, status: tripStatus } = useTripConfig(hasAccess ? user : null)
+  // 🆕 tripName يُقرأ هنا أيضاً الآن — منظّم الرحلة (المرحلة ٣) يحتاجه لبناء
+  // ملخّص رحلته الوحيدة بلا استعلام قائمة (انظر organizerTripSummary أدناه).
+  const { tripName, bankDetails, itinerary, status: tripStatus } = useTripConfig(hasAccess ? user : null)
+
+  // 🆕 المرحلة ٣ — «هل أنا منظّم هذه الرحلة؟» قراءة ذاتية واحدة، لا تُستهلك
+  // إلا حين لا يكون المستخدم مسؤولاً عالمياً أصلاً (المسؤول يرى كل شيء بلا هذا).
+  const isOrganizer = useMyTripRole(TRIP_ID, !isAdmin && hasAccess ? user : null)
 
   // 🆕 دورة حياة الرحلة. ⚠️ هذه إخفاء وتفسير فقط — الحماية الحقيقية في
   // firestore.rules (tripAcceptsExpenses/tripAcceptsWrites). الغرض ألا يضغط
@@ -123,7 +129,21 @@ export function useAppCoordinator() {
   // إدارة الرحلات — لا نشترك في قائمة الرحلات إلا للمسؤول: استعلام القائمة على
   // trips/ يرضيه isAdmin() وحده، فطلبه لعضو عادي مجرّد خطأ صلاحيات في الكونسول.
   const { trips, loading: tripsLoading, error: tripsError } = useAllTrips(isAdmin)
-  const tripAdmin = useTripAdminActions({ isAdmin, showToast, handleFirestoreError })
+
+  // 🆕 المرحلة ٣: منظّم لا يستطيع استعلام trips/ (isAdmin() وحده يرضيه)، فبدل
+  // ذلك نبني ملخّص رحلته الوحيدة من useTripConfig — وهو أصلاً حيّ (onSnapshot)
+  // ومسموح له بقراءته (isMember). هذا ما يضمن ألا يرى منظّم رحلة أخرى إطلاقاً:
+  // القائمة التي تفتحها TripAdminView تحوي عنصراً واحداً بنيوياً، لا بفلترة.
+  const organizerTripId = isOrganizer ? TRIP_ID : null
+  const organizerTripSummary = useMemo(() => ({
+    id: TRIP_ID,
+    name: tripName ?? TRIP_ID,
+    bankDetails,
+    itinerary: itinerary ?? [],
+    status: tripStatus,
+  }), [tripName, bankDetails, itinerary, tripStatus])
+
+  const tripAdmin = useTripAdminActions({ isAdmin, organizerTripId, showToast, handleFirestoreError })
 
   // ─── شاشة «رحلاتي» ────────────────────────────────────────────────────────
   // 🆕 المسؤول يرى كل الرحلات (استعلام القائمة يرضيه isAdmin وحده)، والعضو
@@ -189,6 +209,10 @@ export function useAppCoordinator() {
       // 🆕 جلسة مجهولة = العضويات مرتبطة بهذا المتصفح وحده. تُستهلك في
       // TripPicker لعرض شريط ترقية الحساب. المسؤول ليس مجهولاً أصلاً.
       isAnonymous: user?.isAnonymous === true,
+      // 🆕 المرحلة ٣: منظّم الرحلة الحالية (لا رحلة أخرى — انظر organizerTripId
+      // أعلاه). يُستهلك لإظهار زر «إدارة الرحلة» في ExpensesPanel لمن ليس
+      // مسؤولاً عالمياً لكنه منظّم.
+      isOrganizer,
     },
     /** الأرقام المشتقّة — مدخلات كل ما يُعرض ويُصدَّر. */
     ledger: {
@@ -210,8 +234,18 @@ export function useAppCoordinator() {
       show: () => setShowTripPicker(true),
       hide: () => setShowTripPicker(false),
     },
-    /** قائمة كل الرحلات + كتاباتها (للمسؤول). */
-    tripAdminPanel: { trips, loading: tripsLoading, error: tripsError, ...tripAdmin },
+    /**
+     * 🆕 قائمة الرحلات القابلة للإدارة + كتاباتها. للمسؤول: كل الرحلات
+     * (useAllTrips، استعلام قائمة). لمنظّم: رحلته الوحيدة بنيوياً — لا فلترة
+     * على قائمة أكبر، فلا سبيل له لرؤية رحلة أخرى من هنا أصلاً.
+     */
+    tripAdminPanel: {
+      trips: isAdmin ? trips : (isOrganizer ? [organizerTripSummary] : []),
+      loading: isAdmin ? tripsLoading : false,
+      error: isAdmin ? tripsError : null,
+      viewerRole: isAdmin ? 'admin' as const : 'organizer' as const,
+      ...tripAdmin,
+    },
     filter,
     modals,
     expense,

@@ -45,6 +45,7 @@ const h = vi.hoisted(() => ({
   myTrips: [] as unknown[],
   allTrips: [] as unknown[],
   isAddingExpense: false,
+  isOrganizer: false,
 }))
 
 const noop = () => {}
@@ -70,10 +71,14 @@ vi.mock('./hooks', () => ({
   // ⚠️ bankDetails كائن دائماً — الخطاف الحقيقي يسقط إلى BANK_DETAILS في
   // constants.ts ولا يُرجع null أبداً، وBankDetailsCard يقرأ حقوله مباشرة.
   useTripConfig: () => ({
+    tripName: 'رحلة الاختبار',
     bankDetails: { bankName: 'بنك الاختبار', beneficiary: 'مسافر', iban: 'SA0000000000000000000000' },
     itinerary: [],
     status: h.tripStatus,
   }),
+  // 🆕 المرحلة ٣ — «هل أنا منظّم الرحلة الحالية؟». افتراضياً false، وتُفعَّل
+  // صراحةً في الاختبارات التي تحتاجها تحديداً.
+  useMyTripRole: () => h.isOrganizer,
   useBalances: () => ({ balances: [], totalSpent: 0, totalDeposited: 0, totalRemaining: 0 }),
   useModals: () => ({
     modal: { type: 'none' }, openReports: noop, openTrashBin: noop, openTripAdmin: noop,
@@ -128,6 +133,7 @@ beforeEach(() => {
   h.myTrips = []
   h.allTrips = []
   h.isAddingExpense = false
+  h.isOrganizer = false
 })
 
 // ─── ترتيب البوابات ───────────────────────────────────────────────────────────

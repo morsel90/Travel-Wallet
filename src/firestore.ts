@@ -50,6 +50,12 @@ export const tripsCol = () => collection(db, 'trips')
 // العضوية من التوكن — قراءة مجانية — ولا يجوز اشتقاق أي وصول من هذا المسار.
 export const tripMembersCol = (tripId: string) => collection(db, 'trips', tripId, 'members')
 
+// 🆕 سطر عضوية واحد بمعرّفه — لفحص «هل أنا منظّم هذه الرحلة؟» ذاتياً
+// (useMyTripRole.ts). القراءة تنجح فقط إن كان role فعلاً 'organizer' (انظر
+// isOrganizer في firestore.rules)، فالرفض هنا هو نفسه الإجابة «لا».
+export const tripMemberDocById = (tripId: string, uid: string) =>
+  doc(db, 'trips', tripId, 'members', uid)
+
 // 🆕 نسخ معامَلة بـ tripId صريح من expensesCol/travelersCol/depositLogsCol
 // أعلاه — للنسخ الاحتياطي من لوحة إدارة الرحلات (docs/PLAN-backup-recovery.md
 // المرحلة ١)، حيث الرحلة المطلوب تصديرها قد لا تكون TRIP_ID النشطة. القواعد

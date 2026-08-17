@@ -23,6 +23,12 @@ import type { BankDetails, TripStatus } from '../../types'
 
 interface TripAdminViewProps {
   currentTripId: string
+  /**
+   * 🆕 المرحلة ٣: 'admin' يرى كل الرحلات وأزرار الإنشاء/الاستعادة/الحذف/الرمز.
+   * 'organizer' يرى رحلته الوحيدة (trips يحوي عنصراً واحداً بنيوياً — انظر
+   * useAppCoordinator.ts) وتبويبات محدودة داخل TripDetailPanel وحدها.
+   */
+  viewerRole: 'admin' | 'organizer'
   trips: TripSummary[]
   loading: boolean
   error: string | null
@@ -36,6 +42,8 @@ interface TripAdminViewProps {
   onDeleteTrip: (tripId: string) => Promise<boolean>
   /** 🆕 إزالة عضو من الرحلة — تمرّ إلى TripDetailPanel كما هي. */
   onRemoveMember: (tripId: string, uid: string) => Promise<boolean>
+  /** 🆕 تعيين/إلغاء دور «منظّم الرحلة» (المرحلة ٣) — المسؤول العالمي حصراً. */
+  onSetMemberRole: (tripId: string, uid: string, role: 'organizer' | 'member') => Promise<boolean>
   /** 🆕 تنزيل نسخة JSON احتياطية — docs/PLAN-backup-recovery.md المرحلة ١. */
   onExportBackup: (trip: TripSummary) => Promise<boolean>
   /** 🆕 استعادة رحلة من نسخة JSON — المرحلة ٢. */
@@ -44,11 +52,15 @@ interface TripAdminViewProps {
 }
 
 export default function TripAdminView({
-  currentTripId, trips, loading, error, isSaving,
+  currentTripId, viewerRole, trips, loading, error, isSaving,
   onSaveTripName, onSaveBankDetails, onSaveItinerary, onCreateTrip, onResetPin,
-  onSaveTripStatus, onDeleteTrip, onRemoveMember, onExportBackup, onRestoreTrip, onClose,
+  onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onExportBackup, onRestoreTrip, onClose,
 }: TripAdminViewProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // 🆕 منظّم لديه رحلة واحدة بنيوياً (trips.length <= 1) — نفتحها مباشرة ونخفي
+  // شاشة القائمة/الإنشاء/الاستعادة كلياً، فليس له ما يختار من بينه أصلاً.
+  const [selectedId, setSelectedId] = useState<string | null>(
+    viewerRole === 'organizer' ? (trips[0]?.id ?? null) : null,
+  )
   const [isCreating, setIsCreating] = useState(false)
   const [isRestoring, setIsRestoring] = useState(false)
 
@@ -67,7 +79,8 @@ export default function TripAdminView({
       <header className="sticky top-0 z-10 bg-teal-700 text-white shadow-md">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
-            {selected ? (
+            {/* 🆕 منظّم ليس له قائمة يرجع إليها — رحلته الوحيدة مفتوحة دائماً. */}
+            {selected && viewerRole === 'admin' ? (
               <button
                 type="button"
                 onClick={() => setSelectedId(null)}
@@ -117,6 +130,7 @@ export default function TripAdminView({
         {!loading && selected && (
           <TripDetailPanel
             trip={selected}
+            viewerRole={viewerRole}
             isSaving={isSaving}
             onSaveTripName={onSaveTripName}
             onSaveBankDetails={onSaveBankDetails}
@@ -125,13 +139,17 @@ export default function TripAdminView({
             onSaveTripStatus={onSaveTripStatus}
             onDeleteTrip={onDeleteTrip}
             onRemoveMember={onRemoveMember}
+            onSetMemberRole={onSetMemberRole}
             onExportBackup={onExportBackup}
             // الرحلة لم تعد موجودة — نعود للقائمة بدل إبقاء لوحة تشير لمستند محذوف
+            // (منظّم لا يملك قائمة يعود إليها أصلاً — حذف رحلته ليس من صلاحياته).
             onDeleted={() => setSelectedId(null)}
           />
         )}
 
-        {!loading && !selected && (
+        {/* 🆕 منظّم لا يُنشئ رحلات ولا يستعيد نسخاً — ولا يُفترض أن يصل هنا
+            أصلاً (selectedId يبدأ برحلته)، لكن نمنع الفرع كاملاً احتياطاً. */}
+        {!loading && !selected && viewerRole === 'admin' && (
           <>
             {!isCreating && !isRestoring && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

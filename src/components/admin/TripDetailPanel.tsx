@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Building2, Route, KeyRound, Save, Plane, Car, Train, Bus,
   Pencil, Trash2, Plus, ArrowUp, ArrowDown, Loader2, AlertTriangle, Lock,
-  Users, UserMinus, Copy, Check, Download,
+  Users, UserMinus, Copy, Check, Download, ShieldCheck,
 } from '../../icons'
 import { useTripMembers } from '../../hooks/useTripMembers'
 import { tripUrl } from '../../utils/tripId'
@@ -27,6 +27,13 @@ import type { BankDetails, TransportMode, TripStatus } from '../../types'
 
 interface TripDetailPanelProps {
   trip: TripSummary
+  /**
+   * 🆕 المرحلة ٣: 'organizer' يخفي التبويبات الإدارية الحساسة (نسخة احتياطية،
+   * رمز الدخول، حذف الرحلة) ولا يرى زرّ تعيين/إلغاء منظّم في تبويب الأعضاء —
+   * تلك صلاحية للمسؤول العالمي حصراً (انظر functions/index.js: manageMember
+   * mode=setRole). الحماية الحقيقية خادمية بالكامل؛ هذا إخفاء واجهة فقط.
+   */
+  viewerRole: 'admin' | 'organizer'
   isSaving: boolean
   onSaveTripName: (tripId: string, name: string) => Promise<boolean>
   onSaveBankDetails: (tripId: string, details: BankDetails) => Promise<boolean>
@@ -38,6 +45,8 @@ interface TripDetailPanelProps {
   onDeleteTrip: (tripId: string) => Promise<boolean>
   /** 🆕 إزالة عضو — تمسح عضوية هذه الرحلة وحدها من claims المستهدَف. */
   onRemoveMember: (tripId: string, uid: string) => Promise<boolean>
+  /** 🆕 تعيين/إلغاء دور «منظّم الرحلة» (المرحلة ٣) — المسؤول العالمي حصراً. */
+  onSetMemberRole: (tripId: string, uid: string, role: 'organizer' | 'member') => Promise<boolean>
   /** 🆕 تنزيل نسخة JSON احتياطية — docs/PLAN-backup-recovery.md المرحلة ١. */
   onExportBackup: (trip: TripSummary) => Promise<boolean>
   /** يُستدعى بعد نجاح الحذف — الرحلة لم تعد موجودة فلا يصح إبقاء لوحتها مفتوحة. */
@@ -46,7 +55,7 @@ interface TripDetailPanelProps {
 
 type DetailTab = 'bank' | 'itinerary' | 'members' | 'backup' | 'pin' | 'danger'
 
-const TABS: Array<{ key: DetailTab; label: string; Icon: typeof Building2 }> = [
+const ALL_TABS: Array<{ key: DetailTab; label: string; Icon: typeof Building2 }> = [
   { key: 'bank',      label: 'الاسم والحساب', Icon: Building2 },
   { key: 'itinerary', label: 'مسار الرحلة',   Icon: Route },
   { key: 'members',   label: 'الأعضاء',       Icon: Users },
@@ -54,6 +63,10 @@ const TABS: Array<{ key: DetailTab; label: string; Icon: typeof Building2 }> = [
   { key: 'pin',       label: 'رمز الدخول',    Icon: KeyRound },
   { key: 'danger',    label: 'حذف الرحلة',    Icon: Trash2 },
 ]
+
+// 🆕 منظّم الرحلة لا يرى ما ليس من صلاحياته أصلاً — لا مجرّد أزرار معطّلة.
+// النسخة الاحتياطية ورمز الدخول والحذف تبقى للمسؤول العالمي وحده (الخطة، المرحلة ٣).
+const ORGANIZER_HIDDEN_TABS: ReadonlySet<DetailTab> = new Set(['backup', 'pin', 'danger'])
 
 const MODE_ICON: Record<TransportMode, typeof Plane> = {
   flight: Plane, car: Car, train: Train, bus: Bus,
@@ -79,9 +92,13 @@ const STATUS_HELP: Record<TripStatus, string> = {
 }
 
 export default function TripDetailPanel({
-  trip, isSaving, onSaveTripName, onSaveBankDetails, onSaveItinerary, onResetPin,
-  onSaveTripStatus, onDeleteTrip, onRemoveMember, onExportBackup, onDeleted,
+  trip, viewerRole, isSaving, onSaveTripName, onSaveBankDetails, onSaveItinerary, onResetPin,
+  onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onExportBackup, onDeleted,
 }: TripDetailPanelProps) {
+  const TABS = useMemo(
+    () => viewerRole === 'admin' ? ALL_TABS : ALL_TABS.filter(t => !ORGANIZER_HIDDEN_TABS.has(t.key)),
+    [viewerRole],
+  )
   const [activeTab, setActiveTab] = useState<DetailTab>('bank')
 
   // 🆕 لا نقرأ السجلّ إلا والتبويب مفتوح: القراءة مقصورة على المسؤول، والقائمة
@@ -164,6 +181,13 @@ export default function TripDetailPanel({
     const ok = await onRemoveMember(trip.id, uid)
     // إعادة الجلب عند النجاح وحده: الفشل يترك السطر موجوداً فعلاً، وإخفاؤه
     // يوهم بأن الإزالة تمّت.
+    if (ok) refreshMembers()
+  }
+
+  // 🆕 تعيين/إلغاء دور منظّم — المسؤول العالمي حصراً (زرّه لا يظهر أصلاً لغيره،
+  // ومنظّم يحاول استدعاءها مباشرة يُرفض خادمياً في manageMember).
+  const submitSetRole = async (uid: string, role: 'organizer' | 'member') => {
+    const ok = await onSetMemberRole(trip.id, uid, role)
     if (ok) refreshMembers()
   }
 
@@ -580,7 +604,7 @@ export default function TripDetailPanel({
 
           {membersError && (
             <p role="alert" className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-2.5">
-              تعذّر جلب قائمة الأعضاء. القراءة متاحة للمسؤول وحده — جرّب تسجيل الخروج والدخول لتحديث صلاحيتك.
+              تعذّر جلب قائمة الأعضاء. القراءة متاحة للمسؤول أو منظّم الرحلة — جرّب تسجيل الخروج والدخول لتحديث صلاحيتك.
             </p>
           )}
 
@@ -612,8 +636,15 @@ export default function TripDetailPanel({
                   >
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-bold text-slate-800 truncate">
+                        <p className="text-sm font-bold text-slate-800 truncate flex items-center gap-1.5">
                           {m.displayName || m.email || 'عضو بجلسة مجهولة'}
+                          {/* 🆕 المرحلة ٣ — شارة الدور تظهر للجميع (منظّم يقرأ السجلّ أيضاً)،
+                              لكن زرّ تغييره أدناه للمسؤول العالمي وحده. */}
+                          {m.role === 'organizer' && (
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shrink-0">
+                              <ShieldCheck className="w-3 h-3" /> منظّم
+                            </span>
+                          )}
                         </p>
                         <p className="text-[11px] text-slate-500 mt-0.5" dir="ltr">{m.uid}</p>
                         <p className="text-[11px] text-slate-500 mt-1">
@@ -627,14 +658,29 @@ export default function TripDetailPanel({
                       </div>
 
                       {!isConfirming && (
-                        <button
-                          type="button"
-                          onClick={() => setRemovingUid(m.uid)}
-                          disabled={isSaving}
-                          className="flex items-center gap-1.5 text-rose-700 hover:bg-rose-100 border border-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-40 shrink-0"
-                        >
-                          <UserMinus className="w-3.5 h-3.5" /> إزالة
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {/* 🆕 تعيين/إلغاء المنظّم — المسؤول العالمي حصراً (viewerRole).
+                              functions/index.js يرفض أي استدعاء آخر خادمياً بغضّ النظر. */}
+                          {viewerRole === 'admin' && (
+                            <button
+                              type="button"
+                              onClick={() => void submitSetRole(m.uid, m.role === 'organizer' ? 'member' : 'organizer')}
+                              disabled={isSaving}
+                              className="flex items-center gap-1.5 text-teal-700 hover:bg-teal-100 border border-teal-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-40"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                              {m.role === 'organizer' ? 'إلغاء التنظيم' : 'تعيين منظّماً'}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setRemovingUid(m.uid)}
+                            disabled={isSaving}
+                            className="flex items-center gap-1.5 text-rose-700 hover:bg-rose-100 border border-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-40"
+                          >
+                            <UserMinus className="w-3.5 h-3.5" /> إزالة
+                          </button>
+                        </div>
                       )}
                     </div>
 

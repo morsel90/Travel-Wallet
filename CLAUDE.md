@@ -2,7 +2,25 @@
 
 <div dir="rtl" style="text-align: right">
 
-## آخر تحديث: 2026-08-17
+## آخر تحديث: 2026-08-18
+
+### What changed on 2026-08-18
+
+**Trip Organizer role shipped — Stage 3 of `docs/PLAN-member-management.md`, closing the plan's last open item.** The user's own audit (in Arabic) flagged member management as the biggest functional gap: only a global `admin: true` claim existed, with no way to delegate trip-scoped management (edit name/bank/itinerary/status, invite/remove members) without handing over every trip in the project. `trips/{tripId}/members/{uid}.role: 'organizer' | 'member'` now carries that delegation, kept deliberately separate from the global claim — the same reasoning that keeps `set-admin.mjs` a script, not a UI button.
+
+**Two authorization boundaries not spelled out in the original plan text needed a call at build time, and both landed conservative.** Who assigns the role? The global admin only — `manageMember` (`mode: 'setRole'`) rejects any caller without `admin: true` in the token, full stop; delegating a role that itself grants real write access isn't something an organizer should be able to hand to a peer. And can an organizer remove another organizer, or the admin? No — `manageMember` (`mode: 'remove'`) now checks the caller's own role when they aren't a global admin, and refuses if the *target* is an admin or another organizer. Without that check, two organizers on the same trip could eject each other with no admin involved at all — a horizontal-escalation hole the original design didn't name.
+
+**The negative cases were verified live, not assumed** (guideline 18): `manageMember.run()` invoked directly against real Auth+Firestore emulators (same technique documented for `restoreTrip`) covered ten cases — an organizer removing a plain member (succeeds), removing another organizer (rejected), removing the admin (rejected), a plain member removing anyone (rejected), an organizer granting a role (rejected), and confirming a removal never touches the target's *other* trip memberships. All ten passed. `firestore.rules` gained `isOrganizer(tripId)` (one `get()`, same cost pattern as `tripStatus()`) and 80 rules tests pass, seven of them new — including that an organizer of trip A cannot read or write trip B.
+
+**The organizer's admin panel reuses `TripAdminView`/`TripDetailPanel` rather than a parallel component.** A new `viewerRole: 'admin' | 'organizer'` prop hides the tabs that stay admin-only (backup, PIN reset, delete) and the role-toggle button, and an organizer's "trip list" is built from their own already-live `useTripConfig` data instead of the `trips/` collection query that only `isAdmin()` satisfies — so there's structurally one trip in that list, not a filtered one. `useMyTripRole.ts` is the self-check: a `permission-denied` reading one's own membership row *is* the answer "not an organizer," not an error to surface.
+
+**Verified across two genuinely separate browser sessions, not simulated** — `e2e/organizer-role.spec.ts` has one Playwright context join as a plain member, a second sign in as admin and promote that member via the UI, then reloads the *first* context and confirms the "manage trip" button appears, the admin-only tabs don't, and an actual trip-name edit persists through the new rules. This is the one thing no unit or rules test can show: whether the UI stays correctly in sync with a permission decision made from an entirely different session. Found and fixed one real race while writing it — `openTripAsMember` in `e2e/utils/flows.ts` doesn't wait for `verifyTripPin` to finish before returning, so without an explicit wait the two sessions' join order (and therefore which member row is "real") wasn't guaranteed.
+
+No `firestore.rules` or `functions/index.js` change ships without deploying both together (per existing convention) — `npx firebase deploy --only firestore:rules,functions`. 24 new/changed unit tests in `useTripAdminActions.test.ts` (441 total), typecheck and lint clean.
+
+---
+
+## آخر تحديث سابق: 2026-08-17
 
 ### What changed on 2026-08-17
 
@@ -201,9 +219,10 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 │   │   ├── useDepositActions.ts  # Deposit form + balance update & audit log write
 │   │   ├── useFilteredExpenses.ts # Search + sort with debounce
 │   │   ├── useTripConfig.ts      # Trip name + bank details + itinerary (live onSnapshot)
-│   │   ├── useTripAdminActions.ts # Admin writes to any trips/{tripId} (merge-only) + manageTrip calls
+│   │   ├── useTripAdminActions.ts # Admin **or trip organizer** writes to trips/{tripId} (merge-only) + manageTrip/manageMember calls
 │   │   ├── useAllTrips.ts        # Live list of every trip (admin-only query)
 │   │   ├── useMyTrips.ts         # 🆕 Trips this user joined — one getDoc each (a list query is admin-only)
+│   │   ├── useMyTripRole.ts      # 🆕 "Am I this trip's organizer?" — one self-read; permission-denied just means no
 │   │   ├── useDepositLogs.ts     # Deposit audit log fetcher
 │   │   ├── useOnlineStatus.ts    # navigator.onLine tracking
 │   │   ├── useCountdown.ts       # Generic countdown timer
@@ -235,8 +254,8 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 │   │   ├── NextSegmentWidget.tsx # "Next leg" card — first future itinerary segment
 │   │   ├── ItinerarySection.tsx  # Full itinerary list (rendered inside ReportsView)
 │   │   ├── Misc.tsx              # BankDetailsCard (copy IBAN / Web Share API)
-│   │   ├── admin/TripAdminView.tsx   # Admin panel shell: trips list ↔ trip detail (full-screen)
-│   │   ├── admin/TripDetailPanel.tsx # One trip: name + bank, itinerary editor, PIN reset, delete (empty only), 🆕 JSON backup download
+│   │   ├── admin/TripAdminView.tsx   # 🆕 Trips list ↔ trip detail (full-screen). viewerRole='organizer': one trip, no create/restore
+│   │   ├── admin/TripDetailPanel.tsx # One trip: name + bank, itinerary editor, PIN reset, delete (empty only), JSON backup download, 🆕 members tab role toggle. viewerRole hides admin-only tabs
 │   │   ├── admin/NewTripForm.tsx     # Create a trip (id + name + PIN) via manageTrip
 │   │   ├── admin/RestoreTripForm.tsx # 🆕 Restore a trip from a Stage-1 JSON backup via restoreTrip
 │   │   ├── admin/SegmentForm.tsx     # Add/edit form for a single itinerary segment
@@ -277,7 +296,7 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 │       └── tripId.ts           # TRIP_ID + HAS_EXPLICIT_TRIP_ID from ?trip= query param
 │
 ├── functions/
-│   └── index.js                 # Cloud Functions: verifyTripPin + manageTrip + mergeAnonymousTrips + manageMember + 🆕 restoreTrip
+│   └── index.js                 # Cloud Functions: verifyTripPin + manageTrip + mergeAnonymousTrips + manageMember (remove + 🆕 setRole, both organizer-aware) + restoreTrip
 │
 ├── scripts/
 │   ├── audit-legacy-docs.mjs    # 🆕 Read-only: counts documents still needing each legacy fallback
@@ -299,6 +318,7 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 │   ├── offline-optimistic-write.spec.ts # Offline write shows _pending, then syncs on reconnect
 │   ├── trip-picker.spec.ts              # Bare URL shows "my trips"; clicking one opens it
 │   ├── admin-persists-across-trips.spec.ts # Admin survives reload and trip switching
+│   ├── organizer-role.spec.ts           # 🆕 Two real sessions: admin promotes a member, member's UI updates after reload
 │   ├── wrong-pin.spec.ts                # Rejection message, then success
 │   ├── utils/{seed,flows}.ts            # Emulator seeding + shared UI steps
 │   └── tsconfig.json
@@ -328,15 +348,16 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 | `src/hooks/useModals.ts` | `ModalState` discriminated union + reducer — the single source of truth for which modal is open. |
 | `src/components/ModalManager.tsx` | Renders those modals (all `React.lazy`). Purely presentational; data/handlers passed from `App.tsx`. |
 | `src/hooks/useTripConfig.ts` | Live `onSnapshot` on `trips/{TRIP_ID}`: trip name, bank details, itinerary — with `constants.ts` fallbacks. |
-| `src/hooks/useTripAdminActions.ts` | The only client write path to `trips/{TRIP_ID}`. Always `setDoc(..., { merge: true })` — never a full overwrite. |
-| `src/components/admin/TripAdminView.tsx` | Admin panel. Itinerary is edited locally then saved in one explicit write. |
+| `src/hooks/useTripAdminActions.ts` | The only client write path to `trips/{TRIP_ID}`. Always `setDoc(..., { merge: true })` — never a full overwrite. 🆕 `organizerTripId` param: an organizer may act on their own trip, same as `isAdmin`. |
+| `src/components/admin/TripAdminView.tsx` | Admin panel. Itinerary is edited locally then saved in one explicit write. 🆕 `viewerRole='organizer'` skips the trip list entirely (one trip, opened directly) and hides create/restore. |
+| `src/hooks/useMyTripRole.ts` | 🆕 Self-read of `trips/{tripId}/members/{uid}` to answer "am I this trip's organizer?" — a `permission-denied` here *is* "no," not an error. |
 | `src/utils/itinerary.ts` | Pure itinerary helpers: draft validation, defensive `normalizeItinerary`, `findNextSegment`. Fully tested. |
 | `src/firestore.ts` | Single source of truth for Firestore paths: `expensesCol`, `travelerDoc`, `depositLogsCol`, `rateLimitDoc`, `tripConfigDoc`. |
 | `src/constants.ts` | `CURRENCY_LABELS` (160 currencies), `FALLBACK_RATES`, `EXPENSE_CATEGORIES`, `BANK_DETAILS`. |
 | `src/utils/calculations.ts` | Pure functions for balances, settlements, category totals, spending trend. Fully tested. |
 | `src/utils/xlsx.ts` | Pure-JS OOXML XLSX generator — no dependencies. |
-| `functions/index.js` | `verifyTripPin` (rate-limited PIN verification, grants the `trips` claim) + `manageTrip` (create / resetPin / delete) + `mergeAnonymousTrips` (rescues memberships when linking hits an existing account) + `manageMember` (removes one trip from another user's claims — the only way, since claims live on the target's account) + 🆕 `restoreTrip` (rebuilds a trip from a Stage-1 JSON backup — empty-or-nonexistent trips only, re-validates every document since Admin SDK bypasses the rules). |
-| `firestore.rules` | Security rules: `isAdmin()`, `isMember(tripId)`, `withinExpenseRateLimit`, immutable deposit logs. |
+| `functions/index.js` | `verifyTripPin` (rate-limited PIN verification, grants the `trips` claim) + `manageTrip` (create / resetPin / delete) + `mergeAnonymousTrips` (rescues memberships when linking hits an existing account) + `manageMember` (`mode: 'remove'` — removes one trip from another user's claims, now callable by a trip's organizer too but never against an admin or another organizer; 🆕 `mode: 'setRole'` — grants/revokes the organizer role, global admin only) + `restoreTrip` (rebuilds a trip from a Stage-1 JSON backup — empty-or-nonexistent trips only, re-validates every document since Admin SDK bypasses the rules). |
+| `firestore.rules` | Security rules: `isAdmin()`, `isMember(tripId)`, 🆕 `isOrganizer(tripId)` (reads `trips/{tripId}/members/{uid}.role`), `withinExpenseRateLimit`, immutable deposit logs. |
 | `src/context/UIContext.ts` | 🆕 Two contexts split by volatility. Read the comment there before adding a field — putting a changing value in the actions context silently undoes the split. |
 | `src/hooks/useMyTrips.ts` | 🆕 The user's own trips. Reads each `trips/{id}` with its own `getDoc` — a `list` query is admin-only and would fail for members. |
 | `src/utils/preload.ts` | 🆕 Idle-time preloading of lazy chunks so they exist before connectivity is lost. |
@@ -1186,6 +1207,24 @@ Three results the caller must distinguish, and the toast does:
 **Removal does not touch their expenses, their traveler, or `createdByUid`.** Taking someone out of a trip is not erasing their financial trace from it — whoever paid, paid. Same principle that makes `createdByUid` immutable and deposit logs append-only.
 
 ⚠️ **The negative case that matters (guideline 18): removal must not touch the target's *other* trips.** The claim map is rebuilt by deleting one key from a copy, never reassembled from another source. Getting this wrong wipes memberships unrelated to the decision, and it fails silently — no error, no symptom, until that person opens a different trip days later and is asked for a PIN.
+
+### 🆕 The trip organizer role lives in the roster, not the token — deliberately, and it costs a `get()`
+
+Stage 3 of `docs/PLAN-member-management.md`, shipped 2026-08-18. `trips/{tripId}/members/{uid}.role: 'organizer' | 'member'` lets the admin delegate trip-scoped management (name/bank/itinerary/status, invite/remove members) without handing over `admin: true` — which is global and would hand over every other trip in the project too.
+
+**Two placements were possible, and the roster won on purpose — the opposite trade from `isMember()`.** Putting the role inside the custom claim (`trips: { [tripId]: 'organizer' }` instead of `true`) would make the read free, same as membership itself. But it also changes the shape `isMember()` parses on *every* request, touches the 900-byte claim budget, and — the deciding factor — an organizer's own writes (editing the trip, removing a member) are already rare, admin-panel actions, not a hot path like expense creation. `isOrganizer(tripId)` costs one `get()` on exactly those rare writes, and `isMember()` itself doesn't change by a character. Same reasoning as `tripStatus()` above, applied a second time.
+
+**Who can grant the role is the question the original plan text didn't answer, and it landed conservative: the global admin only.** `manageMember` (`mode: 'setRole'`) rejects any caller without `admin: true`, no exception. Delegating a role that itself grants real write access isn't something an organizer should be able to hand to a peer — the same reasoning `set-admin.mjs` gives for keeping admin-granting a script, never a UI button.
+
+**And an organizer removing a member now needed a check `mode: 'remove'` never had before: who is the target?** Opening removal to organizers without this would let any two organizers on the same trip eject each other with zero admin involvement — a horizontal-escalation hole. So when the caller isn't a global admin, `manageMember` reads the caller's own roster row (must be `'organizer'`) *and* the target's — refusing if the target is a global admin or another organizer. An organizer removing a global admin from the roster wouldn't even do anything real (same `stillHasAccess` fact as before), but "an action that changes nothing yet appears to succeed" is worse than refusing it outright.
+
+⚠️ **Verified live, not assumed (guideline 18):** `manageMember.run()` invoked directly against real Auth+Firestore emulators (same technique as `restoreTrip`) covered ten cases including every rejection above — organizer removing a plain member (succeeds), removing another organizer (rejected), removing the admin (rejected), a plain member removing anyone (rejected), an organizer granting a role to someone (rejected), setRole on someone who never joined (rejected), and — the same guideline-18 case that matters for `remove` — a removal via an organizer never touches the target's *other* trip memberships either. All ten passed.
+
+**The organizer's own admin panel is the existing `TripAdminView`/`TripDetailPanel`, not a new component.** A `viewerRole: 'admin' | 'organizer'` prop hides the tabs that stay admin-only (backup, PIN reset, delete trip) and the role-toggle button in the members list. The trickier part: `TripAdminView`'s trip list is normally `useAllTrips(isAdmin)`, a query only `isAdmin()` satisfies — an organizer can't run it. So for an organizer, `useAppCoordinator.ts` builds a **one-element** `trips` array from their own already-subscribed `useTripConfig` data instead. This isn't a filtered view of a bigger list; there structurally is no bigger list on that code path, which is what actually keeps an organizer from ever seeing another trip through this screen — not a check that could be forgotten.
+
+**`useMyTripRole.ts` is the self-check, and its shape follows the same rule as `useTripMembers.ts`: a `permission-denied` reading your own roster row *is* the answer.** `isOrganizer(tripId)` in the rules only lets the read through when the role really is `'organizer'`; anything else — plain member, never joined, wrong trip — fails the read, and the hook treats that failure as `false`, not an error to log or surface.
+
+**Confirmed across two genuinely separate browser sessions** (`e2e/organizer-role.spec.ts`), because this is exactly the class of bug a unit or rules test can't see: one Playwright context joins as a plain member, a second signs in as admin and promotes that member via the real UI, then the *first* context reloads and is checked for the "manage trip" button, the absence of admin-only tabs, and a real trip-name edit that persists. Writing it surfaced a genuine race unrelated to this feature's own logic: `openTripAsMember` in `e2e/utils/flows.ts` clicks "continue" but never waits for `verifyTripPin` to actually finish, so two sessions joining back-to-back have no guaranteed order — which mattered here because the test needed to know which roster row was "the real member" to promote the right one.
 
 ### 🆕 A modal is four keyboard behaviours, not one attribute
 
