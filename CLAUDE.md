@@ -2,7 +2,15 @@
 
 <div dir="rtl" style="text-align: right">
 
-## آخر تحديث: 2026-08-16
+## آخر تحديث: 2026-08-17
+
+### What changed on 2026-08-17
+
+**Email/Password shipped as a second account-linking provider, closing the last real gap in the anonymous-auth mitigation.** The user flagged, as high priority, that Account Linking (Google-only until today) still left anyone without a Google account — or who avoids OAuth — with zero recovery path if they lost their anonymous session. `useAccountLink.ts` gained `linkWithEmail(email, password)` and `resetPassword(email)` alongside the existing `linkAccount()`; `LinkWithEmailForm.tsx` is a collapsed-by-default secondary option inside `SaveAccountBanner`, Google still shown first as the one-click path for anyone who has it. **`mergeAnonymousTrips` needed zero changes** — it was already provider-agnostic, checking only that the `uid` changed rather than which provider changed it, so the same merge machinery Google's conflict path uses now serves Email/Password too. The `auth/email-already-in-use` conflict path doubles as the recovery path: no separate "sign in" screen exists, since typing a previously-saved email+password from a fresh anonymous session (i.e. after losing the old one) triggers a sign-in attempt followed by the identical merge. **The negative case was verified, not assumed** (guideline 18): a dedicated test confirms a wrong password neither signs in nor calls `mergeAnonymousTrips`. See *Email/Password as a second linking path* under *Design Decisions*. Shipped via [PR #22](https://github.com/morsel90/Travel-Wallet/pull/22) — 21 new unit tests (436 total), lint/typecheck clean, no `firestore.rules` or `functions/index.js` changes, no functions deploy needed. **Manually click-tested by the owner** immediately after merge — linking with a real email/password worked cleanly.
+
+---
+
+## آخر تحديث سابق: 2026-08-16
 
 ### What changed on 2026-08-16
 
@@ -1090,6 +1098,8 @@ Two things the merge deliberately does not do:
 **`resetPassword` exists for a reason Google structurally doesn't need:** Google recovers its own accounts entirely outside this app. An Email/Password account created by *this* app is this app's problem alone — without `sendPasswordResetEmail`, a user who forgets their password would have a feature indistinguishable from not having one. It needs no Cloud Function and no rule changes; Firebase sends the email and hosts the reset page itself. It's reachable from the same form with only an email typed in, deliberately not gated behind a failed link attempt first — a user who has fully forgotten their password should not have to fail at typing it before being offered a way out.
 
 ⚠️ **A wrong password for an already-linked email must not sign in and must not merge — verified as the actual negative case, not assumed** (guideline 18): a dedicated test asserts `mergeAnonymousTrips` is never called and `onLinked` is never invoked when `signInWithEmailAndPassword` rejects, distinct from the happy-path merge test.
+
+**Manually click-tested by the owner, 2026-08-17** — linking with a real email/password succeeded cleanly, confirming the automated coverage above matches real behaviour rather than only mocked expectations.
 
 ### `useExpenses` listens to the whole collection on purpose — do not paginate it
 
