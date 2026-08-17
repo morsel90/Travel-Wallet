@@ -47,4 +47,5 @@ export {
   ChevronLeft,  // 🆕 مؤشّر فتح الرحلة في شاشة «رحلاتي» (RTL: يشير للأمام)
   Upload,       // 🆕 اختيار ملف نسخة احتياطية للاستعادة (RestoreTripForm)
   FileJson,     // 🆕 مؤشّر ملف JSON مُختار بنجاح (RestoreTripForm)
+  Mail,         // 🆕 خيار حفظ الحساب ببريد إلكتروني (LinkWithEmailForm)
 } from 'lucide-react'

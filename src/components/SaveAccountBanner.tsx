@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { useAccountLink } from '../hooks/useAccountLink'
 import { haptic } from '../utils/haptics'
-import { Lock, Loader2, AlertTriangle } from '../icons'
+import { Lock, Loader2, AlertTriangle, Mail } from '../icons'
+import LinkWithEmailForm from './LinkWithEmailForm'
 
 interface SaveAccountBannerProps {
   /** لا يُعرض شيء لغير المجهولين — الحساب الدائم لا يحتاج ترقية. */
@@ -22,7 +24,11 @@ export const SaveAccountBanner = ({ isAnonymous, tripCount }: SaveAccountBannerP
   // إعادة التحميل بعد النجاح: خريطة trips تغيّرت في التوكن، وuseAuth يقرؤها
   // داخل onAuthStateChanged وحده — وهو لا يُطلَق عند تحديث التوكن. الشاشة هنا
   // بلا نماذج مفتوحة فلا يضيع إدخال.
-  const { isLinking, linkError, linkAccount } = useAccountLink(() => window.location.reload())
+  const link = useAccountLink(() => window.location.reload())
+  const { isLinking, linkError, linkAccount } = link
+  // 🆕 من لا يملك حساب Google — أو يتجنّب OAuth — يحتاج بديلاً حقيقياً، لا زخرفة.
+  // مطوي افتراضياً: Google تبقى المسار الأسرع لمن يملكها (زرّ واحد بلا نموذج).
+  const [showEmailForm, setShowEmailForm] = useState(false)
 
   if (!isAnonymous) return null
 
@@ -44,18 +50,33 @@ export const SaveAccountBanner = ({ isAnonymous, tripCount }: SaveAccountBannerP
             احفظ حسابك لتفتحها من أي جهاز.
           </p>
 
-          <button
-            type="button"
-            onClick={() => { haptic.light(); void linkAccount() }}
-            disabled={isLinking}
-            className="flex items-center gap-2 bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm disabled:opacity-60"
-          >
-            {isLinking
-              ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> جارٍ الحفظ...</>
-              : <>حفظ الحساب عبر Google</>}
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => { haptic.light(); setShowEmailForm(false); void linkAccount() }}
+              disabled={isLinking}
+              className="flex items-center gap-2 bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm disabled:opacity-60"
+            >
+              {isLinking && !showEmailForm
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> جارٍ الحفظ...</>
+                : <>حفظ الحساب عبر Google</>}
+            </button>
 
-          {linkError && (
+            {!showEmailForm && (
+              <button
+                type="button"
+                onClick={() => setShowEmailForm(true)}
+                className="flex items-center gap-1.5 text-xs font-bold text-amber-800 hover:text-amber-900 underline decoration-dotted underline-offset-2"
+              >
+                <Mail className="w-3.5 h-3.5" /> أو ببريد إلكتروني
+              </button>
+            )}
+          </div>
+
+          {showEmailForm && <LinkWithEmailForm link={link} onCancel={() => setShowEmailForm(false)} />}
+
+          {/* خطأ Google يُعرض هنا فقط — نموذج البريد يعرض خطأه بنفسه لتفادي التكرار. */}
+          {linkError && !showEmailForm && (
             <p className="text-xs text-rose-700 mt-2.5 flex items-start gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0" />
               {linkError}

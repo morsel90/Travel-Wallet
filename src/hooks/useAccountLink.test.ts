@@ -4,7 +4,10 @@ import { useAccountLink } from './useAccountLink'
 
 const mocks = vi.hoisted(() => ({
   linkWithPopup: vi.fn(),
+  linkWithCredential: vi.fn(),
   signInWithCredential: vi.fn(),
+  signInWithEmailAndPassword: vi.fn(),
+  sendPasswordResetEmail: vi.fn(),
   credentialFromError: vi.fn(),
   httpsCallable: vi.fn(),
   merge: vi.fn(),
@@ -14,9 +17,15 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('firebase/auth', () => ({
   linkWithPopup: mocks.linkWithPopup,
+  linkWithCredential: mocks.linkWithCredential,
   signInWithCredential: mocks.signInWithCredential,
+  signInWithEmailAndPassword: mocks.signInWithEmailAndPassword,
+  sendPasswordResetEmail: mocks.sendPasswordResetEmail,
   GoogleAuthProvider: class {
     static credentialFromError = mocks.credentialFromError
+  },
+  EmailAuthProvider: class {
+    static credential = (email: string, password: string) => ({ email, password })
   },
 }))
 
@@ -164,5 +173,135 @@ describe('useAccountLink — الإلغاء والأخطاء', () => {
 
     act(() => result.current.clearLinkError())
     expect(result.current.linkError).toBeNull()
+  })
+})
+
+describe('useAccountLink — linkWithEmail — المسار السعيد', () => {
+  it('يربط حساباً بريدياً جديداً ويستدعي onLinked دون نقل بيانات', async () => {
+    mocks.linkWithCredential.mockResolvedValue({})
+    const onLinked = vi.fn()
+    const { result } = renderHook(() => useAccountLink(onLinked))
+
+    let outcome
+    await act(async () => { outcome = await result.current.linkWithEmail('a@b.com', 'secret1') })
+
+    expect(outcome).toEqual({ status: 'linked' })
+    expect(onLinked).toHaveBeenCalledTimes(1)
+    expect(mocks.merge).not.toHaveBeenCalled()
+  })
+
+  it('لا يفعل شيئاً لمستخدم غير مجهول', async () => {
+    mocks.currentUser = { isAnonymous: false, getIdToken: mocks.getIdToken }
+    const { result } = renderHook(() => useAccountLink())
+
+    let outcome
+    await act(async () => { outcome = await result.current.linkWithEmail('a@b.com', 'secret1') })
+
+    expect(outcome).toBeNull()
+    expect(mocks.linkWithCredential).not.toHaveBeenCalled()
+  })
+
+  it('كلمة مرور ضعيفة ترفضها Firebase تُعرض برسالة واضحة', async () => {
+    mocks.linkWithCredential.mockRejectedValue(err('auth/weak-password'))
+    const { result } = renderHook(() => useAccountLink())
+
+    await act(async () => { await result.current.linkWithEmail('a@b.com', '123') })
+
+    expect(result.current.linkError).toContain('كلمة المرور قصيرة')
+  })
+
+  it('بريد بصياغة غير صالحة تُعرض برسالة واضحة', async () => {
+    mocks.linkWithCredential.mockRejectedValue(err('auth/invalid-email'))
+    const { result } = renderHook(() => useAccountLink())
+
+    await act(async () => { await result.current.linkWithEmail('not-an-email', 'secret1') })
+
+    expect(result.current.linkError).toContain('البريد الإلكتروني غير صالح')
+  })
+})
+
+// ⚠️ هذا هو مسار "الجهاز الثاني" لكن بالبريد: بريد مسجَّل مسبقاً يعني إما نفس
+// المستخدم يستعيد وصوله، أو محاولة انتحال — والتمييز الوحيد كلمة المرور.
+describe('useAccountLink — linkWithEmail — مسار التعارض (email-already-in-use)', () => {
+  beforeEach(() => {
+    mocks.linkWithCredential.mockRejectedValue(err('auth/email-already-in-use'))
+  })
+
+  it('كلمة المرور الصحيحة تسجّل الدخول وتنقل العضويات', async () => {
+    mocks.signInWithEmailAndPassword.mockResolvedValue({})
+    const onLinked = vi.fn()
+    const { result } = renderHook(() => useAccountLink(onLinked))
+
+    let outcome
+    await act(async () => { outcome = await result.current.linkWithEmail('a@b.com', 'correct1') })
+
+    expect(outcome).toEqual({ status: 'merged', merged: 2 })
+    expect(mocks.signInWithEmailAndPassword).toHaveBeenCalledWith(expect.anything(), 'a@b.com', 'correct1')
+    expect(mocks.merge).toHaveBeenCalledWith({ previousIdToken: 'anon-token' })
+    expect(onLinked).toHaveBeenCalledTimes(1)
+  })
+
+  // ⚠️ الحالة السالبة الأهم هنا: كلمة مرور خاطئة يجب ألا تسجّل دخولاً ولا تدمج
+  // شيئاً — لا نخمّن ولا "نجرّب على أي حال".
+  it('كلمة المرور الخاطئة تُرفض بلا تسجيل دخول ولا دمج', async () => {
+    mocks.signInWithEmailAndPassword.mockRejectedValue(err('auth/wrong-password'))
+    const onLinked = vi.fn()
+    const { result } = renderHook(() => useAccountLink(onLinked))
+
+    let outcome
+    await act(async () => { outcome = await result.current.linkWithEmail('a@b.com', 'wrong') })
+
+    expect(outcome).toBeNull()
+    expect(result.current.linkError).toContain('كلمة مرور مختلفة')
+    expect(mocks.merge).not.toHaveBeenCalled()
+    expect(onLinked).not.toHaveBeenCalled()
+  })
+
+  it('يلتقط توكن الجلسة المجهولة قبل تسجيل الدخول لا بعده', async () => {
+    mocks.signInWithEmailAndPassword.mockResolvedValue({})
+    const order: string[] = []
+    mocks.getIdToken.mockImplementation(async () => { order.push('getIdToken'); return 'anon-token' })
+    mocks.signInWithEmailAndPassword.mockImplementation(async () => { order.push('signIn'); return {} })
+    mocks.merge.mockImplementation(async () => { order.push('merge'); return { data: { merged: 1 } } })
+
+    const { result } = renderHook(() => useAccountLink())
+    await act(async () => { await result.current.linkWithEmail('a@b.com', 'correct1') })
+
+    expect(order).toEqual(['getIdToken', 'signIn', 'merge'])
+  })
+
+  it('فشل الدمج وحده لا يُعرض كفشل كامل', async () => {
+    mocks.signInWithEmailAndPassword.mockResolvedValue({})
+    mocks.merge.mockRejectedValue(err('functions/internal'))
+    const onLinked = vi.fn()
+    const { result } = renderHook(() => useAccountLink(onLinked))
+
+    await act(async () => { await result.current.linkWithEmail('a@b.com', 'correct1') })
+
+    expect(result.current.linkError).toContain('تم تسجيل الدخول')
+    expect(onLinked).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('useAccountLink — resetPassword', () => {
+  it('يرسل رابط إعادة التعيين ويُرجع true عند النجاح', async () => {
+    mocks.sendPasswordResetEmail.mockResolvedValue(undefined)
+    const { result } = renderHook(() => useAccountLink())
+
+    let ok
+    await act(async () => { ok = await result.current.resetPassword('a@b.com') })
+
+    expect(ok).toBe(true)
+    expect(mocks.sendPasswordResetEmail).toHaveBeenCalledWith(expect.anything(), 'a@b.com')
+  })
+
+  it('يُرجع false عند الفشل بدل رمي الاستثناء', async () => {
+    mocks.sendPasswordResetEmail.mockRejectedValue(err('auth/invalid-email'))
+    const { result } = renderHook(() => useAccountLink())
+
+    let ok
+    await act(async () => { ok = await result.current.resetPassword('bad') })
+
+    expect(ok).toBe(false)
   })
 })
