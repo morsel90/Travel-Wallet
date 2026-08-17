@@ -63,6 +63,12 @@ const otherTripMemberDb = (uid = 'member-other-trip'): Firestore =>
   asModularFirestore(testEnv.authenticatedContext(uid, { trips: { [OTHER_TRIP_ID]: true } }).firestore())
 const adminDb      = (uid = 'admin-1'): Firestore =>
   asModularFirestore(testEnv.authenticatedContext(uid, { admin: true }).firestore())
+// 🆕 منظّم رحلة (docs/PLAN-member-management.md المرحلة ٣): نفس claim العضو
+// العادي بالضبط — الدور لا يعيش في الـ claim بل في سجلّ trips/{tripId}/members
+// (انظر seedOrganizer أدناه)، فالفارق الوحيد بين memberDb وorganizerDb هو ما
+// نزرعه في السجلّ قبل الاختبار، لا سياق المصادقة نفسه.
+const organizerDb  = (uid = 'organizer-1'): Firestore =>
+  asModularFirestore(testEnv.authenticatedContext(uid, { trips: { [TRIP_ID]: true } }).firestore())
 
 /** يكتب بيانات تجهيزية متجاوزاً القواعد تماماً — لتحضير حالة سابقة قبل الاختبار الفعلي. */
 const seed = (fn: (db: Firestore) => Promise<void>) =>
@@ -71,6 +77,10 @@ const seed = (fn: (db: Firestore) => Promise<void>) =>
 /** يضبط حالة دورة حياة الرحلة قبل الاختبار (غياب المستند نفسه = active). */
 const setTripStatus = (status: 'active' | 'completed' | 'archived') =>
   seed(db => setDoc(doc(db, 'trips', TRIP_ID), { name: 'رحلة', status }))
+
+/** 🆕 يزرع سطر عضوية بدور منظّم — ما يجعل isOrganizer(tripId) صحيحاً لـ uid هذا. */
+const seedOrganizer = (uid: string, tripId = TRIP_ID) =>
+  seed(db => setDoc(doc(db, 'trips', tripId, 'members', uid), { joinedAt: 1_700_000_000_000, role: 'organizer' }))
 
 // ─── مسارات المستندات (نسخة مستقلة — انظر التعليق أعلى الملف) ────────────────
 const expensesCol    = (db: Firestore, tripId = TRIP_ID) => collection(db, 'artifacts', tripId, 'public', 'data', 'expenses')
@@ -549,6 +559,37 @@ describe('إدارة الرحلات — trips/{tripId}', () => {
     await assertFails(setDoc(tripConfigDoc(adminDb()), { notAllowed: true }))
   })
 
+  // 🆕 المرحلة ٣ — منظّم الرحلة: تحديث لا إنشاء، ولرحلته وحدها.
+  describe('منظّم الرحلة (المرحلة ٣)', () => {
+    it('منظّم الرحلة يستطيع تحديث إعداداتها ببيانات صالحة', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة تجريبية' }))
+      await seedOrganizer('organizer-1')
+      await assertSucceeds(setDoc(tripConfigDoc(organizerDb()), { name: 'اسم جديد' }, { merge: true }))
+    })
+
+    // ⚠️ الحالة السالبة الحاكمة: منظّم بلا سجلّ دور — أو دوره 'member' — يبقى
+    // كعضو عادي، لا كل من لديه claim العضوية في هذه الرحلة.
+    it('عضو الرحلة العادي (بلا سطر دور منظّم) لا يستطيع التحديث', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة تجريبية' }))
+      await assertFails(setDoc(tripConfigDoc(organizerDb()), { name: 'اسم جديد' }, { merge: true }))
+    })
+
+    it('منظّم رحلة أخرى لا يستطيع تحديث هذه الرحلة', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة تجريبية' }))
+      await seedOrganizer('organizer-1', OTHER_TRIP_ID)
+      await assertFails(setDoc(tripConfigDoc(organizerDb()), { name: 'اسم جديد' }, { merge: true }))
+    })
+
+    // 🆕 الفرق الحاسم بين المرحلتين: منظّم يحدّث، لا يُنشئ — الإنشاء يبقى
+    // للمسؤول العالمي وحده (docs/PLAN-member-management.md: "دون: إنشاء رحلات").
+    it('منظّم الرحلة لا يستطيع إنشاء رحلة جديدة (مستند غير موجود أصلاً)', async () => {
+      await seedOrganizer('organizer-1', 'trip-brand-new')
+      await assertFails(
+        setDoc(tripConfigDoc(organizerDb(), 'trip-brand-new'), { name: 'رحلة جديدة' }),
+      )
+    })
+  })
+
   // ⚠️ يبقى الحذف ممنوعاً على العميل حتى بعد إضافة «حذف رحلة» للواجهة: الحذف
   // يمرّ حصراً عبر manageTrip (Cloud Function بصلاحيات Admin SDK تتجاوز القواعد)،
   // وهناك يُفرض شرط أن تكون الرحلة فارغة. لو سُمح للعميل بالحذف مباشرةً لأمكن
@@ -589,6 +630,28 @@ describe('سجلّ عضوية الرحلة — trips/{tripId}/members', () => {
     await assertFails(setDoc(tripMemberDoc(memberDb('member-1'), 'member-1'), { joinedAt: 1 }))
     await assertFails(updateDoc(tripMemberDoc(adminDb(), 'member-1'), { joinedAt: 1 }))
     await assertFails(deleteDoc(tripMemberDoc(adminDb(), 'member-1')))
+  })
+
+  // 🆕 المرحلة ٣ — منظّم الرحلة يحتاج قراءة السجلّ ليعرف من يُزيل، لكن هذا لا
+  // يمنحه كتابة عليه (يبقى «لا كتابة من أي عميل» أعلاه صحيحاً له أيضاً — نفس
+  // الدور محكوم بنفس السطر الذي منحه القراءة).
+  describe('منظّم الرحلة (المرحلة ٣)', () => {
+    it('منظّم الرحلة يقرأ السجلّ كاملاً', async () => {
+      await seedOrganizer('organizer-1')
+      await assertSucceeds(getDocs(tripMembersCol(organizerDb())))
+      await assertSucceeds(getDoc(tripMemberDoc(organizerDb(), 'member-1')))
+    })
+
+    it('منظّم رحلة أخرى لا يقرأ سجلّ هذه الرحلة', async () => {
+      await seedOrganizer('organizer-1', OTHER_TRIP_ID)
+      await assertFails(getDocs(tripMembersCol(organizerDb())))
+    })
+
+    it('حتى المنظّم لا يكتب على السجلّ — دوره نفسه غير قابل للتعديل من العميل', async () => {
+      await seedOrganizer('organizer-1')
+      await assertFails(setDoc(tripMemberDoc(organizerDb(), 'member-1'), { role: 'organizer', joinedAt: 1 }))
+      await assertFails(updateDoc(tripMemberDoc(organizerDb(), 'member-1'), { role: 'member' }))
+    })
   })
 
   // ⚠️ الحالة التي تنكسر بصمت لو نُسي match المتداخل: قواعد المستند الأب لا تسري

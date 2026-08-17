@@ -221,6 +221,12 @@ export interface TripMember {
   mergedFrom?: string
   /** وُجد بالترحيل لا بالانضمام؛ ملازم لغياب joinedAt. */
   backfilledAt?: number
+  /**
+   * 🆕 دور الرحلة (docs/PLAN-member-management.md المرحلة ٣) — منفصل تماماً عن
+   * admin: true العالمي. غيابه يعني 'member' (نفس مبدأ غياب `status` = active).
+   * تكتبه manageMember (mode: 'setRole') وحدها؛ لا كتابة من أي عميل مهما كان.
+   */
+  role?: 'organizer' | 'member'
 }
 
 // 🆕 تفاصيل الحساب البنكي — كانت مُعرَّفة محلياً في useTripConfig.ts وMisc.tsx

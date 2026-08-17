@@ -512,11 +512,13 @@ exports.manageTrip = onCall(
   }
 );
 /**
- * 🆕 manageMember: إزالة عضو من رحلة واحدة.
+ * 🆕 manageMember: إزالة عضو من رحلة واحدة، أو تعيين/إلغاء دور «منظّم الرحلة».
  *
  * **لماذا دالة خادمية ولا يمكن أن تكون قاعدة؟** العضوية تعيش في custom claims
  * حساب العضو المستهدَف، وتعديل claims حساب آخر يوجب Admin SDK. لا سبيل لفعله
- * من العميل تحت أي قاعدة.
+ * من العميل تحت أي قاعدة. ونفس المنطق ينطبق على `role` في سجلّ العضوية —
+ * `firestore.rules` تمنع أي كتابة عليه من أي عميل (`allow write: if false`)
+ * بالضبط لأن isOrganizer() تثق بهذا الحقل لمنح صلاحية كتابة حقيقية على الرحلة.
  *
  * وقبل هذه الدالة كانت الأداة الوحيدة لإخراج شخص هي تغيير رمز الرحلة — أي إخراج
  * **الجميع** وإجبار كل عضو على إدخال الرمز الجديد.
@@ -529,6 +531,15 @@ exports.manageTrip = onCall(
  * ورُفض revokeRefreshTokens رغم أنه يجعلها فورية: أثره على **الحساب كله**، فيُخرج
  * العضو من كل رحلاته لا من هذه وحدها — عقوبة جانبية على رحلات لا علاقة لها
  * بالقرار. انظر docs/PLAN-member-management.md.
+ *
+ * 🆕 المرحلة ٣ — دور «منظّم الرحلة»:
+ *   • `mode: 'setRole'` (تعيين/إلغاء) — **المسؤول العالمي حصراً**. تفويض هذا
+ *     الدور صلاحية إدارية حقيقية (تعديل اسم/بنك/مسار/حالة الرحلة، وإزالة أعضاء
+ *     عاديين)، فمنحه ليس فعلاً يجوز أن يُفوَّض لمنظّم آخر — تماماً كما لا يمنح
+ *     منظّم صلاحية admin لأحد. انظر "دون: ... منح صلاحية المسؤول" في الخطة.
+ *   • `mode: 'remove'` صار متاحاً للمنظّم أيضاً، **لا لإزالة مسؤول أو منظّم
+ *     آخر** — تلك حماية من تصعيد أفقي: لولاها لاستطاع منظّمان إخراج بعضهما
+ *     بلا أي تدخّل من المسؤول العالمي.
  */
 exports.manageMember = onCall(
   {
@@ -539,13 +550,10 @@ exports.manageMember = onCall(
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
     }
-    if (request.auth.token.admin !== true) {
-      throw new HttpsError('permission-denied', 'هذا الإجراء متاح للمسؤول فقط.');
-    }
 
     const tripId = String(request.data?.tripId ?? '').trim();
     const uid = String(request.data?.uid ?? '').trim();
-    const mode = String(request.data?.mode ?? '').trim(); // 'remove'
+    const mode = String(request.data?.mode ?? '').trim(); // 'remove' | 'setRole'
 
     if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
       throw new HttpsError('invalid-argument', 'معرّف الرحلة غير صالح.');
@@ -553,8 +561,42 @@ exports.manageMember = onCall(
     if (!uid || uid.length > 128) {
       throw new HttpsError('invalid-argument', 'معرّف المستخدم غير صالح.');
     }
-    if (mode !== 'remove') {
+    if (mode !== 'remove' && mode !== 'setRole') {
       throw new HttpsError('invalid-argument', 'نوع العملية غير معروف.');
+    }
+
+    const callerIsAdmin = request.auth.token.admin === true;
+    const memberDocRef = db.collection('trips').doc(tripId).collection('members').doc(uid);
+
+    // ─── تعيين/إلغاء دور المنظّم — المسؤول العالمي حصراً ────────────────────
+    if (mode === 'setRole') {
+      if (!callerIsAdmin) {
+        throw new HttpsError('permission-denied', 'تعيين دور منظّم الرحلة متاح للمسؤول فقط.');
+      }
+      const role = String(request.data?.role ?? '').trim();
+      if (role !== 'organizer' && role !== 'member') {
+        throw new HttpsError('invalid-argument', 'الدور غير معروف.');
+      }
+
+      // لا يجوز تعيين من لم ينضم للرحلة أصلاً — لا سطر عضوية له ليُكتب عليه،
+      // وكتابة سطر جديد هنا كانت ستزوّر «متى انضم» (لا نعرفه أصلاً).
+      const targetSnap = await memberDocRef.get();
+      if (!targetSnap.exists) {
+        throw new HttpsError('failed-precondition', 'هذا الحساب لم ينضم لهذه الرحلة بعد.');
+      }
+
+      await memberDocRef.set({ role }, { merge: true });
+      console.log(`[manageMember] setRole ${role} for ${uid} on ${tripId} by ${request.auth.uid}`);
+      return { success: true, uid, tripId, mode: 'setRole', role };
+    }
+
+    // ─── إزالة عضو — المسؤول، أو منظّم هذه الرحلة تحديداً ───────────────────
+    if (!callerIsAdmin) {
+      const callerSnap = await db.collection('trips').doc(tripId).collection('members').doc(request.auth.uid).get();
+      const callerRole = callerSnap.exists ? (callerSnap.data().role || 'member') : 'member';
+      if (callerRole !== 'organizer') {
+        throw new HttpsError('permission-denied', 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.');
+      }
     }
 
     let userRecord;
@@ -562,12 +604,25 @@ exports.manageMember = onCall(
       userRecord = await admin.auth().getUser(uid);
     } catch {
       // الحساب محذوف من Auth لكن سطره باقٍ في السجلّ — ننظّف السطر ولا نفشل.
-      await db.collection('trips').doc(tripId).collection('members').doc(uid).delete();
+      await memberDocRef.delete();
       return { success: true, uid, tripId, claimRemoved: false, stillHasAccess: false };
     }
 
     const existingClaims = userRecord.customClaims || {};
     const existingTrips = existingClaims.trips || {};
+
+    // 🆕 منظّم لا يزيل مسؤولاً ولا منظّماً آخر لنفس الرحلة — حماية التصعيد
+    // الأفقي أعلاه. المسؤول العالمي معفى من هذا الشرط بالكامل.
+    if (!callerIsAdmin) {
+      if (existingClaims.admin === true) {
+        throw new HttpsError('permission-denied', 'لا يستطيع منظّم الرحلة إزالة المسؤول.');
+      }
+      const targetSnap = await memberDocRef.get();
+      const targetRole = targetSnap.exists ? (targetSnap.data().role || 'member') : 'member';
+      if (targetRole === 'organizer') {
+        throw new HttpsError('permission-denied', 'لا يستطيع منظّم الرحلة إزالة منظّم آخر — هذا للمسؤول وحده.');
+      }
+    }
 
     // ⚠️ **الحالة السالبة الحاكمة (القاعدة ١٨): لا تُمسّ بقية رحلاته.** خطأ هنا
     // يمسح عضويات لا علاقة لها بالقرار، وهو فشل صامت تماماً — لا رسالة ولا خطأ،
@@ -583,7 +638,7 @@ exports.manageMember = onCall(
 
     // يُحذف دائماً ولو لم يكن عضواً في الـ claims — سطر بلا عضوية سجلٌّ يكذب،
     // وتنظيفه هو الغرض في تلك الحالة بالذات.
-    await db.collection('trips').doc(tripId).collection('members').doc(uid).delete();
+    await memberDocRef.delete();
 
     // ⚠️ المسؤول لا يستمد وصوله من عضوية الرحلة بل من claim عالمي (admin: true)،
     // فإزالته من الرحلة لا تحجب عنه شيئاً. نُبلغ العميل بذلك بدل إيهام المسؤول

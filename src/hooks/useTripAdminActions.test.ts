@@ -41,8 +41,8 @@ vi.mock('../utils/backup', async (importOriginal) => ({
 const showToast = vi.fn()
 const handleFirestoreError = vi.fn()
 
-const setup = (isAdmin = true) =>
-  renderHook(() => useTripAdminActions({ isAdmin, showToast, handleFirestoreError }))
+const setup = (isAdmin = true, organizerTripId: string | null = null) =>
+  renderHook(() => useTripAdminActions({ isAdmin, organizerTripId, showToast, handleFirestoreError }))
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -128,6 +128,60 @@ describe('removeMember — الرسالة تقول ما حدث فعلاً', () =
     await act(async () => { await result.current.removeMember('trip-1', 'ghost') })
 
     expect(showToast.mock.calls[0][0].text).toContain('لم يكن عضواً')
+  })
+})
+
+// 🆕 المرحلة ٣: منظّم الرحلة يستطيع نفس الاستدعاء، لكن مقصوراً على رحلته
+// تحديداً — الفحص الحقيقي (منظّم لا يزيل مسؤولاً/منظّماً آخر) خادمي بالكامل،
+// انظر اختبارات functions/index.js المباشرة ضد المحاكي (منفصلة عن هذا الملف).
+describe('removeMember — منظّم الرحلة (المرحلة ٣)', () => {
+  it('منظّم رحلته يستدعي الدالة بنجاح', async () => {
+    const { result } = setup(false, 'trip-1')
+    let ok
+    await act(async () => { ok = await result.current.removeMember('trip-1', 'u1') })
+
+    expect(ok).toBe(true)
+    expect(mocks.callable).toHaveBeenCalledWith({ mode: 'remove', tripId: 'trip-1', uid: 'u1' })
+  })
+
+  it('منظّم رحلة أخرى لا يستدعي الدالة لرحلة ليست رحلته', async () => {
+    const { result } = setup(false, 'trip-1')
+    let ok
+    await act(async () => { ok = await result.current.removeMember('trip-2', 'u1') })
+
+    expect(ok).toBe(false)
+    expect(mocks.callable).not.toHaveBeenCalled()
+  })
+})
+
+describe('setMemberRole — المسؤول العالمي حصراً', () => {
+  it('منظّم الرحلة نفسه لا يستطيع تعيين دور — لا حتى لرحلته', async () => {
+    const { result } = setup(false, 'trip-1')
+    let ok
+    await act(async () => { ok = await result.current.setMemberRole('trip-1', 'u1', 'organizer') })
+
+    expect(ok).toBe(false)
+    expect(mocks.callable).not.toHaveBeenCalled()
+  })
+
+  it('المسؤول يستدعي manageMember بالوضع والدور الصحيحين', async () => {
+    const { result } = setup()
+    await act(async () => { await result.current.setMemberRole('trip-1', 'u1', 'organizer') })
+
+    expect(mocks.httpsCallable).toHaveBeenCalledWith({}, 'manageMember')
+    expect(mocks.callable).toHaveBeenCalledWith({ mode: 'setRole', tripId: 'trip-1', uid: 'u1', role: 'organizer' })
+  })
+
+  it('رسالة الدالة العربية عند الفشل تُعرض كما هي', async () => {
+    mocks.callable.mockRejectedValue(
+      Object.assign(new Error('هذا الحساب لم ينضم لهذه الرحلة بعد.'), { code: 'functions/failed-precondition' }),
+    )
+    const { result } = setup()
+    let ok
+    await act(async () => { ok = await result.current.setMemberRole('trip-1', 'ghost', 'organizer') })
+
+    expect(ok).toBe(false)
+    expect(showToast.mock.calls[0][0].text).toBe('هذا الحساب لم ينضم لهذه الرحلة بعد.')
   })
 })
 

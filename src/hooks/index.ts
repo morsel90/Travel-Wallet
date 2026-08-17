@@ -18,4 +18,5 @@ export { useTripAdminActions } from './useTripAdminActions' // 🆕 كتابة �
 export { useAllTrips }         from './useAllTrips' // 🆕 قائمة كل الرحلات — استعلام يرضيه isAdmin() وحده
 export { useMyTrips }          from './useMyTrips'  // 🆕 رحلات المستخدم المنضم لها (شاشة «رحلاتي») — قراءة مستند كل رحلة على حدة
 export { useTripMembers }      from './useTripMembers' // 🆕 أعضاء رحلة بعينها من السجلّ — للمسؤول وحده (الـ claims لا تُستعلَم)
+export { useMyTripRole }       from './useMyTripRole'  // 🆕 «هل أنا منظّم هذه الرحلة؟» (المرحلة ٣) — قراءة ذاتية واحدة
 export { useHeaderCollapse }   from './useHeaderCollapse' // 🆕 تتبّع اتجاه التمرير لتقليص/توسيع الهيدر (Sticky + Collapsible)

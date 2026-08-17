@@ -11,6 +11,8 @@ import { Receipt, Download, Search, Plus, BarChart3, Settings } from '../icons'
 interface ExpensesPanelProps {
   isInitialLoading: boolean
   isAdmin: boolean
+  /** 🆕 منظّم هذه الرحلة تحديداً (المرحلة ٣) — يرى زر «إدارة الرحلة» أيضاً، لا سلة المهملات. */
+  isOrganizer: boolean
   /** هل تقبل الرحلة مصاريف جديدة؟ يغيّر نص الحالة الفارغة وزرّها. */
   canAddExpenses: boolean
   activeExpenses: Expense[]
@@ -29,7 +31,7 @@ interface ExpensesPanelProps {
 // ─── سجل المصاريف ─────────────────────────────────────────────────────────────
 // شريط الأدوات + البحث + القائمة الافتراضية. ExpenseListItem وحده يقرأ السياق.
 export const ExpensesPanel = ({
-  isInitialLoading, isAdmin, canAddExpenses,
+  isInitialLoading, isAdmin, isOrganizer, canAddExpenses,
   activeExpenses, filteredExpenses,
   searchQuery, setSearchQuery, sortOrder, setSortOrder,
   onOpenReports, onOpenTripAdmin, onOpenTrashBin, onExport, onOpenExpenseForm,
@@ -46,12 +48,13 @@ export const ExpensesPanel = ({
         >
           <BarChart3 className="w-3.5 h-3.5" /> التقارير
         </button>
-        {isAdmin && (
+        {(isAdmin || isOrganizer) && (
           <button
             onClick={() => { haptic.light(); onOpenTripAdmin() }}
             className="flex items-center gap-1.5 text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm"
           >
-            <Settings className="w-3.5 h-3.5 text-slate-500" /> إدارة الرحلات
+            {/* 🆕 منظّم لديه رحلة واحدة يديرها — الجمع هنا يعني قائمة رحلات، وهذا خطأ له تحديداً. */}
+            <Settings className="w-3.5 h-3.5 text-slate-500" /> {isAdmin ? 'إدارة الرحلات' : 'إدارة الرحلة'}
           </button>
         )}
         {isAdmin && (

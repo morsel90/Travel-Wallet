@@ -39,16 +39,19 @@ interface ManageTripRequest {
 }
 interface ManageTripResponse { success: boolean; tripId: string }
 
-// 🆕 عقد استدعاء manageMember
-interface ManageMemberRequest { mode: 'remove'; tripId: string; uid: string }
+// 🆕 عقد استدعاء manageMember — 'remove' (المسؤول أو منظّم الرحلة) و
+// 🆕 'setRole' (المسؤول العالمي حصراً — المرحلة ٣، انظر functions/index.js)
+type ManageMemberRequest =
+  | { mode: 'remove'; tripId: string; uid: string }
+  | { mode: 'setRole'; tripId: string; uid: string; role: 'organizer' | 'member' }
 interface ManageMemberResponse {
   success: boolean
   uid: string
   tripId: string
-  /** false إن لم يكن عضواً في الـ claims أصلاً — نُظِّف سطر السجلّ فقط. */
-  claimRemoved: boolean
-  /** true إن كان المستهدَف مسؤولاً: صلاحيته عالمية ولا تمرّ بعضوية الرحلة. */
-  stillHasAccess: boolean
+  /** false إن لم يكن عضواً في الـ claims أصلاً — نُظِّف سطر السجلّ فقط. (mode: 'remove' فقط) */
+  claimRemoved?: boolean
+  /** true إن كان المستهدَف مسؤولاً: صلاحيته عالمية ولا تمرّ بعضوية الرحلة. (mode: 'remove' فقط) */
+  stillHasAccess?: boolean
 }
 
 // 🆕 عقد استدعاء restoreTrip — docs/PLAN-backup-recovery.md المرحلة ٢.
@@ -64,6 +67,16 @@ interface RestoreTripResponse {
 
 interface UseTripAdminActionsParams {
   isAdmin: boolean
+  /**
+   * 🆕 المرحلة ٣: معرّف الرحلة التي يملك فيها المستخدم الحالي دور «منظّم»، أو
+   * null. القيمة الحقيقية الوحيدة الممكنة عملياً هي TRIP_ID الحالي — منظّم لا
+   * يرى رحلة أخرى في الواجهة أصلاً ليكتب لها (انظر useAppCoordinator.ts).
+   *
+   * ⚠️ هذا **تحسين تجربة استخدام لا حماية**: الحارس الحقيقي في firestore.rules
+   * (isOrganizer) وfunctions/index.js (manageMember). قيمة خاطئة هنا تعني في
+   * أسوأ الأحوال محاولة كتابة تُرفض من الخادم برسالة صلاحيات — لا ثغرة.
+   */
+  organizerTripId: string | null
   showToast: (msg: ToastMessage, durationMs?: number) => void
   handleFirestoreError: (err: unknown, fallback: string) => void
 }
@@ -81,6 +94,8 @@ export interface UseTripAdminActionsResult {
   deleteTrip: (tripId: string) => Promise<boolean>
   /** 🆕 إزالة عضو من رحلة واحدة — لا تمسّ بقية رحلاته، ولا تُلغي مصاريفه. */
   removeMember: (tripId: string, uid: string) => Promise<boolean>
+  /** 🆕 تعيين/إلغاء دور «منظّم الرحلة» (المرحلة ٣) — المسؤول العالمي حصراً. */
+  setMemberRole: (tripId: string, uid: string, role: 'organizer' | 'member') => Promise<boolean>
   /** 🆕 تنزيل نسخة JSON احتياطية لرحلة واحدة — انظر docs/PLAN-backup-recovery.md المرحلة ١. */
   exportBackup: (trip: TripSummary) => Promise<boolean>
   /** 🆕 استعادة رحلة من نسخة JSON — رحلة فارغة أو غير موجودة فقط. المرحلة ٢. */
@@ -88,9 +103,17 @@ export interface UseTripAdminActionsResult {
 }
 
 export function useTripAdminActions({
-  isAdmin, showToast, handleFirestoreError,
+  isAdmin, organizerTripId, showToast, handleFirestoreError,
 }: UseTripAdminActionsParams): UseTripAdminActionsResult {
   const [isSaving, setIsSaving] = useState(false)
+
+  // 🆕 المرحلة ٣: المسؤول يتصرّف على أي رحلة، والمنظّم على رحلته وحدها —
+  // بالضبط نفس الحدّ الذي تفرضه firestore.rules (isAdmin() || isOrganizer(tripId)).
+  // هذا فحص واجهة فقط (انظر تعليق organizerTripId في الأعلى)، وليس مصدر الحماية.
+  const canAct = useCallback(
+    (tripId: string) => isAdmin || tripId === organizerTripId,
+    [isAdmin, organizerTripId],
+  )
 
   // كل مسارات الكتابة المباشرة تمرّ من هنا: فحص الصلاحية، علم الحفظ، رسالة
   // النجاح، ومعالجة الخطأ — بدل تكرار الأربعة في كل دالة.
@@ -100,8 +123,8 @@ export function useTripAdminActions({
     successText: string,
     errorFallback: string,
   ): Promise<boolean> => {
-    if (!isAdmin) {
-      showToast({ text: 'هذا الإجراء متاح للمسؤول فقط.', type: 'error' }, 3000)
+    if (!canAct(tripId)) {
+      showToast({ text: 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.', type: 'error' }, 3000)
       return false
     }
 
@@ -118,7 +141,7 @@ export function useTripAdminActions({
     } finally {
       setIsSaving(false)
     }
-  }, [isAdmin, showToast, handleFirestoreError])
+  }, [canAct, showToast, handleFirestoreError])
 
   const saveBankDetails = useCallback((tripId: string, details: BankDetails) => write(
     tripId,
@@ -228,9 +251,11 @@ export function useTripAdminActions({
 
   // 🆕 إزالة عضو — دالة مستقلة عن callManageTrip لأن عقدها مختلف (uid بدل
   // pin/name) ولأن رسالة نجاحها مشروطة بما أعادته الدالة، لا نصاً ثابتاً.
+  // 🆕 المرحلة ٣: متاحة للمسؤول أو منظّم هذه الرحلة تحديداً — الفحص الحقيقي
+  // (منظّم لا يزيل مسؤولاً ولا منظّماً آخر) يبقى خادمياً بالكامل في manageMember.
   const removeMember = useCallback(async (tripId: string, uid: string): Promise<boolean> => {
-    if (!isAdmin) {
-      showToast({ text: 'هذا الإجراء متاح للمسؤول فقط.', type: 'error' }, 3000)
+    if (!canAct(tripId)) {
+      showToast({ text: 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.', type: 'error' }, 3000)
       return false
     }
 
@@ -265,6 +290,48 @@ export function useTripAdminActions({
           type: 'success',
         }, 6000)
       }
+      return true
+    } catch (err) {
+      haptic.error()
+      const message = (err as { message?: string })?.message
+      const isFunctionsError = typeof (err as { code?: string })?.code === 'string'
+        && String((err as { code?: string }).code).startsWith('functions/')
+
+      if (isFunctionsError && message) {
+        showToast({ text: message, type: 'error' }, 4000)
+      } else {
+        handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
+      }
+      return false
+    } finally {
+      setIsSaving(false)
+    }
+  }, [canAct, showToast, handleFirestoreError])
+
+  // 🆕 تعيين/إلغاء دور «منظّم الرحلة» — المسؤول العالمي حصراً (functions/index.js
+  // يفرض هذا خادمياً أيضاً؛ لا يجوز لمنظّم تفويض دوره لآخر — انظر التعليق هناك).
+  const setMemberRole = useCallback(async (
+    tripId: string, uid: string, role: 'organizer' | 'member',
+  ): Promise<boolean> => {
+    if (!isAdmin) {
+      showToast({ text: 'تعيين دور منظّم الرحلة متاح للمسؤول فقط.', type: 'error' }, 3000)
+      return false
+    }
+
+    setIsSaving(true)
+    try {
+      const user = auth.currentUser
+      if (!user) throw new Error('غير مسجّل الدخول.')
+      await user.getIdToken(true)
+
+      const manageMember = httpsCallable<ManageMemberRequest, ManageMemberResponse>(functions, 'manageMember')
+      await manageMember({ mode: 'setRole', tripId, uid, role })
+
+      haptic.success()
+      showToast({
+        text: role === 'organizer' ? 'صار العضو منظّماً لهذه الرحلة.' : 'أُلغي دور المنظّم عن هذا العضو.',
+        type: 'success',
+      })
       return true
     } catch (err) {
       haptic.error()
@@ -384,6 +451,6 @@ export function useTripAdminActions({
 
   return {
     isSaving, saveBankDetails, saveItinerary, saveTripName, saveTripStatus, createTrip, resetTripPin,
-    deleteTrip, removeMember, exportBackup, restoreTrip: restoreTripFn,
+    deleteTrip, removeMember, setMemberRole, exportBackup, restoreTrip: restoreTripFn,
   }
 }
