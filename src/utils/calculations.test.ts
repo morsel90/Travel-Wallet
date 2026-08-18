@@ -128,7 +128,7 @@ describe('calculateBalances', () => {
 
   it('يوزّع المصروف بالتساوي على المشاركين', () => {
     const expenses = [
-      mkExpense({ amount: 300, participants: ['محمد', 'عيسى', 'فرحان'] }),
+      mkExpense({ amount: 300, participants: [1, 2, 3] }),
     ]
     const balances = calculateBalances(travelers, expenses)
     // الحصة = 300 / 3 = 100 لكل مشارك
@@ -139,7 +139,7 @@ describe('calculateBalances', () => {
 
   it('يحمّل المشاركين المحددين فقط دون غيرهم', () => {
     const expenses = [
-      mkExpense({ amount: 200, participants: ['محمد', 'عيسى'] }),
+      mkExpense({ amount: 200, participants: [1, 2] }),
     ]
     const balances = calculateBalances(travelers, expenses)
     expect(balances[0].totalExpenses).toBe(100) // محمد
@@ -149,8 +149,8 @@ describe('calculateBalances', () => {
 
   it('يراكم حصص عدة مصاريف على نفس المسافر', () => {
     const expenses = [
-      mkExpense({ amount: 100, participants: ['محمد'] }),
-      mkExpense({ amount: 60,  participants: ['محمد', 'عيسى'] }),
+      mkExpense({ amount: 100, participants: [1] }),
+      mkExpense({ amount: 60,  participants: [1, 2] }),
     ]
     const balances = calculateBalances(travelers, expenses)
     // محمد: 100 + 30 = 130
@@ -166,17 +166,9 @@ describe('calculateBalances', () => {
     expect(balances.map(b => b.totalExpenses)).toEqual([100, 100, 100])
   })
 
-  it('يدعم خلط المعرّفات والأسماء القديمة (توافق خلفي أثناء الهجرة)', () => {
-    const expenses = [mkExpense({ amount: 100, participants: [1, 'عيسى'] })]
-    const balances = calculateBalances(travelers, expenses)
-    expect(balances[0].totalExpenses).toBe(50) // id=1 → محمد
-    expect(balances[1].totalExpenses).toBe(50) // 'عيسى' (اسم قديم)
-    expect(balances[2].totalExpenses).toBe(0)
-  })
-
   it('القسمة غير المتساوية: يوزّع الباقي ويُبقي المجموع دقيقاً', () => {
     const expenses = [
-      mkExpense({ amount: 100, participants: ['محمد', 'عيسى', 'فرحان'] }),
+      mkExpense({ amount: 100, participants: [1, 2, 3] }),
     ]
     const balances = calculateBalances(travelers, expenses)
     expect(balances[0].totalExpenses).toBe(33.34) // محمد (أول مشارك يأخذ الهللة الزائدة)
@@ -192,9 +184,9 @@ describe('calculateBalances', () => {
     expect(balances.every(b => b.totalExpenses === 0)).toBe(true)
   })
 
-  it('يتجاهل اسم مشارك لا يطابق أي مسافر دون أن ينهار', () => {
+  it('يتجاهل معرّف مشارك لا يطابق أي مسافر دون أن ينهار', () => {
     const expenses = [
-      mkExpense({ amount: 90, participants: ['محمد', 'شخص_محذوف'] }),
+      mkExpense({ amount: 90, participants: [1, 999] }),
     ]
     const balances = calculateBalances(travelers, expenses)
     // الحصة تُحسب على أساس عدد المشاركين (2) = 45، لكن تُطبَّق على محمد فقط
@@ -205,7 +197,7 @@ describe('calculateBalances', () => {
 
   it('لا يطفر على المصفوفة الأصلية للمسافرين', () => {
     const snapshot = JSON.parse(JSON.stringify(travelers))
-    calculateBalances(travelers, [mkExpense({ amount: 30, participants: ['محمد'] })])
+    calculateBalances(travelers, [mkExpense({ amount: 30, participants: [1] })])
     expect(travelers).toEqual(snapshot)
   })
 
