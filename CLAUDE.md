@@ -18,6 +18,10 @@
 
 No `firestore.rules` or `functions/index.js` change ships without deploying both together (per existing convention) — `npx firebase deploy --only firestore:rules,functions`. 24 new/changed unit tests in `useTripAdminActions.test.ts` (441 total), typecheck and lint clean.
 
+**A real, previously-unaddressed UX gap in account linking was closed the same day.** The user's own review (in Arabic) traced a consequence of a design decision this file already documented but never followed through on: `mergeAnonymousTrips` deliberately never rewrites `createdByUid` on old expenses (rewriting financial history is worse than losing edit rights on a few old rows — see *Account linking preserves the `uid`* below). But nothing ever told the user this would happen. Traced the actual current behavior first rather than assuming: `ExpenseListItem`'s `canManage` check (`src/components/ExpenseSection.tsx`) simply hides the edit/delete controls for a non-owned expense — no failed write, no error, indistinguishable from "you never had permission." And the merge's own success path (`SaveAccountBanner`'s `onLinked`) does nothing but an immediate `window.location.reload()` — no toast, no explanation, ever. `src/utils/mergeNotice.ts` (new, with its own unit tests) is a `sessionStorage`-backed one-shot flag: `markUidChanged()` is called the instant sign-in succeeds in both conflict paths in `useAccountLink.ts` (Google's `credential-already-in-use` and email's `email-already-in-use`) — before the reload that would otherwise erase the chance to show anything — and `useAppCoordinator.ts` consumes it once after the next boot to show a toast explaining that pre-merge expenses are now view-only. 5 new/changed unit tests (446 total).
+
+**Adding that toast surfaced a real, pre-existing layout bug in `Toast.tsx` — verified visually via Storybook, not assumed.** Every non-error toast centers itself with `left-1/2 -translate-x-1/2` *and* animates with Tailwind's `animate-bounce` on the same element — but both write the CSS `transform` property, and an animation's keyframes replace the element's transform outright rather than composing with it. The centering translate was silently discarded; only the bounce's `translateY` survived. Invisible for short messages (a narrow box mis-centered by a few pixels goes unnoticed), but the new merge-notice toast is long enough that the bug became a box pinned to the exact horizontal midpoint and growing rightward only — confirmed with `getBoundingClientRect()` at a 375px viewport in a new `تحذير_دمج_الحساب` Storybook story (`Feedback.stories.tsx`): `left: 187.5, right: 375`, not the centered `left: 187.5 - width/2` it should have been. Fixed by moving the centering to a full-width `pointer-events-none` wrapper and keeping the bounce/color on an inner `pointer-events-auto` box — the standard fix for "static transform + animated transform on the same element." Re-verified all three toast variants (short, long, error-with-retry) render correctly afterward.
+
 ---
 
 ## آخر تحديث سابق: 2026-08-17
@@ -290,6 +294,7 @@ Also corrected: rule 3 cannot be `sum(settlements) === total debt`, because the 
 │       ├── travelerName.ts      # Pure: deriveShortName, isValidNameKey, newTravelerId
 │       ├── writeErrors.ts       # Pure: Firestore error code → real cause + is a retry worthwhile
 │       ├── callableErrors.ts    # 🆕 Pure: Cloud Function error code → real cause (ad blocker, network, wrong PIN)
+│       ├── mergeNotice.ts       # 🆕 sessionStorage one-shot flag: warn once, post-reload, that account-merge left old expenses view-only
 │       ├── haptics.ts           # Vibration API + visual flash overlay
 │       ├── preload.ts           # 🆕 Idle-time preloading of lazy chunks (onIdle + preloadAll)
 │       ├── cn.ts                # Tailwind class merge (clsx alternative)
@@ -1101,6 +1106,8 @@ Two things the merge deliberately does not do:
 
 1. **It does not move `createdByUid`.** The user cannot edit expenses recorded under the old session (an admin can). The alternative is rewriting live financial documents with no database backup — see `RECOVERY.md` §4.
 2. **It does not delete the old anonymous account.** Keeping it preserves the ability to diagnose a bad merge, and anonymous accounts cost effectively nothing.
+
+🆕 **That first point silently produced a UX gap until 2026-08-18: nothing ever told the user it happened.** `ExpenseListItem`'s ownership check (`src/components/ExpenseSection.tsx`) just hides the edit/delete controls for a non-owned row — no error, no explanation, indistinguishable from never having had permission. `src/utils/mergeNotice.ts` closes it: `markUidChanged()` fires the instant sign-in succeeds in the conflict path (before the immediate `window.location.reload()` in `onLinked` would otherwise erase the chance to show anything), and `useAppCoordinator.ts` consumes the flag once after the next boot to toast a plain-language explanation. `sessionStorage`, not React state, is what survives that reload.
 
 **The banner is an offer, not a gate.** PIN entry remains the full default path. Forcing registration would kill the product's core property — joining a trip in seconds.
 

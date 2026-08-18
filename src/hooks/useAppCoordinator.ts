@@ -11,6 +11,7 @@ import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from '../utils/tripId'
 import { acceptsExpenses, closedTripNotice } from '../utils/tripStatus'
 import { describeWriteError, writeErrorCode } from '../utils/writeErrors'
 import { onIdle, preloadAll } from '../utils/preload'
+import { consumeUidChangedNotice } from '../utils/mergeNotice'
 import { chartsImporters } from '../components/ChartsPanel'
 import { modalImporters } from '../components/ModalManager'
 import { authImporters } from '../components/AuthFlow'
@@ -200,6 +201,20 @@ export function useAppCoordinator() {
     if (!hasAccess) return
     return onIdle(() => preloadAll(LAZY_IMPORTERS))
   }, [hasAccess])
+
+  // 🆕 إعادة التحميل التي يفرضها useAccountLink بعد دمج حساب لا تترك وقتاً
+  // لعرض توست هناك (الصفحة تُعاد فوراً) — فنقرأ العلم هنا بعد التحميل التالي.
+  // consumeUidChangedNotice تُعيد true مرة واحدة فقط ثم تحذف العلم، فتكرار هذا
+  // الأثر عند كل إعادة رسم غير ضار (المرات اللاحقة تُعيد false بصمت).
+  useEffect(() => {
+    if (!hasAccess) return
+    if (consumeUidChangedNotice()) {
+      showToast({
+        text: 'تم ربط حسابك ونُقلت رحلاتك. مصاريف سجّلتَها قبل الربط ستبقى ظاهرة، لكن لن تستطيع تعديلها أو حذفها بنفسك بعد الآن — المسؤول وحده يستطيع ذلك.',
+        type: 'success',
+      }, 8000)
+    }
+  }, [hasAccess, showToast])
 
   return {
     /** المصادقة والوصول وحالة الشبكة. */

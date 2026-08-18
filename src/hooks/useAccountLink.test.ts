@@ -12,8 +12,15 @@ const mocks = vi.hoisted(() => ({
   httpsCallable: vi.fn(),
   merge: vi.fn(),
   getIdToken: vi.fn(),
+  markUidChanged: vi.fn(),
   currentUser: null as { isAnonymous: boolean; getIdToken: () => Promise<string> } | null,
 }))
+
+// 🆕 يُعلن أن uid تغيّر (utils/mergeNotice.ts) — يُستهلَك بعد إعادة التحميل
+// التالية لتحذير المستخدم أن مصاريفه القديمة (createdByUid غير المنقول عمداً)
+// أصبحت للعرض فقط له. نتحقق هنا فقط من *متى* يُستدعى، لا من تفاصيله الداخلية
+// (لها اختباراتها الخاصة في mergeNotice.test.ts).
+vi.mock('../utils/mergeNotice', () => ({ markUidChanged: mocks.markUidChanged }))
 
 vi.mock('firebase/auth', () => ({
   linkWithPopup: mocks.linkWithPopup,
@@ -60,6 +67,8 @@ describe('useAccountLink — المسار السعيد', () => {
     expect(onLinked).toHaveBeenCalledTimes(1)
     // الربط يحتفظ بنفس الـ uid، فلا شيء يُنقل ولا تُستدعى دالة الدمج إطلاقاً
     expect(mocks.merge).not.toHaveBeenCalled()
+    // ولا حاجة لتحذير «مصاريفك القديمة أصبحت للعرض فقط» — uid لم يتغيّر أصلاً
+    expect(mocks.markUidChanged).not.toHaveBeenCalled()
     expect(result.current.linkError).toBeNull()
   })
 
@@ -95,6 +104,9 @@ describe('useAccountLink — مسار التعارض (credential-already-in-use)
     expect(mocks.signInWithCredential).toHaveBeenCalled()
     expect(mocks.merge).toHaveBeenCalledWith({ previousIdToken: 'anon-token' })
     expect(onLinked).toHaveBeenCalledTimes(1)
+    // ⚠️ uid تغيّر فعلاً هنا — العلم يُرفع بغضّ النظر عن نجاح الدمج التالي،
+    // لأن مصاريف الـ uid القديم تصبح للعرض فقط بمجرد تبديل الحساب، لا بنجاح النقل.
+    expect(mocks.markUidChanged).toHaveBeenCalledTimes(1)
   })
 
   it('يلتقط توكن الجلسة المجهولة قبل تبديل الحساب لا بعده', async () => {
@@ -110,6 +122,19 @@ describe('useAccountLink — مسار التعارض (credential-already-in-use)
     await act(async () => { await result.current.linkAccount() })
 
     expect(order).toEqual(['getIdToken', 'signIn', 'merge'])
+  })
+
+  // ⚠️ onLinked يُعيد تحميل الصفحة فوراً (السلوك الحقيقي في SaveAccountBanner)،
+  // فلا وقت لاحقاً لرفع العلم — يجب أن يُرفع *قبل* onLinked لا بعده أو معه.
+  it('markUidChanged يُستدعى قبل onLinked المُعيد للتحميل', async () => {
+    const order: string[] = []
+    mocks.markUidChanged.mockImplementation(() => { order.push('markUidChanged') })
+    const onLinked = vi.fn(() => { order.push('onLinked') })
+
+    const { result } = renderHook(() => useAccountLink(onLinked))
+    await act(async () => { await result.current.linkAccount() })
+
+    expect(order).toEqual(['markUidChanged', 'onLinked'])
   })
 
   it('فشل الدمج وحده لا يُعرض كفشل كامل — الحساب جاهز والرحلات تحتاج رمزاً', async () => {
@@ -188,6 +213,7 @@ describe('useAccountLink — linkWithEmail — المسار السعيد', () =>
     expect(outcome).toEqual({ status: 'linked' })
     expect(onLinked).toHaveBeenCalledTimes(1)
     expect(mocks.merge).not.toHaveBeenCalled()
+    expect(mocks.markUidChanged).not.toHaveBeenCalled()
   })
 
   it('لا يفعل شيئاً لمستخدم غير مجهول', async () => {
@@ -239,6 +265,7 @@ describe('useAccountLink — linkWithEmail — مسار التعارض (email-al
     expect(mocks.signInWithEmailAndPassword).toHaveBeenCalledWith(expect.anything(), 'a@b.com', 'correct1')
     expect(mocks.merge).toHaveBeenCalledWith({ previousIdToken: 'anon-token' })
     expect(onLinked).toHaveBeenCalledTimes(1)
+    expect(mocks.markUidChanged).toHaveBeenCalledTimes(1)
   })
 
   // ⚠️ الحالة السالبة الأهم هنا: كلمة مرور خاطئة يجب ألا تسجّل دخولاً ولا تدمج
@@ -255,6 +282,9 @@ describe('useAccountLink — linkWithEmail — مسار التعارض (email-al
     expect(result.current.linkError).toContain('كلمة مرور مختلفة')
     expect(mocks.merge).not.toHaveBeenCalled()
     expect(onLinked).not.toHaveBeenCalled()
+    // ⚠️ uid لم يتغيّر أصلاً (تسجيل الدخول فشل) — رفع العلم هنا كان سيحذّر
+    // المستخدم زوراً من أثر لم يقع.
+    expect(mocks.markUidChanged).not.toHaveBeenCalled()
   })
 
   it('يلتقط توكن الجلسة المجهولة قبل تسجيل الدخول لا بعده', async () => {

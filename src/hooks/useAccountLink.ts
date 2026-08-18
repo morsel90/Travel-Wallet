@@ -10,6 +10,7 @@ import {
 } from 'firebase/auth'
 import { httpsCallable } from 'firebase/functions'
 import { auth, functions } from '../firebase'
+import { markUidChanged } from '../utils/mergeNotice'
 
 // ─── ترقية الحساب المجهول إلى حساب دائم ──────────────────────────────────────
 //
@@ -152,6 +153,11 @@ export function useAccountLink(onLinked?: () => void): UseAccountLink {
           setLinkError('تعذّر إكمال تسجيل الدخول. حاول مجدداً.')
           return null
         }
+        // ⚠️ uid تغيّر هنا بالفعل بغضّ النظر عن نجاح الدمج التالي — مصاريف
+        // سُجّلت بالـ uid القديم تصبح للعرض فقط لهذا المستخدم من الآن (انظر
+        // utils/mergeNotice.ts). onLinked أدناه يُعيد تحميل الصفحة فوراً، فلا
+        // وقت لعرض توست هنا — العلم يُقرأ بعد التحميل التالي.
+        markUidChanged()
         const merged = await completeMerge(previousIdToken)
         onLinked?.()
         if ('error' in merged) {
@@ -208,6 +214,8 @@ export function useAccountLink(onLinked?: () => void): UseAccountLink {
           setLinkError('هذا البريد مسجَّل بكلمة مرور مختلفة — تحقّق منها، أو استخدم «نسيت كلمة المرور» أدناه.')
           return null
         }
+        // ⚠️ نفس ملاحظة مسار Google أعلاه — uid تغيّر فعلياً هنا.
+        markUidChanged()
         const merged = await completeMerge(previousIdToken)
         onLinked?.()
         if ('error' in merged) {
