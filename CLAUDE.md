@@ -22,6 +22,14 @@ No `firestore.rules` or `functions/index.js` change ships without deploying both
 
 **Adding that toast surfaced a real, pre-existing layout bug in `Toast.tsx` — verified visually via Storybook, not assumed.** Every non-error toast centers itself with `left-1/2 -translate-x-1/2` *and* animates with Tailwind's `animate-bounce` on the same element — but both write the CSS `transform` property, and an animation's keyframes replace the element's transform outright rather than composing with it. The centering translate was silently discarded; only the bounce's `translateY` survived. Invisible for short messages (a narrow box mis-centered by a few pixels goes unnoticed), but the new merge-notice toast is long enough that the bug became a box pinned to the exact horizontal midpoint and growing rightward only — confirmed with `getBoundingClientRect()` at a 375px viewport in a new `تحذير_دمج_الحساب` Storybook story (`Feedback.stories.tsx`): `left: 187.5, right: 375`, not the centered `left: 187.5 - width/2` it should have been. Fixed by moving the centering to a full-width `pointer-events-none` wrapper and keeping the bounce/color on an inner `pointer-events-auto` box — the standard fix for "static transform + animated transform on the same element." Re-verified all three toast variants (short, long, error-with-retry) render correctly afterward.
 
+**`scripts/audit-legacy-docs.mjs` was re-run against production, one week after the 2026-08-11 baseline — the exact "run it again" step its own output tells you to take.** Three of the four guards read zero on both runs: trips without `status` (closed since `manageTrip` started writing it), trips without `bankDetails`, and expenses with string participants. `createdByUid` stayed at 2/114, unchanged — still needed, untouched.
+
+**Re-running the audit surfaced a real gap the 2026-08-11 "closed population" claim had missed: `scripts/create-trip.mjs` never wrote `status` at all.** `manageTrip` and `restoreTrip` both write it on every trip they create — that's the entire mechanism the "closed population" claim rests on — but `create-trip.mjs` is a third, still-documented creation path (the functions-not-deployed fallback, and the one used to seed a staging project) that silently produced status-less trips forever. The guard's population wasn't actually closed; one path just hadn't been caught yet. Fixed by writing `status: 'active'` from that script too, but only when the trip is new or the field is genuinely absent — never unconditionally, since this script runs again on every future edit (bank details, itinerary) and stamping `active` on every run would silently reactivate a trip an admin had deliberately marked `completed` or `archived`.
+
+**The string-participants fallback was removed outright — the one guard where "closed" really did mean "delete the code."** `Expense.participants` is now `number[]`, not `Array<number | string>`; `utils/participants.ts`'s three helpers dropped their string branch; the `expenseLegacyParticipants` fixture and the `calculations.test.ts` case built specifically to test id/name mixing are gone, since that state is now a type error, not just an empty count. Five other tests in that file that happened to use traveler shortNames as a shorthand for ids were converted to real ids. 445 tests pass (was 446 — net one test removed, not skipped: the deleted case tested exactly the behavior that no longer exists).
+
+**The `status` and `bankDetails` optionality in `firestore.rules` — and the matching defaults in `utils/tripStatus.ts` and `useTripConfig.ts` — were deliberately left in place, despite both guards reading zero.** This is not the same kind of "closed" as `createdByUid` or the participants type. The rules-side default is enforced only against *client* writes; `manageTrip`, `restoreTrip`, and (now) `create-trip.mjs` all write through the Admin SDK, which bypasses `firestore.rules` entirely — so tightening the rule buys no protection against exactly the scripts most likely to regress this, while a future script that *does* forget the field would go from "silently defaults to active" to "every write to that trip's data starts failing with an opaque permission error," which is the failure mode this project has repeatedly identified and fixed elsewhere (see *Diagnosing a failing Cloud Function call*). The cost of keeping the default is one `,'active'` argument; the benefit of removing it is that a hand-seeded or malformed doc fails loudly instead of gracefully. That trade doesn't clear the bar with no staging environment to verify the rules change against — see guideline 22 and 23's spirit applied to a rules change rather than a running bug. Revisit only once `.firebaserc`'s `staging` project is real and every trip-creation path (including any future one) is audited the same way `create-trip.mjs` just was.
+
 ---
 
 ## آخر تحديث سابق: 2026-08-17
@@ -1069,26 +1077,28 @@ Three places accept documents written before a field existed. The question that 
 | Fallback | Guard lives in | Can the population still grow? |
 |---|---|---|
 | `createdByUid` absent | `preservesCreator` in `firestore.rules` | **No** — `isOwnCreation` requires the field on every create |
-| `participants` holding strings | `utils/participants.ts`, `Array<number \| string>` in `types.ts` | **No** — the client writes numeric ids only (`toIds`) |
-| `status` absent | `firestore.rules`, `utils/tripStatus.ts` | **No, since 2026-08-11** — `manageTrip` now writes it; before that, every new trip lacked it |
+| `participants` holding strings | ~~`utils/participants.ts`~~ | **N/A — removed 2026-08-18.** `Expense.participants` is `number[]`; the string branch is deleted, not just unreached |
+| `status` absent | `firestore.rules`, `utils/tripStatus.ts` | **No, since 2026-08-18** — all three trip-creation paths (`manageTrip`, `restoreTrip`, `create-trip.mjs`) now write it. See below for why the fallback *code* stays anyway |
 | `bankDetails` absent | `useTripConfig.ts` → `BANK_DETAILS` | **No** — `create` writes empty strings, and `??` does not fire on `''` |
 
 All four are now closed. Their share of the data therefore falls toward zero as new records accumulate — the opposite of the usual "legacy debt compounds" trajectory.
 
+**"Closed population" and "safe to delete the guard" are not the same claim, and 2026-08-18 is what forced the distinction.** `participants` is the only one where closing the population meant deleting the code — nothing writes strings, nothing ever will, the type system now enforces it. `status` and `bankDetails` are closed the same way *statistically*, but their guards live partly in `firestore.rules`, which only governs *client* writes — `manageTrip`/`restoreTrip`/`create-trip.mjs` all write through the Admin SDK and bypass rules entirely, so "the rule requires it" and "every writer actually sends it" are two independent facts, and only re-auditing every writer (not just the live database) proves the second one. `create-trip.mjs` was the counterexample: it silently never wrote `status` until this date, so the population being closed in *production data* was accidental, not guaranteed. Removing the rules-side default now would trade a graceful "defaults to active" for an opaque permission error the moment any future script repeats that same mistake — a worse failure for a smaller win. Kept deliberately; see the 2026-08-18 changelog entry above for the full reasoning.
+
 **Why no `schemaVersion` field.** The real debt was never the guards; it was having **no way to prove a guard is no longer needed**, so it stays forever out of uncertainty rather than necessity. `schemaVersion` solves that by taxing every write and every rule forever. `scripts/audit-legacy-docs.mjs` answers the same question — for each guard, how many documents still need it — at zero cost on the write path, because the question is asked once every few months, not on every read.
 
-⚠️ **Before deleting a guard whose counter reads zero:** an offline write can arrive days later (`persistentLocalCache`), and any device on an old bundle still writes the old shape. Run the audit on **every** environment, wait, run it again, then delete.
+⚠️ **Before deleting a guard whose counter reads zero:** an offline write can arrive days later (`persistentLocalCache`), and any device on an old bundle still writes the old shape. Run the audit on **every** environment, wait, run it again, then delete. **And, per 2026-08-18: audit every *writer*, not just the live database** — a script that never got the memo can keep a population's count at zero for the wrong reason.
 
-**Measured baseline — production, 2026-08-11** (1 trip, 114 expenses):
+**Measured — production, 2026-08-11 → 2026-08-18** (1 trip, 114 expenses both times):
 
-| Guard | Documents still needing it |
-|---|---|
-| `createdByUid` absent | **2 of 114 expenses (1.75%)** |
-| `participants` holding strings | 0 |
-| `bankDetails` absent | 0 — so the personal fallback in `constants.ts` is currently reachable by nobody |
-| `status` absent | 1 of 1 trip — the original trip, which predates the field |
+| Guard | 2026-08-11 | 2026-08-18 |
+|---|---|---|
+| `createdByUid` absent | **2 of 114 expenses (1.75%)** | **2 of 114 — unchanged, still needed** |
+| `participants` holding strings | 0 | 0 (guard removed) |
+| `bankDetails` absent | 0 | 0 |
+| `status` absent | 1 of 1 trip — the original trip, which predates the field | 0 |
 
-This is the number to compare future runs against. The point is not that 1.75% is small; it is that **the count of 2 cannot grow while the denominator does**, so the guard's relevance decays on its own. That is what "closed population" buys, and it is why no migration was run: rewriting live documents with no database backup (see `RECOVERY.md` §4) costs more than the branch it would let us delete.
+The point of the `createdByUid` row is not that 1.75% is small; it is that **the count of 2 cannot grow while the denominator does**, so the guard's relevance decays on its own. That is what "closed population" buys, and it is why no migration was run: rewriting live documents with no database backup (see `RECOVERY.md` §4) costs more than the branch it would let us delete.
 
 ### 🆕 Account linking preserves the `uid`, which is why it costs almost nothing
 

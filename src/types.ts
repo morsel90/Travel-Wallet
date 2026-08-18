@@ -25,9 +25,7 @@ export interface Expense {
   originalAmount: number
   currency: string      // رمز العملة (SAR | USD | ...)
   exchangeRate: number
-  // معرّفات المسافرين المشاركين (Traveler.id). النصوص مسموحة مؤقتاً للتوافق مع
-  // البيانات القديمة (أسماء مختصرة) قبل تشغيل سكربت الهجرة — انظر scripts/.
-  participants: Array<number | string>
+  participants: number[]   // معرّفات المسافرين المشاركين (Traveler.id)
   createdAt: number     // Unix timestamp (ms)
   // 🆕 uid الجلسة/الجهاز اللي أضاف المصروف أصلاً (مسجّل الدخول المجهول أو المسؤول).
   // يُستخدم للسماح لصاحب المصروف بتعديله أو حذفه بنفسه لاحقاً دون انتظار المسؤول.

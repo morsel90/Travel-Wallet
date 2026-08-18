@@ -40,7 +40,7 @@ export function splitEven(total: number, n: number): number[] {
  * يستخدم خوارزمية "أكبر كسر متبقٍ" لتوزيع الهللات المتبقية لضمان تطابق المجموع.
  * 
  * @param {number} total - إجمالي المبلغ.
- * @param {Array<number | string>} participantIds - معرفات أو أسماء المشاركين.
+ * @param {Array<number | string>} participantIds - معرفات المشاركين (نوع عام، غير مربوط بـ Expense.participants).
  * @param {Record<string, number> | undefined} shares - كائن يمثل حصة كل مشارك (اختياري).
  * @returns {number[]} مصفوفة تمثل القيمة المالية المطلوبة من كل مشارك.
  */

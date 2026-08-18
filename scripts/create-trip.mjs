@@ -124,10 +124,20 @@ async function main() {
     name,
     bankDetails: { bankName, beneficiary, iban },
   }
-  
+
   // إذا تم إدخال مسار رحلة، أضفه للمستند
   if (itinerary.length > 0) {
     tripData.itinerary = itinerary
+  }
+
+  // 🆕 status: 'active' فقط إن كانت الرحلة جديدة أو تفتقد الحقل أصلاً — لا نكتبه
+  // فوق رحلة completed/archived موجودة، وإلا أعاد كل تشغيل لهذا السكربت (لتعديل
+  // تفاصيل البنك مثلاً) تفعيل رحلة أُغلقت عمداً. بدون هذا، هذا المسار كان
+  // الثغرة الوحيدة المتبقية في إغلاق مجموعة «رحلات بلا status» — manageTrip
+  // وrestoreTrip يكتبانه دائماً، وهذا السكربت وحده كان يتجاهله. انظر
+  // scripts/audit-legacy-docs.mjs وCLAUDE.md («Legacy-data fallbacks»).
+  if (!existing.exists || !('status' in existing.data())) {
+    tripData.status = 'active'
   }
 
   const salt = randomBytes(16).toString('hex')

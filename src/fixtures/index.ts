@@ -128,24 +128,9 @@ export const expenseNoCategory: Expense = {
   deletedAt: null,
 }
 
-export const expenseLegacyParticipants: Expense = {
-  // مشاركون بأسماء مختصرة بدل المعرّفات — الصيغة القديمة قبل الترحيل
-  id: 'exp-6',
-  date: '2026-07-26',
-  description: 'مواقف سيارات',
-  amount: 60,
-  originalAmount: 60,
-  currency: 'SAR',
-  exchangeRate: 1,
-  participants: ['أحمد', 'سعد'],
-  createdAt: T0 + 5 * day,
-  category: 'مواصلات',
-  deletedAt: null,
-}
-
 export const expenses: Expense[] = [
   expenseSimple, expenseForeignCurrency, expenseUnevenSplit,
-  expensePending, expenseNoCategory, expenseLegacyParticipants,
+  expensePending, expenseNoCategory,
 ]
 
 // ─── مخرجات محسوبة — مشتقّة لا مكتوبة يدوياً ─────────────────────────────────
