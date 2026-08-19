@@ -1,0 +1,357 @@
+# سجل القرارات المعمارية — Travel Wallet
+
+<div dir="rtl" style="text-align: right">
+
+قرارات تبدو كأخطاء لكنها ليست كذلك. راجع هذا الملف قبل «إصلاح» أي منها. للسياق العام راجع [CLAUDE.md](../CLAUDE.md)؛ لتاريخ التغييرات راجع [CHANGELOG.md](../CHANGELOG.md).
+
+## Design Decisions
+
+Decisions that look like oversights but are not. Read this before "fixing" them.
+
+### Optimistic updates roll back automatically — do not build a retry queue
+
+`firebase.ts` enables `persistentLocalCache`, and that is the rollback mechanism. On every write the Firestore SDK:
+
+1. applies the mutation to the local cache immediately, so `onSnapshot` fires at once with `metadata.hasPendingWrites === true` (this is what surfaces as `_pending`)
+2. persists the pending write to **IndexedDB**, so it survives closing the app
+3. retries it automatically when connectivity returns
+4. **reverts the local mutation if the server ultimately rejects it**, then emits a corrected snapshot — the row disappears on its own
+
+So a queue in IndexedDB would sit on top of the SDK's own IndexedDB queue, and two things retrying the same write means duplicate expenses. Don't.
+
+**The consequence that actually matters:** a write's promise does **not** reject when offline — it stays pending until the server answers. So reaching `.catch()` means the server *refused* the write (rules, a claimed shortName, the expense rate limit), not that the network dropped. The old message said "يبدو أنك غير متصل بالإنترنت" for every failure, which sent people to check their wifi while the real cause was elsewhere, and offered a retry button that was guaranteed to fail identically.
+
+`utils/writeErrors.ts` now maps the Firestore error code to the real cause, states that the change was reverted (because the user is about to watch it vanish), and marks whether a retry is worth offering. Retry is shown only for transient codes — `unavailable`, `deadline-exceeded`, `aborted`, `internal`, `cancelled`.
+
+Match on `error.code`, never on message text: the text varies between SDK versions.
+
+**What is genuinely missing:** undo exists for deleting an expense or a traveler, but not for create or edit. Undoing an edit needs the previous version kept somewhere to restore.
+
+### 🆕 The submit lock is released when the write is *issued*, not when it is confirmed
+
+`useExpenseActions` guards against double submission with `isSubmittingExpenseRef`. It used to be cleared inside `.finally()` on the write promise — which is wrong for exactly the reason documented directly above: **an offline write's promise never settles.** So while offline the lock stayed closed forever, and every expense after the first was rejected at `if (isSubmittingExpenseRef.current) return` in **complete silence** — the form didn't close, no error appeared, nothing happened.
+
+A user on a plane could log one expense, then find the form dead with no explanation. Found by `e2e/offline-optimistic-write.spec.ts`; pinned by two regression tests that simulate a never-settling promise.
+
+Releasing it synchronously is safe: the form closes and clears its fields in the same handler, so there is no button left to double-click.
+
+**The lesson worth keeping:** the codebase documented "offline writes never reject" accurately in one place and then contradicted it in another. When you rely on that fact, grep for the other places that also rely on it.
+
+### 🆕 Never call `signInAnonymously` unconditionally on load
+
+`useAuth` used to call it at the top of its effect on every mount. Firebase returns the current user if they are *already anonymous*, but creates a **new anonymous session that replaces them** if they are signed in with email/password. Result: every page reload evicted the admin.
+
+It stayed invisible until trip switching shipped, because switching trips is a full page load (`TRIP_ID` is read once at module load) and that was the first thing to reload the page routinely.
+
+Now the anonymous session is created only after `onAuthStateChanged` reports *no* user — i.e. after Firebase has finished restoring any persisted session. A ref guards against two concurrent calls, since each could mint a **different** anonymous uid and the second would silently lose the trip memberships stored in the first one's claims. For the same reason `useAdminAuth.handleAdminSignOut` no longer calls it either: session creation has exactly one owner.
+
+### 🆕 The UI context is split by volatility, and that split is load-bearing
+
+Any component consuming a context re-renders when the context **value** changes — not when the slice it reads changes — and `memo()` does not help, because context consumption bypasses it.
+
+`expenseForm` used to live in the same context value as the action handlers. So **every keystroke** in the expense form re-rendered every visible expense row and traveler card, even though all those components read from it were two stable callbacks. `src/context/UIContext.ts` now separates:
+
+- `UIActionsContext` — functions only; identity changes only when the active traveler list does (rare)
+- `UIFormContext` — the volatile form state and the handlers bound to it, consumed only by `ExpenseForm` (a single instance that *should* re-render per keystroke)
+
+⚠️ **When adding a field, place it by how often it changes, not by what it relates to.** One changing value in the actions context silently restores the old behaviour with no visible symptom.
+
+While splitting, six fields were deleted outright (`newTravelerName` and friends, `openExpenseForm`, `isAddingTraveler`, `startAddTraveler`, `submitTraveler`): no component ever read them through context — they are passed as props from `App.tsx` — so they were pure churn.
+
+**This is also why Zustand was not adopted.** Its selling point here would be selective subscription, which the split already provides. The hooks are independent of context already (they take data as parameters), so a state-library migration would rewrite plumbing for a benefit near zero.
+
+### 🆕 `createdByUid` is enforced at creation and immutable afterwards
+
+The rules used to check expense ownership only on **update**. Creation accepted whatever `createdByUid` the client sent, so a member could record an expense attributed to someone else — handing that person the right to edit it, removing their own, and corrupting the only record of who entered it. For a tool whose output is "who owes whom", that record is the thing people fall back on when a settlement is questioned.
+
+Three rules now hold, with no exception for admins:
+
+1. **Creation must be self-attributed** — `isOwnCreation` requires the field to be present *and* equal to `request.auth.uid`. Requiring presence is what makes every new expense attributable; the client already sent it on both the form and quick-add paths, so nothing had to change there.
+2. **`createdByUid` never changes** — `preservesCreator` applies to the admin path too. It used to be checked only inside the owner branch, so an admin could rewrite it. A field that records "who created this" and accepts later edits records nothing.
+3. **Legacy expenses stay editable** — expenses written before the field existed have no owner. The client sends `editingExpense?.createdByUid ?? user?.uid`, which stamps the *editor* on such a document. Rejecting that would have broken admin edits of every old expense, so `preservesCreator` permits stamping an unowned document — but only with the caller's own uid, and never overwriting an owner that already exists.
+
+**Why not exempt admins from rule 1:** if "record on behalf of someone else" is ever wanted, the honest shape is a separate field (`paidBy`) rather than lying in the field that documents the writer. Same reasoning that keeps `changedByUid` bound to `request.auth.uid` in deposit logs.
+
+**If you ever want an audit trail of edits**, add `updatedByUid` as a new field rather than loosening `createdByUid` — creator and last-editor are different facts and conflating them loses both.
+
+### 🆕 Trip lifecycle is enforced in the rules, and absence means `active`
+
+`trips/{tripId}.status` is `active` | `completed` | `archived`, checked by `tripAcceptsExpenses` / `tripAcceptsWrites` in `firestore.rules`. `utils/tripStatus.ts` mirrors the same logic for the UI **and protects nothing** — it exists so a closed trip explains itself instead of presenting buttons the server will reject.
+
+Two decisions worth keeping:
+
+**`completed` still allows traveler and deposit writes.** Only expenses are blocked. If it blocked everything it would be indistinguishable from `archived` except for list visibility, and the state would not earn its place. The real-world need it serves is settling up after the spending stops.
+
+**A missing `status` is `active` — in the rules and in the client.** This is not leniency, it is the migration strategy: every pre-existing trip lacks the field, and any stricter reading would have frozen all of them the moment the rules were deployed. The same principle already governs `createdByUid` on legacy expenses.
+
+🆕 **But that was only half true until 2026-08-11.** `manageTrip`'s `create` wrote `name`, `bankDetails` and `itinerary` and **no `status`** — so every *newly created* trip lacked the field too. The fallback was therefore not accommodating legacy data, it was the permanent behaviour for all data, and the legacy population could never close. `create` now writes `status: 'active'` explicitly. Nothing changes at runtime; what changes is that the count of trips without the field is now **fixed and can only shrink**, exactly as `isOwnCreation` did for `createdByUid`. See `scripts/audit-legacy-docs.mjs`.
+
+⚠️ When changing the meaning of a state, change `firestore.rules` and `utils/tripStatus.ts` **together**. If they disagree the UI either promises something the server refuses, or hides something it would have allowed — and both look like random breakage. `src/utils/tripStatus.test.ts` pins the shared semantics.
+
+### 🆕 Lazy chunks are preloaded once the app is idle
+
+`React.lazy` chunks are fetched on first need. If that moment arrives while offline, the dynamic import fails, throws during render, and the whole tree falls to `ErrorBoundary`. The sharpest case: `ChartsSection` is only requested when `activeExpenses.length > 0`, so **logging the very first expense of a trip while offline crashed the entire app**.
+
+`utils/preload.ts` fetches them quietly on `requestIdleCallback` (with a `setTimeout` fallback for older Safari) once the user has access. Failure is swallowed on purpose — this is opportunistic; if it fails, behaviour is exactly what it was before.
+
+In production the service worker precaches all chunks and covers this, but a real window remains: a first visit that loses connectivity before the SW finishes activating.
+
+### 🆕 `NaN` is blocked in two layers, and a non-finite value is treated as zero rather than thrown
+
+Financial invariant tests found a live path that put `NaN` into every displayed number. `handleAddExpense` checked that the amount *string* was non-empty, not that it was a valid number, and never checked `exchangeRate` at all. So clearing the exchange-rate field — or typing a lone `.` in the amount, which survives sanitising because `ExpenseSection` only strips non-`[0-9.]` and `'.'` is a truthy string — produced `parseFloat(…) === NaN`.
+
+The damage was not an error message but silent corruption: the optimistic write put `NaN` in the local cache immediately, so **every balance and settlement became `NaN`**, then `firestore.rules` rejected the write (`amount >= 0` is false for `NaN`) and the user got a permissions message unrelated to the cause. **Offline it was not rejected at all** — the write sat pending in IndexedDB and the numbers stayed `NaN` until connectivity returned.
+
+Both layers are needed and neither is redundant:
+
+1. **Input boundary** (`useExpenseActions.handleAddExpense`) — `Number.isFinite` on the amount and the rate, before the submit lock closes, so a rejected value leaves the form open and re-submittable. This stops `NaN` from ever being written.
+2. **Pure functions** (`splitEven`, `splitByShares`, `calculateTotalSpent`, `calculateTotalDeposited`) — a non-finite input is treated as `0`. This protects against documents already corrupt in Firestore, which the boundary guard cannot reach.
+
+**Why zero and not a thrown error:** the pure functions run on every expense on every render. Throwing takes the whole tree down to `ErrorBoundary` because of one bad document — the same failure mode as the offline lazy-chunk crash. Returning zeros also preserves array length, which `calculateBalances` depends on when it pairs `shares[i]` with `participants[i]`.
+
+Two subtleties in the weight guard that are easy to reintroduce:
+
+- The old test was `typeof w === 'number' && w > 0`, which **accepts `Infinity`** — it is a number and it is greater than zero. `totalWeight` then became `Infinity` and `(totalHalalas × Infinity) / Infinity` is `NaN`. It must be `Number.isFinite(w)`. (`NaN` was excluded only by accident, because every comparison against `NaN` is false.)
+- The overflow check belongs on **`totalWeight`, not on each weight**: two weights of `1e308` are each perfectly finite and their sum is not.
+
+**The lesson worth keeping:** `handleQuickAddExpense` had guarded with `!Number.isFinite(amount)` since the beginning while `handleAddExpense` did not — the same file contradicted itself. When one of two paths through the same operation has a guard, go look at the other path.
+
+### 🆕 `App.tsx` was split by *kind of work*, and the characterization test came first
+
+639 lines became 260. The split is not by topic but by what the code *is*:
+
+| Kind of work | Where it lives now |
+|---|---|
+| Hook wiring + derived values | `hooks/useAppCoordinator.ts` |
+| The three context values | `components/AppProviders.tsx` |
+| Layout | `components/{Travelers,Charts,Expenses}Panel.tsx`, `StatusBanners`, `AppErrorFallback` |
+| Routing + composition | `App.tsx` — all that remains |
+
+**The test was written first, against the 639-line version, and never edited afterwards.** That ordering is the whole safety argument: a characterization test proven green on the old code distinguishes "my test is wrong" from "the refactor broke something". Written after the fact it proves only that the new code matches itself. `src/App.test.tsx` still passes unmodified — that, not the line count, is what says behaviour was preserved.
+
+Three decisions worth keeping:
+
+**Routing stayed in `App.tsx`.** Extracting an `<AppGate>` was considered and rejected: `App` without the routing decision is a wrapper with no responsibility, and "which screen shows" is exactly what a root file should say. What *did* move is the visibility computation (`picker.isVisible`), which is logic.
+
+**The preload `useEffect` moved into the coordinator.** It must run before any conditional `return` (Rules of Hooks); in `App.tsx` that was guarded by a warning comment, in the coordinator it is guaranteed by structure.
+
+**`LAZY_IMPORTERS` is assembled from per-owner exports.** `chartsImporters` now sits beside its `lazy()` in `ChartsPanel.tsx`, matching `modalImporters` and `authImporters`. Adding a lazy chunk means exporting its importer from its own file — `App.tsx` no longer needs to know any of them exist.
+
+⚠️ **One real cost of the pattern:** grouping the return into objects loses TypeScript narrowing. `expense.expenseToDelete !== null` does not narrow `expense.expenseToDelete` across a JSX boundary, so it needs a local binding (`const { expenseToDelete } = expense`). Prefer that over `!` — the assertion would survive a later change that makes the value genuinely nullable.
+
+### 🆕 Legacy-data fallbacks: closed populations, and why there is no `schemaVersion`
+
+Three places accept documents written before a field existed. The question that matters is not whether they should exist, but **whether their population can still grow** — because a fallback whose population is frozen shrinks into irrelevance on its own, while one that keeps growing is permanent behaviour wearing a migration costume.
+
+| Fallback | Guard lives in | Can the population still grow? |
+|---|---|---|
+| `createdByUid` absent | `preservesCreator` in `firestore.rules` | **No** — `isOwnCreation` requires the field on every create |
+| `participants` holding strings | ~~`utils/participants.ts`~~ | **N/A — removed 2026-08-18.** `Expense.participants` is `number[]`; the string branch is deleted, not just unreached |
+| `status` absent | `firestore.rules`, `utils/tripStatus.ts` | **No, since 2026-08-18** — all three trip-creation paths (`manageTrip`, `restoreTrip`, `create-trip.mjs`) now write it. See below for why the fallback *code* stays anyway |
+| `bankDetails` absent | `useTripConfig.ts` → `BANK_DETAILS` | **No** — `create` writes empty strings, and `??` does not fire on `''` |
+
+All four are now closed. Their share of the data therefore falls toward zero as new records accumulate — the opposite of the usual "legacy debt compounds" trajectory.
+
+**"Closed population" and "safe to delete the guard" are not the same claim, and 2026-08-18 is what forced the distinction.** `participants` is the only one where closing the population meant deleting the code — nothing writes strings, nothing ever will, the type system now enforces it. `status` and `bankDetails` are closed the same way *statistically*, but their guards live partly in `firestore.rules`, which only governs *client* writes — `manageTrip`/`restoreTrip`/`create-trip.mjs` all write through the Admin SDK and bypass rules entirely, so "the rule requires it" and "every writer actually sends it" are two independent facts, and only re-auditing every writer (not just the live database) proves the second one. `create-trip.mjs` was the counterexample: it silently never wrote `status` until this date, so the population being closed in *production data* was accidental, not guaranteed. Removing the rules-side default now would trade a graceful "defaults to active" for an opaque permission error the moment any future script repeats that same mistake — a worse failure for a smaller win. Kept deliberately; see the 2026-08-18 changelog entry above for the full reasoning.
+
+**Why no `schemaVersion` field.** The real debt was never the guards; it was having **no way to prove a guard is no longer needed**, so it stays forever out of uncertainty rather than necessity. `schemaVersion` solves that by taxing every write and every rule forever. `scripts/audit-legacy-docs.mjs` answers the same question — for each guard, how many documents still need it — at zero cost on the write path, because the question is asked once every few months, not on every read.
+
+⚠️ **Before deleting a guard whose counter reads zero:** an offline write can arrive days later (`persistentLocalCache`), and any device on an old bundle still writes the old shape. Run the audit on **every** environment, wait, run it again, then delete. **And, per 2026-08-18: audit every *writer*, not just the live database** — a script that never got the memo can keep a population's count at zero for the wrong reason.
+
+**Measured — production, 2026-08-11 → 2026-08-18** (1 trip, 114 expenses both times):
+
+| Guard | 2026-08-11 | 2026-08-18 |
+|---|---|---|
+| `createdByUid` absent | **2 of 114 expenses (1.75%)** | **2 of 114 — unchanged, still needed** |
+| `participants` holding strings | 0 | 0 (guard removed) |
+| `bankDetails` absent | 0 | 0 |
+| `status` absent | 1 of 1 trip — the original trip, which predates the field | 0 |
+
+The point of the `createdByUid` row is not that 1.75% is small; it is that **the count of 2 cannot grow while the denominator does**, so the guard's relevance decays on its own. That is what "closed population" buys, and it is why no migration was run: rewriting live documents with no database backup (see `RECOVERY.md` §4) costs more than the branch it would let us delete.
+
+### 🆕 Account linking preserves the `uid`, which is why it costs almost nothing
+
+An anonymous `uid` is the **only** key to trip membership: `verifyTripPin` writes it into the custom claims and `isMember()` reads it from the token. Clearing browser data therefore loses every trip — and PINs are stored hashed and never shown again, so a member who does not remember the PIN loses access permanently.
+
+`linkWithPopup` keeps the same `uid`. So `createdByUid` on every expense stays correct, the `trips` claim survives untouched, and **`firestore.rules` does not change by a single character**. That last point is the design-health signal: a feature that touches identity without touching the rules is a feature added at the edge.
+
+**Google first, not Email/Password-only** — even though Email/Password is already enabled for admin sign-in. Google is one button; email drags in a registration form and a reset flow, several times the UI for the same result *for someone who already has a Google account*. 🆕 **That qualifier turned out to matter: Email/Password shipped 2026-08-17 as a second option, not a replacement.** Someone with no Google account (or who avoids OAuth) had zero safety net under the Google-only design — exactly the user most exposed to losing access. See *Email/Password as a second linking path* below.
+
+**⚠️ The conflict path is the part that gets skipped.** If the chosen Google account already has a session (exactly the second-device case), `linkWithPopup` fails with `auth/credential-already-in-use`, the client signs in to the existing account — and **the `uid` changes**, orphaning the anonymous session's memberships. `mergeAnonymousTrips` recovers them.
+
+The proof of ownership needs no new mechanism: the anonymous session's **ID token is itself the proof** — signed by Firebase, unforgeable, and `verifyIdToken` checks signature and expiry together. The client captures it *before* the switch and holds it in a local variable for seconds. ⚠️ Never persist it: storing it turns a short-lived proof into a stealable secret for no gain.
+
+Two things the merge deliberately does not do:
+
+1. **It does not move `createdByUid`.** The user cannot edit expenses recorded under the old session (an admin can). The alternative is rewriting live financial documents with no database backup — see `RECOVERY.md` §4.
+2. **It does not delete the old anonymous account.** Keeping it preserves the ability to diagnose a bad merge, and anonymous accounts cost effectively nothing.
+
+🆕 **That first point silently produced a UX gap until 2026-08-18: nothing ever told the user it happened.** `ExpenseListItem`'s ownership check (`src/components/ExpenseSection.tsx`) just hides the edit/delete controls for a non-owned row — no error, no explanation, indistinguishable from never having had permission. `src/utils/mergeNotice.ts` closes it: `markUidChanged()` fires the instant sign-in succeeds in the conflict path (before the immediate `window.location.reload()` in `onLinked` would otherwise erase the chance to show anything), and `useAppCoordinator.ts` consumes the flag once after the next boot to toast a plain-language explanation. `sessionStorage`, not React state, is what survives that reload.
+
+**The banner is an offer, not a gate.** PIN entry remains the full default path. Forcing registration would kill the product's core property — joining a trip in seconds.
+
+⚠️ **It renders on the main screen *and* in `TripPicker`, and that is not duplication.** It was placed in `TripPicker` alone at first — and `TripPicker` only appears automatically when the app is opened with no `?trip=`, while the header's "my trips" button requires more than one trip. So a member who opens a trip link and belongs to one trip — most members — never saw it. The offer was gated behind a condition that excluded the people it was built for, which is guideline 17 violated inside the feature that documents it. `App.test.tsx` now pins that it reaches the main screen.
+
+### 🆕 Email/Password as a second linking path — same merge machinery, zero function changes
+
+`docs/PLAN-account-linking.md` Stage 3. The gap: a user with no Google account had no linking option at all under the Google-only design, and that user is exactly the one anonymous auth exposes most — no saved email, no saved PIN outside the browser, so clearing browser data is a total, unrecoverable loss. `useAccountLink.ts` gained `linkWithEmail(email, password)` and `resetPassword(email)` alongside the existing `linkAccount`; `LinkWithEmailForm.tsx` is a collapsed-by-default secondary option in `SaveAccountBanner`, Google still shown first and still the one-click path for anyone who has it.
+
+**`mergeAnonymousTrips` did not change by one character.** It was already provider-agnostic — it only checks that the `uid` changed, never which provider changed it — which is exactly the "feature added at the edge" signal from the section above, now proven a second time by a second provider needing zero server changes.
+
+⚠️ **The conflict path *is* the recovery path here, and there's no separate "sign in" screen.** For Google, "you already have an account" is discovered implicitly — the popup itself knows if the browser has a Google session. Email/Password has no such side channel; the only way the server learns "this email is taken" is `linkWithCredential` throwing `auth/email-already-in-use`. So the exact same "save my account" form serves two purposes with no UI distinction at all: typing a fresh email+password links a new account (same `uid`, nothing moves); typing an email+password that's *already* saved — from any new anonymous session, i.e. after losing the old one — throws that error, and the hook responds by attempting `signInWithEmailAndPassword` with the same values the user just typed. Success proves ownership and triggers the identical `mergeAnonymousTrips` merge Google's conflict path uses; failure means either a typo or someone else's email, and the hook does **not** guess between those — it just says the password doesn't match and stops, no sign-in attempted, nothing merged.
+
+**`completeMerge` was extracted as a shared helper** during this change — both providers' conflict paths now call the same function instead of duplicating the "call `mergeAnonymousTrips`, translate `resource-exhausted` specially, treat other merge failures as a completed-link-with-a-warning" logic inline. Google's existing conflict-path tests kept passing unmodified after the extraction, which is what confirmed the refactor was behavior-preserving.
+
+**`resetPassword` exists for a reason Google structurally doesn't need:** Google recovers its own accounts entirely outside this app. An Email/Password account created by *this* app is this app's problem alone — without `sendPasswordResetEmail`, a user who forgets their password would have a feature indistinguishable from not having one. It needs no Cloud Function and no rule changes; Firebase sends the email and hosts the reset page itself. It's reachable from the same form with only an email typed in, deliberately not gated behind a failed link attempt first — a user who has fully forgotten their password should not have to fail at typing it before being offered a way out.
+
+⚠️ **A wrong password for an already-linked email must not sign in and must not merge — verified as the actual negative case, not assumed** (guideline 18): a dedicated test asserts `mergeAnonymousTrips` is never called and `onLinked` is never invoked when `signInWithEmailAndPassword` rejects, distinct from the happy-path merge test.
+
+**Manually click-tested by the owner, 2026-08-17** — linking with a real email/password succeeded cleanly, confirming the automated coverage above matches real behaviour rather than only mocked expectations.
+
+### `useExpenses` listens to the whole collection on purpose — do not paginate it
+
+`useExpenses.ts` opens an `onSnapshot` on the entire expenses collection rather than loading pages. Paginating it (cursor + Virtuoso `endReached`) looks like an obvious win and is not:
+
+1. **Expenses are not a display list, they are the input to every financial number.** `activeExpenses` feeds `useBalances`, `calculateSettlements`, `calculateCategoryTotals`, `calculateSpendingTrend`, `exportTripToExcel`, every traveler's account statement, and the trash bin. Compute those from a partial set and the app shows wrong balances *with no error* — the worst possible failure for an expense-splitting tool, because nobody notices until a settlement is disputed.
+
+2. **Search would silently narrow.** `useFilteredExpenses` matches substrings in the description and participant names. Firestore has no substring query, so search must stay client-side over the full array. With pages loaded on demand, searching an old expense returns "no results" for a record that exists.
+
+3. **The collection does not grow without bound.** The path is `artifacts/{tripId}/public/data/expenses` — per trip. A new trip is a new path, so the size is bounded by one trip's duration, not by the app's lifetime. A heavy trip of 500 expenses is roughly 150 KB, fetched once per device; after that `onSnapshot` plus `persistentLocalCache` syncs only deltas.
+
+**When to revisit:** if a single trip approaches ~2000 expenses, or first paint on a real device becomes visibly slow. The fix then is *not* pagination first — it is a summary document (balances and totals) maintained by a Cloud Function on expense writes. Once the math no longer needs every document, paginating the list becomes safe. In that order.
+
+Rendering is already virtualized by React Virtuoso, so a long list costs memory and network, not DOM.
+
+### 🆕 Every change to `deposited` is an audited movement — including the first one
+
+`deposited` is the **only credit side of the ledger**: expenses subtract, and nothing adds but this field. So every write to it is a financial movement.
+
+Until 2026-08-14 the same movement had two paths with completely different guarantees:
+
+| | Create with an initial balance | Edit via the deposit modal |
+|---|---|---|
+| Who can | **any member** (`isMember` in the rules) | admin only |
+| Audit row | **none** | immutable `depositLogs` entry |
+| Who did it | **unrecorded** — `travelers` has no `createdByUid` | `changedByUid`, pinned to the caller |
+| Why | — | `reason` |
+
+So anyone wanting to add money without a trace didn't open the deposit modal — they created a traveler. And because `depositLogs` is admin-only-readable, not even the admin could see that an initial balance had ever existed.
+
+**The fix does not remove the feature.** `firestore.rules` now requires `deposited == 0` on create, and the client writes the initial balance as a real deposit movement — traveler at 0, then a `depositLogs` row plus the balance update. Same form, same field, same result; an audit row is added.
+
+⚠️ **Two batches, not one — this is a Firestore constraint, not a choice.** The obvious design is a single batch that creates the doc at 0 and then updates it. Firestore **collapses both operations on the same document and evaluates them as one `create` carrying the final value**, which then fails `deposited == 0`. The rejection message says so literally: `false for 'create'`, not `for 'update'`. A rules test pins this so nobody "simplifies" it back and silently breaks adding a traveler with a balance.
+
+**The guarantee that matters survives the split:** the log row and the balance update are in *one* batch, so a balance can never exist without a row explaining it. The worst possible failure is a traveler at 0 with no row — an honest, safe state (no money appeared without a trace), which the admin fixes from the deposit modal. The reverse — a row with no balance — is impossible.
+
+⚠️ **No exception for admins.** Not because they are untrusted — the audit log is *for* them: it is what they point at when asked about a number a month later. Same reasoning that keeps `isOwnCreation` binding on admins.
+
+**Why `createdByUid` on `travelers` was rejected as the fix:** it answers "who created this traveler", not "how much appeared and why". The question asked during a dispute is the second one.
+
+**What made the invariant testable at all:** `utils/deposits.ts` extracts `applyDepositMode` and `replayDepositLogs` as pure functions, shared by both write paths. Before that, the mode arithmetic lived inside a form handler, so "current balance = sum of logged movements" could not be asserted anywhere. It now is, over random operation sequences.
+
+⚠️ **`subtract` clamps at zero**, so `delta` is not always `-amount`. The log therefore derives `delta` from the two balances, never from the input — deriving it from the input breaks the consistency rule on the first over-subtraction.
+
+⚠️ **Transition cost, accepted deliberately.** A device holding an old bundle that queues an offline traveler-create with `deposited > 0` will have that write **refused** when it syncs. Per the optimistic-write design above, the SDK reverts the local mutation rather than getting stuck — the row disappears rather than hanging as `_pending`. The window is one reload wide. **Historical documents are untouched**: rules apply to new writes only, and existing travelers keep balances with no matching log row, exactly as `createdByUid` treated legacy expenses.
+
+### 🆕 The membership roster is an index, not a source of access
+
+`trips/{tripId}/members/{uid}` was added on 2026-08-14 because the token-claims design has a second cost that was never priced. This file documented the trade honestly — membership in the token is a *free* read in `isMember()`, versus a billed `get()` in nearly every rule — and it computed the ceiling (38 trips). What it did not say is that the same decision makes membership **unenumerable, and therefore unmanageable**.
+
+Firebase Auth accepts no query over custom claims. So before this roster existed, the question "who is in this trip?" had no answer at all — not for the app, not for the admin. Enumerating meant paging `listUsers()` over every user in the project and reading each one's claims. The practical consequence: the only way to remove one person from a trip was to reset the PIN, which ejects **everyone**.
+
+**The claim remains the source of truth for access.** The roster is written *after* `setCustomUserClaims` succeeds, and nothing reads it to decide permission. This is load-bearing: `isMember()` still reads the token, so the hot path costs exactly what it did before — zero extra reads on any read or write.
+
+⚠️ **Never add a rule that derives access from this path.** Doing so reintroduces the billed `get()` the whole design exists to avoid, against a 10-read budget that expense creation already spends two of.
+
+Four details that are easy to get wrong:
+
+1. **`joinedAt` is written once and never overwritten.** Re-entering a PIN is not rare — every PIN reset forces every member to re-enter. Writing it on each verification would erase every join date at the first reset, i.e. destroy the field's meaning exactly when it becomes useful.
+2. **A failed roster write does not fail the join.** The claim was already set, so the person *is* a member; dropping their join because an index write failed would punish them for something unrelated. The error goes to Cloud Logging and `scripts/backfill-member-roster.mjs` repairs the gap.
+3. **Trip deletion must delete the subcollection explicitly.** Firestore does not cascade. And this is reachable, not theoretical: deletion requires the trip to be empty of *travelers and expenses*, and joining requires neither — so a trip ten people joined and nobody spent in is "empty" and deletable.
+4. **`mergeAnonymousTrips` writes roster rows too, and leaves the old anonymous ones alone.** The merge does not clear the old account's claims, so that uid still has real access; deleting its row would make the roster lie. `mergedFrom` links the two so the admin sees one person, not two.
+
+**Backfill deliberately leaves `joinedAt` absent** rather than approximating it from `metadata.creationTime` — account creation is not trip join, and they differ for anyone in more than one trip. An invented-but-plausible timestamp is worse than a missing one, because nothing downstream can tell it was invented.
+
+### 🆕 Removing a member is eventually-consistent, and the UI says so
+
+`manageMember` (mode `remove`) deletes **one** trip key from the target's claims and deletes their roster row. It must be a function: claims live on the *target's* account, so no client rule can reach them.
+
+**The removed member keeps access for up to an hour.** Firebase ID tokens last 60 minutes and `isMember()` reads the token, so revocation cannot be instant. This is the exact flip side of that read being free — the same trade documented above, showing its cost on the other end.
+
+`revokeRefreshTokens` would make it immediate and was rejected: it acts on the whole **account**, ejecting the person from every trip they belong to, not the one they were removed from. A side effect on unrelated trips is a bigger wrong than an hour of stale access.
+
+⚠️ **The admin panel states the delay in the tab itself**, and points at PIN reset as the immediate-but-blunt alternative. Hiding it would be the worst option: an admin removing someone after a PIN leak needs to know the door is not yet shut. Same principle as `utils/tripStatus.ts` — the UI explains what the server will actually do.
+
+Three results the caller must distinguish, and the toast does:
+
+| Server returns | Meaning | Why it can't just say "removed" |
+|---|---|---|
+| `claimRemoved: true` | Real removal | Must mention the up-to-an-hour delay |
+| `stillHasAccess: true` | Target is an admin | `admin: true` is global and bypasses trip membership entirely — removing them from the trip changes nothing about their access |
+| `claimRemoved: false` | Roster row with no matching claim | Nothing was revoked; a stale index row was cleaned up |
+
+**Removal does not touch their expenses, their traveler, or `createdByUid`.** Taking someone out of a trip is not erasing their financial trace from it — whoever paid, paid. Same principle that makes `createdByUid` immutable and deposit logs append-only.
+
+⚠️ **The negative case that matters (guideline 18): removal must not touch the target's *other* trips.** The claim map is rebuilt by deleting one key from a copy, never reassembled from another source. Getting this wrong wipes memberships unrelated to the decision, and it fails silently — no error, no symptom, until that person opens a different trip days later and is asked for a PIN.
+
+### 🆕 The trip organizer role lives in the roster, not the token — deliberately, and it costs a `get()`
+
+Stage 3 of `docs/PLAN-member-management.md`, shipped 2026-08-18. `trips/{tripId}/members/{uid}.role: 'organizer' | 'member'` lets the admin delegate trip-scoped management (name/bank/itinerary/status, invite/remove members) without handing over `admin: true` — which is global and would hand over every other trip in the project too.
+
+**Two placements were possible, and the roster won on purpose — the opposite trade from `isMember()`.** Putting the role inside the custom claim (`trips: { [tripId]: 'organizer' }` instead of `true`) would make the read free, same as membership itself. But it also changes the shape `isMember()` parses on *every* request, touches the 900-byte claim budget, and — the deciding factor — an organizer's own writes (editing the trip, removing a member) are already rare, admin-panel actions, not a hot path like expense creation. `isOrganizer(tripId)` costs one `get()` on exactly those rare writes, and `isMember()` itself doesn't change by a character. Same reasoning as `tripStatus()` above, applied a second time.
+
+**Who can grant the role is the question the original plan text didn't answer, and it landed conservative: the global admin only.** `manageMember` (`mode: 'setRole'`) rejects any caller without `admin: true`, no exception. Delegating a role that itself grants real write access isn't something an organizer should be able to hand to a peer — the same reasoning `set-admin.mjs` gives for keeping admin-granting a script, never a UI button.
+
+**And an organizer removing a member now needed a check `mode: 'remove'` never had before: who is the target?** Opening removal to organizers without this would let any two organizers on the same trip eject each other with zero admin involvement — a horizontal-escalation hole. So when the caller isn't a global admin, `manageMember` reads the caller's own roster row (must be `'organizer'`) *and* the target's — refusing if the target is a global admin or another organizer. An organizer removing a global admin from the roster wouldn't even do anything real (same `stillHasAccess` fact as before), but "an action that changes nothing yet appears to succeed" is worse than refusing it outright.
+
+⚠️ **Verified live, not assumed (guideline 18):** `manageMember.run()` invoked directly against real Auth+Firestore emulators (same technique as `restoreTrip`) covered ten cases including every rejection above — organizer removing a plain member (succeeds), removing another organizer (rejected), removing the admin (rejected), a plain member removing anyone (rejected), an organizer granting a role to someone (rejected), setRole on someone who never joined (rejected), and — the same guideline-18 case that matters for `remove` — a removal via an organizer never touches the target's *other* trip memberships either. All ten passed.
+
+**The organizer's own admin panel is the existing `TripAdminView`/`TripDetailPanel`, not a new component.** A `viewerRole: 'admin' | 'organizer'` prop hides the tabs that stay admin-only (backup, PIN reset, delete trip) and the role-toggle button in the members list. The trickier part: `TripAdminView`'s trip list is normally `useAllTrips(isAdmin)`, a query only `isAdmin()` satisfies — an organizer can't run it. So for an organizer, `useAppCoordinator.ts` builds a **one-element** `trips` array from their own already-subscribed `useTripConfig` data instead. This isn't a filtered view of a bigger list; there structurally is no bigger list on that code path, which is what actually keeps an organizer from ever seeing another trip through this screen — not a check that could be forgotten.
+
+**`useMyTripRole.ts` is the self-check, and its shape follows the same rule as `useTripMembers.ts`: a `permission-denied` reading your own roster row *is* the answer.** `isOrganizer(tripId)` in the rules only lets the read through when the role really is `'organizer'`; anything else — plain member, never joined, wrong trip — fails the read, and the hook treats that failure as `false`, not an error to log or surface.
+
+**Confirmed across two genuinely separate browser sessions** (`e2e/organizer-role.spec.ts`), because this is exactly the class of bug a unit or rules test can't see: one Playwright context joins as a plain member, a second signs in as admin and promotes that member via the real UI, then the *first* context reloads and is checked for the "manage trip" button, the absence of admin-only tabs, and a real trip-name edit that persists. Writing it surfaced a genuine race unrelated to this feature's own logic: `openTripAsMember` in `e2e/utils/flows.ts` clicks "continue" but never waits for `verifyTripPin` to actually finish, so two sessions joining back-to-back have no guaranteed order — which mattered here because the test needed to know which roster row was "the real member" to promote the right one.
+
+### 🆕 A modal is four keyboard behaviours, not one attribute
+
+`Modal.tsx` had `onClick={onClose}` on the backdrop and a drag-to-dismiss gesture. Both need a pointer. Someone on a keyboard could **open a modal and have no way out of it** — and every modal in the app inherits from this one file: deposit, trash bin, traveler profile, admin sign-in, and both delete confirmations.
+
+Adding `role="dialog"` alone would have been worse than nothing: it announces a dialog to a screen reader while the dialog still cannot be left. The four behaviours in `hooks/useDialogA11y.ts` each fix a separate failure:
+
+| | Without it |
+|---|---|
+| **Escape closes** | No pointer-free exit exists at all |
+| **Focus trap** | Tab walks out to elements that are visually covered and look disabled |
+| **Focus enters on open** | Focus stays on the button behind the modal, so the first Tab lands somewhere arbitrary |
+| **Focus returns on close** | Focus drops to `<body>`; the user restarts from the top of the page after every modal |
+
+⚠️ **`aria-modal="true"` is separate from the focus trap and both are needed.** The trap stops the Tab key; `aria-modal` is what stops a screen reader from browsing the covered page in its own reading mode, which does not use Tab at all.
+
+⚠️ **Capture the previously-focused element *before* moving focus.** Afterwards `document.activeElement` is the dialog itself, and the reference to whatever opened it is gone.
+
+⚠️ **Check `isConnected` before restoring focus.** The opener may have been removed while the modal was open — a delete-confirmation opened from a traveler card, then the card disappears. Calling `focus()` on an orphaned node throws in some browsers.
+
+**`label` is a required prop, deliberately.** Each modal renders its own heading in its own shape, so deriving `aria-labelledby` automatically would force every modal to know about an id this component generates. Making it required is what stops a *future* modal from shipping unnamed — the case where a screen reader announces "dialog" and nothing else.
+
+**The tests assert behaviour, not attributes** (`Modal.test.tsx`): that Escape actually closes, that Tab actually wraps, that focus actually returns. An attribute written without the behaviour behind it passes code review and fails the first user.
+
+⚠️ **And they immediately earned it.** The first draft filtered the focusable list with `el.offsetParent !== null` to skip hidden elements. That is wrong twice over: `offsetParent` is `null` for **any `position: fixed` element**, and the modal lives inside a `fixed inset-0` overlay — so depending on the DOM shape the filter could empty the list in a real browser and disable the trap **with no visible symptom**. It is also always `null` in jsdom, which has no layout, so the trap could not be tested at all. Visibility is now checked with `hidden` / `aria-hidden`, which behave identically in both. A test that could not run would have hidden a bug that could not be seen.
+
+### 🆕 The QR code is a dependency, and that is consistent with guidelines 1–2
+
+Guidelines 1 and 2 are not a blanket ban on dependencies. `recharts` was rejected because HTML/CSS bars do the job; SheetJS was rejected because the OOXML we need is one page of code. Both replacements are *verifiable by looking at them*.
+
+QR encoding is not that. It is Reed–Solomon error correction over GF(256), automatic version/capacity selection, and mask evaluation — and **its correctness cannot be proven without a scanner**. A code that is wrong by one module looks completely normal and simply never reads. Hand-rolling it would be exactly the situation guideline 18 warns about: a thing that reports success while being broken.
+
+`qrcode-generator` is ~15KB, has no dependencies of its own, and ships TypeScript declarations. What the dependency buys is verification we do not otherwise have.
+
+Two implementation details worth keeping:
+
+- **One `<path>`, not one `<rect>` per module.** A typical trip URL yields a 33×33 grid; a rect each is over a thousand DOM nodes for a static image. `components/admin/QrCode.tsx` emits a single path.
+- **`QrCode.test.tsx` tests structure, not readability**, and says so at the top. It pins the quiet margin (4 modules — scanners fail without it), the light/dark contrast, the `xmlns` needed for the exported file to open outside a browser, and that the path scales with input length. Whether the code actually *scans* is settled by a phone, once.
+
+⚠️ **The PIN is deliberately not encoded in the QR.** The server cannot supply it — it is stored hashed and never retrievable — so including it would mean the admin typing the secret into a form to bury it in a shareable image. That collapses the link and the PIN from two separate factors into one artifact that survives a screenshot. The QR carries `?trip=X` and nothing else.
+
+**Still missing on purpose:** no invite records, no per-trip organizer role. That is phase 3 of `docs/PLAN-member-management.md`.
+
+</div>
