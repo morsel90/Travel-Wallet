@@ -54,6 +54,13 @@ interface ManageMemberResponse {
   stillHasAccess?: boolean
 }
 
+// 🆕 عقد استدعاء manageInvite — 'create' (يحذف أي رابط سابق لنفس الرحلة وينشئ
+// توكناً جديداً) و'revoke' (يحذف الرابط النشط بلا استبدال). كلاهما متاح للمسؤول
+// أو منظّم *هذه* الرحلة تحديداً — نفس شرط canAct أدناه، والفحص الحقيقي خادمي
+// بالكامل في manageInvite. انظر functions/index.js.
+interface ManageInviteRequest { mode: 'create' | 'revoke'; tripId: string }
+interface ManageInviteResponse { success: boolean; token?: string }
+
 // 🆕 عقد استدعاء restoreTrip — docs/PLAN-backup-recovery.md المرحلة ٢.
 // backup: unknown عمداً — الشكل الحقيقي (TripBackup) يُتحقَّق منه خادمياً
 // بالكامل (Admin SDK يتجاوز القواعد)، فلا قيمة في تضييق النوع هنا فقط ليُخدَع
@@ -100,6 +107,10 @@ export interface UseTripAdminActionsResult {
   exportBackup: (trip: TripSummary) => Promise<boolean>
   /** 🆕 استعادة رحلة من نسخة JSON — رحلة فارغة أو غير موجودة فقط. المرحلة ٢. */
   restoreTrip: (tripId: string, pin: string, backup: unknown) => Promise<boolean>
+  /** 🆕 رابط دعوة بنقرة واحدة — ينشئ توكناً جديداً (يُبطل أي رابط سابق لنفس الرحلة ضمنياً). null عند الفشل (توست يُعرض هنا). */
+  createInvite: (tripId: string) => Promise<string | null>
+  /** 🆕 يُبطل الرابط النشط لهذه الرحلة، إن وُجد. */
+  revokeInvite: (tripId: string) => Promise<boolean>
 }
 
 export function useTripAdminActions({
@@ -350,6 +361,76 @@ export function useTripAdminActions({
     }
   }, [isAdmin, showToast, handleFirestoreError])
 
+  // 🆕 رابط دعوة — createInvite/revokeInvite دالتان مستقلتان عن callManageTrip
+  // لأن عقدهما مختلف (tripId فقط، لا pin/name) ولأن createInvite يُعيد توكناً
+  // يستهلكه المستدعي فوراً (بناء رابط المشاركة)، لا نص نجاح ثابت.
+  const createInvite = useCallback(async (tripId: string): Promise<string | null> => {
+    if (!canAct(tripId)) {
+      showToast({ text: 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.', type: 'error' }, 3000)
+      return null
+    }
+
+    setIsSaving(true)
+    try {
+      const user = auth.currentUser
+      if (!user) throw new Error('غير مسجّل الدخول.')
+      await user.getIdToken(true)
+
+      const manageInvite = httpsCallable<ManageInviteRequest, ManageInviteResponse>(functions, 'manageInvite')
+      const { data } = await manageInvite({ mode: 'create', tripId })
+      return data.token ?? null
+    } catch (err) {
+      haptic.error()
+      const message = (err as { message?: string })?.message
+      const isFunctionsError = typeof (err as { code?: string })?.code === 'string'
+        && String((err as { code?: string }).code).startsWith('functions/')
+
+      if (isFunctionsError && message) {
+        showToast({ text: message, type: 'error' }, 4000)
+      } else {
+        handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
+      }
+      return null
+    } finally {
+      setIsSaving(false)
+    }
+  }, [canAct, showToast, handleFirestoreError])
+
+  const revokeInvite = useCallback(async (tripId: string): Promise<boolean> => {
+    if (!canAct(tripId)) {
+      showToast({ text: 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.', type: 'error' }, 3000)
+      return false
+    }
+
+    setIsSaving(true)
+    try {
+      const user = auth.currentUser
+      if (!user) throw new Error('غير مسجّل الدخول.')
+      await user.getIdToken(true)
+
+      const manageInvite = httpsCallable<ManageInviteRequest, ManageInviteResponse>(functions, 'manageInvite')
+      await manageInvite({ mode: 'revoke', tripId })
+
+      haptic.success()
+      showToast({ text: 'تم إبطال رابط الدعوة.', type: 'success' })
+      return true
+    } catch (err) {
+      haptic.error()
+      const message = (err as { message?: string })?.message
+      const isFunctionsError = typeof (err as { code?: string })?.code === 'string'
+        && String((err as { code?: string }).code).startsWith('functions/')
+
+      if (isFunctionsError && message) {
+        showToast({ text: message, type: 'error' }, 4000)
+      } else {
+        handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
+      }
+      return false
+    } finally {
+      setIsSaving(false)
+    }
+  }, [canAct, showToast, handleFirestoreError])
+
   // 🆕 تنزيل نسخة احتياطية — قراءة فقط، بلا مسار كتابة جديد ولا دالة سحابية:
   // isAdmin() في القواعد يمنح قراءة expenses/travelers/depositLogs لأي رحلة،
   // لا الرحلة النشطة وحدها (نفس أساس فحص الخلوّ قبل الحذف). depositLogs تُجلب
@@ -452,5 +533,6 @@ export function useTripAdminActions({
   return {
     isSaving, saveBankDetails, saveItinerary, saveTripName, saveTripStatus, createTrip, resetTripPin,
     deleteTrip, removeMember, setMemberRole, exportBackup, restoreTrip: restoreTripFn,
+    createInvite, revokeInvite,
   }
 }

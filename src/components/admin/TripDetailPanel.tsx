@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Building2, Route, KeyRound, Save, Plane, Car, Train, Bus,
   Pencil, Trash2, Plus, ArrowUp, ArrowDown, Loader2, AlertTriangle, Lock,
-  Users, UserMinus, Copy, Check, Download, ShieldCheck,
+  Users, UserMinus, Copy, Check, Download, ShieldCheck, Share2, Ban,
 } from '../../icons'
 import { useTripMembers } from '../../hooks/useTripMembers'
 import { tripUrl } from '../../utils/tripId'
@@ -23,7 +23,7 @@ import {
 import type { SegmentDraft } from '../../utils/itinerary'
 import type { TripSummary } from '../../hooks/useAllTrips'
 import { TRIP_STATUS_LABEL } from '../../types'
-import type { BankDetails, TransportMode, TripStatus } from '../../types'
+import type { BankDetails, ToastMessage, TransportMode, TripStatus } from '../../types'
 
 interface TripDetailPanelProps {
   trip: TripSummary
@@ -49,6 +49,12 @@ interface TripDetailPanelProps {
   onSetMemberRole: (tripId: string, uid: string, role: 'organizer' | 'member') => Promise<boolean>
   /** 🆕 تنزيل نسخة JSON احتياطية — docs/PLAN-backup-recovery.md المرحلة ١. */
   onExportBackup: (trip: TripSummary) => Promise<boolean>
+  /** 🆕 رابط دعوة بنقرة واحدة — ينشئ توكناً جديداً (يُبطل أي رابط سابق لنفس الرحلة ضمنياً). null عند الفشل. */
+  onCreateInvite: (tripId: string) => Promise<string | null>
+  /** 🆕 يُبطل رابط الدعوة النشط لهذه الرحلة، إن وُجد. */
+  onRevokeInvite: (tripId: string) => Promise<boolean>
+  /** 🆕 توست عام — لتأكيد نسخ رسالة الدعوة حين لا يدعم الجهاز Web Share API. */
+  showToast: (msg: ToastMessage, durationMs?: number) => void
   /** يُستدعى بعد نجاح الحذف — الرحلة لم تعد موجودة فلا يصح إبقاء لوحتها مفتوحة. */
   onDeleted: () => void
 }
@@ -93,7 +99,8 @@ const STATUS_HELP: Record<TripStatus, string> = {
 
 export default function TripDetailPanel({
   trip, viewerRole, isSaving, onSaveTripName, onSaveBankDetails, onSaveItinerary, onResetPin,
-  onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onExportBackup, onDeleted,
+  onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onExportBackup,
+  onCreateInvite, onRevokeInvite, showToast, onDeleted,
 }: TripDetailPanelProps) {
   const TABS = useMemo(
     () => viewerRole === 'admin' ? ALL_TABS : ALL_TABS.filter(t => !ORGANIZER_HIDDEN_TABS.has(t.key)),
@@ -107,6 +114,12 @@ export default function TripDetailPanel({
     useTripMembers(trip.id, activeTab === 'members')
   const [removingUid, setRemovingUid] = useState<string | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
+  // 🆕 رابط دعوة بنقرة واحدة — توكن هذه الجلسة فقط (لا قراءة من الخادم لمعرفة
+  // رابط نشط سابق؛ العقد الوحيد المتاح هو create/revoke — انظر manageInvite في
+  // functions/index.js). null يعني «لم نطلب رابطاً بعد في هذه الجلسة».
+  const [inviteToken, setInviteToken] = useState<string | null>(null)
+  const [isPreparingInvite, setIsPreparingInvite] = useState(false)
+  const [inviteMsgCopied, setInviteMsgCopied] = useState(false)
 
   const [nameForm, setNameForm] = useState(trip.name)
   const [bankForm, setBankForm] = useState<BankDetails>(trip.bankDetails)
@@ -133,6 +146,9 @@ export default function TripDetailPanel({
     setPinError(null)
     setDeleteConfirm('')
     setActiveTab('bank')
+    // 🆕 توكن الجلسة السابقة يخصّ رحلة أخرى — لا معنى لمشاركته هنا.
+    setInviteToken(null)
+    setInviteMsgCopied(false)
   }, [trip.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const bankDirty = useMemo(
@@ -157,6 +173,55 @@ export default function TripDetailPanel({
     navigator.clipboard.writeText(inviteUrl)
     setLinkCopied(true)
     window.setTimeout(() => setLinkCopied(false), 2000)
+  }
+
+  // 🆕 رابط الدخول المباشر (?invite=TOKEN) — يتجاوز رمز الرحلة كلياً لمن يفتحه.
+  const directJoinUrl = (token: string) =>
+    `${window.location.origin}${window.location.pathname}?invite=${token}`
+
+  const inviteShareMessage = (token: string) =>
+    `أهلاً! أدعوك للانضمام إلى رحلتنا ✈️ ${trip.name}. انقر على الرابط التالي للدخول مباشرة: ${directJoinUrl(token)}`
+
+  // 🆕 مشاركة بنقرة واحدة — Web Share API إن دعمها الجهاز، وإلا نسخ الرسالة
+  // كاملة للحافظة. ⚠️ لا await قبل navigator.share() إن كان لدينا توكن مسبقاً:
+  // بعض المتصفحات (Safari تحديداً) ترفض استدعاء share() بعد فجوة زمنية طويلة
+  // منذ ضغطة المستخدم (انتهاء "user activation") — لذا الزر يبقى معطّلاً
+  // (isPreparingInvite) حتى يجهز التوكن، فلا حاجة لانتظار شبكة داخل هذه الدالة
+  // في الحالة الشائعة (توكن جاهز مسبقاً من ضغطة سابقة أو من نفس الجلسة).
+  const handleShareInvite = async () => {
+    let token = inviteToken
+    if (!token) {
+      setIsPreparingInvite(true)
+      token = await onCreateInvite(trip.id)
+      setIsPreparingInvite(false)
+      if (!token) return // توست الخطأ عُرض بالفعل من onCreateInvite
+      setInviteToken(token)
+    }
+
+    const message = inviteShareMessage(token)
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ text: message })
+      } catch {
+        // المستخدم ألغى صفحة المشاركة، أو فشلت لسبب لا يستحق تنبيهاً
+      }
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(message)
+      setInviteMsgCopied(true)
+      showToast({ text: 'نُسخت رسالة الدعوة — الصقها لمن تريد دعوته.', type: 'success' })
+      window.setTimeout(() => setInviteMsgCopied(false), 2000)
+    } catch {
+      // نادر: تعذّر الوصول للحافظة (صلاحيات المتصفح)
+    }
+  }
+
+  const handleRevokeInvite = async () => {
+    const ok = await onRevokeInvite(trip.id)
+    if (ok) setInviteToken(null)
   }
 
   // تنزيل الـ QR كـ SVG: نُسلسِل العقدة المرسومة فعلاً بدل إعادة توليدها، فما
@@ -528,9 +593,54 @@ export default function TripDetailPanel({
       )}
 
       {activeTab === 'members' && (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+        <>
+          {/* 🆕 دعوة بنقرة واحدة — رابط يمنح عضوية فورية بلا إدخال رمز الرحلة
+              يدوياً. لا يستبدل الرمز (يبقى فعّالاً دائماً)؛ طريقة دخول إضافية. */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-3">
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <Share2 className="w-4 h-4 text-teal-600" /> دعوة أعضاء — بنقرة واحدة
+            </h3>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              رابط يدخل به المدعوّ إلى الرحلة مباشرة بلا حاجة لرمز الرحلة. رابط واحد نشط فقط لكل
+              رحلة — مشاركة رابط جديد تُبطل أي رابط سابق تلقائياً.
+            </p>
+
+            <div className="flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => void handleShareInvite()}
+                disabled={isPreparingInvite}
+                className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm disabled:opacity-40"
+              >
+                {isPreparingInvite ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : inviteMsgCopied ? (
+                  <Check className="w-3.5 h-3.5" />
+                ) : (
+                  <Share2 className="w-3.5 h-3.5" />
+                )}
+                {isPreparingInvite ? 'جارٍ التجهيز...' : inviteMsgCopied ? 'نُسخت الرسالة' : 'مشاركة رابط الدعوة'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleRevokeInvite()}
+                disabled={isSaving}
+                className="flex items-center gap-1.5 text-rose-700 hover:bg-rose-50 border border-rose-200 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors disabled:opacity-40"
+              >
+                <Ban className="w-3.5 h-3.5" /> إبطال رابط الدعوة
+              </button>
+            </div>
+
+            {typeof navigator === 'undefined' || !navigator.share ? (
+              <p className="text-[11px] text-slate-400">
+                جهازك لا يدعم المشاركة المباشرة — يُنسخ نص الدعوة إلى الحافظة بدلاً من ذلك.
+              </p>
+            ) : null}
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
           <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <Plus className="w-4 h-4 text-teal-600" /> دعوة أعضاء
+            <Plus className="w-4 h-4 text-teal-600" /> أو شارك رمز الرحلة يدوياً
           </h3>
 
           <div className="flex flex-col sm:flex-row gap-4 items-center">
@@ -716,7 +826,8 @@ export default function TripDetailPanel({
               })}
             </div>
           )}
-        </div>
+          </div>
+        </>
       )}
 
       {activeTab === 'backup' && (

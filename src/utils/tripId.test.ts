@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isValidTripId, TRIP_ID, HAS_EXPLICIT_TRIP_ID } from './tripId'
+import { isValidTripId, TRIP_ID, HAS_EXPLICIT_TRIP_ID, INVITE_TOKEN } from './tripId'
 
 // ⚠️ هذه الصيغة مكرّرة عمداً في ثلاثة أماكن: هنا، وfunctions/index.js
 // (TRIP_ID_PATTERN)، وscripts/create-trip.mjs. الفحص الخادمي هو الحاجز الفعلي؛
@@ -63,5 +63,17 @@ describe('TRIP_ID / HAS_EXPLICIT_TRIP_ID', () => {
 
   it('TRIP_ID نفسه يبقى معرّفاً صالحاً دائماً', () => {
     expect(isValidTripId(TRIP_ID)).toBe(true)
+  })
+})
+
+// 🆕 نفس نمط TRIP_ID أعلاه: يُحسب مرة واحدة عند تحميل الوحدة من الرابط. بيئة
+// Vitest بلا `?invite=` — أي أن الحالة المرصودة هنا هي بالضبط حالة «فتح
+// التطبيق برابط عادي (أو رابط رحلة)، لا برابط دعوة». اختبارات صيغة التوكن نفسها
+// (INVITE_TOKEN_PATTERN) غير مباشرة هنا لأن القيمة تُحسب مرة واحدة عند
+// الاستيراد؛ يغطّيها سلوكياً useInviteJoin.test.ts (يُمرّر توكناً وهمياً بمحاكاة
+// هذه الوحدة).
+describe('INVITE_TOKEN', () => {
+  it('null حين لا يذكر الرابط دعوة', () => {
+    expect(INVITE_TOKEN).toBeNull()
   })
 })

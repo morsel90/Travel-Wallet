@@ -42,8 +42,17 @@ const WRONG_PIN: CallableErrorDescription = {
   kind: 'input',
 }
 
+// 🆕 نظير WRONG_PIN لمسار joinViaInvite — نفس الكتمان الأمني (توكن غير موجود
+// وتوكن مُبطَل رسالة واحدة، انظر functions/index.js)، لكن نصاً يخصّ الروابط لا
+// الرمز اليدوي؛ عرض «رمز الرحلة غير صحيح» لمن ضغط رابطاً كان سيربكه بلا داعٍ.
+const INVALID_INVITE: CallableErrorDescription = {
+  text: 'رابط الدعوة غير صالح أو أُبطل. اطلب من منظّم الرحلة رابطاً جديداً.',
+  kind: 'input',
+}
+
 /**
- * @param err الخطأ كما وصل من httpsCallable (FirebaseError بكود `functions/…`)
+ * الأسباب البيئية مشتركة بين verifyTripPin وjoinViaInvite (نفس الأعراض: امتداد
+ * متصفح، شبكة، خادم) — فقط نص الحالة الافتراضية (fallback) يختلف بينهما.
  *
  * ⚠️ `unauthenticated` **لا يعني أن المستخدم غير مسجّل** — التطبيق يُسجّل كل
  * زائر تلقائياً كمجهول. وصولها يعني أن التوكن لم يصل إلى الدالة: امتداد متصفح
@@ -51,12 +60,12 @@ const WRONG_PIN: CallableErrorDescription = {
  * انتهت. ولهذا تذكر الرسالة الامتداد صراحةً: هو الاحتمال الأرجح والوحيد الذي
  * يستطيع المستخدم إصلاحه بنفسه.
  */
-export function describeCallableError(err: unknown): CallableErrorDescription {
+function describeCallableErrorWithFallback(err: unknown, fallback: CallableErrorDescription): CallableErrorDescription {
   const code = callableErrorCode(err)
 
   switch (code) {
     case 'permission-denied':
-      return WRONG_PIN
+      return fallback
 
     case 'unauthenticated':
       return {
@@ -83,11 +92,21 @@ export function describeCallableError(err: unknown): CallableErrorDescription {
         kind: 'environment',
       }
 
-    // ⚠️ الافتراضي رسالة الرمز الخاطئ، لا رسالة عامة: أغلب حالات الفشل الفعلية
-    // هي رمز خاطئ، والحالات المسمّاة أعلاه تغطي ما عداها. لكن **أضف الكود هنا**
-    // متى ظهر كود جديد بدل توسيع هذا الفرع — فالغرض من الملف كله ألا تُخفي
-    // رسالةٌ واحدة أسباباً متعددة.
+    // ⚠️ الافتراضي هو fallback المُمرَّر، لا رسالة عامة: أغلب حالات الفشل
+    // الفعلية تقع في input (رمز خاطئ/رابط باطل)، والحالات المسمّاة أعلاه تغطي
+    // ما عداها. لكن **أضف الكود هنا** متى ظهر كود جديد بدل توسيع هذا الفرع —
+    // فالغرض من الملف كله ألا تُخفي رسالةٌ واحدة أسباباً متعددة.
     default:
-      return WRONG_PIN
+      return fallback
   }
+}
+
+/** @param err الخطأ كما وصل من httpsCallable لـ verifyTripPin (FirebaseError بكود `functions/…`) */
+export function describeCallableError(err: unknown): CallableErrorDescription {
+  return describeCallableErrorWithFallback(err, WRONG_PIN)
+}
+
+/** @param err الخطأ كما وصل من httpsCallable لـ joinViaInvite (FirebaseError بكود `functions/…`) */
+export function describeInviteError(err: unknown): CallableErrorDescription {
+  return describeCallableErrorWithFallback(err, INVALID_INVITE)
 }

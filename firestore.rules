@@ -423,6 +423,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 🆕 دعوات الرحلة (روابط دخول بنقرة واحدة تتجاوز رمز الرحلة اليدوي) —
+    // tripInvites/{token}. نفس نمط tripSecrets أعلاه بالضبط: لا قراءة ولا كتابة
+    // من العميل تحت أي ظرف — بما فيهم المسؤول. الإنشاء/الإبطال عبر manageInvite
+    // والاستهلاك عبر joinViaInvite فقط (Admin SDK يتجاوز هذه القواعد بالكامل؛
+    // allow false هنا يمنع فقط وصولاً مباشراً من تطبيق العميل).
+    match /tripInvites/{token} {
+      allow read, write: if false;
+    }
+
     // 🆕 Rate Limits لـ verifyTripPin (حماية من تخمين الرمز)
     // لا يُقرأ ولا يُكتب من العميل — للـ Cloud Functions فقط
     match /rateLimits/{doc} {

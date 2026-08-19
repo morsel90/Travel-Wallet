@@ -3,7 +3,7 @@ import type { ToastMessage } from '../types'
 import {
   useAuth, useAdminAuth, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
-  useTripAdminActions, useAllTrips, useMyTrips, useMyTripRole,
+  useTripAdminActions, useAllTrips, useMyTrips, useMyTripRole, useInviteJoin,
 } from './index'
 import { useFilteredExpenses } from './useFilteredExpenses'
 import { calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from '../utils/calculations'
@@ -93,6 +93,11 @@ export function useAppCoordinator() {
       toastTimeoutRef.current = setTimeout(() => setToast(null), durationMs)
     }
   }, [])
+
+  // 🆕 رابط دعوة بنقرة واحدة (?invite=TOKEN) — يُستهلك مرة واحدة عند تحميل
+  // الصفحة، قبل أي شيء آخر. النجاح إعادة توجيه كاملة (لا حالة تُستهلك هنا)،
+  // والفشل يُنظّف الرابط ويعرض توستاً ثم يُكمل التدفّق المعتاد (رحلاتي/بوابة الرمز).
+  const inviteJoinStatus = useInviteJoin(user, showToast)
 
   const admin = useAdminAuth({ showToast })
 
@@ -217,6 +222,8 @@ export function useAppCoordinator() {
   }, [hasAccess, showToast])
 
   return {
+    /** 🆕 رابط دعوة بنقرة واحدة — App.tsx يعرض شاشة تحميل حصراً طالما 'joining'. */
+    invite: { status: inviteJoinStatus },
     /** المصادقة والوصول وحالة الشبكة. */
     session: {
       user, isAdmin, hasAccess, isOnline,
@@ -241,7 +248,13 @@ export function useAppCoordinator() {
     /** أسعار الصرف الحيّة — تُقرأ من DataContext في نموذج المصروف. */
     rates: { currencies: CURRENCIES, ratesUpdatedAt },
     /** حالة المزامنة والتنبيهات. */
-    status: { isSyncing, syncError, toast, handlePullToRefresh, hasUnsavedData },
+    status: {
+      isSyncing, syncError, toast, handlePullToRefresh, hasUnsavedData,
+      // 🆕 مُصدَّرة لاستخدامها خارج هذا الملف عند الحاجة إلى توست من مكوّن لا
+      // يملك مساراً خادمياً خاصاً به يُطلقه بنفسه (مثال: نسخ رابط دعوة احتياطياً
+      // حين لا يدعم الجهاز Web Share API — انظر TripDetailPanel.tsx).
+      showToast,
+    },
     /** شاشة «رحلاتي». */
     picker: {
       trips: pickerTrips, loading: pickerLoading, error: pickerError,

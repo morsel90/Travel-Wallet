@@ -67,3 +67,26 @@ export const TRIP_ID: string = readTripIdFromLocation()
  * الحالة بالضبط هي التي تعرض شاشة «رحلاتي» بدل بوابة الرمز (انظر App.tsx).
  */
 export const HAS_EXPLICIT_TRIP_ID: boolean = readExplicitTripId() !== null
+
+// ─── 🆕 رابط دعوة بنقرة واحدة (?invite=TOKEN) ────────────────────────────────
+// بديل لا استبدال لبوابة الرمز اليدوية: رابط يحمل توكناً عشوائياً بدل tripId
+// صريح، يُستبدَل بعضوية فعلية عبر joinViaInvite (functions/index.js) دون أي
+// طلب رمز. يُقرأ مرة واحدة عند تحميل الوحدة كـ TRIP_ID أعلاه بالضبط.
+
+// ⚠️ يجب أن يطابق INVITE_TOKEN_PATTERN في functions/index.js تماماً — التوكن
+// الفعلي المولَّد 32 حرفاً (base64url لـ24 بايت)، والحدّ الأعلى هنا أوسع قليلاً
+// (64) كهامش تحقّق لا كطول متوقَّع، على غرار TRIP_ID_PATTERN أعلاه.
+const INVITE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,64}$/
+
+function readInviteToken(): string | null {
+  try {
+    const token = new URLSearchParams(window.location.search).get('invite')?.trim()
+    if (token && INVITE_TOKEN_PATTERN.test(token)) return token
+  } catch {
+    // بيئة بدون window (مثل اختبارات Vitest) — تجاهل، لا رابط دعوة
+  }
+  return null
+}
+
+/** توكن الدعوة المذكور صراحةً في الرابط، أو null إن لم يُفتح التطبيق برابط دعوة. */
+export const INVITE_TOKEN: string | null = readInviteToken()

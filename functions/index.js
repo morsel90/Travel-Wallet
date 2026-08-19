@@ -776,6 +776,128 @@ function isValidDepositLogJs(d) {
   return true;
 }
 
+/**
+ * 🆕 manageInvite / joinViaInvite: رابط دعوة بنقرة واحدة — يتجاوز إدخال رمز
+ * الرحلة يدوياً، بديل لا استبدال لـ verifyTripPin (الذي يبقى كما هو تماماً).
+ *
+ * ── نموذج البيانات ───────────────────────────────────────────────────────────
+ * tripInvites/{token} — معرّف المستند هو التوكن نفسه (32 حرف base64url، 192 بت
+ * انتروبيا من crypto.randomBytes(24)). المحتوى: { tripId, createdAt, createdByUid }.
+ *
+ * ── رابط نشط واحد فقط لكل رحلة ─────────────────────────────────────────────
+ * 'create' يحذف أي رابط سابق لنفس الرحلة قبل إنشاء الجديد — فالإبطال ضمنيّ عند
+ * التجديد، ولا حاجة لتتبّع أيّ التوكنات لا يزال صالحاً. 'revoke' هو بالضبط نفس
+ * خطوة الحذف بلا الإنشاء الذي يليها.
+ *
+ * ── لماذا لا حدّ معدّل (Rate Limit) على joinViaInvite ────────────────────────
+ * على عكس رمز الرحلة (4+ خانات، يُخمَّن خلال آلاف المحاولات — من هنا حاجة
+ * checkRateLimit)، توكن بـ192 بت غير قابل للتخمين بأي هجوم واقعي. حدّ معدّل هنا
+ * كان سيحمي من لا شيء بكلفة تعقيد إضافي.
+ *
+ * ── الكتمان الأمني ────────────────────────────────────────────────────────
+ * توكن غير موجود أو مُبطَل كلاهما `permission-denied` بنص واحد — نفس مبدأ
+ * verifyTripPin بالضبط (رمز خاطئ ورحلة غير موجودة رسالة واحدة) لمنع اكتشاف ما
+ * إذا كان توكن ما صالحاً يوماً.
+ */
+const INVITE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
+
+// نفس شرط manageMember لإزالة عضو بالضبط: المسؤول العالمي، أو منظّم *هذه*
+// الرحلة تحديداً. غير مُشترَكة مع manageMember عمداً — لا نلمس كوداً مُختبَراً
+// قائماً لمجرد تفادي تكرار خمسة أسطر.
+async function callerManagesTrip(tripId, auth) {
+  if (auth.token.admin === true) return true;
+  const callerSnap = await db.collection('trips').doc(tripId).collection('members').doc(auth.uid).get();
+  const callerRole = callerSnap.exists ? (callerSnap.data().role || 'member') : 'member';
+  return callerRole === 'organizer';
+}
+
+// استعلام لا get() بمعرّف واحد — معرّف مستند الدعوة هو التوكن العشوائي نفسه لا
+// tripId، فلا سبيل لمعرفة أي دعوة تخصّ رحلة بعينها إلا بالبحث.
+async function deleteExistingInvites(tripId) {
+  const snap = await db.collection('tripInvites').where('tripId', '==', tripId).get();
+  if (snap.empty) return;
+  const batch = db.batch();
+  snap.docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
+}
+
+exports.manageInvite = onCall(
+  { region: 'us-central1', maxInstances: 5 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+    }
+
+    const tripId = String(request.data?.tripId ?? '').trim();
+    const mode = String(request.data?.mode ?? '').trim(); // 'create' | 'revoke'
+
+    if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
+      throw new HttpsError('invalid-argument', 'معرّف الرحلة غير صالح.');
+    }
+    if (mode !== 'create' && mode !== 'revoke') {
+      throw new HttpsError('invalid-argument', 'نوع العملية غير معروف.');
+    }
+    if (!(await callerManagesTrip(tripId, request.auth))) {
+      throw new HttpsError('permission-denied', 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.');
+    }
+
+    // الحذف مشترك بين الوضعين: 'revoke' يتوقف هنا، و'create' يكمل لإنشاء توكن جديد.
+    await deleteExistingInvites(tripId);
+
+    if (mode === 'revoke') {
+      console.log(`[manageInvite] revoke on ${tripId} by ${request.auth.uid}`);
+      return { success: true };
+    }
+
+    const token = crypto.randomBytes(24).toString('base64url');
+    await db.collection('tripInvites').doc(token).set({
+      tripId,
+      createdAt: Date.now(),
+      createdByUid: request.auth.uid,
+    });
+
+    console.log(`[manageInvite] create on ${tripId} by ${request.auth.uid}`);
+    return { success: true, token };
+  }
+);
+
+exports.joinViaInvite = onCall(
+  { region: 'us-central1', maxInstances: 5 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+    }
+
+    const inviteToken = String(request.data?.inviteToken ?? '').trim();
+    if (!inviteToken || !INVITE_TOKEN_PATTERN.test(inviteToken)) {
+      throw new HttpsError('invalid-argument', 'رابط الدعوة غير صالح.');
+    }
+
+    const inviteSnap = await db.collection('tripInvites').doc(inviteToken).get();
+    if (!inviteSnap.exists) {
+      throw new HttpsError('permission-denied', 'رابط الدعوة غير صالح أو منتهي الصلاحية.');
+    }
+
+    const { tripId } = inviteSnap.data();
+
+    // 🆕 نفس منطق دمج claims الموجود في verifyTripPin بالضبط — انظر تعليقها.
+    const userRecord = await admin.auth().getUser(request.auth.uid);
+    const existingTrips = (userRecord.customClaims && userRecord.customClaims.trips) || {};
+
+    const nextClaims = {
+      ...userRecord.customClaims,
+      trips: { ...existingTrips, [tripId]: true },
+    };
+    assertClaimsFitTokenLimit(nextClaims);
+
+    await admin.auth().setCustomUserClaims(request.auth.uid, nextClaims);
+    await recordMembership(tripId, userRecord);
+
+    console.log(`[joinViaInvite] ${request.auth.uid} joined ${tripId} via invite`);
+    return { success: true, tripId };
+  }
+);
+
 exports.restoreTrip = onCall(
   { region: 'us-central1', maxInstances: 2, timeoutSeconds: 120 },
   async (request) => {

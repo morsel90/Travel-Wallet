@@ -92,6 +92,7 @@ const depositLogsCol  = (db: Firestore, travelerId: number, tripId = TRIP_ID) =>
 const rateLimitDoc    = (db: Firestore, uid: string, tripId = TRIP_ID) => doc(db, 'artifacts', tripId, 'public', 'data', 'rateLimits', uid)
 const tripConfigDoc   = (db: Firestore, tripId = TRIP_ID) => doc(db, 'trips', tripId)
 const tripSecretsDoc  = (db: Firestore, tripId = TRIP_ID) => doc(db, 'tripSecrets', tripId)
+const tripInvitesDoc  = (db: Firestore, token = 'inv-test') => doc(db, 'tripInvites', token)
 const tripMemberDoc   = (db: Firestore, uid: string, tripId = TRIP_ID) => doc(db, 'trips', tripId, 'members', uid)
 const tripMembersCol  = (db: Firestore, tripId = TRIP_ID) => collection(db, 'trips', tripId, 'members')
 const pinRateLimitDoc = (db: Firestore, key = 'k1') => doc(db, 'rateLimits', key)
@@ -533,6 +534,32 @@ describe('حماية tripSecrets — لا وصول من العميل تحت أي
 
   it('لا أحد يستطيع الكتابة على tripSecrets مباشرة — حتى المسؤول', async () => {
     await assertFails(setDoc(tripSecretsDoc(adminDb()), { pinHash: 'z', salt: 'w' }))
+  })
+})
+
+// 🆕 دعوات الرحلة (روابط دخول بنقرة واحدة) — نفس نمط tripSecrets تماماً: لا
+// وصول من العميل تحت أي ظرف. الإنشاء/الإبطال/الاستهلاك كلها عبر Admin SDK داخل
+// manageInvite/joinViaInvite (functions/index.js)، وهي تتجاوز هذه القواعد
+// بالكامل — الاختبارات هنا تثبّت فقط أن القاعدة نفسها تمنع الوصول المباشر.
+describe('حماية tripInvites — لا وصول من العميل تحت أي ظرف', () => {
+  beforeEach(async () => {
+    await seed(db => setDoc(tripInvitesDoc(db), { tripId: TRIP_ID, createdAt: Date.now(), createdByUid: 'admin-1' }))
+  })
+
+  it('المسؤول نفسه ممنوع من قراءة tripInvites', async () => {
+    await assertFails(getDoc(tripInvitesDoc(adminDb())))
+  })
+
+  it('عضو الرحلة ممنوع من قراءة tripInvites', async () => {
+    await assertFails(getDoc(tripInvitesDoc(memberDb())))
+  })
+
+  it('لا أحد يستطيع الكتابة على tripInvites مباشرة — حتى المسؤول', async () => {
+    await assertFails(setDoc(tripInvitesDoc(adminDb(), 'inv-other'), { tripId: TRIP_ID, createdAt: Date.now(), createdByUid: 'admin-1' }))
+  })
+
+  it('لا أحد يستطيع حذف دعوة مباشرة — حتى المسؤول', async () => {
+    await assertFails(deleteDoc(tripInvitesDoc(adminDb())))
   })
 })
 
