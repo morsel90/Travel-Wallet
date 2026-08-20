@@ -45,6 +45,11 @@ export interface Expense {
   // بالتساوي التام كما كان قبل هذا التحديث؛ كل المصاريف القديمة تعمل دون أي
   // حاجة لترحيل بيانات. انظر splitByShares في utils/calculations.ts.
   shares?: Record<string, number>
+  // 🆕 من دفع المصروف فعلياً: رقم = Traveler.id دفعها من جيبه (يُقيَّد لحسابه في
+  // calculateBalances قبل خصم نصيبه)، أو 'fund' = من الصندوق المشترك كالمعتاد.
+  // غياب الحقل بالكامل (كل المصاريف قبل هذا التحديث) يُعامَل كـ 'fund' — لا حاجة
+  // لترحيل بيانات. انظر calculateBalances في utils/calculations.ts.
+  paidBy?: number | 'fund'
 }
 
 // ─── نماذج نموذج إدخال المصروف ───────────────────────────────────────────────
@@ -64,6 +69,9 @@ export interface ExpenseFormData {
   // تلقائياً). عند الحفظ بوضع 'equal' يُهمَل shares تماماً (لا يُكتب لـ Firestore).
   splitMode: 'equal' | 'custom'
   shares: Record<number, number>
+  // 🆕 دائماً له قيمة افتراضية ('fund') في النموذج، تماماً كـ category — انظر
+  // Expense.paidBy لدلالة القيم.
+  paidBy: number | 'fund'
 }
 
 // ─── العملات ─────────────────────────────────────────────────────────────────

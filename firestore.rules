@@ -65,10 +65,11 @@ service cloud.firestore {
     // وحقل createdByUid الاختياري (uid صاحب المصروف) — انظر isExpenseOwner أدناه
     // وحقل category الاختياري (فئة المصروف — للرسم البياني في src/components/charts/)
     // وحقل shares الاختياري (تقسيم غير متساوٍ — انظر isValidShares أدناه)
+    // وحقل paidBy الاختياري (من دفعها فعلياً — 'fund' أو Traveler.id)
     function isValidExpense(d) {
       return d.keys().hasOnly([
                'date', 'description', 'amount', 'originalAmount',
-               'currency', 'exchangeRate', 'participants', 'createdAt', 'deletedAt', 'createdByUid', 'category', 'shares'
+               'currency', 'exchangeRate', 'participants', 'createdAt', 'deletedAt', 'createdByUid', 'category', 'shares', 'paidBy'
              ])
         && d.date is string           && d.date.size() <= 10
         && d.description is string     && d.description.size() > 0 && d.description.size() <= 200
@@ -81,7 +82,10 @@ service cloud.firestore {
         && (!('deletedAt' in d) || d.deletedAt == null || d.deletedAt is number)
         && (!('createdByUid' in d) || d.createdByUid is string)
         && (!('category' in d) || (d.category is string && d.category.size() <= 50))
-        && (!('shares' in d) || isValidShares(d.shares, d.participants));
+        && (!('shares' in d) || isValidShares(d.shares, d.participants))
+        // 🆕 من دفع المصروف فعلياً: 'fund' (الصندوق المشترك) أو رقم (Traveler.id
+        // دفعها من جيبه). غياب الحقل = 'fund' — كل المصاريف القديمة تبقى صالحة.
+        && (!('paidBy' in d) || d.paidBy == 'fund' || d.paidBy is number);
     }
 
     // 🆕 تقسيم غير متساوٍ (اختياري): خريطة { [participantId]: وزن } لا يجب أن
