@@ -6,13 +6,31 @@ import { expect } from '@playwright/test'
 
 export interface TripCreds {
   tripId: string
-  pin: string
+  memberEmail: string
+  memberPassword: string
   adminEmail: string
   adminPassword: string
 }
 
+/** يسجّل الدخول عبر AuthGate بالبريد/كلمة المرور — يفتح النموذج المطوي أولاً (Google هو الخيار الأول المعروض، لا نستخدمه هنا). */
+async function signInWithEmail(page: Page, email: string, password: string): Promise<void> {
+  await page.getByText('أو عبر البريد الإلكتروني').click()
+  await page.getByPlaceholder('البريد الإلكتروني').fill(email)
+  await page.getByPlaceholder('كلمة المرور').fill(password)
+  await page.getByRole('button', { name: 'تسجيل الدخول' }).click()
+  // AuthGate يزول فور نجاح الدخول — انتظاره يمنع محاولة استخدام العناصر التالية قبل استقرار التوجيه.
+  await expect(page.getByRole('button', { name: /متابعة عبر Google/ })).not.toBeVisible()
+}
+
 /**
- * يفتح رابط الرحلة، يتجاوز بوابة رمز الرحلة (TripGate)، ثم يسجّل دخول المسؤول.
+ * يفتح رابط الرحلة ويسجّل دخول حساب المسؤول مباشرة عبر AuthGate.
+ *
+ * ⚠️ لا خطوة "وضع المسؤول" منفصلة هنا بعد الآن: حساب المسؤول في seedTrip يحمل
+ * admin claim من البداية، وisAdmin() في firestore.rules لا تحتاج عضوية الرحلة
+ * (`isMember(appId) || isAdmin()`) — فمروره عبر AuthGate وحده كافٍ للوصول
+ * المباشر بصفة مسؤول. الزر "وضع المسؤول" داخل التطبيق يبقى موجوداً لسيناريو
+ * مختلف (من سجّل دخوله كعضو عادي بحسابه الشخصي ويريد التبديل لحساب المسؤول
+ * العالمي المنفصل) — انظر useAdminAuth.ts — لا للمسار الذي يختبره هذا الملف.
  *
  * ⚠️ هذا هو المسار الوحيد الفعلي لإضافة مسافر عبر الواجهة: زر "إضافة مسافر"
  * لا يظهر إطلاقاً لعضو غير مسؤول (انظر App.tsx وTravelerSection.tsx) — رغم أن
@@ -21,23 +39,14 @@ export interface TripCreds {
  */
 export async function openTripAsAdmin(page: Page, creds: TripCreds): Promise<void> {
   await page.goto(`/?trip=${creds.tripId}`)
-
-  await page.getByPlaceholder('رمز الرحلة').fill(creds.pin)
-  await page.getByRole('button', { name: 'متابعة' }).click()
-
-  await page.getByRole('button', { name: 'وضع المسؤول' }).click()
-  await page.getByPlaceholder('البريد الإلكتروني').fill(creds.adminEmail)
-  await page.getByPlaceholder('كلمة المرور').fill(creds.adminPassword)
-  await page.getByRole('button', { name: 'دخول' }).click()
-
+  await signInWithEmail(page, creds.adminEmail, creds.adminPassword)
   await expect(page.getByRole('button', { name: 'إغلاق المسؤول' })).toBeVisible()
 }
 
-/** يفتح رابط الرحلة ويتحقق من رمزها فقط — بلا تسجيل دخول مسؤول (مسار العضو العادي). */
-export async function openTripAsMember(page: Page, tripId: string, pin: string): Promise<void> {
-  await page.goto(`/?trip=${tripId}`)
-  await page.getByPlaceholder('رمز الرحلة').fill(pin)
-  await page.getByRole('button', { name: 'متابعة' }).click()
+/** يفتح رابط الرحلة ويسجّل دخول حساب العضو العادي عبر AuthGate — بلا صلاحية مسؤول. */
+export async function openTripAsMember(page: Page, creds: TripCreds): Promise<void> {
+  await page.goto(`/?trip=${creds.tripId}`)
+  await signInWithEmail(page, creds.memberEmail, creds.memberPassword)
 }
 
 /** يضيف مسافراً عبر النموذج — يتطلب وضع المسؤول مفعّلاً مسبقاً (openTripAsAdmin). */

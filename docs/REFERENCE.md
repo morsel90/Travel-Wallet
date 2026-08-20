@@ -25,7 +25,7 @@
 │   │
 │   ├── hooks/
 │   │   ├── index.ts              # Unified re-export
-│   │   ├── useAuth.ts            # Auth state, admin claims, PIN verification, rate limiting
+│   │   ├── useAuth.ts            # 🆕 Auth state, admin claims, Google/Email sign-in — no PIN, no anonymous sessions
 │   │   ├── useAdminAuth.ts       # Admin sign-in modal state, sign-in/out, password reset + cooldown
 │   │   ├── useModals.ts          # Unified modal state (discriminated union + reducer)
 │   │   ├── useExpenses.ts        # Firestore onSnapshot → Expense[]
@@ -54,9 +54,9 @@
 │   │   └── UIContext.ts          # 🆕 TWO contexts: UIActionsContext (stable) + UIFormContext (volatile)
 │   │
 │   ├── components/
-│   │   ├── TripGate.tsx          # PIN entry screen with rate limit countdown (+ escape link to "my trips")
+│   │   ├── AuthGate.tsx          # 🆕 Mandatory Google/Email sign-in screen — no PIN, no anonymous sessions
+│   │   ├── NotAMemberScreen.tsx  # 🆕 Signed in but not a member of this trip (+ escape link to "my trips")
 │   │   ├── TripPicker.tsx        # 🆕 "My trips" list — shown when the URL names no trip
-│   │   ├── SaveAccountBanner.tsx # 🆕 Optional "save your account" offer, shown only to anonymous users
 │   │   ├── Header.tsx            # Sticky collapsible header with stats pills
 │   │   ├── SmartInputBar.tsx     # Fixed bottom input bar (quick expense)
 │   │   ├── TravelerSection.tsx   # Traveler cards + add form + profile modal
@@ -73,8 +73,8 @@
 │   │   ├── ItinerarySection.tsx  # Full itinerary list (rendered inside ReportsView)
 │   │   ├── Misc.tsx              # BankDetailsCard (copy IBAN / Web Share API)
 │   │   ├── admin/TripAdminView.tsx   # 🆕 Trips list ↔ trip detail (full-screen). viewerRole='organizer': one trip, no create/restore
-│   │   ├── admin/TripDetailPanel.tsx # One trip: name + bank, itinerary editor, PIN reset, delete (empty only), JSON backup download, 🆕 members tab role toggle. viewerRole hides admin-only tabs
-│   │   ├── admin/NewTripForm.tsx     # Create a trip (id + name + PIN) via manageTrip
+│   │   ├── admin/TripDetailPanel.tsx # One trip: name + bank, itinerary editor, delete (empty only), JSON backup download, invite link, 🆕 members tab role toggle. viewerRole hides admin-only tabs
+│   │   ├── admin/NewTripForm.tsx     # Create a trip (id + name) via manageTrip
 │   │   ├── admin/RestoreTripForm.tsx # 🆕 Restore a trip from a Stage-1 JSON backup via restoreTrip
 │   │   ├── admin/SegmentForm.tsx     # Add/edit form for a single itinerary segment
 │   │   ├── charts/ChartsSection.tsx  # Settlements, categories, trend (HTML/CSS)
@@ -107,19 +107,18 @@
 │       ├── itinerary.ts         # Pure: segment draft validation, normalize/sort, findNextSegment
 │       ├── travelerName.ts      # Pure: deriveShortName, isValidNameKey, newTravelerId
 │       ├── writeErrors.ts       # Pure: Firestore error code → real cause + is a retry worthwhile
-│       ├── callableErrors.ts    # 🆕 Pure: Cloud Function error code → real cause (ad blocker, network, wrong PIN)
-│       ├── mergeNotice.ts       # 🆕 sessionStorage one-shot flag: warn once, post-reload, that account-merge left old expenses view-only
+│       ├── callableErrors.ts    # 🆕 Pure: Cloud Function error code → real cause (ad blocker, network, invalid invite)
 │       ├── haptics.ts           # Vibration API + visual flash overlay
 │       ├── preload.ts           # 🆕 Idle-time preloading of lazy chunks (onIdle + preloadAll)
 │       ├── cn.ts                # Tailwind class merge (clsx alternative)
 │       └── tripId.ts           # TRIP_ID + HAS_EXPLICIT_TRIP_ID from ?trip= query param
 │
 ├── functions/
-│   └── index.js                 # Cloud Functions: verifyTripPin + manageTrip + mergeAnonymousTrips + manageMember (remove + 🆕 setRole, both organizer-aware) + restoreTrip
+│   └── index.js                 # Cloud Functions: manageTrip (create/delete) + manageInvite + joinViaInvite (rejects anonymous sessions) + updateMyTravelerName + linkTravelerAccount + manageMember (remove + 🆕 setRole, both organizer-aware) + restoreTrip
 │
 ├── scripts/
 │   ├── audit-legacy-docs.mjs    # 🆕 Read-only: counts documents still needing each legacy fallback
-│   ├── create-trip.mjs          # Admin SDK script: create/update trip + PIN
+│   ├── create-trip.mjs          # Admin SDK script: create/update trip
 │   ├── set-admin.mjs            # Admin SDK script: grant/revoke admin claim
 │   ├── list-trips.mjs           # Admin SDK script: list existing trips
 │   ├── backfill-traveler-names.mjs # One-off migration: claim docs for pre-existing travelers
@@ -131,15 +130,15 @@
 │   └── tsconfig.json
 │
 ├── e2e/                         # 🆕 Playwright end-to-end specs (real browser + emulators)
-│   ├── critical-flow.spec.ts            # PIN → admin → travelers → expense → edit → balances → report → export
+│   ├── critical-flow.spec.ts            # Sign in → admin → travelers → expense → edit → balances → report → export
 │   ├── balances-math.spec.ts            # Exact settlement arithmetic through the real UI
 │   ├── soft-delete-trash.spec.ts        # Delete → undo toast → delete again → restore from trash
 │   ├── offline-optimistic-write.spec.ts # Offline write shows _pending, then syncs on reconnect
 │   ├── trip-picker.spec.ts              # Bare URL shows "my trips"; clicking one opens it
 │   ├── admin-persists-across-trips.spec.ts # Admin survives reload and trip switching
 │   ├── organizer-role.spec.ts           # 🆕 Two real sessions: admin promotes a member, member's UI updates after reload
-│   ├── wrong-pin.spec.ts                # Rejection message, then success
-│   ├── utils/{seed,flows}.ts            # Emulator seeding + shared UI steps
+│   ├── auth-gate.spec.ts                # 🆕 AuthGate: invalid invite link, email sign-up/sign-in, not-a-member screen
+│   ├── utils/{seed,flows}.ts            # Emulator seeding (mints authenticated users via Admin SDK) + shared UI steps
 │   └── tsconfig.json
 │
 ├── firestore.rules              # Security rules (multi-trip, admin claims, rate limiting)
@@ -158,12 +157,12 @@
 
 | File | Purpose |
 |---|---|
-| `src/App.tsx` | 🆕 Two jobs only: **routing** (picker → PIN gate → app, in that order) and **composition**. No hook wiring, no context values, no layout. |
+| `src/App.tsx` | 🆕 Two jobs only: **routing** (auth gate → invite screen → picker → membership check → app, in that order) and **composition**. No hook wiring, no context values, no layout. |
 | `src/hooks/useAppCoordinator.ts` | 🆕 Every hook call and derived value, returned as named groups (`session`, `ledger`, `trip`, `rates`, `status`, `picker`, …). Order inside is load-bearing — later hooks consume earlier results. |
 | `src/components/AppProviders.tsx` | 🆕 Builds and provides the three context values. Read `context/UIContext.ts` before touching it — the volatility split is a performance guarantee whose breakage is silent. |
 | `src/types.ts` | All interfaces: `Traveler`, `Expense`, `ExpenseFormData`, `Settlement`, `ToastMessage`, etc. |
 | `src/hooks/useExpenseActions.ts` | All expense CRUD: form submission, quick add, optimistic updates, retry logic, rate limiting. |
-| `src/hooks/useAuth.ts` | Auth state machine: anonymous sign-in, admin claim detection, PIN verification via Cloud Function, rate limit countdown. |
+| `src/hooks/useAuth.ts` | 🆕 Auth state machine: session restore, admin claim detection, `joinedTripIds` from the `trips` claim, `signInWithGoogle` (popup with redirect fallback) + `signInWithEmail`. No anonymous sign-in. |
 | `src/hooks/useModals.ts` | `ModalState` discriminated union + reducer — the single source of truth for which modal is open. |
 | `src/components/ModalManager.tsx` | Renders those modals (all `React.lazy`). Purely presentational; data/handlers passed from `App.tsx`. |
 | `src/hooks/useTripConfig.ts` | Live `onSnapshot` on `trips/{TRIP_ID}`: trip name, bank details, itinerary — with `constants.ts` fallbacks. |
@@ -175,12 +174,12 @@
 | `src/constants.ts` | `CURRENCY_LABELS` (160 currencies), `FALLBACK_RATES`, `EXPENSE_CATEGORIES`, `BANK_DETAILS`. |
 | `src/utils/calculations.ts` | Pure functions for balances, settlements, category totals, spending trend. Fully tested. |
 | `src/utils/xlsx.ts` | Pure-JS OOXML XLSX generator — no dependencies. |
-| `functions/index.js` | `verifyTripPin` (rate-limited PIN verification, grants the `trips` claim) + `manageTrip` (create / resetPin / delete) + `mergeAnonymousTrips` (rescues memberships when linking hits an existing account) + `manageMember` (`mode: 'remove'` — removes one trip from another user's claims, now callable by a trip's organizer too but never against an admin or another organizer; 🆕 `mode: 'setRole'` — grants/revokes the organizer role, global admin only) + `restoreTrip` (rebuilds a trip from a Stage-1 JSON backup — empty-or-nonexistent trips only, re-validates every document since Admin SDK bypasses the rules). |
-| `firestore.rules` | Security rules: `isAdmin()`, `isMember(tripId)`, 🆕 `isOrganizer(tripId)` (reads `trips/{tripId}/members/{uid}.role`), `withinExpenseRateLimit`, immutable deposit logs. |
+| `functions/index.js` | `manageTrip` (create / delete, no PIN) + `manageInvite` (create/revoke invite token) + `joinViaInvite` (grants the `trips` claim; rejects anonymous callers with `failed-precondition`) + `updateMyTravelerName` (self-service rename on first join) + `linkTravelerAccount` (organizer links a ghost traveler to a joined account) + `manageMember` (`mode: 'remove'` — removes one trip from another user's claims, callable by a trip's organizer too but never against an admin or another organizer; 🆕 `mode: 'setRole'` — grants/revokes the organizer role, global admin only) + `restoreTrip` (rebuilds a trip from a Stage-1 JSON backup — empty-or-nonexistent trips only, re-validates every document since Admin SDK bypasses the rules). |
+| `firestore.rules` | Security rules: `isAdmin()`, `isMember(tripId)` (🆕 folds in `isNotAnonymous()` — no anonymous session ever satisfies it), 🆕 `isOrganizer(tripId)` (reads `trips/{tripId}/members/{uid}.role`), `withinExpenseRateLimit`, immutable deposit logs. |
 | `src/context/UIContext.ts` | 🆕 Two contexts split by volatility. Read the comment there before adding a field — putting a changing value in the actions context silently undoes the split. |
 | `src/hooks/useMyTrips.ts` | 🆕 The user's own trips. Reads each `trips/{id}` with its own `getDoc` — a `list` query is admin-only and would fail for members. |
 | `src/utils/preload.ts` | 🆕 Idle-time preloading of lazy chunks so they exist before connectivity is lost. |
-| `scripts/create-trip.mjs` | Admin SDK script to create/update a trip (name, bank details, PIN hash). |
+| `scripts/create-trip.mjs` | Admin SDK script to create/update a trip (name, bank details, itinerary). No PIN — invite it from the app's admin panel afterward. |
 | `scripts/set-admin.mjs` | Admin SDK script to grant/revoke `admin: true` custom claim. |
 | `scripts/run-with-emulators.mjs` | 🆕 Wrapper giving emulator-backed test runs a trustworthy exit code. See its header comment — three separate bugs lived here. |
 
@@ -257,14 +256,18 @@ trips/{tripId}                    — Trip config (name, bankDetails, itinerary[
                                     Admin-writable from the app (validated by isValidTripConfig);
                                     delete stays forbidden — it would orphan artifacts/{tripId}
 trips/{tripId}/members/{uid}      — 🆕 Membership roster. Written ONLY by the functions
-                                    (verifyTripPin on join, mergeAnonymousTrips on merge);
+                                    (joinViaInvite on join);
                                     `allow write: if false`, read admin-only.
                                     { joinedAt, lastVerifiedAt, email?, displayName?,
                                       mergedFrom?, backfilledAt? }
                                     ⚠️ An index, NOT a source of access — see Design Decisions
-tripSecrets/{tripId}              — PIN hash + salt (no client access, function only)
-rateLimits/verify_{key}          — PIN verify rate limits (function only)
+tripInvites/{token}               — 🆕 Invite link record { tripId, createdAt, createdByUid }
+                                    (no client access, function only — manageInvite writes,
+                                    joinViaInvite consumes)
 ```
+
+🆕 No `tripSecrets/{tripId}` and no PIN-verification `rateLimits/verify_{key}` — both
+deleted along with the PIN itself. See *Design Decisions* in `docs/DECISIONS.md`.
 
 ---
 
@@ -281,23 +284,22 @@ Variables* for why hand-rolled `fetch` made a staging environment impossible.
 import { httpsCallable } from 'firebase/functions'
 import { functions } from './firebase'
 
-// hooks/useAuth.ts
-await httpsCallable<{ pin: string; tripId: string }, { success: boolean }>(
-  functions, 'verifyTripPin',
-)({ pin, tripId })
+// 🆕 hooks/useInviteJoin.ts — requires a real (non-anonymous) sign-in first;
+// rejected with failed-precondition otherwise
+await httpsCallable<{ inviteToken: string }, { success: boolean; tripId: string; needsName?: boolean }>(
+  functions, 'joinViaInvite',
+)({ inviteToken })
+
+// 🆕 hooks/useInviteJoin.ts — only when needsName was true above
+await httpsCallable<{ tripId: string; name: string }, { success: boolean }>(
+  functions, 'updateMyTravelerName',
+)({ tripId, name })
 
 // hooks/useTripAdminActions.ts — admin claim required, re-checked server-side
 await httpsCallable<
-  { mode: 'create' | 'resetPin' | 'delete'; tripId: string; pin?: string; name?: string },
+  { mode: 'create' | 'delete'; tripId: string; name?: string },
   { success: boolean; tripId: string }
->(functions, 'manageTrip')({ mode, tripId, pin, name })
-```
-
-```ts
-// 🆕 hooks/useAccountLink.ts — only on the account-conflict path
-await httpsCallable<{ previousIdToken: string }, { merged: number }>(
-  functions, 'mergeAnonymousTrips',
-)({ previousIdToken })
+>(functions, 'manageTrip')({ mode, tripId, name })
 ```
 
 ```ts
@@ -305,48 +307,39 @@ await httpsCallable<{ previousIdToken: string }, { merged: number }>(
 // (docs/PLAN-backup-recovery.md). backup: unknown deliberately — the real shape
 // is re-validated entirely server-side, since Admin SDK bypasses firestore.rules.
 await httpsCallable<
-  { tripId: string; pin: string; backup: unknown },
+  { tripId: string; backup: unknown },
   { success: boolean; tripId: string; restored: { travelers: number; expenses: number; depositLogs: number } }
->(functions, 'restoreTrip')({ tripId, pin, backup })
+>(functions, 'restoreTrip')({ tripId, backup })
 ```
 
 Failures arrive as `FirebaseError` with a `functions/…` code (`unauthenticated`,
-`permission-denied`, `resource-exhausted` for the PIN rate limit), not as an HTTP status.
+`permission-denied`, `failed-precondition` for an anonymous caller), not as an HTTP status.
 
-`manageTrip` exists because creating a trip or changing its PIN writes
-`tripSecrets/{tripId}`, which is `read, write: if false` for every client
-including admins. Salt generation and hashing stay server-side. Everything
-non-secret (name, bank details, itinerary) is written straight from the client
-through `firestore.rules` instead — no function deploy needed to change it.
+`manageTrip` still exists as a function purely for `mode: 'delete'`'s multi-collection
+emptiness check (see below) — `mode: 'create'` no longer touches any secret and could,
+in principle, move to a direct `firestore.rules`-validated write like the rest of trip
+config; it stays bundled with `delete` for one endpoint instead of two.
 
-`mode: 'create'` refuses to overwrite an existing trip: overwriting would
-replace its PIN and lock out every current member.
+`mode: 'create'` refuses to overwrite an existing trip.
 
-🆕 `mode: 'delete'` needs no `pin` or `name`, and **refuses any trip that has a
+🆕 `mode: 'delete'` needs no `name`, and **refuses any trip that has a
 single traveler or expense** (checked server-side with `limit(1)` queries — the
 question is "is there data?", not "how much"). This is what keeps the deletion
 safe, and why `allow delete: if false` stays in `firestore.rules`: if the client
 could delete directly, that emptiness check could simply be bypassed, orphaning
 `artifacts/{tripId}` and destroying deposit logs that are immutable by design.
-It deletes `trips/{tripId}` and `tripSecrets/{tripId}` in one atomic batch, which
-also frees the trip id for reuse — the actual need behind it (a trip created with
+It also frees the trip id for reuse — the actual need behind it (a trip created with
 a typo'd id). Archiving would not free the id, which is why it wasn't chosen.
 
-🆕 **Trip membership lives in the token, and that has a ceiling.** `verifyTripPin` writes `trips: { [tripId]: true }` into the custom claims, and `isMember()` in `firestore.rules` reads it straight from the token — a **free** read. Storing membership in Firestore instead would force a billed `get()` into nearly every rule, on every read and every write, against a 10-read-per-request budget that expense creation already spends two of. The trade is deliberate.
+🆕 **Trip membership lives in the token, and that has a ceiling.** `joinViaInvite` writes `trips: { [tripId]: true }` into the custom claims, and `isMember()` in `firestore.rules` reads it straight from the token — a **free** read. Storing membership in Firestore instead would force a billed `get()` into nearly every rule, on every read and every write, against a 10-read-per-request budget that expense creation already spends two of. The trade is deliberate.
 
 Its cost is a hard limit: Firebase caps custom claims at **1000 bytes**. With a 16-character trip id each membership costs ~25 bytes, so `assertClaimsFitTokenLimit` refuses at **38 trips** (913 bytes), leaving 111 bytes of headroom. The budget is 900 rather than 1000 so that adding `admin: true` — or any future claim — does not turn a near-limit account into a broken one.
 
 ⚠️ **Without that guard the failure is actively misleading:** authentication does *not* break and existing tokens keep working. What fails is the *join* — `setCustomUserClaims` throws, and the user sees an opaque `internal` error naming nothing. Now they get `resource-exhausted` with a sentence that says what happened.
 
-**When a real user approaches 38 trips**, the fix is `users/{uid}.joinedTrips` in Firestore — priced honestly in `docs/PLAN-account-linking.md`, and deliberately not built before it is needed.
+**When a real user approaches 38 trips**, the fix is `users/{uid}.joinedTrips` in Firestore — deliberately not built before it is needed.
 
-🆕 **PIN rate limiting is scoped per trip.** The key is `anon_${ip}_${tripId}` (or
-`auth_${uid}_${tripId}`), so exceeding the limit on one trip no longer locks the
-user out of every other trip. The anonymous limit is **15** per 15 minutes, not 5:
-a travel group joining the *same* trip shares one wifi and therefore one key, and
-5 attempts between them was reachable by two typos. The IP is used rather than the
-uid because `signInAnonymously` makes fresh uids free — a uid-based limit is
-bypassed by reloading the page.
+🆕 **No rate limit on `joinViaInvite`.** The old per-trip PIN limiter is gone along with the PIN — an invite token is 192 bits of entropy (`crypto.randomBytes(24)`), unguessable by any realistic brute force, so a rate limit there would have protected against nothing. See the `joinViaInvite` doc comment in `functions/index.js`.
 
 ### Key Data Context (available to all components)
 
@@ -432,7 +425,7 @@ Layers 2 and 3 need **Java** (the Firestore emulator is a JVM process) and a cac
 Pure utilities and every hook. Hooks are tested with `renderHook`, mocking `firebase/firestore` and `src/firestore.ts` — none of them need React context, because hooks take their data as parameters and the contexts only carry results *outward*.
 
 - `utils/`: `calculations`, `reportData`, `reports`, `itinerary`, `tripId`, `travelerName`, `writeErrors`, 🆕 `callableErrors`, `preload`
-- `hooks/`: `useAuth`, `useExpenseActions`, `useTravelerActions`, `useDepositActions`, `useMyTrips`, `useModals`, `useBalances`, `useFilteredExpenses`, `useDebounce`, `useCountdown`, `useOnlineStatus`, `useHeaderCollapse`, 🆕 `useAccountLink`
+- `hooks/`: `useAuth`, `useExpenseActions`, `useTravelerActions`, `useDepositActions`, `useMyTrips`, `useModals`, `useBalances`, `useFilteredExpenses`, `useDebounce`, `useCountdown`, `useOnlineStatus`, `useHeaderCollapse`, 🆕 `useInviteJoin`
 - `components/EmptyState.test.tsx`
 - 🆕 `App.test.tsx` — a **characterization test**: it describes behaviour as it is, not as it should be, and exists to make refactors of `App.tsx` safe. Pins gate ordering, the status banners, the closed-trip hiding of both expense inputs, the empty states, and that empty states stay hidden while loading. ⚠️ If it fails during a refactor, the refactor changed behaviour — changing the expectation to make it pass destroys the only reason it exists.
 
@@ -444,7 +437,7 @@ Two things worth knowing before editing that file:
 - **Rule 3 is `min(debt, credit)`, not "total debt".** `remaining = deposited − share`, so the balances sum to the fund's surplus or deficit and reach zero only by coincidence; a surplus leaves creditors unmatched. Stating it as "= total debt" fails on a perfectly healthy ledger. A separate test covers the balanced case where the stronger claim does hold. Measured deviation is exactly one halala, bounded by `EPSILON` and *not* by group size.
 
 #### 2. Rules tests (`tests/firestore-rules/`)
-Run against the emulator with `@firebase/rules-unit-testing` — they test `firestore.rules` itself, not app code. Cover: anonymous/non-member denial, cross-trip isolation, expense ownership on update, hard-delete blocked everywhere, admin-only trip writes, `tripSecrets` unreachable even by admin, the expense rate limit including clock tampering, deposit-log immutability, and `travelerNames` uniqueness.
+Run against the emulator with `@firebase/rules-unit-testing` — they test `firestore.rules` itself, not app code. Cover: non-member denial, 🆕 an authenticated session with a *valid* `trips` claim but `sign_in_provider: 'anonymous'` still denied everywhere `isMember()` gates (the actual mechanism behind the PIN/anonymous removal — see *Design Decisions*), cross-trip isolation, expense ownership on update, hard-delete blocked everywhere, admin-only trip writes, `tripInvites` unreachable even by admin, the expense rate limit including clock tampering, deposit-log immutability, and `travelerNames` uniqueness.
 
 🆕 Expense attribution is covered in both directions: a member (and an admin) is refused when creating an expense under someone else's `createdByUid`, refused when omitting it, and refused when changing it on update. Legacy expenses that predate the field are covered too — see *Design Decisions*.
 
@@ -542,7 +535,7 @@ The framework's own source makes this precise: `checkAuthToken` returns `MISSING
 
 ✅ **The UI no longer hides this.** `callVerify` used to swallow every error except `resource-exhausted` and show «رمز الرحلة غير صحيح» — the same sentence for a wrong PIN, a missing trip, an unauthenticated call and an infrastructure fault. That is the same failure mode `utils/writeErrors.ts` exists to prevent for writes, and it is what made this take two hours.
 
-`utils/callableErrors.ts` now translates the code into its real cause, and `unauthenticated` names the ad blocker explicitly — the one cause a user can fix unaided. ⚠️ **"Wrong PIN" and "no such trip" stay merged on purpose**: the server returns one `permission-denied` for both so that trip existence cannot be probed by guessing `?trip=`. That merge is security; the rest was noise. `callableErrors.test.ts` pins both halves of that line.
+`utils/callableErrors.ts` now translates the code into its real cause, and `unauthenticated` names the ad blocker explicitly — the one cause a user can fix unaided. ⚠️ **"Wrong PIN" and "no such trip" stayed merged on purpose** back when `verifyTripPin` existed: the server returned one `permission-denied` for both so that trip existence could not be probed by guessing `?trip=`. 🆕 That principle carried over unchanged to invite links after PIN removal — `describeInviteError` merges "invalid token" and "revoked token" the same way, for the same reason. That merge is security; the rest was noise. `callableErrors.test.ts` pins it.
 
 ### Storybook
 
@@ -570,9 +563,11 @@ Three independent systems that must be deployed separately:
 |---|---|---|
 | Frontend | `vercel --prod` | SPA hosted on Vercel |
 | Firestore Rules | `firebase deploy --only firestore:rules` | Security rules |
-| Cloud Functions | `firebase deploy --only functions` | `verifyTripPin`, `manageTrip`, `mergeAnonymousTrips`, `manageMember`, 🆕 `restoreTrip` |
+| Cloud Functions | `firebase deploy --only functions` | `manageTrip`, `manageInvite`, `joinViaInvite`, `updateMyTravelerName`, `linkTravelerAccount`, `manageMember`, 🆕 `restoreTrip` |
 
-**Important:** After updating `firestore.rules` or `functions/index.js`, existing users may need to re-enter their trip PIN (custom claim format changed). Always create the trip via `scripts/create-trip.mjs` before deploying new rules.
+**Important:** Always create the trip via `scripts/create-trip.mjs` before deploying rules that depend on it existing.
+
+⚠️ **Deploying `firestore.rules` with `isNotAnonymous()` folded into `isMember()` (see *Design Decisions*) is a one-way, breaking deploy on production data.** Any member still on an anonymous session loses access the instant this lands — no re-entry flow exists to recover it, because there is no PIN anymore. This is not a routine deploy footnote; confirm intent before running it against a live project with real members.
 
 **Functions runtime:** Node 22. The version is pinned in **two** places and both must agree — `firebase.json` (`runtime: "nodejs22"`, which is what the deploy actually reads) and `functions/package.json` (`engines.node`). Changing only the latter does nothing. CI uses Node 22 as well, so the frontend is built on the same major the functions run on.
 

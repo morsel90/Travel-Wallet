@@ -1,42 +1,28 @@
 /**
  * Cloud Functions لتطبيق "مصاريف السفر".
  *
- * verifyTripPin: دالة قابلة للاستدعاء (Callable) تتحقق من رمز رحلة مشترك
- * (Trip PIN) خادميًا، ثم تمنح المستخدم الحالي (حتى لو كان مجهولًا/Anonymous)
- * صلاحية "عضو في هذه الرحلة تحديداً" عبر Custom Claim باسم `trips` (خريطة
- * { [tripId]: true }). هذا الـ Claim هو ما تتحقق منه قواعد Firestore (انظر
- * firestore.rules: isMember(appId)) للسماح بالقراءة والإنشاء ضمن مسار هذه
- * الرحلة تحديداً — لا يمنح أي صلاحية على رحلات أخرى.
- *
- * 🆕 دعم رحلات متعددة: كل رحلة تخزّن هاش رمزها الخاص في مستند
- * tripSecrets/{tripId} (بدل سر Secret Manager عالمي واحد سابقاً TRIP_PIN) —
- * هذا يتيح للمسؤول إضافة رحلة جديدة فوراً (عبر scripts/create-trip.mjs) دون
- * أي حاجة لإعادة نشر هذه الدالة. الرمز نفسه لا يُخزَّن أبداً كنص صريح — فقط
- * هاش SHA-256 مع ملح (salt) عشوائي خاص بكل رحلة.
+ * 🆕 نموذج الوصول الحالي (يُلغي رمز الرحلة/PIN والجلسات المجهولة نهائياً —
+ * انظر docs/DECISIONS.md لتاريخ القرار وسببه): العضوية في رحلة تُمنح حصراً عبر
+ * joinViaInvite (رابط دعوة موقَّع)، ولحساب حقيقي (Google أو بريد/كلمة مرور)
+ * لا لجلسة مجهولة — الدالة ترفض أي استدعاء من جلسة sign_in_provider ==
+ * 'anonymous' صراحةً. النتيجة Custom Claim باسم `trips` (خريطة
+ * { [tripId]: true }) على حساب المستخدم، وهو ما تتحقق منه قواعد Firestore
+ * (انظر firestore.rules: isMember(appId)) للسماح بالقراءة والكتابة ضمن مسار
+ * هذه الرحلة تحديداً — لا يمنح أي صلاحية على رحلات أخرى.
  */
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
-const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 const crypto = require('crypto');
 
 admin.initializeApp();
 
 const db = admin.firestore();
-const WINDOW_MS = 15 * 60 * 1000; // 15 دقيقة
-const MAX_PIN_INPUT_LENGTH = 128;
-// 🆕 حد أدنى لطول الرمز عند إنشائه من الواجهة. لا يُطبَّق على التحقق
-// (verifyTripPin) حتى لا تنكسر رحلات قائمة رمزها أقصر من هذا.
-const MIN_PIN_LENGTH = 4;
 
 // ⚠️ يجب أن يطابق هذا التنسيق تماماً TRIP_ID_PATTERN في src/utils/tripId.ts —
 // إنجليزي/أرقام وشرطة (-) وشرطة سفلية (_) فقط، بطول 1-64 حرفاً، لمنع tripId
 // من أن يتحول لمسار Firestore خبيث أو معرّف غير متوقع.
 const TRIP_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
-
-function hashPin(pin, salt) {
-  return crypto.createHash('sha256').update(salt + pin).digest('hex');
-}
 
 // 🆕 حدّ Firebase لحجم الـ custom claims هو 1000 بايت. عضوية الرحلات تُخزَّن في
 // الـ claims (`trips: { [tripId]: true }`) لأن firestore.rules تقرأها من التوكن
@@ -109,265 +95,14 @@ async function recordMembership(tripId, userRecord, extra = {}) {
   }
 }
 
-// 🆕 وظيفة حماية من محاولات التخمين المستمرة (Rate Limiting)
-//
-// ⚠️ المفتاح يشمل tripId عمداً (يجب أن يكون مُتحقَّقاً من صيغته قبل الاستدعاء —
-// انظر TRIP_ID_PATTERN في verifyTripPin، فهو يدخل في معرّف مستند):
-//
-//   • قبلاً كان المفتاح `anon_${ip}` وحده، فتجاوز الحدّ على رحلة واحدة يحظر
-//     المستخدم عن **كل** الرحلات — بما فيها رحلات يعرف رموزها تماماً.
-//   • الحماية الفعلية المقصودة هي ضد تخمين رمز رحلة بعينها، وهذه يحفظها
-//     التضييق كما هي: عدد المحاولات على الرحلة الواحدة لم يتغير مبدؤه.
-//
-// ⚠️ ولماذا الـ IP لا الـ uid للمجهولين: إنشاء حساب مجهول جديد مجاني وفوري
-// (signInAnonymously)، فحدٌّ مبني على uid يُتجاوز بإعادة تحميل الصفحة. الـ IP
-// ليس مثالياً لكنه المؤشر الوحيد الذي له كلفة على المهاجم.
-//
-// وحدّ المجهولين مرفوع من 5 إلى 15 لأن التضييق وحده لا يعالج الحالة التي دفعتنا
-// لهذا: مجموعة سفر تنضم **لنفس الرحلة** من شبكة واحدة (واي فاي فندق، أو نقطة
-// اتصال من جوال أحدهم) تتشارك المفتاح ذاته. خمسة أشخاص يخطئ اثنان منهم مرة
-// واحدة كان يكفي لحظر المجموعة كلها ربع ساعة — وهو سيناريو متوقّع تماماً
-// لتطبيق غرضه أن تنضم مجموعة لرحلة في وقت واحد.
-async function checkRateLimit(request, tripId) {
-  const now = Date.now();
-  const ip = request.rawRequest?.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown';
-  const uid = request.auth?.uid;
-
-  // التحقق الدقيق من نوع المصادقة لتفادي حظر مستخدمين مسجلين لا يملكون بريداً إلكترونياً
-  const isAnonymous = request.auth?.token?.firebase?.sign_in_provider === 'anonymous';
-
-  const scope = isAnonymous ? `anon_${ip}` : `auth_${uid || ip}`;
-  const key = `${scope}_${tripId}`;
-  const limit = isAnonymous ? 15 : 20;
-
-  const docRef = db.collection('rateLimits').doc(`verify_${key}`);
-
-  // ⚠️ القراءة والفحص والزيادة داخل معاملة واحدة (transaction) لا get() ثم
-  // update() منفصلتين. بدونها، طلبات متزامنة تصل والعدّاد قريب من الحدّ
-  // تقرأ كلّها نفس القيمة القديمة فتجتاز الفحص معاً، فيتجاوز عدد المحاولات
-  // الفعلي الحدّ المعلن — سباق (TOCTOU) يُضعف الحماية من تخمين رمز الرحلة.
-  // runTransaction تُسلسِل أي معاملات متزامنة تلمس نفس المستند (بإعادة
-  // المحاولة تلقائياً عند التعارض)، فلا يمكن لقراءتين أن تريا نفس القيمة
-  // القديمة معاً ثم تكتبا زيادتين مستقلّتين.
-  return db.runTransaction(async (tx) => {
-    const snap = await tx.get(docRef);
-
-    // تعيين وقت الانتهاء في المستقبل (24 ساعة) لسياسة TTL
-    const expireAt = Timestamp.fromMillis(now + 24 * 60 * 60 * 1000);
-
-    if (!snap.exists) {
-      tx.set(docRef, { count: 1, windowStart: now, expireAt });
-      return { limited: false };
-    }
-
-    const data = snap.data();
-    const windowStart = data.windowStart;
-
-    // انتهت النافذة الزمنية
-    if (now - windowStart > WINDOW_MS) {
-      tx.set(docRef, { count: 1, windowStart: now, expireAt });
-      return { limited: false };
-    }
-
-    // تجاوز الحد
-    if (data.count >= limit) {
-      console.warn(`[RATE_LIMIT] Blocked: ${key}, count: ${data.count}`);
-      const retryAfterSeconds = Math.ceil((windowStart + WINDOW_MS - now) / 1000);
-      return { limited: true, retryAfter: retryAfterSeconds };
-    }
-
-    // زيادة العداد بشكل آمن وتفادي مشاكل التزامن
-    tx.update(docRef, { count: FieldValue.increment(1) });
-    return { limited: false };
-  });
-}
-
-exports.verifyTripPin = onCall(
-  {
-    region: 'us-central1',
-    // حد أقصى للنسخ المتزامنة يقلل من الأثر المالي لأي محاولة إساءة استخدام (تخمين متكرر)
-    maxInstances: 5,
-  },
-  async (request) => {
-    // يجب أن يكون المستخدم مسجّل دخول (ولو بحساب مجهول) قبل محاولة التحقق من الرمز
-    if (!request.auth) {
-      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
-    }
-
-    const tripId = String(request.data?.tripId ?? '').trim();
-    const submitted = String(request.data?.pin ?? '').trim();
-
-    if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
-      throw new HttpsError('invalid-argument', 'معرّف الرحلة غير صالح.');
-    }
-
-    if (!submitted || submitted.length > MAX_PIN_INPUT_LENGTH) {
-      throw new HttpsError('invalid-argument', 'أدخل رمز الرحلة.');
-    }
-
-    // 🆕 التحقق من تجاوز حد المحاولات قبل قراءة الرمز السري من قاعدة البيانات.
-    // tripId مُتحقَّق من صيغته أعلاه — شرط لازم لأنه يدخل في معرّف مستند العدّاد.
-    const rateCheck = await checkRateLimit(request, tripId);
-    
-    if (rateCheck.limited) {
-      const minutesLeft = Math.ceil(rateCheck.retryAfter / 60);
-      // ⚠️ الوسيط الثالث (details) ليس زينة: العميل يقرأ منه retryAfter ليعرض
-      // عدّاً تنازلياً دقيقاً. كان مفقوداً، فكان العميل يسقط على قيمته الاحتياطية
-      // (900 ثانية) ويعرض «15 دقيقة» دائماً مهما كان المتبقي الحقيقي — انظر
-      // callVerify في hooks/useAuth.ts.
-      throw new HttpsError(
-        'resource-exhausted',
-        `تجاوزت عدد المحاولات المسموحة. يرجى المحاولة بعد ${minutesLeft} دقيقة.`,
-        { retryAfter: rateCheck.retryAfter }
-      );
-    }
-
-    const secretSnap = await db.collection('tripSecrets').doc(tripId).get();
-
-    // ⚠️ نفس رسالة الخطأ سواء كانت الرحلة غير موجودة أصلاً أو كان الرمز خاطئاً
-    // فقط — لمنع أي تسريب معلومات لمن يحاول تخمين معرّفات رحلات عشوائية عبر ?trip=
-    if (!secretSnap.exists) {
-      throw new HttpsError('permission-denied', 'رمز الرحلة غير صحيح.');
-    }
-
-    const { salt, pinHash } = secretSnap.data();
-    const submittedHash = hashPin(submitted, salt);
-
-    // مقارنة بزمن ثابت (timing-safe) لمنع هجوم قياس التوقيت لتخمين الهاش حرفاً
-    // بحرف — timingSafeEqual يرمي استثناءً إن اختلف طول المخزَّنين، لذا نتحقق
-    // من تطابق الطول أولاً كخطوة مستقلة قبل استدعائها.
-    const match =
-      submittedHash.length === pinHash.length &&
-      crypto.timingSafeEqual(Buffer.from(submittedHash), Buffer.from(pinHash));
-
-    if (!match) {
-      throw new HttpsError('permission-denied', 'رمز الرحلة غير صحيح.');
-    }
-
-    // 🆕 ندمج مع أي رحلات سابقة تحقق منها هذا المستخدم بدل استبدال الـ Custom
-    // Claims بالكامل (setCustomUserClaims يستبدل القيمة كلها، لا يدمجها تلقائياً)
-    // — هذا يسمح لنفس الشخص بالانضمام لأكثر من رحلة على نفس الحساب/الجهاز.
-    const userRecord = await admin.auth().getUser(request.auth.uid);
-    const existingTrips = (userRecord.customClaims && userRecord.customClaims.trips) || {};
-
-    const nextClaims = {
-      ...userRecord.customClaims,
-      trips: { ...existingTrips, [tripId]: true },
-    };
-    assertClaimsFitTokenLimit(nextClaims);
-
-    await admin.auth().setCustomUserClaims(request.auth.uid, nextClaims);
-
-    // 🆕 بعد كتابة الـ claim لا قبلها: الـ claim هو ما يجعل الانضمام حقيقياً،
-    // وهذا فهرس له. والدالة تبتلع أخطاءها عمداً — انظر تعليقها.
-    await recordMembership(tripId, userRecord);
-
-    return { success: true };
-
-  }
-);
-
 /**
- * 🆕 mergeAnonymousTrips: نقل عضويات الرحلات من جلسة مجهولة سابقة إلى الحساب
- * الدائم الذي سجّل الدخول للتوّ.
+ * 🆕 manageTrip: إنشاء رحلة جديدة أو حذفها — للمسؤول حصراً.
  *
- * ── متى تُستدعى ───────────────────────────────────────────────────────────────
- * عند ترقية حساب مجهول إلى دائم، `linkWithPopup` يحتفظ بنفس الـ uid فتبقى كل
- * العضويات والمصاريف صحيحة بلا أي نقل — وهذه هي الحالة الشائعة ولا تمرّ من هنا.
- *
- * لكن إن كان لحساب Google المختار جلسة سابقة (أي أن المستخدم ربط حسابه من جهاز
- * آخر قبلاً — وهو بالضبط سيناريو تعدد الأجهزة) يفشل الربط بـ
- * `auth/credential-already-in-use`، فيسجّل العميل الدخول بالحساب القائم — وعندها
- * **يتغيّر الـ uid** وتُيتَّم عضويات الجلسة المجهولة. هذه الدالة تنقذها.
- *
- * ── لماذا ID token وليس آلية إثبات جديدة ────────────────────────────────────
- * السؤال الأمني الوحيد هنا: كيف نتأكد أن المستدعي كان فعلاً يملك تلك الجلسة
- * المجهولة؟ الجواب جاهز: توكن تلك الجلسة **هو بذاته** الإثبات — موقَّع من
- * Firebase، ولا يمكن تزويره، و`verifyIdToken` يتحقق من التوقيع والصلاحية معاً.
- * فلا حاجة لمستند «دمج معلّق» ولا رمز لمرة واحدة ولا أي حالة إضافية.
- *
- * ⚠️ العميل يلتقط التوكن **قبل** تسجيل الدخول بالحساب الجديد، ويحتفظ به في
- * متغيّر بالذاكرة لثوانٍ فقط. لا يُخزَّن في localStorage ولا في Firestore: تخزينه
- * يحوّله إلى سرٍّ قابل للسرقة بلا أي مقابل.
- *
- * ── ما لا تفعله عمداً ────────────────────────────────────────────────────────
- * ١. لا تنقل `createdByUid` على المصاريف. النتيجة أن المستخدم لا يستطيع تعديل
- *    مصاريفه المسجَّلة بالجلسة القديمة (المسؤول يستطيع). البديل إعادة كتابة
- *    مستندات مالية حيّة بلا نسخة احتياطية — كلفة ومخاطرة لا تستحقهما راحة تعديل.
- * ٢. لا تحذف الحساب المجهول القديم. الحذف يفقد إمكانية التشخيص إن ساء الدمج،
- *    والحسابات المجهولة بلا تكلفة تُذكر.
- */
-exports.mergeAnonymousTrips = onCall(
-  { region: 'us-central1', maxInstances: 5 },
-  async (request) => {
-    if (!request.auth) {
-      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
-    }
-
-    const previousIdToken = request.data && request.data.previousIdToken;
-    if (typeof previousIdToken !== 'string' || !previousIdToken) {
-      throw new HttpsError('invalid-argument', 'التوكن السابق مفقود.');
-    }
-
-    let decoded;
-    try {
-      decoded = await admin.auth().verifyIdToken(previousIdToken);
-    } catch (err) {
-      // توكن منتهٍ أو مزوَّر أو من مشروع آخر — الرفض هو الصواب، ولا نُفصح عن السبب.
-      console.warn(`[mergeAnonymousTrips] rejected token for ${request.auth.uid}: ${err.code || err.message}`);
-      throw new HttpsError('permission-denied', 'تعذّر التحقق من الجلسة السابقة.');
-    }
-
-    // نفس الحساب = الربط نجح دون تغيّر uid، فلا شيء يُنقل. ليست حالة خطأ.
-    if (decoded.uid === request.auth.uid) {
-      return { merged: 0 };
-    }
-
-    const previousTrips = (decoded.trips && typeof decoded.trips === 'object' && !Array.isArray(decoded.trips))
-      ? decoded.trips
-      : {};
-
-    const userRecord = await admin.auth().getUser(request.auth.uid);
-    const existingTrips = (userRecord.customClaims && userRecord.customClaims.trips) || {};
-
-    // ⚠️ العضويات القائمة أولاً في ترتيب الدمج: الحساب الدائم هو المرجع، والجلسة
-    // المجهولة تُضيف ولا تُلغي. القيم كلها `true` فالفرق نظري اليوم، لكن الترتيب
-    // يبقى صحيحاً إن حملت القيمة يوماً معنى أدق من مجرد العضوية.
-    const mergedTrips = { ...previousTrips, ...existingTrips };
-    const nextClaims = { ...userRecord.customClaims, trips: mergedTrips };
-
-    // الدمج يجمع مجموعتين، فهو أكثر موضع مرشَّح لتجاوز حدّ حجم الـ claims.
-    assertClaimsFitTokenLimit(nextClaims);
-
-    const addedCount = Object.keys(mergedTrips).length - Object.keys(existingTrips).length;
-    if (addedCount > 0) {
-      await admin.auth().setCustomUserClaims(request.auth.uid, nextClaims);
-
-      // 🆕 الرحلات المنقولة تحتاج سطرها في السجلّ أيضاً، وإلا صار للحساب الدائم
-      // وصولٌ لا يظهر في أي قائمة — وهو بالضبط العمى الذي وُجد السجلّ لإنهائه.
-      const newlyAdded = Object.keys(mergedTrips).filter(id => !(id in existingTrips));
-      await Promise.all(
-        newlyAdded.map(id => recordMembership(id, userRecord, { mergedFrom: decoded.uid })),
-      );
-    }
-
-    // ⚠️ **سطر الجلسة المجهولة يبقى، ولا يُحذف.** الدمج لا يمسح claims الحساب
-    // القديم (انظر «ما لا يفعله الدمج» في docs/PLAN-account-linking.md)، فذلك
-    // الـ uid ما زال يملك وصولاً فعلياً. حذف سطره يجعل السجلّ يكذب: شخصٌ يدخل
-    // ولا يظهر في القائمة. `mergedFrom` على السطر الجديد هو ما يربط الاثنين،
-    // فتعرف لوحة الإدارة أنهما شخص واحد بدل أن تعرضهما كعضوين.
-    console.log(`[mergeAnonymousTrips] ${decoded.uid} → ${request.auth.uid}: +${addedCount}`);
-    return { merged: addedCount };
-  }
-);
-
-/**
- * 🆕 manageTrip: إنشاء رحلة جديدة أو تغيير رمز رحلة قائمة — للمسؤول حصراً.
- *
- * لماذا دالة خادمية وليست قاعدة Firestore كبقية إعدادات الرحلة؟ لأن هذه العملية
- * تلمس tripSecrets/{tripId} (الملح + هاش الرمز)، وهو المستند الوحيد المحظور
- * قراءةً وكتابةً على العميل تحت أي ظرف — بما في ذلك المسؤول. توليد الملح وحساب
- * الهاش يبقيان خادميين، فلا يصل الرمز الصريح ولا هاشه إلى أي كود يعمل في المتصفح.
+ * 🆕 لم تعد تلمس أي سرّ (لا رمز رحلة بعد الآن — انظر تعليق أعلى الملف)، فالسبب
+ * الوحيد المتبقي لبقائها دالة خادمية لا قاعدة Firestore هو الحذف: يحتاج قراءة
+ * عبر مجموعات فرعية متعددة (members/travelers/expenses) والتحقّق من الخلوّ قبل
+ * الكتابة الذرّية — تسلسل لا تعبّر عنه قاعدة واحدة بسهولة. الإنشاء مبنّى هنا
+ * بجانبه لبساطة نقطة نهاية واحدة، لا لضرورة معمارية.
  *
  * تفاصيل الرحلة غير السرّية (الاسم/البنك/المسار) لا تمرّ من هنا — تُكتب مباشرة
  * من الواجهة عبر قواعد Firestore (isValidTripConfig)، وهي المسار الأخف والأسرع.
@@ -388,9 +123,8 @@ exports.manageTrip = onCall(
     }
 
     const tripId = String(request.data?.tripId ?? '').trim();
-    const pin = String(request.data?.pin ?? '').trim();
     const name = String(request.data?.name ?? '').trim();
-    const mode = String(request.data?.mode ?? '').trim(); // 'create' | 'resetPin' | 'delete'
+    const mode = String(request.data?.mode ?? '').trim(); // 'create' | 'delete'
 
     if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
       throw new HttpsError(
@@ -398,21 +132,11 @@ exports.manageTrip = onCall(
         'معرّف الرحلة غير صالح — إنجليزي/أرقام وشرطة (-) وشرطة سفلية (_) فقط، بطول 1-64 حرفاً.'
       );
     }
-    if (mode !== 'create' && mode !== 'resetPin' && mode !== 'delete') {
+    if (mode !== 'create' && mode !== 'delete') {
       throw new HttpsError('invalid-argument', 'نوع العملية غير معروف.');
     }
-
-    // الحذف لا يحتاج رمزاً ولا اسماً — نتفادى فرض شروطهما عليه
-    if (mode !== 'delete') {
-      if (!pin || pin.length > MAX_PIN_INPUT_LENGTH) {
-        throw new HttpsError('invalid-argument', 'أدخل رمز الرحلة.');
-      }
-      if (pin.length < MIN_PIN_LENGTH) {
-        throw new HttpsError('invalid-argument', `رمز الرحلة قصير جداً — ${MIN_PIN_LENGTH} خانات على الأقل.`);
-      }
-      if (name.length > 100) {
-        throw new HttpsError('invalid-argument', 'اسم الرحلة طويل جداً (100 حرف كحد أقصى).');
-      }
+    if (mode === 'create' && name.length > 100) {
+      throw new HttpsError('invalid-argument', 'اسم الرحلة طويل جداً (100 حرف كحد أقصى).');
     }
 
     const tripRef = db.collection('trips').doc(tripId);
@@ -457,56 +181,43 @@ exports.manageTrip = onCall(
       // تحت مسار مستند غير موجود، لا تظهر في أي واجهة ولا تُحذف أبداً.
       //
       // وهذه الحالة قابلة للوصول فعلاً لا نظرية: شرط الحذف هو خلوّ الرحلة من
-      // **مسافرين ومصاريف**، والانضمام بالرمز لا يستلزم إضافة مسافر. فرحلة
+      // **مسافرين ومصاريف**، والانضمام عبر رابط دعوة لا يستلزم إضافة مسافر. فرحلة
       // انضمّ إليها عشرة ولم يسجّل أحدهم مصروفاً تُعدّ فارغة وتُحذف.
       const members = await tripRef.collection('members').get();
 
-      // المستندات معاً في كتابة ذرّية: لا يبقى رمز بلا رحلة ولا العكس
+      // المستندات معاً في كتابة ذرّية
       const deleteBatch = db.batch();
       members.docs.forEach(doc => deleteBatch.delete(doc.ref));
       deleteBatch.delete(tripRef);
-      deleteBatch.delete(db.collection('tripSecrets').doc(tripId));
       await deleteBatch.commit();
 
       console.log(`[manageTrip] delete on ${tripId} by ${request.auth.uid}`);
       return { success: true, tripId };
     }
 
-    // ⚠️ الإنشاء لا يكتب فوق رحلة قائمة أبداً: الكتابة فوقها تستبدل رمزها الحالي
-    // فيفقد كل أعضائها الوصول فجأة. هذا بالضبط ما يفعله create-trip.mjs بعد سؤال
-    // تأكيد نصي — وهو خطر أكبر من أن يُترك خلف زر في واجهة رسومية.
-    if (mode === 'create' && existing.exists) {
+    // ⚠️ الإنشاء لا يكتب فوق رحلة قائمة أبداً — نفس المبرر الذي كان قائماً حين
+    // كانت الكتابة فوق رحلة تستبدل رمزها: اليوم بلا رمز، لكن استبدال بنك/مسار
+    // رحلة قائمة بغلطة معرّف لا يزال أثراً غير مرغوب لا يستحق ترك بابه مفتوحاً.
+    if (existing.exists) {
       throw new HttpsError('already-exists', `الرحلة "${tripId}" موجودة مسبقاً — اختر معرّفاً آخر.`);
     }
-    if (mode === 'resetPin' && !existing.exists) {
-      throw new HttpsError('not-found', `الرحلة "${tripId}" غير موجودة.`);
-    }
 
-    const salt = crypto.randomBytes(16).toString('hex');
-    const pinHash = hashPin(pin, salt);
+    await tripRef.set({
+      name: name || tripId,
+      bankDetails: { bankName: '', beneficiary: '', iban: '' },
+      itinerary: [],
+      // 🆕 status يُكتب صراحةً رغم أن غيابه يعني 'active' في القواعد وفي
+      // utils/tripStatus.ts. السبب ليس تغيير سلوك — لا شيء يتغيّر اليوم — بل
+      // إغلاق المجموعة: بدونه *كل* رحلة جديدة تفتقد الحقل، فيصير السقوط إلى
+      // 'active' سلوكاً دائماً لكل البيانات لا تسامحاً مع بيانات ما قبل
+      // الميزة، ولا يمكن أبداً معرفة متى تصبح الحالة القديمة فارغة.
+      // بكتابته هنا يصير عدد المستندات بلا `status` ثابتاً لا يزيد — تماماً
+      // كما فعلت قاعدة isOwnCreation مع createdByUid. انظر
+      // scripts/audit-legacy-docs.mjs: هو ما يخبرك متى يصبح حذف الحارس آمناً.
+      status: 'active',
+    });
 
-    // مستندان في كتابة ذرّية واحدة: لا رحلة بلا رمز، ولا رمز بلا رحلة.
-    const batch = db.batch();
-    if (mode === 'create') {
-      batch.set(tripRef, {
-        name: name || tripId,
-        bankDetails: { bankName: '', beneficiary: '', iban: '' },
-        itinerary: [],
-        // 🆕 status يُكتب صراحةً رغم أن غيابه يعني 'active' في القواعد وفي
-        // utils/tripStatus.ts. السبب ليس تغيير سلوك — لا شيء يتغيّر اليوم — بل
-        // إغلاق المجموعة: بدونه *كل* رحلة جديدة تفتقد الحقل، فيصير السقوط إلى
-        // 'active' سلوكاً دائماً لكل البيانات لا تسامحاً مع بيانات ما قبل
-        // الميزة، ولا يمكن أبداً معرفة متى تصبح الحالة القديمة فارغة.
-        // بكتابته هنا يصير عدد المستندات بلا `status` ثابتاً لا يزيد — تماماً
-        // كما فعلت قاعدة isOwnCreation مع createdByUid. انظر
-        // scripts/audit-legacy-docs.mjs: هو ما يخبرك متى يصبح حذف الحارس آمناً.
-        status: 'active',
-      });
-    }
-    batch.set(db.collection('tripSecrets').doc(tripId), { salt, pinHash });
-    await batch.commit();
-
-    console.log(`[manageTrip] ${mode} on ${tripId} by ${request.auth.uid}`);
+    console.log(`[manageTrip] create on ${tripId} by ${request.auth.uid}`);
 
     return { success: true, tripId };
   }
@@ -674,9 +385,10 @@ exports.manageMember = onCall(
 // فشل دفعة لاحقة يترك الرحلة في حالة استعادة جزئية **مرئية لا صامتة**: الدالة
 // ترمي خطأً صريحاً يذكر العدد الفعلي المكتوب قبل الفشل، بدل الإبلاغ بنجاح كاذب.
 //
-// ⚠️ **رمز PIN جديد إلزامي.** النسخة الاحتياطية لا تحوي tripSecrets أصلاً —
-// المرحلة ١ تستبعده عمداً لأنه لا يُقرأ من العميل تحت أي ظرف — فالاستعادة
-// تُنشئ رمزاً جديداً كجزء منها، تماماً كإنشاء رحلة جديدة (manageTrip mode=create).
+// 🆕 لا رمز رحلة بعد الآن (انظر تعليق أعلى الملف) — الاستعادة لا تُنشئ شيئاً
+// يعادل الوصول، ولا حاجة لذلك: من كان عضواً بالفعل (uid محفوظ في مسافري
+// النسخة) يحتفظ بوصوله عبر claim حسابه القائم أصلاً إن لم يتغيّر. عضو جديد
+// يحتاج رابط دعوة كأي انضمام آخر.
 //
 // ⚠️ **changedByUid في سجلّات الإيداع يبقى كما في النسخة، لا uid المسؤول
 // الحالي.** القاعدة الحيّة تفرض تطابقهما لمنع انتحال هوية في كتابة مباشرة من
@@ -782,8 +494,8 @@ function isValidDepositLogJs(d) {
 }
 
 /**
- * 🆕 manageInvite / joinViaInvite: رابط دعوة بنقرة واحدة — يتجاوز إدخال رمز
- * الرحلة يدوياً، بديل لا استبدال لـ verifyTripPin (الذي يبقى كما هو تماماً).
+ * 🆕 manageInvite / joinViaInvite: رابط دعوة بنقرة واحدة — طريقة الانضمام
+ * الوحيدة المتبقية لرحلة (انظر تعليق أعلى الملف؛ رمز الرحلة اليدوي أُلغي تماماً).
  *
  * ── نموذج البيانات ───────────────────────────────────────────────────────────
  * tripInvites/{token} — معرّف المستند هو التوكن نفسه (32 حرف base64url، 192 بت
@@ -795,13 +507,12 @@ function isValidDepositLogJs(d) {
  * خطوة الحذف بلا الإنشاء الذي يليها.
  *
  * ── لماذا لا حدّ معدّل (Rate Limit) على joinViaInvite ────────────────────────
- * على عكس رمز الرحلة (4+ خانات، يُخمَّن خلال آلاف المحاولات — من هنا حاجة
- * checkRateLimit)، توكن بـ192 بت غير قابل للتخمين بأي هجوم واقعي. حدّ معدّل هنا
- * كان سيحمي من لا شيء بكلفة تعقيد إضافي.
+ * توكن بـ192 بت غير قابل للتخمين بأي هجوم واقعي — على عكس رمز الرحلة القصير
+ * الملغى، الذي كان يستحق حدّ معدّل مخصّصاً. حدّ معدّل هنا كان سيحمي من لا شيء
+ * بكلفة تعقيد إضافي.
  *
  * ── الكتمان الأمني ────────────────────────────────────────────────────────
- * توكن غير موجود أو مُبطَل كلاهما `permission-denied` بنص واحد — نفس مبدأ
- * verifyTripPin بالضبط (رمز خاطئ ورحلة غير موجودة رسالة واحدة) لمنع اكتشاف ما
+ * توكن غير موجود أو مُبطَل كلاهما `permission-denied` بنص واحد لمنع اكتشاف ما
  * إذا كان توكن ما صالحاً يوماً.
  */
 const INVITE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
@@ -975,6 +686,17 @@ exports.joinViaInvite = onCall(
       throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
     }
 
+    // 🆕 لا عضوية بجلسة مجهولة — انظر تعليق أعلى الملف وdocs/DECISIONS.md.
+    // الرفض هنا صريح رغم أن firestore.rules ترفض isMember() لجلسة مجهولة
+    // أصلاً (دفاع في العمق): بدون هذا، يُمنح uid مجهول claim حقيقياً ثم
+    // يُكتشف أنه عديم الفائدة عند أول قراءة — تجربة أسوأ من رفض واضح فوراً.
+    if (request.auth.token.firebase?.sign_in_provider === 'anonymous') {
+      throw new HttpsError(
+        'failed-precondition',
+        'الانضمام يتطلب حساباً حقيقياً (Google أو بريد إلكتروني) — سجّل الدخول أولاً.',
+      );
+    }
+
     const inviteToken = String(request.data?.inviteToken ?? '').trim();
     if (!inviteToken || !INVITE_TOKEN_PATTERN.test(inviteToken)) {
       throw new HttpsError('invalid-argument', 'رابط الدعوة غير صالح.');
@@ -987,7 +709,8 @@ exports.joinViaInvite = onCall(
 
     const { tripId } = inviteSnap.data();
 
-    // 🆕 نفس منطق دمج claims الموجود في verifyTripPin بالضبط — انظر تعليقها.
+    // 🆕 ندمج مع أي رحلات سابقة تحقق منها هذا المستخدم بدل استبدال الـ Custom
+    // Claims بالكامل (setCustomUserClaims يستبدل القيمة كلها، لا يدمجها تلقائياً).
     const userRecord = await admin.auth().getUser(request.auth.uid);
     const existingTrips = (userRecord.customClaims && userRecord.customClaims.trips) || {};
 
@@ -1003,8 +726,9 @@ exports.joinViaInvite = onCall(
     // 🆕 نموذج الهوية الهجين: تزويد ملف مسافر تلقائياً إن لم يوجد له واحد بعد
     // في هذه الرحلة تحديداً. لا يُفشل الانضمام إن فشل — انظر تعليق الدالة.
     // 🆕 needsName في الاستجابة: صحيحة فقط حين أُنشئ ملف جديد فعلاً بلا اسم
-    // عرض حقيقي (جلسة مجهولة غالباً) — الواجهة تعرض عندها نموذج اسم من خطوة
-    // واحدة قبل التوجيه للرحلة (انظر useInviteJoin.ts). فشل التزويد أو ربط
+    // عرض حقيقي (حساب بريد/كلمة مرور بلا اسم مُدخَل، أو حساب Google بلا اسم
+    // عرض) — الواجهة تعرض عندها نموذج اسم من خطوة واحدة قبل التوجيه للرحلة
+    // (انظر useInviteJoin.ts). فشل التزويد أو ربط
     // مسبق لا يستحقان سؤالاً — الأول لأن لا ملف وُلد أصلاً، والثاني لأن
     // الملف مُسمّى بالفعل (ربما من هذا الحوار نفسه في زيارة سابقة).
     let needsName = false;
@@ -1142,7 +866,6 @@ exports.restoreTrip = onCall(
     }
 
     const tripId = String(request.data?.tripId ?? '').trim();
-    const pin = String(request.data?.pin ?? '').trim();
     const backup = request.data?.backup;
 
     if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
@@ -1150,12 +873,6 @@ exports.restoreTrip = onCall(
         'invalid-argument',
         'معرّف الرحلة غير صالح — إنجليزي/أرقام وشرطة (-) وشرطة سفلية (_) فقط، بطول 1-64 حرفاً.'
       );
-    }
-    if (!pin || pin.length > MAX_PIN_INPUT_LENGTH) {
-      throw new HttpsError('invalid-argument', 'أدخل رمز الرحلة.');
-    }
-    if (pin.length < MIN_PIN_LENGTH) {
-      throw new HttpsError('invalid-argument', `رمز الرحلة قصير جداً — ${MIN_PIN_LENGTH} خانات على الأقل.`);
     }
 
     // ── التحقّق من بنية ملف النسخة الاحتياطية بالكامل قبل أي كتابة ──────────
@@ -1231,15 +948,11 @@ exports.restoreTrip = onCall(
     }
 
     // ── الكتابة على دفعات لا تتجاوز ٥٠٠ عملية لكل دفعة (حدّ Firestore) ──────
-    const salt = crypto.randomBytes(16).toString('hex');
-    const pinHash = hashPin(pin, salt);
-
     const ops = [];
     ops.push({
       ref: tripRef,
       data: { name: trip.name || tripId, bankDetails: trip.bankDetails, itinerary: trip.itinerary, status: trip.status },
     });
-    ops.push({ ref: db.collection('tripSecrets').doc(tripId), data: { salt, pinHash } });
     for (const t of travelers) {
       ops.push({ ref: dataRoot.collection('travelers').doc(String(t.id)), data: t });
     }

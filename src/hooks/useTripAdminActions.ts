@@ -1,15 +1,14 @@
 // 🆕 عمليات الكتابة الخاصة بواجهة إدارة الرحلات.
 //
-// مساران مختلفان عمداً بحسب حساسية البيانات:
+// مساران مختلفان عمداً بحسب طبيعة العملية:
 //
 // 1. البيانات غير السرّية (الاسم/البنك/المسار) → كتابة مباشرة على
 //    trips/{tripId} عبر قواعد Firestore (isValidTripConfig). أخفّ وأسرع، ولا
 //    تحتاج نشر دوال عند كل تعديل. القاعدة تشترط isAdmin() فقط ولا تشير للرحلة
 //    النشطة، فالمسؤول يعدّل أي رحلة دون مغادرة الرحلة المفتوحة.
 //
-// 2. إنشاء رحلة أو تغيير رمزها → Cloud Function باسم manageTrip، لأنها تلمس
-//    tripSecrets/{tripId} المحظور على العميل تحت أي ظرف. توليد الملح وحساب
-//    الهاش يبقيان خادميين فلا يلمس المتصفح أياً منهما.
+// 2. إنشاء رحلة أو حذفها → Cloud Function باسم manageTrip — انظر تعليقها في
+//    functions/index.js لماذا الحذف تحديداً يحتاج صلاحيات Admin SDK.
 //
 // ⚠️ كل كتابات المسار الأول تستخدم setDoc(..., { merge: true }):
 //   - الكتابة الكاملة بلا merge تمسح الحقول غير المذكورة — وهذه مصيدة
@@ -32,9 +31,8 @@ import type { TripSummary } from './useAllTrips'
 
 // عقد استدعاء manageTrip — يطابق ما تقرأه الدالة في functions/index.js
 interface ManageTripRequest {
-  mode: 'create' | 'resetPin' | 'delete'
+  mode: 'create' | 'delete'
   tripId: string
-  pin: string
   name: string
 }
 interface ManageTripResponse { success: boolean; tripId: string }
@@ -72,7 +70,7 @@ interface LinkTravelerAccountResponse { success: boolean; tripId: string; travel
 // backup: unknown عمداً — الشكل الحقيقي (TripBackup) يُتحقَّق منه خادمياً
 // بالكامل (Admin SDK يتجاوز القواعد)، فلا قيمة في تضييق النوع هنا فقط ليُخدَع
 // لاحقاً بملف عُدِّل يدوياً بشكل يطابق TripBackup ظاهرياً لكنه فاسد فعلياً.
-interface RestoreTripRequest { tripId: string; pin: string; backup: unknown }
+interface RestoreTripRequest { tripId: string; backup: unknown }
 interface RestoreTripResponse {
   success: boolean
   tripId: string
@@ -102,8 +100,7 @@ export interface UseTripAdminActionsResult {
   saveTripName: (tripId: string, name: string) => Promise<boolean>
   /** 🆕 تغيير حالة دورة حياة الرحلة — القواعد تفرض أثرها، هذا يكتب الحقل فقط. */
   saveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
-  createTrip: (tripId: string, name: string, pin: string) => Promise<boolean>
-  resetTripPin: (tripId: string, pin: string) => Promise<boolean>
+  createTrip: (tripId: string, name: string) => Promise<boolean>
   /** حذف نهائي — للرحلات الفارغة فقط، والخادم هو من يفرض ذلك (انظر functions/index.js). */
   deleteTrip: (tripId: string) => Promise<boolean>
   /** 🆕 إزالة عضو من رحلة واحدة — لا تمسّ بقية رحلاته، ولا تُلغي مصاريفه. */
@@ -113,7 +110,7 @@ export interface UseTripAdminActionsResult {
   /** 🆕 تنزيل نسخة JSON احتياطية لرحلة واحدة — انظر docs/PLAN-backup-recovery.md المرحلة ١. */
   exportBackup: (trip: TripSummary) => Promise<boolean>
   /** 🆕 استعادة رحلة من نسخة JSON — رحلة فارغة أو غير موجودة فقط. المرحلة ٢. */
-  restoreTrip: (tripId: string, pin: string, backup: unknown) => Promise<boolean>
+  restoreTrip: (tripId: string, backup: unknown) => Promise<boolean>
   /** 🆕 رابط دعوة بنقرة واحدة — ينشئ توكناً جديداً (يُبطل أي رابط سابق لنفس الرحلة ضمنياً). null عند الفشل (توست يُعرض هنا). */
   createInvite: (tripId: string) => Promise<string | null>
   /** 🆕 يُبطل الرابط النشط لهذه الرحلة، إن وُجد. */
@@ -206,9 +203,8 @@ export function useTripAdminActions({
   // كان مستحيلاً مع إعادة التوجيه في vercel.json (رابط مكتوب حرفياً لا يقرأ
   // متغيرات البيئة). انظر التعليق الأوسع في hooks/useAuth.ts.
   const callManageTrip = useCallback(async (
-    mode: 'create' | 'resetPin' | 'delete',
+    mode: 'create' | 'delete',
     tripId: string,
-    pin: string,
     name: string,
     successText: string,
   ): Promise<boolean> => {
@@ -225,15 +221,15 @@ export function useTripAdminActions({
       await user.getIdToken(true)
 
       const manageTrip = httpsCallable<ManageTripRequest, ManageTripResponse>(functions, 'manageTrip')
-      await manageTrip({ mode, tripId, pin, name })
+      await manageTrip({ mode, tripId, name })
 
       haptic.success()
       showToast({ text: successText, type: 'success' })
       return true
     } catch (err) {
       haptic.error()
-      // الدالة ترسل رسائل عربية مفهومة (معرّف مكرر، رمز قصير، رحلة غير فارغة…)
-      // وتصل في message ضمن FunctionsError — نعرضها كما هي.
+      // الدالة ترسل رسائل عربية مفهومة (معرّف مكرر، رحلة غير فارغة…) وتصل في
+      // message ضمن FunctionsError — نعرضها كما هي.
       const message = (err as { message?: string })?.message
       const isFunctionsError = typeof (err as { code?: string })?.code === 'string'
         && String((err as { code?: string }).code).startsWith('functions/')
@@ -250,27 +246,21 @@ export function useTripAdminActions({
   }, [isAdmin, showToast, handleFirestoreError])
 
   const createTrip = useCallback(
-    (tripId: string, name: string, pin: string) =>
-      callManageTrip('create', tripId, pin, name, `تم إنشاء الرحلة "${tripId}"`),
+    (tripId: string, name: string) =>
+      callManageTrip('create', tripId, name, `تم إنشاء الرحلة "${tripId}"`),
     [callManageTrip]
   )
 
-  const resetTripPin = useCallback(
-    (tripId: string, pin: string) =>
-      callManageTrip('resetPin', tripId, pin, '', 'تم تغيير رمز الرحلة'),
-    [callManageTrip]
-  )
-
-  // الرمز والاسم فارغان: الحذف لا يحتاجهما، والدالة الخادمية لا تفرضهما في هذا
-  // الوضع. ورسالة «الرحلة ليست فارغة» تأتي من الخادم وتُعرض كما هي (انظر أعلاه).
+  // الاسم فارغ: الحذف لا يحتاجه، والدالة الخادمية لا تفرضه في هذا الوضع.
+  // ورسالة «الرحلة ليست فارغة» تأتي من الخادم وتُعرض كما هي (انظر أعلاه).
   const deleteTrip = useCallback(
     (tripId: string) =>
-      callManageTrip('delete', tripId, '', '', `تم حذف الرحلة "${tripId}"`),
+      callManageTrip('delete', tripId, '', `تم حذف الرحلة "${tripId}"`),
     [callManageTrip]
   )
 
   // 🆕 إزالة عضو — دالة مستقلة عن callManageTrip لأن عقدها مختلف (uid بدل
-  // pin/name) ولأن رسالة نجاحها مشروطة بما أعادته الدالة، لا نصاً ثابتاً.
+  // name) ولأن رسالة نجاحها مشروطة بما أعادته الدالة، لا نصاً ثابتاً.
   // 🆕 المرحلة ٣: متاحة للمسؤول أو منظّم هذه الرحلة تحديداً — الفحص الحقيقي
   // (منظّم لا يزيل مسؤولاً ولا منظّماً آخر) يبقى خادمياً بالكامل في manageMember.
   const removeMember = useCallback(async (tripId: string, uid: string): Promise<boolean> => {
@@ -371,7 +361,7 @@ export function useTripAdminActions({
   }, [isAdmin, showToast, handleFirestoreError])
 
   // 🆕 رابط دعوة — createInvite/revokeInvite دالتان مستقلتان عن callManageTrip
-  // لأن عقدهما مختلف (tripId فقط، لا pin/name) ولأن createInvite يُعيد توكناً
+  // لأن عقدهما مختلف (tripId فقط، لا name) ولأن createInvite يُعيد توكناً
   // يستهلكه المستدعي فوراً (بناء رابط المشاركة)، لا نص نجاح ثابت.
   const createInvite = useCallback(async (tripId: string): Promise<string | null> => {
     if (!canAct(tripId)) {
@@ -441,7 +431,7 @@ export function useTripAdminActions({
   }, [canAct, showToast, handleFirestoreError])
 
   // 🆕 ربط مسافر شبح بحساب — دالة مستقلة عن callManageTrip لأن عقدها مختلف
-  // (travelerId/targetUid بدل pin/name) ولأن رسالة الخطأ الأشيع (مسافر مربوط
+  // (travelerId/targetUid بدل name) ولأن رسالة الخطأ الأشيع (مسافر مربوط
   // بالفعل، أو الحساب مربوط بمسافر آخر) خادمية بالكامل وتُعرض كما هي.
   const linkTravelerAccount = useCallback(async (
     tripId: string, travelerId: number, targetUid: string,
@@ -537,10 +527,10 @@ export function useTripAdminActions({
   }, [isAdmin, showToast, handleFirestoreError])
 
   // 🆕 استعادة — دالة مستقلة عن callManageTrip لأن عقدها مختلف تماماً (backup
-  // كامل بدل pin/name فقط) ولأن الخادم يعيد إحصاءً (restored) يستحق إظهاره في
+  // كامل بدل الاسم فقط) ولأن الخادم يعيد إحصاءً (restored) يستحق إظهاره في
   // رسالة النجاح، لا نصاً ثابتاً. كل التحقق الفعلي خادمي — انظر restoreTrip في
   // functions/index.js؛ العميل هنا لا يفحص شكل backup إطلاقاً.
-  const restoreTripFn = useCallback(async (tripId: string, pin: string, backup: unknown): Promise<boolean> => {
+  const restoreTripFn = useCallback(async (tripId: string, backup: unknown): Promise<boolean> => {
     if (!isAdmin) {
       showToast({ text: 'هذا الإجراء متاح للمسؤول فقط.', type: 'error' }, 3000)
       return false
@@ -553,7 +543,7 @@ export function useTripAdminActions({
       await user.getIdToken(true)
 
       const restoreTripCallable = httpsCallable<RestoreTripRequest, RestoreTripResponse>(functions, 'restoreTrip')
-      const { data } = await restoreTripCallable({ tripId, pin, backup })
+      const { data } = await restoreTripCallable({ tripId, backup })
 
       haptic.success()
       showToast({
@@ -581,7 +571,7 @@ export function useTripAdminActions({
   }, [isAdmin, showToast, handleFirestoreError])
 
   return {
-    isSaving, saveBankDetails, saveItinerary, saveTripName, saveTripStatus, createTrip, resetTripPin,
+    isSaving, saveBankDetails, saveItinerary, saveTripName, saveTripStatus, createTrip,
     deleteTrip, removeMember, setMemberRole, exportBackup, restoreTrip: restoreTripFn,
     createInvite, revokeInvite, linkTravelerAccount,
   }

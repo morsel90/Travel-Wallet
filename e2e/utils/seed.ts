@@ -1,13 +1,12 @@
-// 🔴 يجهّز بيانات رحلة اختبار مباشرة في محاكيات Firestore/Auth عبر Admin SDK —
-// يحاكي بدقة ما تفعله scripts/create-trip.mjs (كتابة trips/{tripId} +
-// tripSecrets/{tripId}) وscripts/set-admin.mjs (منح admin claim)، لكن ضد
-// المحاكي المحلي مباشرة بدل مشروع Firebase حقيقي، ومن دون serviceAccountKey.json
+// 🔴 يجهّز بيانات رحلة اختبار مباشرة في محاكيَي Firestore/Auth عبر Admin SDK،
+// ضد المحاكي المحلي مباشرة بدل مشروع Firebase حقيقي، ومن دون serviceAccountKey.json
 // (Admin SDK لا يحتاج بيانات اعتماد حقيقية عندما يكتشف متغيرات بيئة المحاكي).
 //
-// ⚠️ hashPin هنا يجب أن يطابق hashPin في functions/index.js حرفياً
-// (sha256(salt + pin)) — أي اختلاف يعني أن verifyTripPin (تعمل داخل محاكي
-// Functions الحقيقي، لا نسخة مُقلَّدة هنا) سترفض كل رمز نزرعه.
-import { randomBytes, createHash } from 'node:crypto'
+// 🆕 لا رمز رحلة (PIN) بعد الآن — العضوية تُمنح مباشرة كـ custom claim على حساب
+// بريد/كلمة مرور حقيقي (نفس ما تكتبه joinViaInvite فعلياً عند استهلاك رابط
+// دعوة حقيقي)، بلا حاجة لاستهلاك رابط دعوة في كل اختبار. الحساب نفسه — بريده
+// وكلمة مروره — حقيقي في محاكي Auth، فيسجّل كل اختبار الدخول عبر AuthGate
+// الحقيقية (e2e/utils/flows.ts) لا عبر اختصار في localStorage أو Firestore مباشرة.
 import { getApps, initializeApp, type App } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
 import { getFirestore } from 'firebase-admin/firestore'
@@ -30,81 +29,80 @@ function adminApp(): App {
   return cachedApp
 }
 
-/** يطابق hashPin(pin, salt) في functions/index.js تماماً — sha256(salt + pin). */
-function hashPin(pin: string, salt: string): string {
-  return createHash('sha256').update(salt + pin).digest('hex')
+/**
+ * ينشئ حساباً ببريد/كلمة مرور في محاكي Auth إن لم يكن موجوداً بعد، ويمنحه
+ * الـ claims المطلوبة (تستبدل أي claims سابقة — كافٍ هنا لأن كل اختبار يمنح
+ * حسابه دوراً واحداً ثابتاً). يعيد الـ uid.
+ */
+async function ensureUser(email: string, password: string, claims: Record<string, unknown>): Promise<string> {
+  const auth = getAuth(adminApp())
+
+  let uid: string
+  try {
+    uid = (await auth.getUserByEmail(email)).uid
+  } catch (error) {
+    // إخبار TypeScript أن الخطأ قد يحتوي على خاصية code
+    const err = error as { code?: string }
+
+    if (err.code !== 'auth/user-not-found') throw error
+
+    try {
+      uid = (await auth.createUser({ email, password, emailVerified: true })).uid
+    } catch (createError) {
+      const cErr = createError as { code?: string }
+      // إذا قام Worker آخر بإنشاء المستخدم في هذه اللحظة، استرجع الـ UID ببساطة
+      if (cErr.code === 'auth/email-already-exists') {
+        uid = (await auth.getUserByEmail(email)).uid
+      } else {
+        throw createError
+      }
+    }
+  }
+
+  await auth.setCustomUserClaims(uid, claims)
+  return uid
 }
 
 export interface SeedTripOptions {
   /** معرّف رحلة فريد لهذا الملف الاختباري — تجنّب مشاركته بين ملفات مختلفة (Playwright يشغّل الملفات بالتوازي). */
   tripId: string
-  pin: string
+  memberEmail: string
+  memberPassword: string
   adminEmail: string
   adminPassword: string
 }
 
 /**
- * يهيّئ رحلة جاهزة للاختبار: مستند الرحلة، هاش رمزها (بنفس خوارزمية الخادم
- * الحقيقية)، وحساب مسؤول يحمل admin claim مسبقاً — كل ما يلزم لبدء سيناريو
- * E2E كامل دون المرور بأي خطوة يدوية.
+ * يهيّئ رحلة جاهزة للاختبار: مستند الرحلة، حساب عضو يحمل claim عضوية هذه
+ * الرحلة تحديداً مسبقاً (نفس أثر استهلاك رابط دعوة حقيقي عبر joinViaInvite)،
+ * وحساب مسؤول عالمي يحمل admin claim — كل ما يلزم لبدء سيناريو E2E كامل دون
+ * المرور بأي خطوة يدوية.
+ *
+ * ⚠️ حساب المسؤول لا يحتاج claim العضوية: firestore.rules تمنحه isAdmin() في
+ * كل قاعدة تقريباً (`isMember(appId) || isAdmin()`)، ومروره عبر AuthGate وحده
+ * كافٍ للوصول المباشر — لا حاجة لخطوة "وضع المسؤول" داخل التطبيق إن سجّل
+ * دخوله بحسابه الحقيقي من البداية (انظر openTripAsAdmin في flows.ts).
  */
-export async function seedTrip({ tripId, pin, adminEmail, adminPassword }: SeedTripOptions): Promise<void> {
-  const app = adminApp()
-  const db = getFirestore(app)
-  const auth = getAuth(app)
-
-  const salt = randomBytes(16).toString('hex')
-  const pinHash = hashPin(pin, salt)
+export async function seedTrip({ tripId, memberEmail, memberPassword, adminEmail, adminPassword }: SeedTripOptions): Promise<void> {
+  const db = getFirestore(adminApp())
 
   await db.collection('trips').doc(tripId).set({
     name: `رحلة اختبار E2E — ${tripId}`,
     bankDetails: { bankName: '', beneficiary: '', iban: '' },
     itinerary: [],
   })
-  await db.collection('tripSecrets').doc(tripId).set({ salt, pinHash })
 
-  // إنشاء حساب المسؤول إن لم يكن موجوداً — يسمح بإعادة تشغيل هذا الملف محلياً
-  // أثناء تطوير الاختبار عدة مرات على نفس بريد المسؤول دون فشل "user already exists".
-  let uid: string
-  try {
-    uid = (await auth.getUserByEmail(adminEmail)).uid
-  } catch (error) {
-    // إخبار TypeScript أن الخطأ قد يحتوي على خاصية code
-    const err = error as { code?: string }
-    
-    if (err.code === 'auth/user-not-found') {
-      try {
-        uid = (await auth.createUser({ email: adminEmail, password: adminPassword, emailVerified: true })).uid
-      } catch (createError) {
-        const cErr = createError as { code?: string }
-        // إذا قام Worker آخر بإنشاء المستخدم في هذه اللحظة، استرجع الـ UID ببساطة
-        if (cErr.code === 'auth/email-already-exists') {
-          uid = (await auth.getUserByEmail(adminEmail)).uid
-        } else {
-          throw createError
-        }
-      }
-    } else {
-      throw error
-    }
-  }
-  await auth.setCustomUserClaims(uid, { admin: true })
-}
+  const memberUid = await ensureUser(memberEmail, memberPassword, { trips: { [tripId]: true } })
+  await ensureUser(adminEmail, adminPassword, { admin: true })
 
-/**
- * 🆕 يصفّر عدّادات حدّ المحاولات الخاصة بـ verifyTripPin.
- *
- * ⚠️ يلزم أي اختبار يعتمد على *نص* رسالة الخطأ عند رمز خاطئ. صار المفتاح
- * يشمل tripId (انظر checkRateLimit في functions/index.js) فلم تعد الاختبارات
- * تتشارك عدّاداً واحداً — لكن تشغيل نفس الملف مراراً خلال 15 دقيقة يراكم
- * العدّاد على رحلته هو، فيحصل على «تجاوزت عدد المحاولات» بدل الرسالة المتوقَّعة.
- * التصفير يجعل الاختبار مستقلاً عن عدد المرات التي شُغِّل فيها قبله.
- */
-export async function clearPinRateLimits(): Promise<void> {
-  const db = getFirestore(adminApp())
-  const snap = await db.collection('rateLimits').get()
-  if (snap.empty) return
-  const batch = db.batch()
-  snap.docs.forEach(doc => batch.delete(doc.ref))
-  await batch.commit()
+  // ⚠️ الـ claim وحده كافٍ للوصول (isMember تقرؤه من التوكن)، لكن هذا الاختصار
+  // يمنح العضوية دون المرور بـ joinViaInvite فعلياً — فلا يكتب هذا السطر في
+  // trips/{tripId}/members تلقائياً كما تفعل recordMembership في
+  // functions/index.js. أي اختبار يفتح تبويب "الأعضاء" (organizer-role.spec.ts)
+  // يحتاج هذا السطر موجوداً فعلاً، فنكتبه هنا يدوياً بنفس الشكل بالضبط.
+  await db.collection('trips').doc(tripId).collection('members').doc(memberUid).set({
+    joinedAt: Date.now(),
+    lastVerifiedAt: Date.now(),
+    email: memberEmail,
+  })
 }

@@ -277,25 +277,25 @@ describe('restoreTrip', () => {
   it('غير المسؤول لا يستدعي الدالة إطلاقاً', async () => {
     const { result } = setup(false)
     let ok
-    await act(async () => { ok = await result.current.restoreTrip('trip-1', '1234', fakeBackup) })
+    await act(async () => { ok = await result.current.restoreTrip('trip-1', fakeBackup) })
 
     expect(ok).toBe(false)
     expect(mocks.callable).not.toHaveBeenCalled()
   })
 
-  it('يستدعي restoreTrip بالمعرّف والرمز والنسخة كما هي — بلا فحص شكلها محلياً', async () => {
+  it('يستدعي restoreTrip بالمعرّف والنسخة كما هي — بلا فحص شكلها محلياً', async () => {
     mocks.callable.mockResolvedValue({ data: { success: true, tripId: 'trip-1', restored: { travelers: 2, expenses: 5, depositLogs: 1 } } })
     const { result } = setup()
-    await act(async () => { await result.current.restoreTrip('trip-1', '1234', fakeBackup) })
+    await act(async () => { await result.current.restoreTrip('trip-1', fakeBackup) })
 
     expect(mocks.httpsCallable).toHaveBeenCalledWith({}, 'restoreTrip')
-    expect(mocks.callable).toHaveBeenCalledWith({ tripId: 'trip-1', pin: '1234', backup: fakeBackup })
+    expect(mocks.callable).toHaveBeenCalledWith({ tripId: 'trip-1', backup: fakeBackup })
   })
 
   it('رسالة النجاح تذكر أعداد ما استُعيد فعلياً', async () => {
     mocks.callable.mockResolvedValue({ data: { success: true, tripId: 'trip-1', restored: { travelers: 2, expenses: 5, depositLogs: 1 } } })
     const { result } = setup()
-    await act(async () => { await result.current.restoreTrip('trip-1', '1234', fakeBackup) })
+    await act(async () => { await result.current.restoreTrip('trip-1', fakeBackup) })
 
     const text = showToast.mock.calls[0][0].text
     expect(text).toContain('2')
@@ -308,7 +308,7 @@ describe('restoreTrip', () => {
     )
     const { result } = setup()
     let ok
-    await act(async () => { ok = await result.current.restoreTrip('trip-1', '1234', fakeBackup) })
+    await act(async () => { ok = await result.current.restoreTrip('trip-1', fakeBackup) })
 
     expect(ok).toBe(false)
     expect(showToast.mock.calls[0][0].text).toBe('لا يمكن الاستعادة إلى "trip-1" لأنها تحوي مسافرين أو مصاريف بالفعل.')
@@ -317,9 +317,39 @@ describe('restoreTrip', () => {
   it('يحرّر علم الحفظ بعد الفشل', async () => {
     mocks.callable.mockRejectedValue(new Error('boom'))
     const { result } = setup()
-    await act(async () => { await result.current.restoreTrip('trip-1', '1234', fakeBackup) })
+    await act(async () => { await result.current.restoreTrip('trip-1', fakeBackup) })
 
     expect(result.current.isSaving).toBe(false)
+  })
+})
+
+describe('createTrip — الصلاحية والعقد', () => {
+  it('غير المسؤول لا يستدعي الدالة إطلاقاً', async () => {
+    const { result } = setup(false)
+    let ok
+    await act(async () => { ok = await result.current.createTrip('trip-1', 'اسم') })
+
+    expect(ok).toBe(false)
+    expect(mocks.callable).not.toHaveBeenCalled()
+  })
+
+  it('يستدعي manageTrip بالوضع create والاسم بلا رمز رحلة', async () => {
+    mocks.callable.mockResolvedValue({ data: { success: true, tripId: 'trip-1' } })
+    const { result } = setup()
+    await act(async () => { await result.current.createTrip('trip-1', 'رحلة تركيا') })
+
+    expect(mocks.httpsCallable).toHaveBeenCalledWith({}, 'manageTrip')
+    expect(mocks.callable).toHaveBeenCalledWith({ mode: 'create', tripId: 'trip-1', name: 'رحلة تركيا' })
+  })
+})
+
+describe('deleteTrip — الصلاحية والعقد', () => {
+  it('يستدعي manageTrip بالوضع delete بلا رمز رحلة', async () => {
+    mocks.callable.mockResolvedValue({ data: { success: true, tripId: 'trip-1' } })
+    const { result } = setup()
+    await act(async () => { await result.current.deleteTrip('trip-1') })
+
+    expect(mocks.callable).toHaveBeenCalledWith({ mode: 'delete', tripId: 'trip-1', name: '' })
   })
 })
 

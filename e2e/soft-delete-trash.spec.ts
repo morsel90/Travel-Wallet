@@ -8,7 +8,8 @@ import { openTripAsAdmin, addTraveler, addExpense, expenseCard } from './utils/f
 
 const CREDS = {
   tripId: 'e2e-soft-delete',
-  pin: '556677',
+  memberEmail: 'e2e-member-trash@test.local', // غير مستخدَم في هذا السيناريو، لكن seedTrip يتطلبه
+  memberPassword: 'E2eTestPass!1',
   adminEmail: 'e2e-admin-trash@test.local',
   adminPassword: 'E2eTestPass!1',
 }

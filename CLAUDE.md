@@ -23,8 +23,9 @@
 **Target users:** Group travelers who need to track shared expenses, split costs, settle debts, and export reports — all in one place, without a server backend.
 
 **Core features:**
-- Multi-trip support (each trip has its own data + PIN)
-- Anonymous or admin auth via Firebase Auth + Custom Claims
+- Multi-trip support (each trip has its own data)
+- 🆕 Mandatory Google/Email sign-in + admin auth via Firebase Auth + Custom Claims — no PIN, no anonymous sessions (see *Design Decisions* in `docs/DECISIONS.md`)
+- 🆕 Trip membership granted exclusively via signed invite links (`?invite=TOKEN`), consumed once and stored as a `trips` custom claim
 - Real-time Firestore listeners with optimistic updates
 - Offline-first: `persistentLocalCache` + `persistentMultipleTabManager`
 - Smart input bar for quick expense entry (bottom-fixed)
@@ -33,10 +34,10 @@
 - Per-traveler account statements + PDF printing via Portal
 - Full Excel export (pure-JS OOXML, no external deps)
 - Haptic feedback (Web Vibration API + visual flash for iOS)
-- Rate limiting on PIN verification and expense creation
+- Rate limiting on expense creation
 - Trip itinerary (flights/car/train/bus) stored per-trip + "next segment" widget
-- In-app admin panel (admin-only): list all trips, create a trip, set/reset its PIN, edit bank details and itinerary, delete an *empty* trip
-- 🆕 "My trips" picker: opening the app with no `?trip=` shows the trips you belong to instead of demanding a PIN for the default one
+- In-app admin panel (admin-only): list all trips, create a trip, edit bank details and itinerary, delete an *empty* trip
+- 🆕 "My trips" picker: opening the app with no `?trip=` shows the trips you belong to instead of the default one
 
 ---
 
@@ -75,9 +76,9 @@
 ┌─────────────────────────────────────────────────────────┐
 │                        App.tsx                          │
 │  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐ │
-│  │  TripGate    │  │   Header     │  │  SmartInputBar  │ │
-│  │  (PIN auth)  │  │  (stats +    │  │  (quick add)   │ │
-│  │              │  │   collapse)  │  │                │ │
+│  │  AuthGate    │  │   Header     │  │  SmartInputBar  │ │
+│  │  (Google/    │  │  (stats +    │  │  (quick add)   │ │
+│  │   Email)     │  │   collapse)  │  │                │ │
 │  └─────────────┘  └──────────────┘  └────────────────┘ │
 │  ┌────────────────────────────────────────────────────┐ │
 │  │  <main> (PullToRefresh wrapper)                    │ │
@@ -99,8 +100,9 @@
           │                      │
      ┌────▼────┐          ┌──────▼──────┐
      │  Auth   │          │  Firestore  │
-     │ (anon / │          │ (real-time) │
-     │  admin) │          └─────────────┘
+     │(Google/ │          │ (real-time) │
+     │ Email/  │          └─────────────┘
+     │ admin)  │
      └─────────┘
 ```
 
@@ -115,7 +117,7 @@
 
 **Trip identification:** `TRIP_ID` from `?trip=xyz` query param → used to build Firestore paths at `artifacts/{TRIP_ID}/public/data/{expenses|travelers|rateLimits}/...`
 
-🆕 `HAS_EXPLICIT_TRIP_ID` (same module) records whether the URL actually named a trip. Opening the app *bare* means no trip was intended, so the "my trips" picker is shown instead of the default trip's PIN gate.
+🆕 `HAS_EXPLICIT_TRIP_ID` (same module) records whether the URL actually named a trip. Opening the app *bare* means no trip was intended, so the "my trips" picker is shown instead of the default trip.
 
 **Modal state:** all general modals (reports, trash bin, delete traveler, deposit, deposit history) live in a single discriminated union (`ModalState` in `useModals.ts`) so only one can be open at a time, and are rendered by `ModalManager.tsx`. Two modals are deliberately *outside* this union because they belong to their own domain state: expense delete confirmation (in `useExpenseActions`) and admin sign-in (in `useAdminAuth` + `AuthFlow.tsx`).
 
@@ -137,7 +139,7 @@ cp .env.example .env.local
 firebase login
 firebase use travelapp-87206
 
-# 3. Create a trip (interactive — provides PIN for the trip URL)
+# 3. Create a trip (interactive)
 node scripts/create-trip.mjs
 
 # 4. Deploy Firestore rules + Cloud Function (after creating a trip)
@@ -150,17 +152,19 @@ node scripts/set-admin.mjs grant admin@example.com
 # 6. Start dev server
 npm run dev
 
-# 7. Open http://localhost:5173/?trip=YOUR_TRIP_ID
+# 7. Open http://localhost:5173/?trip=YOUR_TRIP_ID, sign in (Google/Email),
+#    then generate an invite link from the trip's admin panel ("الأعضاء" tab)
+#    to bring other members in — there is no PIN to share.
 
 # 8. (optional) Prepare the E2E browser — first time only
 npm run e2e:install
 ```
 
-**Important:** The app reads `TRIP_ID` from `?trip=xyz` in the URL. Without it, it defaults to `?trip=travelapp-87206` — and 🆕 if you already belong to trips, the "my trips" picker is shown instead of that trip's PIN gate.
+**Important:** The app reads `TRIP_ID` from `?trip=xyz` in the URL. Without it, it defaults to `?trip=travelapp-87206` — and 🆕 if you already belong to trips, the "my trips" picker is shown instead of that trip.
 
 🆕 **Prerequisite for the rules and E2E suites: Java.** The Firestore emulator is a JVM process; without a JDK both fail with «Unable to locate a Java Runtime» buried in `firebase-debug.log`.
 
-🆕 **PIN verification works under `npm run dev` with no proxy of any kind.** The client calls functions through `httpsCallable`, which derives the URL from `projectId`, so the dev server has nothing to forward. The old `/api/*` dev proxy — and the `vercel.json` rewrite it mirrored — are both gone; see *Environment Variables*.
+🆕 **Cloud Function calls work under `npm run dev` with no proxy of any kind.** The client calls functions through `httpsCallable`, which derives the URL from `projectId`, so the dev server has nothing to forward. The old `/api/*` dev proxy — and the `vercel.json` rewrite it mirrored — are both gone; see *Environment Variables*.
 
 ### استخدام graphify أثناء العمل على المشروع
 
@@ -207,7 +211,7 @@ Unrelated but easy to confuse: `DEFAULT_TRIP_ID` in `src/utils/tripId.ts` is the
 
 ### Setting up a staging environment (🆕)
 
-1. Create a second Firebase project; enable **Anonymous** and **Email/Password** auth, and create a Firestore database.
+1. Create a second Firebase project; enable **Google** and **Email/Password** auth (🆕 no Anonymous provider needed — see *Design Decisions*), and create a Firestore database.
 2. Put its id in `.firebaserc` under `staging`, then deploy the backend to it:
    `npx firebase deploy --only firestore:rules,functions --project staging`
 3. Download that project's service-account key as `serviceAccountKey.staging.json` (git-ignored by the `serviceAccountKey*.json` pattern), then seed it:

@@ -9,7 +9,8 @@ import { openTripAsAdmin, addTraveler, addExpense, expenseCard } from './utils/f
 
 const CREDS = {
   tripId: 'e2e-offline-write',
-  pin: '998877',
+  memberEmail: 'e2e-member-offline@test.local', // غير مستخدَم في هذا السيناريو، لكن seedTrip يتطلبه
+  memberPassword: 'E2eTestPass!1',
   adminEmail: 'e2e-admin-offline@test.local',
   adminPassword: 'E2eTestPass!1',
 }

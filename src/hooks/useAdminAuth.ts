@@ -50,11 +50,9 @@ export function useAdminAuth({ showToast }: UseAdminAuthArgs) {
   }, [adminEmail, adminPassword])
 
   const handleAdminSignOut = useCallback(async () => {
-    // ⚠️ لا تُنشئ جلسة مجهولة هنا. useAuth يملك هذه المسؤولية وحده: مستمع
-    // onAuthStateChanged فيه يرصد غياب المستخدم بعد signOut ويُنشئ الجلسة
-    // المجهولة بحارس يمنع التزامن. استدعاؤها من هنا أيضاً يعني طلبين متوازيين
-    // قد يُنشئ كلٌّ منهما حساباً مجهولاً مستقلاً، فتضيع عضويات الرحلات المحفوظة
-    // في claims الحساب الأول ويُطالَب المستخدم برموز رحلاته من جديد.
+    // بعد الخروج، مستمع onAuthStateChanged في useAuth يرصد غياب المستخدم
+    // ويُظهر AuthGate من جديد — لا جلسة بديلة تُنشأ تلقائياً (لا وجود لجلسات
+    // مجهولة بعد إلغاء PIN؛ انظر docs/DECISIONS.md).
     try { await signOut(auth) } catch (err) { console.error(err) }
   }, [])
 

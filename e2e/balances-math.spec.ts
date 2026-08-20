@@ -9,7 +9,8 @@ import { openTripAsAdmin, addTraveler, addExpense } from './utils/flows'
 
 const CREDS = {
   tripId: 'e2e-balances-math',
-  pin: '112233',
+  memberEmail: 'e2e-member-balances@test.local', // غير مستخدَم في هذا السيناريو، لكن seedTrip يتطلبه
+  memberPassword: 'E2eTestPass!1',
   adminEmail: 'e2e-admin-balances@test.local',
   adminPassword: 'E2eTestPass!1',
 }

@@ -87,12 +87,12 @@ const app = initializeApp(readFirebaseConfig())
 export const auth = getAuth(app)
 
 // ⚠️ المنطقة هنا يجب أن تطابق تمامًا المنطقة المُعرَّفة في functions/index.js
-// (region: 'us-central1' داخل onCall) وإلا فشلت استدعاءات verifyTripPin.
-// تبقى مكتوبة في الكود لأنها خاصية معمارية مشتركة مع الخادم، لا إعداد بيئة:
-// تغييرها هنا وحده دون تغييرها هناك يكسر الاستدعاءات بصمت.
+// (region: 'us-central1' داخل كل onCall، مثل joinViaInvite) وإلا فشلت
+// الاستدعاءات. تبقى مكتوبة في الكود لأنها خاصية معمارية مشتركة مع الخادم، لا
+// إعداد بيئة: تغييرها هنا وحده دون تغييرها هناك يكسر الاستدعاءات بصمت.
 //
 // 🆕 هذه النسخة هي المسار الوحيد لاستدعاء الدوال الآن (httpsCallable في
-// hooks/useAuth.ts وhooks/useTripAdminActions.ts). كان العميل يستدعيها بـ fetch
+// hooks/useInviteJoin.ts وhooks/useTripAdminActions.ts). كان العميل يستدعيها بـ fetch
 // خام على `/api/...` عبر إعادة توجيه في vercel.json — وهو ما ربط التطبيق بمشروع
 // Firebase واحد مكتوب حرفياً في ملف لا يقرأ متغيرات البيئة، فاستحال قيام بيئة
 // staging حقيقية. الـ SDK يشتق رابط الدالة من projectId تلقائياً، فتتبع الدوال

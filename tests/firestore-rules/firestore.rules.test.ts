@@ -61,6 +61,13 @@ const memberDb     = (uid = 'member-1'): Firestore =>
   asModularFirestore(testEnv.authenticatedContext(uid, { trips: { [TRIP_ID]: true } }).firestore())
 const otherTripMemberDb = (uid = 'member-other-trip'): Firestore =>
   asModularFirestore(testEnv.authenticatedContext(uid, { trips: { [OTHER_TRIP_ID]: true } }).firestore())
+// 🆕 جلسة مجهولة تحمل claim عضوية صالحاً — الحالة الكاسرة التي يفرضها إلغاء
+// رمز الرحلة (انظر docs/DECISIONS.md وisNotAnonymous في firestore.rules): عضو
+// قديم لم يربط حسابه بعد يحمل هذا الـ claim بالضبط من قبل نشر هذا التغيير.
+const anonymousMemberDb = (uid = 'anon-member-1'): Firestore =>
+  asModularFirestore(
+    testEnv.authenticatedContext(uid, { trips: { [TRIP_ID]: true }, firebase: { sign_in_provider: 'anonymous' } }).firestore(),
+  )
 const adminDb      = (uid = 'admin-1'): Firestore =>
   asModularFirestore(testEnv.authenticatedContext(uid, { admin: true }).firestore())
 // 🆕 منظّم رحلة (docs/PLAN-member-management.md المرحلة ٣): نفس claim العضو
@@ -91,11 +98,9 @@ const depositLogsCol  = (db: Firestore, travelerId: number, tripId = TRIP_ID) =>
   collection(db, 'artifacts', tripId, 'public', 'data', 'travelers', String(travelerId), 'depositLogs')
 const rateLimitDoc    = (db: Firestore, uid: string, tripId = TRIP_ID) => doc(db, 'artifacts', tripId, 'public', 'data', 'rateLimits', uid)
 const tripConfigDoc   = (db: Firestore, tripId = TRIP_ID) => doc(db, 'trips', tripId)
-const tripSecretsDoc  = (db: Firestore, tripId = TRIP_ID) => doc(db, 'tripSecrets', tripId)
 const tripInvitesDoc  = (db: Firestore, token = 'inv-test') => doc(db, 'tripInvites', token)
 const tripMemberDoc   = (db: Firestore, uid: string, tripId = TRIP_ID) => doc(db, 'trips', tripId, 'members', uid)
 const tripMembersCol  = (db: Firestore, tripId = TRIP_ID) => collection(db, 'trips', tripId, 'members')
-const pinRateLimitDoc = (db: Firestore, key = 'k1') => doc(db, 'rateLimits', key)
 
 // ─── حمولات صالحة (تطابق isValidExpense/isValidTraveler/isValidDepositLog) ───
 /** مصروف بلا نسبة — يمثّل المصاريف القديمة السابقة لحقل createdByUid. */
@@ -548,28 +553,10 @@ describe('سجلات تدقيق الإيداع — depositLogs', () => {
   })
 })
 
-describe('حماية tripSecrets — لا وصول من العميل تحت أي ظرف', () => {
-  beforeEach(async () => {
-    await seed(db => setDoc(tripSecretsDoc(db), { pinHash: 'x', salt: 'y' }))
-  })
-
-  it('المسؤول نفسه ممنوع من قراءة tripSecrets', async () => {
-    await assertFails(getDoc(tripSecretsDoc(adminDb())))
-  })
-
-  it('عضو الرحلة ممنوع من قراءة tripSecrets', async () => {
-    await assertFails(getDoc(tripSecretsDoc(memberDb())))
-  })
-
-  it('لا أحد يستطيع الكتابة على tripSecrets مباشرة — حتى المسؤول', async () => {
-    await assertFails(setDoc(tripSecretsDoc(adminDb()), { pinHash: 'z', salt: 'w' }))
-  })
-})
-
-// 🆕 دعوات الرحلة (روابط دخول بنقرة واحدة) — نفس نمط tripSecrets تماماً: لا
-// وصول من العميل تحت أي ظرف. الإنشاء/الإبطال/الاستهلاك كلها عبر Admin SDK داخل
-// manageInvite/joinViaInvite (functions/index.js)، وهي تتجاوز هذه القواعد
-// بالكامل — الاختبارات هنا تثبّت فقط أن القاعدة نفسها تمنع الوصول المباشر.
+// 🆕 دعوات الرحلة (روابط دخول بنقرة واحدة — الطريقة الوحيدة للانضمام الآن) —
+// لا وصول من العميل تحت أي ظرف. الإنشاء/الإبطال/الاستهلاك كلها عبر Admin SDK
+// داخل manageInvite/joinViaInvite (functions/index.js)، وهي تتجاوز هذه
+// القواعد بالكامل — الاختبارات هنا تثبّت فقط أن القاعدة نفسها تمنع الوصول المباشر.
 describe('حماية tripInvites — لا وصول من العميل تحت أي ظرف', () => {
   beforeEach(async () => {
     await seed(db => setDoc(tripInvitesDoc(db), { tripId: TRIP_ID, createdAt: Date.now(), createdByUid: 'admin-1' }))
@@ -720,10 +707,36 @@ describe('سجلّ عضوية الرحلة — trips/{tripId}/members', () => {
   })
 })
 
-describe('حدّ معدّل تحقّق رمز الرحلة — rateLimits/ العلوية (verifyTripPin)', () => {
-  it('لا تُقرأ ولا تُكتب من العميل إطلاقاً — حتى من المسؤول', async () => {
-    await assertFails(getDoc(pinRateLimitDoc(adminDb())))
-    await assertFails(setDoc(pinRateLimitDoc(adminDb()), { count: 1 }))
+// 🆕 القاعدة ١٨: التحقّق الفعلي من أن الحالة الكاسرة تُرفض فعلاً — لا افتراض
+// أن isNotAnonymous() تعمل لمجرد أنها كُتبت. anonymousMemberDb يحمل claim
+// trips صالحاً تماماً (لم يتغيّر شيء فيه)، والفرق الوحيد أن مزوّد الدخول
+// 'anonymous' — وهذا وحده يجب أن يكفي للرفض في كل مسار يمرّ عبر isMember().
+describe('نموذج الوصول: لا عضوية لجلسة مجهولة (isNotAnonymous)', () => {
+  it('جلسة مجهولة بـ claim عضوية صالح تُمنع من قراءة المصاريف', async () => {
+    await seed(db => setDoc(expenseDoc(db, 'e1'), expenseBy('anon-member-1')))
+    await assertFails(getDocs(expensesCol(anonymousMemberDb())))
+  })
+
+  it('جلسة مجهولة بـ claim عضوية صالح تُمنع من إنشاء مصروف', async () => {
+    await assertFails(setDoc(expenseDoc(anonymousMemberDb(), 'e1'), expenseBy('anon-member-1')))
+  })
+
+  it('جلسة مجهولة بـ claim عضوية صالح تُمنع من قراءة المسافرين', async () => {
+    await seed(db => setDoc(travelerDoc(db, 1), validTraveler()))
+    await assertFails(getDoc(travelerDoc(anonymousMemberDb(), 1)))
+  })
+
+  it('جلسة مجهولة بـ claim عضوية صالح تُمنع من قراءة إعدادات الرحلة', async () => {
+    await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة' }))
+    await assertFails(getDoc(tripConfigDoc(anonymousMemberDb())))
+  })
+
+  // ⚠️ المقارنة هي بيت القصيد: نفس uid ونفس claim trips بالضبط، والفرق الوحيد
+  // مزوّد الدخول — فما يفصل بين النجاح والفشل هنا isNotAnonymous() وحدها لا
+  // أي شرط آخر (لا فرق في المستند، لا فرق في العملية).
+  it('نفس claim العضوية بالضبط ينجح لحساب حقيقي ويفشل لحساب مجهول', async () => {
+    await assertSucceeds(setDoc(expenseDoc(memberDb('same-uid'), 'e1'), expenseBy('same-uid')))
+    await assertFails(setDoc(expenseDoc(anonymousMemberDb('same-uid'), 'e2'), expenseBy('same-uid')))
   })
 })
 

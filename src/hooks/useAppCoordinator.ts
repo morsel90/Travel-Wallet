@@ -11,7 +11,6 @@ import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from '../utils/tripId'
 import { acceptsExpenses, closedTripNotice } from '../utils/tripStatus'
 import { describeWriteError, writeErrorCode } from '../utils/writeErrors'
 import { onIdle, preloadAll } from '../utils/preload'
-import { consumeUidChangedNotice } from '../utils/mergeNotice'
 import { chartsImporters } from '../components/ChartsPanel'
 import { modalImporters } from '../components/ModalManager'
 import { authImporters } from '../components/AuthFlow'
@@ -37,9 +36,14 @@ export function useAppCoordinator() {
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
 
-  const { user, isAdmin, needsTripPin, pinCheckLoading, pinError, rateLimitSeconds, verifyTripPin, joinedTripIds } = useAuth()
+  const {
+    user, isAdmin, authLoading, joinedTripIds,
+    signInError, isSigningIn, signInWithGoogle, signInWithEmail,
+  } = useAuth()
   const isOnline = useOnlineStatus()
-  const hasAccess = isAdmin || (!pinCheckLoading && !needsTripPin)
+  // 🆕 لا رمز رحلة بعد الآن — الوصول عضوية مباشرة (claim) أو صلاحية مسؤول
+  // عالمية، بلا خطوة تحقّق وسيطة. انظر docs/DECISIONS.md.
+  const hasAccess = isAdmin || (!authLoading && joinedTripIds.includes(TRIP_ID))
 
   // 🆕 شاشة «رحلاتي» — تُعرض حين يُفتح التطبيق بلا `?trip=`، أي بلا رحلة مقصودة.
   const [showTripPicker, setShowTripPicker] = useState(false)
@@ -184,11 +188,11 @@ export function useAppCoordinator() {
   // المستخدم صراحةً من الهيدر. اختيار رحلة ينقل إلى `?trip=X` فيصبح المعرّف
   // صريحاً ولا تظهر الشاشة مجدداً.
   //
-  // ⚠️ لا نشترط needsTripPin هنا: كان ذلك يخفي الشاشة عن كل عضو في الرحلة
-  // الافتراضية (وهم الأغلبية) لأنه لا يُطالَب برمز أصلاً، فلا يراها أحد عملياً.
+  // ⚠️ لا نشترط عضوية الرحلة الافتراضية هنا: كان ذلك يخفي الشاشة عن كل عضو في
+  // الرحلة الافتراضية (وهم الأغلبية)، فلا يراها أحد عملياً — القاعدة ١٧.
   const isPickerVisible =
     showTripPicker ||
-    (!HAS_EXPLICIT_TRIP_ID && !pinCheckLoading && !pickerLoading && pickerTrips.length > 0)
+    (!HAS_EXPLICIT_TRIP_ID && !authLoading && !pickerLoading && pickerTrips.length > 0)
 
   const hasUnsavedData = useCallback(() => {
     const hasExpenseData = expense.isAddingExpense && (
@@ -222,30 +226,15 @@ export function useAppCoordinator() {
     return onIdle(() => preloadAll(LAZY_IMPORTERS))
   }, [hasAccess])
 
-  // 🆕 إعادة التحميل التي يفرضها useAccountLink بعد دمج حساب لا تترك وقتاً
-  // لعرض توست هناك (الصفحة تُعاد فوراً) — فنقرأ العلم هنا بعد التحميل التالي.
-  // consumeUidChangedNotice تُعيد true مرة واحدة فقط ثم تحذف العلم، فتكرار هذا
-  // الأثر عند كل إعادة رسم غير ضار (المرات اللاحقة تُعيد false بصمت).
-  useEffect(() => {
-    if (!hasAccess) return
-    if (consumeUidChangedNotice()) {
-      showToast({
-        text: 'تم ربط حسابك ونُقلت رحلاتك. مصاريف سجّلتَها قبل الربط ستبقى ظاهرة، لكن لن تستطيع تعديلها أو حذفها بنفسك بعد الآن — المسؤول وحده يستطيع ذلك.',
-        type: 'success',
-      }, 8000)
-    }
-  }, [hasAccess, showToast])
-
   return {
     /** 🆕 رابط دعوة بنقرة واحدة — App.tsx يعرض InviteJoinScreen طالما 'joining' أو 'needsName'. */
     invite: inviteJoin,
     /** المصادقة والوصول وحالة الشبكة. */
     session: {
       user, isAdmin, hasAccess, isOnline,
-      needsTripPin, pinCheckLoading, pinError, rateLimitSeconds, verifyTripPin, joinedTripIds,
-      // 🆕 جلسة مجهولة = العضويات مرتبطة بهذا المتصفح وحده. تُستهلك في
-      // TripPicker لعرض شريط ترقية الحساب. المسؤول ليس مجهولاً أصلاً.
-      isAnonymous: user?.isAnonymous === true,
+      authLoading, joinedTripIds,
+      // 🆕 لا PIN بعد الآن — تسجيل الدخول (AuthGate) هو الحارس الوحيد المتبقي.
+      signInError, isSigningIn, signInWithGoogle, signInWithEmail,
       // 🆕 المرحلة ٣: منظّم الرحلة الحالية (لا رحلة أخرى — انظر organizerTripId
       // أعلاه). يُستهلك لإظهار زر «إدارة الرحلة» في ExpensesPanel لمن ليس
       // مسؤولاً عالمياً لكنه منظّم.

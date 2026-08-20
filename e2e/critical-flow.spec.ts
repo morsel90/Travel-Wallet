@@ -1,17 +1,14 @@
 // 🔴 السيناريو الأهم: التدفق الكامل الذي يمر به مستخدم حقيقي من أول لحظة حتى
-// تصدير التقرير — دخول الرحلة، التحقق من الرمز، إضافة مسافرين، تسجيل مصروف،
-// تعديله، التأكد من ظهور الرصيد والتسوية بشكل صحيح، ثم فتح التقرير وتصديره.
-//
-// ⚠️ إضافة مسافر تتطلب وضع المسؤول (انظر التعليق في e2e/utils/flows.ts)، لذا
-// الجلسة هنا تدخل كعضو عادي عبر رمز الرحلة أولاً (كما يحدث فعلياً)، ثم تسجّل
-// دخول المسؤول من نفس الجلسة — تماماً كما يفعل منظّم رحلة حقيقي في أول استخدام.
+// تصدير التقرير — تسجيل الدخول، إضافة مسافرين، تسجيل مصروف، تعديله، التأكد من
+// ظهور الرصيد والتسوية بشكل صحيح، ثم فتح التقرير وتصديره.
 import { test, expect } from '@playwright/test'
 import { seedTrip } from './utils/seed'
 import { openTripAsAdmin, addTraveler, addExpense, editExpenseAmount, expenseCard } from './utils/flows'
 
 const CREDS = {
   tripId: 'e2e-critical-flow',
-  pin: '135790',
+  memberEmail: 'e2e-member-critical@test.local', // غير مستخدَم في هذا السيناريو، لكن seedTrip يتطلبه
+  memberPassword: 'E2eTestPass!1',
   adminEmail: 'e2e-admin-critical@test.local',
   adminPassword: 'E2eTestPass!1',
 }
@@ -20,7 +17,7 @@ test.beforeAll(async () => {
   await seedTrip(CREDS)
 })
 
-test('التدفق الحرج الكامل: PIN → مسافرون → مصروف → تعديل → رصيد → تسوية → تقرير → تصدير', async ({ page }) => {
+test('التدفق الحرج الكامل: تسجيل الدخول → مسافرون → مصروف → تعديل → رصيد → تسوية → تقرير → تصدير', async ({ page }) => {
   await openTripAsAdmin(page, CREDS)
 
   // ── إضافة مسافرين ────────────────────────────────────────────────────────

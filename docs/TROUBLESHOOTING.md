@@ -22,11 +22,9 @@
 Simply add to `CURRENCY_LABELS` in `constants.ts`. The `buildCurrencyMap` function and `useExchangeRates` hook handle the rest automatically.
 
 ### Create a new trip
-Sign in as admin → **إدارة الرحلات** → «إنشاء رحلة جديدة». Enter a trip id, a name and a PIN; the app calls `manageTrip` which writes `trips/{tripId}` and `tripSecrets/{tripId}` in one atomic batch. Then share `https://your-app.vercel.app/?trip=YOUR_TRIP_ID` plus the PIN.
+Sign in as admin → **إدارة الرحلات** → «إنشاء رحلة جديدة». Enter a trip id and a name; the app calls `manageTrip` which writes `trips/{tripId}`. 🆕 No PIN — invite members from the same panel's "الأعضاء" tab (generates a one-click `?invite=TOKEN` link) once the trip exists.
 
-The PIN is stored only as a salted SHA-256 hash and is never shown again — capture it when you set it. It can be changed later from the same panel (رمز الدخول tab), which forces every member of that trip to re-enter it once.
-
-`scripts/create-trip.mjs` still works and is the fallback if functions are not deployed.
+`scripts/create-trip.mjs` still works and is the fallback if functions are not deployed — it also no longer prompts for a PIN.
 
 ### Grant admin access
 ```bash
@@ -74,7 +72,7 @@ The itinerary is edited locally and saved in one explicit write, because the fie
 
 `scripts/add-flights.mjs` still exists for bulk entry but is no longer the primary path — it hardcodes its data and overwrites the whole array.
 
-`scripts/create-trip.mjs` writes with `{ merge: true }`, so re-running it to change bank details no longer wipes an existing itinerary. It still replaces the PIN every run, which signs every member of that trip out — the prompt says so before proceeding.
+`scripts/create-trip.mjs` writes with `{ merge: true }`, so re-running it to change bank details no longer wipes an existing itinerary. 🆕 It no longer touches a PIN at all (removed entirely) or signs anyone out.
 
 Once saved, `NextSegmentWidget` shows the first segment whose `departure.time` is in the future, and `ItinerarySection` lists all segments in the reports view. Both update immediately — `useTripConfig` listens with `onSnapshot`.
 
@@ -95,8 +93,8 @@ The app exports Excel directly from the UI (button in expense section header). F
 
 | Issue | Likely Cause | Solution |
 |---|---|---|
-| "خطأ في الصلاحيات" | User not a member of this trip, or trip not created in Firestore | Run `scripts/create-trip.mjs` for this tripId; user must re-enter PIN |
-| PIN entry stuck in loop | Custom claims format mismatch | User logs out and back in (or `getIdToken(true)`) |
+| "خطأ في الصلاحيات" | User not a member of this trip, or trip not created in Firestore | Run `scripts/create-trip.mjs` for this tripId; user must join again via an invite link |
+| 🆕 Signed-in user stuck on "لست عضواً في هذه الرحلة" | They are authenticated but have no `trips` claim for this `TRIP_ID` — no self-service join exists anymore | Get a fresh invite link from the trip's admin panel ("الأعضاء" tab) |
 | Expenses not syncing | Network offline; Firestore SDK queues writes | Check `isOnline` banner; writes sync when connection returns |
 | An expense appeared then vanished | The server rejected the write and Firestore reverted the local copy. A toast now names the cause | Read the toast — usually permissions or the one-expense-per-second limit |
 | `recharts` not found (build error) | Old dependency referenced somewhere | Run `npm install` (package.json no longer lists recharts) |
@@ -113,9 +111,8 @@ The app exports Excel directly from the UI (button in expense section header). F
 | "إنشاء الرحلة" fails with `functions/not-found` | 🆕 `manageTrip` is not deployed to the project this build points at (check `VITE_FIREBASE_PROJECT_ID`) | `npx firebase deploy --only functions --project <that project>`. No `vercel.json` change is involved any more |
 | "هذا الإجراء متاح للمسؤول فقط" when creating a trip | `manageTrip` re-checks `request.auth.token.admin` server-side and does not trust the client | Run `scripts/set-admin.mjs grant <email>`, then re-login |
 | 🆕 "بلغت الحد الأقصى لعدد الرحلات على هذا الحساب" | The account's custom claims hit the 900-byte budget — 38 trips with typical ids. Expected, not a bug | Existing trips keep working and auth is unaffected; only *joining a new one* is refused. Free a slot, or implement `users/{uid}` — see `docs/PLAN-account-linking.md` |
-| 🆕 "رمز الرحلة غير صحيح" with a correct PIN, on **one machine only** | An ad blocker or privacy extension is stripping the `Authorization` header from the cross-origin call. DevTools "Copy as cURL" still shows the header — it reflects intent, not what left the browser | Disable the extension, or allowlist the app's domain. **Ask "does it work on another device?" before investigating anything else** — see *Diagnosing a failing Cloud Function call* |
-| 🆕 "رمز الرحلة غير صحيح" on `localhost` with a correct PIN | Was caused by the old `/api/verifyTripPin` rewrite not existing under `npm run dev`, so the dev server returned HTML | No longer possible — `httpsCallable` needs no proxy. If it recurs, the PIN really is wrong, or `.env.local` points at a project where this trip has no `tripSecrets` doc |
-| 🆕 Admin mode lost after switching trips | Trip switching is a full page reload, and `signInAnonymously` used to run unconditionally on every load, replacing the admin session | Fixed in `useAuth`. If it recurs, verify the deployed build actually contains the fix (`git log origin/main..main`) |
+| "رابط الدعوة غير صالح أو أُبطل" on **one machine only** | An ad blocker or privacy extension is stripping the `Authorization` header from the cross-origin call. DevTools "Copy as cURL" still shows the header — it reflects intent, not what left the browser. (🆕 Historical note: this exact symptom used to read "رمز الرحلة غير صحيح" back when the mechanism was `verifyTripPin`, deleted along with the PIN — the underlying cause and fix are unchanged) | Disable the extension, or allowlist the app's domain. **Ask "does it work on another device?" before investigating anything else** — see *Diagnosing a failing Cloud Function call* |
+| 🆕 Admin mode lost after switching trips | Historical (pre-2026-08-20): trip switching is a full page reload, and `signInAnonymously` used to run unconditionally on every load, replacing the admin session | No longer reachable at all — `signInAnonymously` was deleted entirely, not just fixed. If something like this recurs, it is a new bug, not this one |
 | 🆕 Nothing happens when adding a second expense offline | The submit lock waited for a server confirmation that never comes while offline | Fixed in `useExpenseActions` — released when the write is issued |
 | 🆕 App shows "حدث خطأ غير متوقع" right after the first expense of a trip, offline | A `React.lazy` chunk (`ChartsSection`) was requested for the first time with no connectivity | Mitigated by `utils/preload.ts`; the service worker covers it in production |
 | 🆕 "لا يمكن حذف ... لأنها تحوي مسافرين أو مصاريف" | Deletion is restricted to empty trips by design — deposit logs are immutable and must not be orphaned | Expected. Archive the trip instead (see *Close or archive a trip*) |
@@ -128,8 +125,7 @@ The app exports Excel directly from the UI (button in expense section header). F
 | 🆕 `npm run test:rules` / `test:e2e` fail with "Unable to locate a Java Runtime" | The Firestore emulator is a JVM process | Install a JDK (`brew install openjdk` + link it), then re-run |
 | 🆕 Emulator fails downloading `cloud-firestore-emulator-*.jar` | A newer firebase-tools (often a *global* install) wants a newer jar and cannot reach `storage.googleapis.com` | Run through `npm run …` so the pinned local version is used; it reuses the cached jar |
 | 🆕 E2E fails with "Port 5173 is already in use" | A leftover `vite`/`npm run dev` from another terminal | `lsof -i :5173` then kill it; do not run a dev server alongside `npm run test:e2e` |
-| 🆕 `wrong-pin` E2E test fails with a rate-limit message | Too many PIN attempts accumulated on that trip's counter within 15 minutes | The test clears counters via `clearPinRateLimits()`; if changed, keep that call |
-| 🆕 A removed member can still open the trip | Expected for up to 60 minutes — `isMember()` reads the ID token, and tokens live an hour | Wait it out, or reset the PIN for an immediate cut (which ejects everyone). The members tab says this before you click |
+| 🆕 A removed member can still open the trip | Expected for up to 60 minutes — `isMember()` reads the ID token, and tokens live an hour | Wait it out — there is no immediate-cut alternative (no PIN to reset anymore). The members tab says this before you click |
 | 🆕 The members tab is empty although people have joined | They joined before the roster existed (2026-08-14). Membership lived only in their claims, which cannot be queried | `node scripts/backfill-member-roster.mjs --apply`. Those rows show "تاريخ الانضمام غير معروف" — the date was never stored anywhere |
 | 🆕 "تعذّر جلب قائمة الأعضاء" for an admin | The roster is `read: if isAdmin()`, and the admin claim may not be on the current token yet | Sign out and back in — the claim only refreshes on a new token. Same cause as the empty trips list |
 | 🆕 Removing an admin from a trip appears to do nothing | Correct: `admin: true` is global and bypasses trip membership, so there was no trip-scoped access to revoke | Expected — the toast says so. Revoke admin with `scripts/set-admin.mjs revoke <email>` instead |
