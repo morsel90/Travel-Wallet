@@ -20,9 +20,16 @@ function participantsCell(exp: Expense, travelers: Traveler[]): string {
   return names.map((n, i) => `${n} (${(amounts[i] ?? 0).toFixed(2)})`).join('، ')
 }
 
+// نص عمود "بواسطة": اسم المسافر إن دفعها من جيبه، أو الصندوق المشترك (القيمة
+// الافتراضية والوحيدة لكل المصاريف قبل هذه الميزة).
+function paidByCell(exp: Expense, travelers: Traveler[]): string {
+  if (typeof exp.paidBy !== 'number') return 'الصندوق المشترك'
+  return travelers.find(t => t.id === exp.paidBy)?.name ?? `#${exp.paidBy}`
+}
+
 /** ورقة "المصاريف": صف لكل مصروف + صف إجمالي في النهاية. */
 export function buildExpenseRows(expenses: Expense[], travelers: Traveler[]): XlsxCell[][] {
-  const header: XlsxCell[] = ['التاريخ', 'الوصف', 'الفئة', 'المبلغ (ريال)', 'العملة', 'المبلغ الأصلي', 'المشاركون']
+  const header: XlsxCell[] = ['التاريخ', 'الوصف', 'الفئة', 'المبلغ (ريال)', 'العملة', 'المبلغ الأصلي', 'المشاركون', 'بواسطة']
   const rows: XlsxCell[][] = expenses.map(e => [
     e.date,
     e.description,
@@ -31,9 +38,10 @@ export function buildExpenseRows(expenses: Expense[], travelers: Traveler[]): Xl
     e.currency,
     money(e.originalAmount),
     participantsCell(e, travelers),
+    paidByCell(e, travelers),
   ])
   const total = money(expenses.reduce((s, e) => s + e.amount, 0))
-  rows.push(['الإجمالي', '', '', total, '', '', ''])
+  rows.push(['الإجمالي', '', '', total, '', '', '', ''])
   return [header, ...rows]
 }
 

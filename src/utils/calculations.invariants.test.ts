@@ -96,6 +96,13 @@ const bookArb = travelerIds.chain(ids =>
                   ),
                 ),
             ),
+            // 🆕 من دفعها: غياب الحقل أو 'fund' (الصندوق المشترك، كما كان دائماً)،
+            // أو معرّف مسافر فعلي من نفس الدفتر (دفعها من جيبه) — انظر قاعدة ٢.
+            paidBy: fc.oneof(
+              fc.constant(undefined),
+              fc.constant('fund' as const),
+              fc.constantFrom(...ids),
+            ),
           }),
         ),
         { maxLength: 12 },
@@ -104,7 +111,9 @@ const bookArb = travelerIds.chain(ids =>
     .map(({ deposits, expenses }) => ({
       travelers: ids.map((id, i) => mkTraveler(id, deposits[i])),
       expenses: expenses.map((e, i) =>
-        mkExpense({ id: `e${i}`, amount: e.amount, participants: e.participants, shares: e.shares }),
+        mkExpense({
+          id: `e${i}`, amount: e.amount, participants: e.participants, shares: e.shares, paidBy: e.paidBy,
+        }),
       ),
     })),
 )
@@ -207,11 +216,17 @@ describe('قاعدة ١ — مجموع الحصص يساوي مبلغ المصر
 // تطبيق تقسيم مصاريف، لأنه لا يرمي خطأً ولا يُلاحَظ حتى تُنازَع تسوية.
 
 describe('قاعدة ٢ — حفظ المال في الأرصدة', () => {
-  it('remaining = deposited − totalExpenses لكل مسافر', () => {
+  it('remaining = deposited + ما دُفع من الجيب − totalExpenses لكل مسافر', () => {
+    // 🆕 بعد ميزة "دفعها فلان": مصروف بـ paidBy = هذا المسافر يُقيَّد كاملاً
+    // لحسابه (انظر calculateBalances) قبل خصم نصيبه ضمن totalExpenses كالمعتاد.
     fc.assert(
       fc.property(bookArb, ({ travelers, expenses }) => {
-        for (const b of calculateBalances(travelers, expenses)) {
-          expect(b.remaining).toBeCloseTo(b.deposited - b.totalExpenses, 9)
+        const balances = calculateBalances(travelers, expenses)
+        for (const b of balances) {
+          const outOfPocketPaid = sum(
+            expenses.filter(e => e.paidBy === b.id).map(e => e.amount),
+          )
+          expect(b.remaining).toBeCloseTo(b.deposited + outOfPocketPaid - b.totalExpenses, 9)
         }
       }),
       RUNS,
@@ -230,14 +245,22 @@ describe('قاعدة ٢ — حفظ المال في الأرصدة', () => {
     )
   })
 
-  it('مجموع الأرصدة المتبقية = مجموع الإيداعات − مجموع المصاريف', () => {
+  it('معادلة الدفتر: مجموع الأرصدة = مجموع الإيداعات − مجموع مصاريف الصندوق فقط', () => {
+    // 🆕 مصروف مدفوع من جيب مسافر (paidBy رقم) لا يُغيّر هذا المجموع: الائتمان
+    // المضاف لرصيد الدافع (المبلغ كاملاً) يُعادل تماماً ما يُخصَم من نصيب كل
+    // المشاركين (شاملاً هو نفسه إن كان منهم) — لأن مجموع الحصص يساوي المبلغ
+    // بالضبط (قاعدة ١). فالمصاريف من الجيب تصفّر أثرها الصافي على مجموع كل
+    // الأرصدة، ويبقى الأثر الحقيقي على المجموع محصوراً في مصاريف الصندوق
+    // المشترك ('fund' أو الحقل غائب).
     fc.assert(
       fc.property(bookArb, ({ travelers, expenses }) => {
         const balances = calculateBalances(travelers, expenses)
         const totalRemaining = halalas(sum(balances.map(b => b.remaining)))
         const totalDeposited = halalas(sum(travelers.map(t => t.deposited)))
-        const totalSpent = expenses.reduce((s, e) => s + halalas(e.amount), 0)
-        expect(totalRemaining).toBe(totalDeposited - totalSpent)
+        const fundSpent = expenses
+          .filter(e => typeof e.paidBy !== 'number')
+          .reduce((s, e) => s + halalas(e.amount), 0)
+        expect(totalRemaining).toBe(totalDeposited - fundSpent)
       }),
       RUNS,
     )
@@ -586,6 +609,24 @@ describe('قاعدة ٤ — القيم غير المنتهية محجوزة عن
           }
         },
       ),
+      RUNS,
+    )
+  })
+
+  it('مصروف بمبلغ غير منتهٍ مدفوع من جيب مسافر لا يُفسد رصيد الدافع', () => {
+    // 🆕 نفس حراسة splitEven (انظر تعليقها) مطبَّقة على مسار الائتمان الجديد —
+    // Number.isFinite(exp.amount) في calculateBalances قبل إضافته لرصيد الدافع.
+    fc.assert(
+      fc.property(fc.constantFrom(NaN, Infinity, -Infinity), poison => {
+        const travelers = [mkTraveler(1, 1000), mkTraveler(2, 1000)]
+        const balances = calculateBalances(travelers, [
+          mkExpense({ amount: poison, participants: [1, 2], paidBy: 1 }),
+        ])
+        for (const b of balances) {
+          expect(Number.isFinite(b.remaining)).toBe(true)
+          expect(Number.isFinite(b.totalExpenses)).toBe(true)
+        }
+      }),
       RUNS,
     )
   })

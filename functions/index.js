@@ -735,7 +735,7 @@ function isValidExpenseJs(d) {
   if (!isPlainObject(d)) return false;
   if (!hasOnlyKeys(d, [
     'id', 'date', 'description', 'amount', 'originalAmount', 'currency', 'exchangeRate',
-    'participants', 'createdAt', 'deletedAt', 'createdByUid', 'category', 'shares',
+    'participants', 'createdAt', 'deletedAt', 'createdByUid', 'category', 'shares', 'paidBy',
   ])) return false;
   if (typeof d.id !== 'string' || !d.id) return false;
   if (typeof d.date !== 'string' || d.date.length > 10) return false;
@@ -751,6 +751,8 @@ function isValidExpenseJs(d) {
   if ('createdByUid' in d && typeof d.createdByUid !== 'string') return false;
   if ('category' in d && (typeof d.category !== 'string' || d.category.length > 50)) return false;
   if ('shares' in d && !isValidSharesJs(d.shares, d.participants)) return false;
+  // 🆕 موازٍ لـ isValidExpense في firestore.rules — انظر تعليقها هناك.
+  if ('paidBy' in d && d.paidBy !== 'fund' && typeof d.paidBy !== 'number') return false;
   return true;
 }
 

@@ -109,6 +109,11 @@ export const ExpenseForm = memo(() => {
     setExpenseForm(prev => ({ ...prev, category: e.target.value }));
   }, [setExpenseForm]);
 
+  const handlePaidByChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    setExpenseForm(prev => ({ ...prev, paidBy: value === 'fund' ? 'fund' : Number(value) }));
+  }, [setExpenseForm]);
+
   const handleToggleSplitMode = useCallback(() => {
     setExpenseForm(prev => {
       if (prev.splitMode === 'custom') {
@@ -265,6 +270,22 @@ export const ExpenseForm = memo(() => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           </div>
+        </div>
+
+        {/* طريقة الدفع */}
+        <div>
+          <label className="block text-xs font-bold text-slate-500 mb-1.5 ms-1">طريقة الدفع</label>
+          <select
+            value={String(expenseForm.paidBy)}
+            onChange={handlePaidByChange}
+            className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm text-slate-800 font-bold focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all"
+            aria-label="طريقة الدفع"
+          >
+            <option value="fund">الصندوق المشترك</option>
+            {travelers.map(t => (
+              <option key={t.id} value={t.id}>دفعها: {t.shortName}</option>
+            ))}
+          </select>
         </div>
 
         {/* اختيار المشاركين */}
@@ -445,6 +466,12 @@ export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
     return `${num.toFixed(2)} ${currencies[expense.currency]?.label || expense.currency}`;
   }, [expense.currency, expense.originalAmount, currencies]);
 
+  const paidByLabel = useMemo(() => {
+    if (typeof expense.paidBy !== 'number') return null
+    const payer = travelers.find(t => t.id === expense.paidBy)
+    return payer ? `دفعها: ${payer.shortName}` : null
+  }, [expense.paidBy, travelers]);
+
   const shareData = useMemo(() => {
     const names = toDisplayNames(expense.participants, travelers)
     const shareAmounts = expense.shares 
@@ -514,6 +541,12 @@ export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
               {originalAmountDisplay && (
                 <span className="text-[10px] font-bold text-amber-600 bg-amber-50/60 px-1.5 py-0.5 rounded-md border border-amber-100/70 tracking-tight tabular-nums">
                   {originalAmountDisplay}
+                </span>
+              )}
+
+              {paidByLabel && (
+                <span className="text-[10px] font-bold text-violet-600 bg-violet-50/60 px-1.5 py-0.5 rounded-md border border-violet-100/70">
+                  {paidByLabel}
                 </span>
               )}
 

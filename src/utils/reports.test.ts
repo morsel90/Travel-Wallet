@@ -24,7 +24,7 @@ describe('buildExpenseRows', () => {
   it('header + one row per expense + totals row', () => {
     const rows = buildExpenseRows(expenses, travelers)
     expect(rows).toHaveLength(1 + expenses.length + 1)
-    expect(rows[0]).toEqual(['التاريخ', 'الوصف', 'الفئة', 'المبلغ (ريال)', 'العملة', 'المبلغ الأصلي', 'المشاركون'])
+    expect(rows[0]).toEqual(['التاريخ', 'الوصف', 'الفئة', 'المبلغ (ريال)', 'العملة', 'المبلغ الأصلي', 'المشاركون', 'بواسطة'])
     // صف المصروف الأول: التاريخ/الوصف/الفئة/المبلغ
     expect(rows[1][0]).toBe('2026-07-10')
     expect(rows[1][3]).toBe(200)
@@ -37,6 +37,18 @@ describe('buildExpenseRows', () => {
     const rows = buildExpenseRows(expenses, travelers)
     expect(String(rows[1][6])).toContain('أحمد')
     expect(String(rows[1][6])).toContain('سعد')
+  })
+
+  it('paidBy column: رقم مسافر → اسمه، و fund أو غياب الحقل → الصندوق المشترك', () => {
+    const withPaidBy: Expense[] = [
+      { ...expenses[0], paidBy: 2 },
+      { ...expenses[1], paidBy: 'fund' },
+      { ...expenses[2] }, // بلا paidBy — مصروف قديم
+    ]
+    const rows = buildExpenseRows(withPaidBy, travelers)
+    expect(rows[1][7]).toBe('سعد')
+    expect(rows[2][7]).toBe('الصندوق المشترك')
+    expect(rows[3][7]).toBe('الصندوق المشترك')
   })
 })
 

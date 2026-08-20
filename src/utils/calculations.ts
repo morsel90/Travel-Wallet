@@ -114,6 +114,16 @@ export function calculateBalances(travelers: Traveler[], expenses: Expense[]): T
   })
 
   expenses.forEach(exp => {
+    // 🆕 مصروف دُفع من جيب مسافر (paidBy رقم) لا من الصندوق: يُقيَّد المبلغ
+    // كاملاً لحساب الدافع *قبل* خصم نصيبه أدناه — فتصبح remaining = deposited +
+    // ما دفعه من جيبه − نصيبه من كل المصاريف. 'fund' أو غياب الحقل (كل المصاريف
+    // القديمة) لا يُغيّران شيئاً؛ نفس السلوك السابق تماماً.
+    if (typeof exp.paidBy === 'number') {
+      const payer = balances.find(b => matchesTraveler(b, exp.paidBy as number))
+      // نفس تحصين splitEven: مبلغ غير منتهٍ يُعامَل كصفر لا يُفسد رصيد الدافع.
+      if (payer) payer.remaining += Number.isFinite(exp.amount) ? exp.amount : 0
+    }
+
     const n = exp.participants.length
     if (n === 0) return
     const shares = splitByShares(exp.amount, exp.participants, exp.shares)

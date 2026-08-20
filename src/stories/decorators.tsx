@@ -57,6 +57,7 @@ export const baseUIForm: UIFormContextType = {
     category: 'مطاعم',
     splitMode: 'equal',
     shares: {},
+    paidBy: 'fund',
   },
   setExpenseForm: log('setExpenseForm'),
   isExpenseFormOpen: false,

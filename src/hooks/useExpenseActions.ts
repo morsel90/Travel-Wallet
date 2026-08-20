@@ -87,6 +87,7 @@ export function useExpenseActions({
     category: EXPENSE_CATEGORIES[0],
     splitMode: 'equal',
     shares: {},
+    paidBy: 'fund',
   }), [activeTravelers])
 
   const [newExpense, setNewExpense] = useState<ExpenseFormData>(emptyExpenseForm)
@@ -143,6 +144,7 @@ export function useExpenseActions({
       exchangeRate:   exchangeRate,
       participants:   newExpense.participants,
       category:       newExpense.category,
+      paidBy:         newExpense.paidBy,
       createdAt:      editingExpense?.createdAt ?? now,
       createdByUid:   editingExpense?.createdByUid ?? user?.uid,
     }
@@ -309,6 +311,7 @@ export function useExpenseActions({
       category:     exp.category ?? EXPENSE_CATEGORIES[EXPENSE_CATEGORIES.length - 1],
       splitMode:    exp.shares ? 'custom' : 'equal',
       shares,
+      paidBy:       exp.paidBy ?? 'fund',
     })
     setIsAddingExpense(true)
   }, [activeTravelers])
