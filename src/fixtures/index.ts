@@ -201,3 +201,36 @@ export const noTravelers: Traveler[] = []
 export const noExpenses: Expense[] = []
 export const noSettlements: typeof settlements = []
 export const noItinerary: ItinerarySegment[] = []
+
+// ─── بطاقتي الشخصية (نموذج الهوية الهجين) ────────────────────────────────────
+// 🆕 مسافر مربوط بحساب المستخدم نفسه (uid) — الحالة التي يصعب بلوغها في
+// التطبيق الحيّ أكثر من غيرها في هذا الملف: تتطلب انضماماً فعلياً برابط دعوة،
+// لا مجرد بيانات في Firestore. مُبقاة خارج `travelers`/`expenses` المشتركتين
+// أعلاه عمداً — قصص أخرى (ChartsSection مثلاً) تستهلكهما، وإضافة مسافر ومصروف
+// هنا كانت ستغيّر أرقامها بلا علاقة بهذه الحالة.
+export const MY_UID = 'story-user-uid'
+
+export const travelerMine: Traveler = {
+  id: 6, name: 'محمد العاثم', shortName: 'محمد', deposited: 1000, deletedAt: null, uid: MY_UID, joinedAt: T0,
+}
+
+/** دفعها محمد من جيبه بدل الصندوق — يظهر في كشف حسابه كسطر "دفعها من جيبه". */
+export const expenseMinePaidByPocket: Expense = {
+  id: 'exp-mine-1',
+  date: '2026-07-26',
+  description: 'وقود سيارة الرحلة',
+  amount: 200,
+  originalAmount: 200,
+  currency: 'SAR',
+  exchangeRate: 1,
+  participants: [1, 6],
+  paidBy: 6,
+  createdAt: T0 + 5 * day,
+  category: 'مواصلات',
+  deletedAt: null,
+}
+
+export const travelersWithMine: Traveler[] = [...travelers, travelerMine]
+export const expensesWithMine: Expense[] = [...expenses, expenseMinePaidByPocket]
+export const balancesWithMine: TravelerBalance[] = calculateBalances(travelersWithMine, expensesWithMine)
+export const balanceMine: TravelerBalance = balancesWithMine.find(b => b.id === travelerMine.id) ?? balancesWithMine[0]

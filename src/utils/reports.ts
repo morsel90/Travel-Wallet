@@ -127,12 +127,14 @@ export function exportTravelerToExcel({ traveler, balance, statement }: Traveler
   ]
 
   // 2. بناء ورقة كشف الحساب التفصيلي
-  const statementHeader: XlsxCell[] = ['التاريخ', 'الوصف', 'الفئة', 'المبلغ المخصوم (ريال)', 'الرصيد الجاري (ريال)']
+  // 🆕 عمود واحد بإشارة بدل عمودين منفصلين — يشمل حصصه (سالبة) وما دفعه من
+  // جيبه لمصروف (موجبة)، انظر AccountStatement.rows في utils/reportData.ts.
+  const statementHeader: XlsxCell[] = ['التاريخ', 'الوصف', 'الفئة', 'الأثر على رصيده (ريال)', 'الرصيد الجاري (ريال)']
   const statementRows: XlsxCell[][] = statement ? statement.rows.map(r => [
     r.date,
-    r.description,
+    r.kind === 'paidByPocket' ? `${r.description} (دفعها من جيبه)` : r.description,
     r.category,
-    money(r.share),
+    money(r.kind === 'paidByPocket' ? r.amount : -r.amount),
     money(r.balanceAfter)
   ]) : []
 

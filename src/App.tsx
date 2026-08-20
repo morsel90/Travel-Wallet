@@ -24,6 +24,7 @@ import { AppProviders }     from './components/AppProviders'
 import { AppErrorFallback } from './components/AppErrorFallback'
 import { StatusBanners }    from './components/StatusBanners'
 import { SaveAccountBanner } from './components/SaveAccountBanner'
+import MyBalanceBanner       from './components/MyBalanceBanner'
 import { TravelersPanel }   from './components/TravelersPanel'
 import { ChartsPanel }      from './components/ChartsPanel'
 import { ExpensesPanel }    from './components/ExpensesPanel'
@@ -45,8 +46,15 @@ export default function App() {
 
   // 🆕 رابط دعوة بنقرة واحدة (?invite=TOKEN) — يسبق كل توجيه آخر: نجاحه إعادة
   // توجيه كاملة، وفشله ينظّف الرابط ويُكمل للتدفّق المعتاد أدناه (رحلاتي/بوابة الرمز).
-  if (invite.status === 'joining') {
-    return <InviteJoinScreen />
+  if (invite.status === 'joining' || invite.status === 'needsName') {
+    return (
+      <InviteJoinScreen
+        status={invite.status}
+        onSubmitName={invite.submitName}
+        onSkipName={invite.skipName}
+        isSubmittingName={invite.isSubmittingName}
+      />
+    )
   }
 
   // 🆕 من فتح التطبيق بلا `?trip=` لا رحلة مقصودة لديه، فمطالبته برمز الرحلة
@@ -130,6 +138,11 @@ export default function App() {
 
               <OnboardingBanner />
 
+              {/* 🆕 نموذج الهوية الهجين — يظهر فقط لمن مسافره مربوط بحسابه فعلاً. */}
+              {!ledger.isInitialLoading && ledger.myBalance && (
+                <MyBalanceBanner balance={ledger.myBalance} />
+              )}
+
               {!ledger.isInitialLoading && (
                 <NextSegmentWidget itinerary={trip.itinerary} />
               )}
@@ -159,7 +172,7 @@ export default function App() {
                 isInitialLoading={ledger.isInitialLoading}
                 isAdmin={session.isAdmin}
                 activeTravelers={ledger.activeTravelers}
-                balances={ledger.balances}
+                balances={ledger.travelersPanelBalances}
                 isAddingTraveler={traveler.isAddingTraveler}
                 onStartAddTraveler={traveler.startAddTraveler}
                 travelerForm={{

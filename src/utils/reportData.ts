@@ -77,11 +77,16 @@ export function buildDailySummary(expenses: Expense[]): DailySummaryRow[] {
 }
 
 export interface StatementRow {
+  /** 🆕 `${exp.id}:${kind}` لا exp.id وحده — مصروف واحد قد يُنتج سطرين (دفعه من
+   * جيبه + حصته فيه)، انظر تعليق الدالة أدناه. */
   id: string
   date: string
   description: string
   category: string
-  share: number
+  /** 🆕 'share': حصته من مصروف شارك فيه (يُخصم). 'paidByPocket': ما دفعه من جيبه لمصروف (يُضاف). انظر Expense.paidBy. */
+  kind: 'share' | 'paidByPocket'
+  /** القيمة المطلقة للحركة — أثرها على الرصيد الجاري يُقرأ من `kind` لا من إشارة العدد. */
+  amount: number
   balanceAfter: number
 }
 
@@ -89,40 +94,64 @@ export interface AccountStatement {
   opening: number
   rows: StatementRow[]
   totalShare: number
+  /** 🆕 إجمالي ما دفعه هذا المسافر من جيبه لمصاريف (Expense.paidBy = هويته) — صفر لمن لم يدفع من جيبه قط. */
+  totalPaidByPocket: number
+  /** المودَع + دفعه من جيبه − إجمالي حصصه — نفس صيغة TravelerBalance.remaining في calculateBalances تماماً؛ الحقلان يجب أن يتطابقا دائماً لنفس المسافر. */
   remaining: number
 }
 
 /**
- * كشف حساب مسافر: يبدأ من رصيده المُودَع (opening) ثم يخصم حصّته من كل مصروف
- * شارك فيه بترتيب زمني تصاعدي (حسب createdAt)، مع رصيد جارٍ (balanceAfter) بعد
- * كل عملية. الرصيد النهائي = remaining = المُودَع − إجمالي الحصص. يعامل الرصيد
- * المُودَع كأنه متوفّر من بداية الرحلة (النمط المعتاد للدفع المسبق).
+ * كشف حساب مسافر: يبدأ من رصيده المُودَع (opening) ثم يتحرّك بترتيب زمني
+ * تصاعدي (حسب createdAt) — خصماً لحصّته من كل مصروف شارك فيه، وإضافةً لكل
+ * مبلغ دفعه من جيبه بدل الصندوق (Expense.paidBy) — مع رصيد جارٍ (balanceAfter)
+ * بعد كل حركة. الرصيد النهائي = remaining = المُودَع + دفعه من جيبه − إجمالي
+ * الحصص، بنفس منطق calculateBalances في utils/calculations.ts بالضبط (انظر
+ * تعليقها) — لا حساباً موازياً مستقلاً قد ينحرف عنه.
+ *
+ * ⚠️ **مصروف واحد قد يُنتج سطرين**: من دفع مصروفاً من جيبه *وشارك فيه أيضاً*
+ * يظهر له سطر "دفعه من جيبه" (+المبلغ كاملاً) وسطر "حصته" (−نصيبه) لنفس
+ * المصروف — بالضبط ما يحدث لرصيده فعلياً في calculateBalances (يُقيَّد له
+ * المبلغ كاملاً ثم يُخصم نصيبه كغيره من المشاركين). لهذا `id` هنا `exp.id`
+ * ملحقاً بـ `kind`، لا exp.id وحده.
  */
 export function buildAccountStatement(deposited: number, traveler: Traveler, expenses: Expense[]): AccountStatement {
-  const mine = expenses
-    .map(exp => {
-      if (exp.participants.length === 0) return null
+  interface Entry { exp: Expense; kind: StatementRow['kind']; amount: number }
+  const entries: Entry[] = []
+
+  for (const exp of expenses) {
+    // 🆕 دفعها من جيبه — انظر تعليق paidBy في calculateBalances؛ نفس تحصين
+    // Number.isFinite هناك، فمصروف بمبلغ فاسد لا يُنتج رصيداً غير منتهٍ هنا أيضاً.
+    if (typeof exp.paidBy === 'number' && matchesTraveler(traveler, exp.paidBy)) {
+      entries.push({ exp, kind: 'paidByPocket', amount: Number.isFinite(exp.amount) ? exp.amount : 0 })
+    }
+
+    if (exp.participants.length > 0) {
       const idx = exp.participants.findIndex(p => matchesTraveler(traveler, p))
-      if (idx === -1) return null
-      const share = splitByShares(exp.amount, exp.participants, exp.shares)[idx] ?? 0
-      return { exp, share }
-    })
-    .filter((x): x is { exp: Expense; share: number } => x !== null)
-    .sort((a, b) => a.exp.createdAt - b.exp.createdAt)
+      if (idx !== -1) {
+        const share = splitByShares(exp.amount, exp.participants, exp.shares)[idx] ?? 0
+        entries.push({ exp, kind: 'share', amount: share })
+      }
+    }
+  }
+
+  entries.sort((a, b) => a.exp.createdAt - b.exp.createdAt)
 
   let balance = deposited
-  const rows: StatementRow[] = mine.map(({ exp, share }) => {
-    balance -= share
+  const rows: StatementRow[] = entries.map(({ exp, kind, amount }) => {
+    balance += kind === 'paidByPocket' ? amount : -amount
     return {
-      id: exp.id,
+      id: `${exp.id}:${kind}`,
       date: exp.date,
       description: exp.description,
       category: exp.category || 'أخرى',
-      share,
+      kind,
+      amount,
       balanceAfter: balance,
     }
   })
 
-  const totalShare = mine.reduce((s, m) => s + m.share, 0)
-  return { opening: deposited, rows, totalShare, remaining: deposited - totalShare }
+  const totalShare = entries.filter(e => e.kind === 'share').reduce((s, e) => s + e.amount, 0)
+  const totalPaidByPocket = entries.filter(e => e.kind === 'paidByPocket').reduce((s, e) => s + e.amount, 0)
+
+  return { opening: deposited, rows, totalShare, totalPaidByPocket, remaining: deposited + totalPaidByPocket - totalShare }
 }

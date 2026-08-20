@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import type { User } from 'firebase/auth'
 import { TravelerCard } from '../components/TravelerSection'
 import { withContext, withAdminContext, Providers } from './decorators'
 import * as fx from '../fixtures'
@@ -68,6 +69,29 @@ export const مسؤول_قابل_للحذف: Story = {
   decorators: [
     Story => (
       <Providers data={{ isAdmin: true, expenses: fx.noExpenses }}>
+        <Story />
+      </Providers>
+    ),
+  ],
+}
+
+/**
+ * 🆕 نموذج الهوية الهجين — بطاقة المستخدم نفسه: شارة "حسابك" وزر "كشف حسابي"
+ * الظاهر دائماً (لا خلف تحويم). المسافر هنا دفع مصروفاً من جيبه أيضاً، فزر
+ * "كشف حسابي" يفتح كشفاً يعرض بطاقة "دفعه من جيبه" الرابعة — انظر
+ * fx.expenseMinePaidByPocket.
+ */
+export const بطاقتي_الشخصية: Story = {
+  args: { traveler: fx.balanceMine },
+  decorators: [
+    Story => (
+      <Providers
+        data={{
+          travelers: fx.travelersWithMine,
+          expenses: fx.expensesWithMine,
+          user: { uid: fx.MY_UID } as unknown as User,
+        }}
+      >
         <Story />
       </Providers>
     ),

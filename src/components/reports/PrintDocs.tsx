@@ -232,9 +232,11 @@ interface StatementProps {
 
 export const PrintableStatement = ({ tripName, generatedAt, traveler, statement, logs, isAdmin }: StatementProps) => (
   <DocFrame title={`كشف حساب — ${traveler.name}`} subtitle={tripName} generatedAt={generatedAt}>
-    <div className="grid grid-cols-3 gap-2 text-center print:break-inside-avoid">
+    <div className={`grid ${statement.totalPaidByPocket !== 0 ? 'grid-cols-4' : 'grid-cols-3'} gap-2 text-center print:break-inside-avoid`}>
       {[
         ['المودَع', fmt(statement.opening)],
+        // 🆕 لا تُعرض لمن لم يدفع من جيبه قط — نفس منطق TravelerProfileModal.
+        ...(statement.totalPaidByPocket !== 0 ? [['دفعه من جيبه', fmt(statement.totalPaidByPocket)]] : []),
         ['إجمالي حصصه', fmt(statement.totalShare)],
         ['المتبقي', fmt(statement.remaining)],
       ].map(([label, value]) => (
@@ -245,7 +247,7 @@ export const PrintableStatement = ({ tripName, generatedAt, traveler, statement,
       ))}
     </div>
 
-    <SectionTitle>حركة المصاريف (حصصه)</SectionTitle>
+    <SectionTitle>حركة المصاريف (حصصه وما دفعه من جيبه)</SectionTitle>
     {statement.rows.length === 0 ? (
       <p className="text-slate-500">لم يشارك في أي مصروف بعد.</p>
     ) : (
@@ -255,7 +257,7 @@ export const PrintableStatement = ({ tripName, generatedAt, traveler, statement,
             <th className={th}>التاريخ</th>
             <th className={th}>الوصف</th>
             <th className={th}>الفئة</th>
-            <th className={th}>حصته</th>
+            <th className={th}>الأثر على رصيده</th>
             <th className={th}>الرصيد بعده</th>
           </tr>
         </thead>
@@ -263,9 +265,9 @@ export const PrintableStatement = ({ tripName, generatedAt, traveler, statement,
           {statement.rows.map(r => (
             <tr key={r.id}>
               <td className={td}>{r.date}</td>
-              <td className={td}>{r.description}</td>
+              <td className={td}>{r.description}{r.kind === 'paidByPocket' ? ' (دفعها من جيبه)' : ''}</td>
               <td className={td}>{r.category}</td>
-              <td className={td} dir="ltr">{fmt(r.share)}</td>
+              <td className={td} dir="ltr">{r.kind === 'paidByPocket' ? '+' : '−'}{fmt(r.amount)}</td>
               <td className={td} dir="ltr">{fmt(r.balanceAfter)}</td>
             </tr>
           ))}
