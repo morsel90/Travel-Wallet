@@ -61,6 +61,13 @@ interface ManageMemberResponse {
 interface ManageInviteRequest { mode: 'create' | 'revoke'; tripId: string }
 interface ManageInviteResponse { success: boolean; token?: string }
 
+// 🆕 عقد استدعاء linkTravelerAccount — نموذج الهوية الهجين. متاح للمسؤول أو
+// منظّم *هذه* الرحلة تحديداً (نفس شرط canAct)؛ الفحص الحقيقي (المسافر غير
+// مربوط بالفعل، والحساب المستهدَف غير مربوط بمسافر آخر) خادمي بالكامل. انظر
+// functions/index.js.
+interface LinkTravelerAccountRequest { tripId: string; travelerId: number; targetUid: string }
+interface LinkTravelerAccountResponse { success: boolean; tripId: string; travelerId: number; targetUid: string }
+
 // 🆕 عقد استدعاء restoreTrip — docs/PLAN-backup-recovery.md المرحلة ٢.
 // backup: unknown عمداً — الشكل الحقيقي (TripBackup) يُتحقَّق منه خادمياً
 // بالكامل (Admin SDK يتجاوز القواعد)، فلا قيمة في تضييق النوع هنا فقط ليُخدَع
@@ -111,6 +118,8 @@ export interface UseTripAdminActionsResult {
   createInvite: (tripId: string) => Promise<string | null>
   /** 🆕 يُبطل الرابط النشط لهذه الرحلة، إن وُجد. */
   revokeInvite: (tripId: string) => Promise<boolean>
+  /** 🆕 ربط مسافر "شبح" (uid == null) بحساب عضو انضمّ فعلاً — نموذج الهوية الهجين. */
+  linkTravelerAccount: (tripId: string, travelerId: number, targetUid: string) => Promise<boolean>
 }
 
 export function useTripAdminActions({
@@ -431,6 +440,47 @@ export function useTripAdminActions({
     }
   }, [canAct, showToast, handleFirestoreError])
 
+  // 🆕 ربط مسافر شبح بحساب — دالة مستقلة عن callManageTrip لأن عقدها مختلف
+  // (travelerId/targetUid بدل pin/name) ولأن رسالة الخطأ الأشيع (مسافر مربوط
+  // بالفعل، أو الحساب مربوط بمسافر آخر) خادمية بالكامل وتُعرض كما هي.
+  const linkTravelerAccount = useCallback(async (
+    tripId: string, travelerId: number, targetUid: string,
+  ): Promise<boolean> => {
+    if (!canAct(tripId)) {
+      showToast({ text: 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.', type: 'error' }, 3000)
+      return false
+    }
+
+    setIsSaving(true)
+    try {
+      const user = auth.currentUser
+      if (!user) throw new Error('غير مسجّل الدخول.')
+      await user.getIdToken(true)
+
+      const linkTravelerAccountCallable =
+        httpsCallable<LinkTravelerAccountRequest, LinkTravelerAccountResponse>(functions, 'linkTravelerAccount')
+      await linkTravelerAccountCallable({ tripId, travelerId, targetUid })
+
+      haptic.success()
+      showToast({ text: 'تم ربط المسافر بحسابه.', type: 'success' })
+      return true
+    } catch (err) {
+      haptic.error()
+      const message = (err as { message?: string })?.message
+      const isFunctionsError = typeof (err as { code?: string })?.code === 'string'
+        && String((err as { code?: string }).code).startsWith('functions/')
+
+      if (isFunctionsError && message) {
+        showToast({ text: message, type: 'error' }, 4000)
+      } else {
+        handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
+      }
+      return false
+    } finally {
+      setIsSaving(false)
+    }
+  }, [canAct, showToast, handleFirestoreError])
+
   // 🆕 تنزيل نسخة احتياطية — قراءة فقط، بلا مسار كتابة جديد ولا دالة سحابية:
   // isAdmin() في القواعد يمنح قراءة expenses/travelers/depositLogs لأي رحلة،
   // لا الرحلة النشطة وحدها (نفس أساس فحص الخلوّ قبل الحذف). depositLogs تُجلب
@@ -533,6 +583,6 @@ export function useTripAdminActions({
   return {
     isSaving, saveBankDetails, saveItinerary, saveTripName, saveTripStatus, createTrip, resetTripPin,
     deleteTrip, removeMember, setMemberRole, exportBackup, restoreTrip: restoreTripFn,
-    createInvite, revokeInvite,
+    createInvite, revokeInvite, linkTravelerAccount,
   }
 }

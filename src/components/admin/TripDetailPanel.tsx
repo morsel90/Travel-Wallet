@@ -10,8 +10,10 @@ import {
   Building2, Route, KeyRound, Save, Plane, Car, Train, Bus,
   Pencil, Trash2, Plus, ArrowUp, ArrowDown, Loader2, AlertTriangle, Lock,
   Users, UserMinus, Copy, Check, Download, ShieldCheck, Share2, Ban,
+  UserCheck, Link2,
 } from '../../icons'
 import { useTripMembers } from '../../hooks/useTripMembers'
+import { useTripTravelers } from '../../hooks/useTripTravelers'
 import { tripUrl } from '../../utils/tripId'
 import QrCode from './QrCode'
 import SegmentForm from './SegmentForm'
@@ -47,6 +49,8 @@ interface TripDetailPanelProps {
   onRemoveMember: (tripId: string, uid: string) => Promise<boolean>
   /** 🆕 تعيين/إلغاء دور «منظّم الرحلة» (المرحلة ٣) — المسؤول العالمي حصراً. */
   onSetMemberRole: (tripId: string, uid: string, role: 'organizer' | 'member') => Promise<boolean>
+  /** 🆕 ربط مسافر "شبح" (uid == null) بحساب عضو انضمّ فعلاً — نموذج الهوية الهجين. */
+  onLinkTravelerAccount: (tripId: string, travelerId: number, targetUid: string) => Promise<boolean>
   /** 🆕 تنزيل نسخة JSON احتياطية — docs/PLAN-backup-recovery.md المرحلة ١. */
   onExportBackup: (trip: TripSummary) => Promise<boolean>
   /** 🆕 رابط دعوة بنقرة واحدة — ينشئ توكناً جديداً (يُبطل أي رابط سابق لنفس الرحلة ضمنياً). null عند الفشل. */
@@ -59,12 +63,13 @@ interface TripDetailPanelProps {
   onDeleted: () => void
 }
 
-type DetailTab = 'bank' | 'itinerary' | 'members' | 'backup' | 'pin' | 'danger'
+type DetailTab = 'bank' | 'itinerary' | 'members' | 'travelers' | 'backup' | 'pin' | 'danger'
 
 const ALL_TABS: Array<{ key: DetailTab; label: string; Icon: typeof Building2 }> = [
   { key: 'bank',      label: 'الاسم والحساب', Icon: Building2 },
   { key: 'itinerary', label: 'مسار الرحلة',   Icon: Route },
   { key: 'members',   label: 'الأعضاء',       Icon: Users },
+  { key: 'travelers', label: 'المسافرون',     Icon: UserCheck },
   { key: 'backup',    label: 'نسخة احتياطية', Icon: Download },
   { key: 'pin',       label: 'رمز الدخول',    Icon: KeyRound },
   { key: 'danger',    label: 'حذف الرحلة',    Icon: Trash2 },
@@ -99,7 +104,7 @@ const STATUS_HELP: Record<TripStatus, string> = {
 
 export default function TripDetailPanel({
   trip, viewerRole, isSaving, onSaveTripName, onSaveBankDetails, onSaveItinerary, onResetPin,
-  onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onExportBackup,
+  onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onLinkTravelerAccount, onExportBackup,
   onCreateInvite, onRevokeInvite, showToast, onDeleted,
 }: TripDetailPanelProps) {
   const TABS = useMemo(
@@ -108,11 +113,19 @@ export default function TripDetailPanel({
   )
   const [activeTab, setActiveTab] = useState<DetailTab>('bank')
 
-  // 🆕 لا نقرأ السجلّ إلا والتبويب مفتوح: القراءة مقصورة على المسؤول، والقائمة
-  // لا تتغيّر إلا بفعله هو في هذه الشاشة نفسها — فلا داعي لجلبها مع كل رحلة يفتحها.
+  // 🆕 لا نقرأ السجلّ إلا والتبويب مفتوح: القراءة مقصورة على المسؤول/المنظّم،
+  // والقائمة لا تتغيّر إلا بفعله هو في هذه الشاشة نفسها — فلا داعي لجلبها مع كل
+  // رحلة يفتحها. تبويب "المسافرون" يحتاج القائمتين معاً (انظر useTripTravelers)
+  // لبناء قائمة الأعضاء غير المربوطين بعد.
   const { members, error: membersError, refresh: refreshMembers } =
-    useTripMembers(trip.id, activeTab === 'members')
+    useTripMembers(trip.id, activeTab === 'members' || activeTab === 'travelers')
+  const { travelers, error: travelersError, refresh: refreshTravelers } =
+    useTripTravelers(trip.id, activeTab === 'travelers')
   const [removingUid, setRemovingUid] = useState<string | null>(null)
+  // 🆕 نموذج الهوية الهجين — id المسافر الذي فُتحت له قائمة "ربط بحساب"، والعضو
+  // المختار فيها. سطر واحد يُفتح في كل مرة (نفس فكرة removingUid أعلاه).
+  const [linkingTravelerId, setLinkingTravelerId] = useState<number | null>(null)
+  const [linkTargetUid, setLinkTargetUid] = useState('')
   const [linkCopied, setLinkCopied] = useState(false)
   // 🆕 رابط دعوة بنقرة واحدة — توكن هذه الجلسة فقط (لا قراءة من الخادم لمعرفة
   // رابط نشط سابق؛ العقد الوحيد المتاح هو create/revoke — انظر manageInvite في
@@ -149,6 +162,8 @@ export default function TripDetailPanel({
     // 🆕 توكن الجلسة السابقة يخصّ رحلة أخرى — لا معنى لمشاركته هنا.
     setInviteToken(null)
     setInviteMsgCopied(false)
+    setLinkingTravelerId(null)
+    setLinkTargetUid('')
   }, [trip.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const bankDirty = useMemo(
@@ -254,6 +269,30 @@ export default function TripDetailPanel({
   const submitSetRole = async (uid: string, role: 'organizer' | 'member') => {
     const ok = await onSetMemberRole(trip.id, uid, role)
     if (ok) refreshMembers()
+  }
+
+  // 🆕 أعضاء لم يُربَطوا بأي ملف مسافر بعد في هذه الرحلة — هذه القائمة وحدها
+  // تُعرض في اختيار "ربط بحساب"، فلا يستطيع المنظّم ربط شخص مربوط أصلاً بغيره
+  // (نفس المنع الذي تفرضه linkTravelerAccount خادمياً — هنا مجرّد تسهيل عرض).
+  const unlinkedMembers = useMemo(
+    () => (members ?? []).filter(m => !(travelers ?? []).some(t => t.uid === m.uid)),
+    [members, travelers],
+  )
+
+  const startLinkTraveler = (travelerId: number) => {
+    setLinkingTravelerId(travelerId)
+    setLinkTargetUid('')
+  }
+  const cancelLinkTraveler = () => { setLinkingTravelerId(null); setLinkTargetUid('') }
+
+  const submitLinkTraveler = async () => {
+    if (linkingTravelerId === null || !linkTargetUid) return
+    const ok = await onLinkTravelerAccount(trip.id, linkingTravelerId, linkTargetUid)
+    if (ok) {
+      cancelLinkTraveler()
+      refreshTravelers()
+      refreshMembers()
+    }
   }
 
   const startAdd = () => { setEditingId(null); setDraftError(null); setDraft(emptySegmentDraft()) }
@@ -828,6 +867,129 @@ export default function TripDetailPanel({
           )}
           </div>
         </>
+      )}
+
+      {activeTab === 'travelers' && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+          <div>
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-teal-600" /> المسافرون
+              {travelers && <span className="text-xs font-normal text-slate-400">({travelers.length})</span>}
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              كل مسافر في دفتر هذه الرحلة، وحالة ربطه بحساب انضمّ فعلاً — "مسجل يدوياً" يعني ملفاً
+              أنشأه المنظّم لشخص لم ينضمّ بعد (أو لا يملك حساباً)، ويمكن ربطه لاحقاً بحسابه الحقيقي.
+            </p>
+          </div>
+
+          {travelersError && (
+            <p role="alert" className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-2.5">
+              تعذّر جلب قائمة المسافرين.
+            </p>
+          )}
+
+          {!travelers && !travelersError && (
+            <div className="flex items-center justify-center gap-2 text-slate-500 py-8">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-sm font-bold">جارٍ جلب المسافرين...</span>
+            </div>
+          )}
+
+          {travelers?.length === 0 && (
+            <EmptyState
+              Icon={UserCheck}
+              title="لا يوجد مسافرون بعد"
+              description="يُضاف المسافرون من صفحة الرحلة الرئيسية، أو تلقائياً عند الانضمام برابط دعوة."
+            />
+          )}
+
+          {travelers && travelers.length > 0 && (
+            <div className="space-y-2">
+              {travelers.map(t => {
+                const isLinking = linkingTravelerId === t.id
+                return (
+                  <div key={t.id} className={`rounded-xl border p-3 transition-colors ${
+                    isLinking ? 'border-teal-300 bg-teal-50/60' : 'border-slate-200 bg-slate-50/60'
+                  }`}>
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-slate-800 truncate flex items-center gap-1.5">
+                          {t.name}
+                          {t.uid ? (
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shrink-0">
+                              <UserCheck className="w-3 h-3" /> منضم
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full shrink-0">
+                              مسجل يدوياً
+                            </span>
+                          )}
+                        </p>
+                        {t.uid && <p className="text-[11px] text-slate-500 mt-0.5" dir="ltr">{t.uid}</p>}
+                      </div>
+
+                      {!t.uid && !isLinking && (
+                        <button
+                          type="button"
+                          onClick={() => startLinkTraveler(t.id)}
+                          disabled={isSaving}
+                          className="flex items-center gap-1.5 text-teal-700 hover:bg-teal-100 border border-teal-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-40 shrink-0"
+                        >
+                          <Link2 className="w-3.5 h-3.5" /> ربط بحساب مسافر
+                        </button>
+                      )}
+                    </div>
+
+                    {isLinking && (
+                      <div className="mt-3 pt-3 border-t border-teal-200 space-y-2.5">
+                        {unlinkedMembers.length === 0 ? (
+                          <p className="text-xs text-slate-500">
+                            لا يوجد عضو غير مربوط بعد — كل من انضمّ للرحلة مربوط بمسافر آخر بالفعل.
+                          </p>
+                        ) : (
+                          <>
+                            <label className={labelClass} htmlFor="link-target-uid">اختر الحساب</label>
+                            <select
+                              id="link-target-uid"
+                              value={linkTargetUid}
+                              onChange={e => setLinkTargetUid(e.target.value)}
+                              className={inputClass}
+                            >
+                              <option value="">— اختر عضواً —</option>
+                              {unlinkedMembers.map(m => (
+                                <option key={m.uid} value={m.uid}>
+                                  {m.displayName || m.email || `عضو بجلسة مجهولة (${m.uid})`}
+                                </option>
+                              ))}
+                            </select>
+                          </>
+                        )}
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void submitLinkTraveler()}
+                            disabled={isSaving || !linkTargetUid}
+                            className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-40"
+                          >
+                            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+                            تأكيد الربط
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelLinkTraveler}
+                            className="px-3 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+                          >
+                            إلغاء
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       )}
 
       {activeTab === 'backup' && (

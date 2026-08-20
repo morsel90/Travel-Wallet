@@ -717,12 +717,15 @@ function isValidSharesJs(shares, participants) {
 
 function isValidTravelerJs(d) {
   if (!isPlainObject(d)) return false;
-  if (!hasOnlyKeys(d, ['id', 'name', 'shortName', 'deposited', 'deletedAt'])) return false;
+  if (!hasOnlyKeys(d, ['id', 'name', 'shortName', 'deposited', 'deletedAt', 'uid', 'joinedAt'])) return false;
   if (!Number.isInteger(d.id)) return false;
   if (typeof d.name !== 'string' || d.name.length < 1 || d.name.length > 100) return false;
   if (typeof d.shortName !== 'string' || d.shortName.length < 1 || d.shortName.length > 50) return false;
   if (typeof d.deposited !== 'number' || !Number.isFinite(d.deposited) || d.deposited < 0) return false;
   if ('deletedAt' in d && d.deletedAt !== null && typeof d.deletedAt !== 'number') return false;
+  // 🆕 موازٍ لـ isValidTraveler في firestore.rules — انظر تعليقها هناك.
+  if ('uid' in d && d.uid !== null && typeof d.uid !== 'string') return false;
+  if ('joinedAt' in d && typeof d.joinedAt !== 'number') return false;
   return true;
 }
 
@@ -823,6 +826,92 @@ async function deleteExistingInvites(tripId) {
   await batch.commit();
 }
 
+/**
+ * 🆕 نموذج الهوية الهجين — التزويد التلقائي عند الانضمام (docs/PLAN…).
+ *
+ * موازيان تماماً لـ utils/travelerName.ts على العميل (لا يمكن استيرادها هنا —
+ * سياق تشغيل مختلف تماماً بلا حزمة بناء مشتركة)، لنفس الأسباب الموثّقة هناك:
+ *   - deriveShortNameJs: أول كلمة من الاسم — نفس القاعدة، نفس السبب.
+ *   - isValidNameKeyJs: قيود معرّف مستند Firestore (لا '/'، لا '.'/'..'، لا
+ *     نمط __محجوز__، حدّ 1500 بايت).
+ *   - نطاق المعرّف العشوائي (1 .. 2^31-2) نفسه — عشوائي لا "أكبر+1"، لنفس سبب
+ *     سباق التصادم الموثّق في newTravelerId على العميل؛ هنا الخطر أعلى فعلياً
+ *     لأن التزويد يقع بلا أي تدخّل بشري يلاحظ الخطأ.
+ */
+function deriveShortNameJs(fullName) {
+  return String(fullName).trim().split(/\s+/)[0] || '';
+}
+
+function isValidNameKeyJs(shortName) {
+  if (!shortName) return false;
+  if (shortName.includes('/')) return false;
+  if (shortName === '.' || shortName === '..') return false;
+  if (/^__.*__$/.test(shortName)) return false;
+  return Buffer.byteLength(shortName, 'utf8') <= 1500;
+}
+
+function randomTravelerId() {
+  return (crypto.randomInt(0, 2147483646)) + 1;
+}
+
+// 🆕 حدّ محاولات معقول: كل محاولة فاشلة تعني تعارضاً حقيقياً على شكل الاسم
+// المختصر (المعرّف العشوائي شبه مستحيل التصادم فعلياً) — مجموعة سفر بهذا العدد
+// من الأشخاص بنفس الاسم الأول حرفياً حالة نادرة جداً، وما بعدها عطل حقيقي.
+const MAX_PROVISION_ATTEMPTS = 20;
+
+/**
+ * يبحث عن ملف مسافر بهذا uid في هذه الرحلة، وإن لم يوجد يُنشئ واحداً تلقائياً
+ * ويربطه به فوراً — بدل انتظار ربط يدوي من المنظّم لاحقاً.
+ *
+ * ⚠️ **لا تفشل الانضمام إن فشل التزويد.** العضوية (claim + recordMembership)
+ * تكون قد مُنحت بالفعل قبل استدعاء هذه الدالة؛ إسقاط الانضمام بأكمله بسبب فشل
+ * هنا يحرم المستخدم من رحلته لسبب لا يخصّه — نفس مبدأ recordMembership تماماً
+ * (انظر تعليقها أعلاه). الفشل يُسجَّل فقط، ويبقى الحل اليدوي (linkTravelerAccount)
+ * متاحاً للمنظّم كشبكة أمان.
+ *
+ * ⚠️ **batch.create لا set**: يفشل الالتزام كاملاً إن وُجد أي من المستندين
+ * (سباق بين انضمامين متزامنين بنفس الاسم الأول) — فنعيد المحاولة باسم مختصر
+ * مختلف (لاحقة رقمية) بدل الكتابة فوق حجز اسم شخص آخر أو مسافر آخر بالمصادفة.
+ */
+async function provisionTravelerForUid(tripId, uid, displayName) {
+  const dataRoot = db.collection('artifacts').doc(tripId).collection('public').doc('data');
+  const travelersCol = dataRoot.collection('travelers');
+
+  const existing = await travelersCol.where('uid', '==', uid).limit(1).get();
+  if (!existing.empty) return; // مربوط بالفعل — لا شيء يُفعل
+
+  const baseName = (typeof displayName === 'string' && displayName.trim()) || 'مسافر جديد';
+  const baseShortName = deriveShortNameJs(baseName);
+
+  for (let attempt = 0; attempt < MAX_PROVISION_ATTEMPTS; attempt++) {
+    const shortName = attempt === 0 ? baseShortName : `${baseShortName}${attempt + 1}`;
+    if (!isValidNameKeyJs(shortName)) continue; // نادر جداً — تخطٍّ لا فشل كامل
+
+    const id = randomTravelerId();
+    const traveler = {
+      id,
+      name: baseName,
+      shortName,
+      deposited: 0,
+      deletedAt: null,
+      uid,
+      joinedAt: Date.now(),
+    };
+
+    try {
+      const batch = db.batch();
+      batch.create(travelersCol.doc(String(id)), traveler);
+      batch.create(dataRoot.collection('travelerNames').doc(shortName), { travelerId: id });
+      await batch.commit();
+      return;
+    } catch {
+      // الاسم المختصر (أو المعرّف، شبه مستحيل) مأخوذ — نجرّب لاحقة أخرى.
+    }
+  }
+
+  console.error(`[provisionTravelerForUid] فشل تزويد مسافر تلقائي لـ ${uid} على ${tripId} بعد ${MAX_PROVISION_ATTEMPTS} محاولة.`);
+}
+
 exports.manageInvite = onCall(
   { region: 'us-central1', maxInstances: 5 },
   async (request) => {
@@ -895,8 +984,80 @@ exports.joinViaInvite = onCall(
     await admin.auth().setCustomUserClaims(request.auth.uid, nextClaims);
     await recordMembership(tripId, userRecord);
 
+    // 🆕 نموذج الهوية الهجين: تزويد ملف مسافر تلقائياً إن لم يوجد له واحد بعد
+    // في هذه الرحلة تحديداً. لا يُفشل الانضمام إن فشل — انظر تعليق الدالة.
+    try {
+      await provisionTravelerForUid(
+        tripId, request.auth.uid, request.auth.token.name || userRecord.displayName,
+      );
+    } catch (err) {
+      console.error(`[joinViaInvite] تعذّر تزويد مسافر تلقائي لـ ${request.auth.uid} على ${tripId}:`, err);
+    }
+
     console.log(`[joinViaInvite] ${request.auth.uid} joined ${tripId} via invite`);
     return { success: true, tripId };
+  }
+);
+
+/**
+ * 🆕 linkTravelerAccount: ربط يدوي — منظّم أو مسؤول يربط ملف مسافر "شبح"
+ * (uid == null، أنشأه هو يدوياً لشخص لم ينضمّ بعد) بحساب عضو انضمّ فعلاً.
+ *
+ * بديل يدوي للتزويد التلقائي في joinViaInvite: يغطي الحالة التي انضمّ فيها
+ * الشخص برمز الرحلة مباشرة (لا رابط دعوة، فلا تزويد تلقائي يقع أصلاً) أو
+ * انضمّ *بعد* أن أنشأ المنظّم ملفه يدوياً بالفعل قبل وصوله.
+ *
+ * ⚠️ **لا يعيد ربط ملف مربوط بالفعل.** لو سُمح بذلك لصار بإمكان منظّم "سرقة"
+ * ملف شخص آخر لحساب مختلف — والحماية الوحيدة من ذلك هنا أن traveler.uid فارغ
+ * أصلاً شرط مسبق. من يريد تصحيح ربط خاطئ يُلغيه يدوياً في Firestore (لا مسار
+ * عميل لذلك اليوم — نطاق مقصود، ليس نسياناً).
+ */
+exports.linkTravelerAccount = onCall(
+  { region: 'us-central1', maxInstances: 5 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+    }
+
+    const tripId = String(request.data?.tripId ?? '').trim();
+    const travelerId = request.data?.travelerId;
+    const targetUid = String(request.data?.targetUid ?? '').trim();
+
+    if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
+      throw new HttpsError('invalid-argument', 'معرّف الرحلة غير صالح.');
+    }
+    if (!Number.isInteger(travelerId)) {
+      throw new HttpsError('invalid-argument', 'معرّف المسافر غير صالح.');
+    }
+    if (!targetUid || targetUid.length > 128) {
+      throw new HttpsError('invalid-argument', 'معرّف الحساب المستهدَف غير صالح.');
+    }
+    if (!(await callerManagesTrip(tripId, request.auth))) {
+      throw new HttpsError('permission-denied', 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.');
+    }
+
+    const travelersCol = db.collection('artifacts').doc(tripId).collection('public').doc('data').collection('travelers');
+    const travelerRef = travelersCol.doc(String(travelerId));
+    const travelerSnap = await travelerRef.get();
+    if (!travelerSnap.exists) {
+      throw new HttpsError('not-found', 'هذا المسافر غير موجود في هذه الرحلة.');
+    }
+    if (travelerSnap.data().uid != null) {
+      throw new HttpsError('failed-precondition', 'هذا المسافر مربوط بحساب بالفعل.');
+    }
+
+    // 🆕 منع الربط المزدوج: لا يجوز أن يملك حساب واحد أكثر من ملف مسافر واحد
+    // في نفس الرحلة — والا صار الشخص نفسه يظهر مرتين في الدفتر بمعرّفين
+    // مختلفين، فتتضاعف حصته حسابياً دون أن يفعل شيئاً.
+    const boundElsewhere = await travelersCol.where('uid', '==', targetUid).limit(1).get();
+    if (!boundElsewhere.empty) {
+      throw new HttpsError('failed-precondition', 'هذا الحساب مربوط بالفعل بمسافر آخر في هذه الرحلة.');
+    }
+
+    await travelerRef.update({ uid: targetUid });
+
+    console.log(`[linkTravelerAccount] ${request.auth.uid} linked traveler ${travelerId} to ${targetUid} on ${tripId}`);
+    return { success: true, tripId, travelerId, targetUid };
   }
 );
 

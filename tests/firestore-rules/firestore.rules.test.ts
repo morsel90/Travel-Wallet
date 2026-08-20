@@ -279,6 +279,35 @@ describe('المسافرون — إنشاء وتعديل', () => {
   })
 })
 
+// 🆕 نموذج الهوية الهجين: uid/joinedAt اختياريان — هذه الاختبارات تثبّت أن
+// isValidTraveler تقبل شكلهما الصحيح (نص أو null لـ uid، رقم لـ joinedAt) وترفض
+// أي شكل آخر، تماماً كأي حقل اختياري آخر في هذا النوع. الكتابة الفعلية لهذين
+// الحقلين تمرّ حصراً عبر Admin SDK (joinViaInvite/linkTravelerAccount) الذي
+// يتجاوز هذه القواعد أصلاً — هذا يختبر القاعدة نفسها لا مسار الكتابة الحيّ.
+describe('المسافرون — uid/joinedAt (نموذج الهوية الهجين)', () => {
+  it('uid كـ null (مسافر شبح غير مربوط) يُقبل', async () => {
+    await assertSucceeds(setDoc(travelerDoc(memberDb(), 20), validTraveler({ id: 20, uid: null })))
+  })
+
+  it('uid كنص (مسافر مربوط بحساب) و joinedAt رقماً يُقبلان معاً', async () => {
+    await assertSucceeds(
+      setDoc(travelerDoc(memberDb(), 21), validTraveler({ id: 21, uid: 'member-1', joinedAt: Date.now() })),
+    )
+  })
+
+  it('uid برقم بدل نص أو null يُرفض', async () => {
+    await assertFails(setDoc(travelerDoc(memberDb(), 22), validTraveler({ id: 22, uid: 12345 })))
+  })
+
+  it('joinedAt بنص بدل رقم يُرفض', async () => {
+    await assertFails(setDoc(travelerDoc(memberDb(), 23), validTraveler({ id: 23, joinedAt: '2026-01-01' })))
+  })
+
+  it('غياب الحقلين كليةً يبقى صالحاً — كل المسافرين قبل هذا التحديث', async () => {
+    await assertSucceeds(setDoc(travelerDoc(memberDb(), 24), validTraveler({ id: 24 })))
+  })
+})
+
 // 🆕 الرصيد الابتدائي: `deposited` هو الطرف الدائن الوحيد في الدفتر، وتعديله
 // لاحقاً محكوم بـ isAdmin() ويكتب سطراً غير قابل للتعديل. أما الإنشاء فكان
 // يقبل أي مبلغ من أي عضو بلا سجلّ — فمن أراد إضافة مال بلا أثر لا يفتح نافذة
