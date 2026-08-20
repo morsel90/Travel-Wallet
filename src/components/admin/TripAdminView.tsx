@@ -19,7 +19,7 @@ import RestoreTripForm from './RestoreTripForm'
 import EmptyState from '../EmptyState'
 import { tripUrl } from '../../utils/tripId'
 import type { TripSummary } from '../../hooks/useAllTrips'
-import type { BankDetails, TripStatus } from '../../types'
+import type { BankDetails, ToastMessage, TripStatus } from '../../types'
 
 interface TripAdminViewProps {
   currentTripId: string
@@ -48,13 +48,20 @@ interface TripAdminViewProps {
   onExportBackup: (trip: TripSummary) => Promise<boolean>
   /** 🆕 استعادة رحلة من نسخة JSON — المرحلة ٢. */
   onRestoreTrip: (tripId: string, pin: string, backup: unknown) => Promise<boolean>
+  /** 🆕 رابط دعوة بنقرة واحدة — ينشئ توكناً جديداً (يُبطل أي رابط سابق لنفس الرحلة ضمنياً). */
+  onCreateInvite: (tripId: string) => Promise<string | null>
+  /** 🆕 يُبطل رابط الدعوة النشط لهذه الرحلة. */
+  onRevokeInvite: (tripId: string) => Promise<boolean>
+  /** 🆕 توست عام — يُستخدم في TripDetailPanel لتأكيد نسخ رسالة الدعوة احتياطياً (لا Web Share API). */
+  showToast: (msg: ToastMessage, durationMs?: number) => void
   onClose: () => void
 }
 
 export default function TripAdminView({
   currentTripId, viewerRole, trips, loading, error, isSaving,
   onSaveTripName, onSaveBankDetails, onSaveItinerary, onCreateTrip, onResetPin,
-  onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onExportBackup, onRestoreTrip, onClose,
+  onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onExportBackup, onRestoreTrip,
+  onCreateInvite, onRevokeInvite, showToast, onClose,
 }: TripAdminViewProps) {
   // 🆕 منظّم لديه رحلة واحدة بنيوياً (trips.length <= 1) — نفتحها مباشرة ونخفي
   // شاشة القائمة/الإنشاء/الاستعادة كلياً، فليس له ما يختار من بينه أصلاً.
@@ -141,6 +148,9 @@ export default function TripAdminView({
             onRemoveMember={onRemoveMember}
             onSetMemberRole={onSetMemberRole}
             onExportBackup={onExportBackup}
+            onCreateInvite={onCreateInvite}
+            onRevokeInvite={onRevokeInvite}
+            showToast={showToast}
             // الرحلة لم تعد موجودة — نعود للقائمة بدل إبقاء لوحة تشير لمستند محذوف
             // (منظّم لا يملك قائمة يعود إليها أصلاً — حذف رحلته ليس من صلاحياته).
             onDeleted={() => setSelectedId(null)}

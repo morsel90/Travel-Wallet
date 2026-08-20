@@ -20,3 +20,4 @@ export { useMyTrips }          from './useMyTrips'  // 🆕 رحلات المس�
 export { useTripMembers }      from './useTripMembers' // 🆕 أعضاء رحلة بعينها من السجلّ — للمسؤول وحده (الـ claims لا تُستعلَم)
 export { useMyTripRole }       from './useMyTripRole'  // 🆕 «هل أنا منظّم هذه الرحلة؟» (المرحلة ٣) — قراءة ذاتية واحدة
 export { useHeaderCollapse }   from './useHeaderCollapse' // 🆕 تتبّع اتجاه التمرير لتقليص/توسيع الهيدر (Sticky + Collapsible)
+export { useInviteJoin }       from './useInviteJoin' // 🆕 انضمام فوري عبر رابط دعوة (?invite=TOKEN) — بديل بوابة الرمز اليدوية

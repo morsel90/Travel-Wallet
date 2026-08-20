@@ -322,3 +322,109 @@ describe('restoreTrip', () => {
     expect(result.current.isSaving).toBe(false)
   })
 })
+
+describe('createInvite — الصلاحية والعقد', () => {
+  it('يرفض غير المسؤول ولمن ليس منظّم *هذه* الرحلة تحديداً — نفس شرط canAct', async () => {
+    const { result } = setup(false, 'trip-2')
+    let token
+    await act(async () => { token = await result.current.createInvite('trip-1') })
+
+    expect(token).toBeNull()
+    expect(mocks.callable).not.toHaveBeenCalled()
+    expect(showToast.mock.calls[0][0].text).toContain('أو منظّم الرحلة')
+  })
+
+  it('يستدعي manageInvite بالوضع create ويُعيد التوكن', async () => {
+    mocks.callable.mockResolvedValue({ data: { success: true, token: 'tok-abc' } })
+    const { result } = setup()
+    let token
+    await act(async () => { token = await result.current.createInvite('trip-1') })
+
+    expect(mocks.httpsCallable).toHaveBeenCalledWith({}, 'manageInvite')
+    expect(mocks.callable).toHaveBeenCalledWith({ mode: 'create', tripId: 'trip-1' })
+    expect(token).toBe('tok-abc')
+  })
+
+  it('منظّم هذه الرحلة تحديداً (لا رحلة أخرى) يستطيع الإنشاء', async () => {
+    mocks.callable.mockResolvedValue({ data: { success: true, token: 'tok-abc' } })
+    const { result } = setup(false, 'trip-1')
+    let token
+    await act(async () => { token = await result.current.createInvite('trip-1') })
+
+    expect(token).toBe('tok-abc')
+  })
+
+  it('يحدّث التوكن قبل الاستدعاء (claim الصلاحية قد يكون تغيّر)', async () => {
+    mocks.callable.mockResolvedValue({ data: { success: true, token: 'tok-abc' } })
+    const { result } = setup()
+    await act(async () => { await result.current.createInvite('trip-1') })
+    expect(mocks.getIdToken).toHaveBeenCalledWith(true)
+  })
+
+  it('رسالة رفض الخادم تُعرض كما هي، وتُعيد null', async () => {
+    mocks.callable.mockRejectedValue(
+      Object.assign(new Error('هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.'), { code: 'functions/permission-denied' }),
+    )
+    const { result } = setup()
+    let token
+    await act(async () => { token = await result.current.createInvite('trip-1') })
+
+    expect(token).toBeNull()
+    expect(showToast.mock.calls[0][0].text).toBe('هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.')
+  })
+
+  it('خطأ شبكة (لا كود functions/) يستخدم handleFirestoreError لا رسالة الخادم', async () => {
+    mocks.callable.mockRejectedValue(new Error('network'))
+    const { result } = setup()
+    await act(async () => { await result.current.createInvite('trip-1') })
+
+    expect(handleFirestoreError).toHaveBeenCalledTimes(1)
+    expect(showToast).not.toHaveBeenCalled()
+  })
+})
+
+describe('revokeInvite — الصلاحية والعقد', () => {
+  it('يرفض من ليس مسؤولاً أو منظّم هذه الرحلة', async () => {
+    const { result } = setup(false, 'trip-2')
+    let ok
+    await act(async () => { ok = await result.current.revokeInvite('trip-1') })
+
+    expect(ok).toBe(false)
+    expect(mocks.callable).not.toHaveBeenCalled()
+  })
+
+  it('يستدعي manageInvite بالوضع revoke ويُظهر توست نجاح', async () => {
+    mocks.callable.mockResolvedValue({ data: { success: true } })
+    const { result } = setup()
+    let ok
+    await act(async () => { ok = await result.current.revokeInvite('trip-1') })
+
+    expect(mocks.httpsCallable).toHaveBeenCalledWith({}, 'manageInvite')
+    expect(mocks.callable).toHaveBeenCalledWith({ mode: 'revoke', tripId: 'trip-1' })
+    expect(ok).toBe(true)
+    expect(showToast.mock.calls[0][0]).toMatchObject({ text: 'تم إبطال رابط الدعوة.', type: 'success' })
+  })
+
+  it('فشل الخادم يُعيد false ويعرض الرسالة كما وصلت', async () => {
+    mocks.callable.mockRejectedValue(
+      Object.assign(new Error('لم يعد الإجراء متاحاً.'), { code: 'functions/failed-precondition' }),
+    )
+    const { result } = setup()
+    let ok
+    await act(async () => { ok = await result.current.revokeInvite('trip-1') })
+
+    expect(ok).toBe(false)
+    expect(showToast.mock.calls[0][0].text).toBe('لم يعد الإجراء متاحاً.')
+  })
+
+  it('يحرّر علم الحفظ بعد النجاح والفشل معاً', async () => {
+    mocks.callable.mockResolvedValueOnce({ data: { success: true } })
+    const { result } = setup()
+    await act(async () => { await result.current.revokeInvite('trip-1') })
+    expect(result.current.isSaving).toBe(false)
+
+    mocks.callable.mockRejectedValueOnce(new Error('boom'))
+    await act(async () => { await result.current.revokeInvite('trip-1') })
+    expect(result.current.isSaving).toBe(false)
+  })
+})

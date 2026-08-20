@@ -14,6 +14,7 @@ import { NextSegmentWidget } from './components/NextSegmentWidget'
 import UpdatePrompt         from './components/UpdatePrompt'
 import OnboardingBanner     from './components/OnboardingBanner'
 import TripGate             from './components/TripGate'
+import InviteJoinScreen     from './components/InviteJoinScreen'
 import TripPicker           from './components/TripPicker'
 import AuthFlow             from './components/AuthFlow'
 import ModalManager         from './components/ModalManager'
@@ -35,12 +36,18 @@ import { ExpensesPanel }    from './components/ExpensesPanel'
 // كل ما عدا ذلك انتقل: التركيب إلى hooks/useAppCoordinator.ts، وقيم السياق إلى
 // components/AppProviders.tsx، والتخطيط إلى أقسام components/*Panel.tsx.
 export default function App() {
-  const { session, ledger, trip, rates, status, picker, tripAdminPanel, filter, modals, expense, traveler, deposit, admin } =
+  const { session, ledger, trip, rates, status, picker, tripAdminPanel, filter, modals, expense, traveler, deposit, admin, invite } =
     useAppCoordinator()
 
   // نسخة محلية ليضيّق TypeScript نوعها: الوصول عبر `expense.expenseToDelete`
   // لا يُضيَّق عبر حدّ JSX، فكان سيتطلّب تأكيداً بـ `!` بلا داعٍ.
   const { expenseToDelete } = expense
+
+  // 🆕 رابط دعوة بنقرة واحدة (?invite=TOKEN) — يسبق كل توجيه آخر: نجاحه إعادة
+  // توجيه كاملة، وفشله ينظّف الرابط ويُكمل للتدفّق المعتاد أدناه (رحلاتي/بوابة الرمز).
+  if (invite.status === 'joining') {
+    return <InviteJoinScreen />
+  }
 
   // 🆕 من فتح التطبيق بلا `?trip=` لا رحلة مقصودة لديه، فمطالبته برمز الرحلة
   // الافتراضية مطالبةٌ برمز رحلة قد لا تعنيه إطلاقاً — نعرض رحلاته بدلاً منها.
@@ -257,6 +264,9 @@ export default function App() {
               onSetMemberRole: tripAdminPanel.setMemberRole,
               onExportBackup: tripAdminPanel.exportBackup,
               onRestoreTrip: tripAdminPanel.restoreTrip,
+              onCreateInvite: tripAdminPanel.createInvite,
+              onRevokeInvite: tripAdminPanel.revokeInvite,
+              showToast: status.showToast,
             }}
           />
 

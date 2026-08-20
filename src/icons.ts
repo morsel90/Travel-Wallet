@@ -49,4 +49,5 @@ export {
   FileJson,     // 🆕 مؤشّر ملف JSON مُختار بنجاح (RestoreTripForm)
   Mail,         // 🆕 خيار حفظ الحساب ببريد إلكتروني (LinkWithEmailForm)
   ShieldCheck,  // 🆕 دور «منظّم الرحلة» (TripDetailPanel — المرحلة ٣)
+  Ban,          // 🆕 زر إبطال رابط الدعوة (TripDetailPanel)
 } from 'lucide-react'

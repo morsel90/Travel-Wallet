@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { callableErrorCode, describeCallableError } from './callableErrors'
+import { callableErrorCode, describeCallableError, describeInviteError } from './callableErrors'
 
 const err = (code: string) => Object.assign(new Error(code), { code })
 
@@ -64,5 +64,42 @@ describe('describeCallableError — ما يجب أن يبقى مُوحَّداً
     const noSuchTrip = describeCallableError(err('functions/permission-denied'))
     expect(wrongPin).toEqual(noSuchTrip)
     expect(wrongPin.text).not.toMatch(/غير موجودة|لا توجد رحلة/)
+  })
+})
+
+// 🆕 نظير describeCallableError لمسار joinViaInvite (رابط الدعوة بنقرة واحدة) —
+// نفس الأسباب البيئية بالضبط، لكن نص حالة الرمز/الافتراضي يخصّ الروابط لا الرمز
+// اليدوي. انظر functions/index.js: joinViaInvite.
+describe('describeInviteError', () => {
+  it('permission-denied ⇒ رسالة رابط دعوة، لا رسالة رمز الرحلة', () => {
+    const d = describeInviteError(err('functions/permission-denied'))
+    expect(d.kind).toBe('input')
+    expect(d.text).toContain('رابط الدعوة')
+    expect(d.text).not.toContain('رمز الرحلة')
+  })
+
+  it('كود غير معروف يسقط إلى نفس رسالة الرابط الباطل، لا رسالة الرمز', () => {
+    const d = describeInviteError(err('functions/weird-new-code'))
+    expect(d.text).toContain('رابط الدعوة')
+  })
+
+  it.each([
+    ['functions/unauthenticated', 'مانع إعلانات'],
+    ['functions/unavailable', 'اتصالك'],
+    ['functions/not-found', 'غير متاحة'],
+    ['functions/internal', 'خطأ في الخادم'],
+  ])('%s ⇒ نفس الأسباب البيئية المشتركة مع describeCallableError', (code, fragment) => {
+    const invite = describeInviteError(err(code))
+    const pin = describeCallableError(err(code))
+    expect(invite).toEqual(pin) // الأسباب البيئية موحّدة — لا فرق بين المسارين هنا
+    expect(invite.text).toContain(fragment)
+  })
+
+  // ⚠️ توكن غير موجود وتوكن مُبطَل يصلان بنفس الكود — نفس كتمان verifyTripPin
+  // (رمز خاطئ ورحلة غير موجودة)، انظر comment في manageInvite/joinViaInvite.
+  it('«توكن غير موجود» و«توكن مُبطَل» رسالة واحدة لا تفرّق بينهما', () => {
+    const missing = describeInviteError(err('functions/permission-denied'))
+    const revoked = describeInviteError(err('functions/permission-denied'))
+    expect(missing).toEqual(revoked)
   })
 })

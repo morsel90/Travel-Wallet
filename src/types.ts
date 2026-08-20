@@ -227,6 +227,16 @@ export interface TripMember {
   role?: 'organizer' | 'member'
 }
 
+// ─── دعوة الرحلة (رابط دخول بنقرة واحدة) ─────────────────────────────────────
+// 🆕 tripInvites/{token} — يكتبه manageInvite (Cloud Function) حصراً، `read,
+// write: if false` في firestore.rules لأي عميل. لا يُقرأ من الواجهة مباشرةً
+// إطلاقاً (لا صلاحية لذلك)؛ الشكل موثَّق هنا كمرجع فقط.
+export interface TripInvite {
+  tripId: string
+  createdAt: number
+  createdByUid: string
+}
+
 // 🆕 تفاصيل الحساب البنكي — كانت مُعرَّفة محلياً في useTripConfig.ts وMisc.tsx
 // معاً؛ وُحِّدت هنا لأن واجهة إدارة الرحلة تحتاج نفس النوع للنموذج.
 export interface BankDetails {
