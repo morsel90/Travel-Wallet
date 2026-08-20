@@ -50,4 +50,6 @@ export {
   Mail,         // 🆕 خيار حفظ الحساب ببريد إلكتروني (LinkWithEmailForm)
   ShieldCheck,  // 🆕 دور «منظّم الرحلة» (TripDetailPanel — المرحلة ٣)
   Ban,          // 🆕 زر إبطال رابط الدعوة (TripDetailPanel)
+  UserCheck,    // 🆕 شارة «منضم» — مسافر مربوط بحساب (نموذج الهوية الهجين)
+  Link2,        // 🆕 زر «ربط بحساب مسافر» (نموذج الهوية الهجين)
 } from 'lucide-react'

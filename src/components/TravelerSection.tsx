@@ -1,5 +1,5 @@
 import { memo, useCallback, useState } from 'react'
-import { Pencil, Trash2, Plus, X, History, Loader2 } from '../icons'
+import { Pencil, Trash2, Plus, X, History, Loader2, UserCheck } from '../icons'
 import type { Traveler, TravelerBalance } from '../types'
 import { useData } from '../context/DataContext'
 import { useUIActions } from '../context/UIContext'
@@ -19,7 +19,11 @@ const convertArabicNumerals = (str: string): string => {
 // مكوّن عرض بطاقة رصيد المسافر المنفرد (Traveler Card)
 export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
   // جلبنا settlements و travelers لدعم بيانات النافذة المنبثقة
-  const { isAdmin, expenses, travelers } = useData()
+  const { isAdmin, expenses, travelers, user } = useData()
+  // 🆕 نموذج الهوية الهجين: تمييز بطاقة المستخدم نفسه بين بطاقات بقية المسافرين
+  // — traveler.uid يُقارَن لا يُفترض، فمن دون حساب (تصفّح محلي) أو مسافر غير
+  // مربوط لا يرى الشارة على أي بطاقة، وهذا صحيح ومقصود.
+  const isMine = !!(traveler.uid && user && traveler.uid === user.uid)
   // إجراءات فقط — البطاقة تتكرر لكل مسافر، فلا يجوز أن تشترك في حالة نموذج متقلبة
   const { openDeposit, requestDeleteTraveler, openDepositHistory } = useUIActions()
   
@@ -35,9 +39,11 @@ export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
 
   return (
     <>
-      <div 
+      <div
         onClick={() => setShowProfile(true)}
-        className="bg-white rounded-xl p-3.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col gap-2.5 relative group transition-all hover:shadow-md hover:border-teal-300 cursor-pointer"
+        className={`bg-white rounded-xl p-3.5 sm:p-4 shadow-sm flex flex-col gap-2.5 relative group transition-all hover:shadow-md cursor-pointer ${
+          isMine ? 'border-2 border-teal-300 hover:border-teal-400' : 'border border-slate-100 hover:border-teal-300'
+        }`}
       >
         {traveler._pending && (
           <div className="absolute -top-1.5 -right-1.5 bg-teal-500 text-white p-1 rounded-full shadow-sm z-10" title="جارٍ المزامنة...">
@@ -52,8 +58,13 @@ export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
             </div>
             
             <div className="min-w-0 flex-1 flex flex-col justify-center gap-0.5">
-              <span className="font-bold text-slate-800 text-base sm:text-lg truncate min-w-0 leading-tight">
+              <span className="font-bold text-slate-800 text-base sm:text-lg truncate min-w-0 leading-tight flex items-center gap-1.5">
                 {traveler.name}
+                {isMine && (
+                  <span className="flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.5 rounded-full shrink-0">
+                    <UserCheck className="w-3 h-3" /> حسابك
+                  </span>
+                )}
               </span>
               <span className="text-xs text-slate-500 truncate min-w-0 leading-tight">
                 المودع: <span className="font-bold text-slate-700">{traveler.deposited} ﷼</span>

@@ -428,3 +428,97 @@ describe('revokeInvite — الصلاحية والعقد', () => {
     expect(result.current.isSaving).toBe(false)
   })
 })
+
+// 🆕 نموذج الهوية الهجين — ربط مسافر "شبح" بحساب. الفحص الحقيقي (المسافر غير
+// مربوط بالفعل، والحساب المستهدَف غير مربوط بمسافر آخر) خادمي بالكامل في
+// linkTravelerAccount (functions/index.js) — هنا فقط عقد الاستدعاء والصلاحية
+// على مستوى الواجهة، نفس نمط removeMember/createInvite أعلاه بالضبط.
+describe('linkTravelerAccount — الصلاحية والعقد', () => {
+  it('يرفض غير المسؤول ولمن ليس منظّم *هذه* الرحلة تحديداً — نفس شرط canAct', async () => {
+    const { result } = setup(false, 'trip-2')
+    let ok
+    await act(async () => { ok = await result.current.linkTravelerAccount('trip-1', 5, 'u1') })
+
+    expect(ok).toBe(false)
+    expect(mocks.callable).not.toHaveBeenCalled()
+    expect(showToast.mock.calls[0][0].text).toContain('أو منظّم الرحلة')
+  })
+
+  it('يستدعي linkTravelerAccount بالمعرّفات الصحيحة ويُظهر توست نجاح', async () => {
+    mocks.callable.mockResolvedValue({ data: { success: true, tripId: 'trip-1', travelerId: 5, targetUid: 'u1' } })
+    const { result } = setup()
+    let ok
+    await act(async () => { ok = await result.current.linkTravelerAccount('trip-1', 5, 'u1') })
+
+    expect(mocks.httpsCallable).toHaveBeenCalledWith({}, 'linkTravelerAccount')
+    expect(mocks.callable).toHaveBeenCalledWith({ tripId: 'trip-1', travelerId: 5, targetUid: 'u1' })
+    expect(ok).toBe(true)
+    expect(showToast.mock.calls[0][0]).toMatchObject({ text: 'تم ربط المسافر بحسابه.', type: 'success' })
+  })
+
+  it('منظّم هذه الرحلة تحديداً (لا رحلة أخرى) يستطيع الربط', async () => {
+    mocks.callable.mockResolvedValue({ data: { success: true, tripId: 'trip-1', travelerId: 5, targetUid: 'u1' } })
+    const { result } = setup(false, 'trip-1')
+    let ok
+    await act(async () => { ok = await result.current.linkTravelerAccount('trip-1', 5, 'u1') })
+
+    expect(ok).toBe(true)
+  })
+
+  it('يحدّث التوكن قبل الاستدعاء', async () => {
+    mocks.callable.mockResolvedValue({ data: { success: true } })
+    const { result } = setup()
+    await act(async () => { await result.current.linkTravelerAccount('trip-1', 5, 'u1') })
+    expect(mocks.getIdToken).toHaveBeenCalledWith(true)
+  })
+})
+
+// ⚠️ الحالتان السالبتان الحقيقيتان — مسافر مربوط بالفعل، وحساب مربوط بمسافر
+// آخر — لا يمكن اختبارهما هنا: الواجهة لا تعرف شيئاً عن حالة المسافر قبل
+// الاستدعاء، فقط تُمرّر العقد وتعرض رسالة الخادم كما وصلت. هذا بالضبط ما
+// تختبره الحالتان أدناه — أن الرسالة الخادمية (أياً كانت) تصل كما هي.
+describe('linkTravelerAccount — رسائل الرفض الخادمية تصل كما هي', () => {
+  it('مسافر مربوط بالفعل', async () => {
+    mocks.callable.mockRejectedValue(
+      Object.assign(new Error('هذا المسافر مربوط بحساب بالفعل.'), { code: 'functions/failed-precondition' }),
+    )
+    const { result } = setup()
+    let ok
+    await act(async () => { ok = await result.current.linkTravelerAccount('trip-1', 5, 'u1') })
+
+    expect(ok).toBe(false)
+    expect(showToast.mock.calls[0][0].text).toBe('هذا المسافر مربوط بحساب بالفعل.')
+  })
+
+  it('الحساب المستهدَف مربوط بمسافر آخر في نفس الرحلة', async () => {
+    mocks.callable.mockRejectedValue(
+      Object.assign(new Error('هذا الحساب مربوط بالفعل بمسافر آخر في هذه الرحلة.'), { code: 'functions/failed-precondition' }),
+    )
+    const { result } = setup()
+    let ok
+    await act(async () => { ok = await result.current.linkTravelerAccount('trip-1', 5, 'u1') })
+
+    expect(ok).toBe(false)
+    expect(showToast.mock.calls[0][0].text).toBe('هذا الحساب مربوط بالفعل بمسافر آخر في هذه الرحلة.')
+  })
+
+  it('خطأ شبكة (لا كود functions/) يستخدم handleFirestoreError لا رسالة الخادم', async () => {
+    mocks.callable.mockRejectedValue(new Error('network'))
+    const { result } = setup()
+    await act(async () => { await result.current.linkTravelerAccount('trip-1', 5, 'u1') })
+
+    expect(handleFirestoreError).toHaveBeenCalledTimes(1)
+    expect(showToast).not.toHaveBeenCalled()
+  })
+
+  it('يحرّر علم الحفظ بعد النجاح والفشل معاً', async () => {
+    mocks.callable.mockResolvedValueOnce({ data: { success: true } })
+    const { result } = setup()
+    await act(async () => { await result.current.linkTravelerAccount('trip-1', 5, 'u1') })
+    expect(result.current.isSaving).toBe(false)
+
+    mocks.callable.mockRejectedValueOnce(new Error('boom'))
+    await act(async () => { await result.current.linkTravelerAccount('trip-1', 5, 'u1') })
+    expect(result.current.isSaving).toBe(false)
+  })
+})

@@ -262,6 +262,7 @@ export default function App() {
               onDeleteTrip: tripAdminPanel.deleteTrip,
               onRemoveMember: tripAdminPanel.removeMember,
               onSetMemberRole: tripAdminPanel.setMemberRole,
+              onLinkTravelerAccount: tripAdminPanel.linkTravelerAccount,
               onExportBackup: tripAdminPanel.exportBackup,
               onRestoreTrip: tripAdminPanel.restoreTrip,
               onCreateInvite: tripAdminPanel.createInvite,

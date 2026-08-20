@@ -10,6 +10,19 @@ export interface Traveler {
   // snapshot.metadata.hasPendingWrites في useTravelers لعرض شارة "جارٍ المزامنة"
   // على العنصر أثناء التحديث المتفائل (Optimistic Update)، قبل تأكيد الخادم.
   _pending?: boolean
+  // 🆕 نموذج الهوية الهجين: ربط بروفايل الدفتر (Traveler.id، الرقمي، يبقى مصدر
+  // كل حساب في calculations.ts دون تغيير) بحساب Firebase Auth الذي يديره
+  // (uid). قيمتان ممكنتان لملف "غير مربوط": الحقل غائب تماماً (كل المسافرين
+  // قبل هذا التحديث) أو null (مسافر "شبح" أنشأه المنظّم يدوياً لشخص لم ينضمّ
+  // بعد). يُملأ تلقائياً عند الانضمام عبر رابط الدعوة (joinViaInvite) إن لم
+  // يوجد ملف بهذا uid أصلاً، أو يدوياً عبر linkTravelerAccount (منظّم/مسؤول
+  // يربط ملفاً شبحاً بحساب انضمّ فعلاً). انظر functions/index.js.
+  uid?: string | null
+  // 🆕 متى انضمّ صاحب هذا الملف فعلياً — يُكتب فقط مع الإنشاء التلقائي عبر
+  // joinViaInvite، لا عند linkTravelerAccount (ربط ملف موجود بحساب لاحقاً لا
+  // يُعيد تعريف "متى انضم"). غيابه لا يعني خطأً — كل المسافرين قبل هذا
+  // التحديث، وكل الملفات "الشبح" التي لم تُربَط بعد، بلا هذا الحقل تماماً.
+  joinedAt?: number
 }
 
 export interface TravelerBalance extends Traveler {

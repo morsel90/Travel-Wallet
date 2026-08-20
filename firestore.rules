@@ -143,13 +143,23 @@ service cloud.firestore {
     }
 
     // التحقّق من بنية المسافر — تم السماح بحقل deletedAt الاختياري كـ number (Unix timestamp)
+    // 🆕 uid/joinedAt (نموذج الهوية الهجين): اختياريان لا يغيّران شيئاً عن أي
+    // مسافر لا يحملهما (كل المسافرين قبل هذا التحديث). uid إما نص (uid حساب
+    // Firebase) أو null صراحةً (ملف "شبح" لم يُربَط بعد) — لا يجوز غيابه
+    // بمعنى null ضمنياً، فالتمييز بين "لم يُربَط" و"لم يُذكَر الحقل أصلاً" لا
+    // قيمة له هنا. الكتابة الفعلية لهذين الحقلين تمرّ حصراً عبر Admin SDK
+    // (joinViaInvite/linkTravelerAccount في functions/index.js) الذي يتجاوز
+    // هذه القواعد أصلاً — وجودهما هنا فقط للسماح بقراءتهما ولإبقاء update
+    // المسؤول المباشر (تعديل رصيد مثلاً) غير مرفوض بسببهما.
     function isValidTraveler(d) {
-      return d.keys().hasOnly(['id', 'name', 'shortName', 'deposited', 'deletedAt'])
+      return d.keys().hasOnly(['id', 'name', 'shortName', 'deposited', 'deletedAt', 'uid', 'joinedAt'])
         && d.id is int
         && d.name is string       && d.name.size() > 0 && d.name.size() <= 100
         && d.shortName is string   && d.shortName.size() > 0 && d.shortName.size() <= 50
         && d.deposited is number   && d.deposited >= 0
-        && (!('deletedAt' in d) || d.deletedAt == null || d.deletedAt is number);
+        && (!('deletedAt' in d) || d.deletedAt == null || d.deletedAt is number)
+        && (!('uid' in d) || d.uid == null || d.uid is string)
+        && (!('joinedAt' in d) || d.joinedAt is number);
     }
 
     // 🆕 حجز الاسم المختصر: المحتوى مجرّد إشارة لصاحب الاسم (لتشخيص أي تعارض

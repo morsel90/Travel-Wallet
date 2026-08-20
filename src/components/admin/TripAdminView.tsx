@@ -44,6 +44,8 @@ interface TripAdminViewProps {
   onRemoveMember: (tripId: string, uid: string) => Promise<boolean>
   /** 🆕 تعيين/إلغاء دور «منظّم الرحلة» (المرحلة ٣) — المسؤول العالمي حصراً. */
   onSetMemberRole: (tripId: string, uid: string, role: 'organizer' | 'member') => Promise<boolean>
+  /** 🆕 ربط مسافر "شبح" (uid == null) بحساب عضو انضمّ فعلاً — نموذج الهوية الهجين. */
+  onLinkTravelerAccount: (tripId: string, travelerId: number, targetUid: string) => Promise<boolean>
   /** 🆕 تنزيل نسخة JSON احتياطية — docs/PLAN-backup-recovery.md المرحلة ١. */
   onExportBackup: (trip: TripSummary) => Promise<boolean>
   /** 🆕 استعادة رحلة من نسخة JSON — المرحلة ٢. */
@@ -60,7 +62,7 @@ interface TripAdminViewProps {
 export default function TripAdminView({
   currentTripId, viewerRole, trips, loading, error, isSaving,
   onSaveTripName, onSaveBankDetails, onSaveItinerary, onCreateTrip, onResetPin,
-  onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onExportBackup, onRestoreTrip,
+  onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onLinkTravelerAccount, onExportBackup, onRestoreTrip,
   onCreateInvite, onRevokeInvite, showToast, onClose,
 }: TripAdminViewProps) {
   // 🆕 منظّم لديه رحلة واحدة بنيوياً (trips.length <= 1) — نفتحها مباشرة ونخفي
@@ -147,6 +149,7 @@ export default function TripAdminView({
             onDeleteTrip={onDeleteTrip}
             onRemoveMember={onRemoveMember}
             onSetMemberRole={onSetMemberRole}
+            onLinkTravelerAccount={onLinkTravelerAccount}
             onExportBackup={onExportBackup}
             onCreateInvite={onCreateInvite}
             onRevokeInvite={onRevokeInvite}
