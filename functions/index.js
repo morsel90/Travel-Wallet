@@ -873,14 +873,29 @@ const MAX_PROVISION_ATTEMPTS = 20;
  * (سباق بين انضمامين متزامنين بنفس الاسم الأول) — فنعيد المحاولة باسم مختصر
  * مختلف (لاحقة رقمية) بدل الكتابة فوق حجز اسم شخص آخر أو مسافر آخر بالمصادفة.
  */
+// 🆕 قيمة الاسم الافتراضي حين لا يملك المنضمّ اسم عرض (شائع لجلسة مجهولة بلا
+// حساب Google/بريد) — نظيرة تماماً لثابت لا يمكن استيراده هنا (سياق تشغيل
+// مختلف، انظر تعليق الدالة أعلاه). 🆕 مُصدَّرة عبر `usedDefaultName` أدناه بدل
+// مقارنة المستدعي بها مباشرة، فلا يعتمد سلوكان على تطابق نص حرفي في ملفين.
+const DEFAULT_TRAVELER_NAME = 'مسافر جديد';
+
+/**
+ * @returns {{ created: boolean, usedDefaultName: boolean }} — `created` كاذبة
+ * حين كان مربوطاً بالفعل *أو* حين استُنفدت محاولات التزويد (الفشل يُسجَّل
+ * كما كان، فلا حاجة للمستدعي لتمييز الحالتين). `usedDefaultName` صحيحة فقط
+ * حين أُنشئ ملف فعلاً بلا اسم عرض حقيقي — هذا ما يقرأه joinViaInvite ليقرّر
+ * إن كان يستحق سؤال المنضمّ عن اسمه (needsName في الاستجابة).
+ */
 async function provisionTravelerForUid(tripId, uid, displayName) {
   const dataRoot = db.collection('artifacts').doc(tripId).collection('public').doc('data');
   const travelersCol = dataRoot.collection('travelers');
 
   const existing = await travelersCol.where('uid', '==', uid).limit(1).get();
-  if (!existing.empty) return; // مربوط بالفعل — لا شيء يُفعل
+  if (!existing.empty) return { created: false, usedDefaultName: false }; // مربوط بالفعل — لا شيء يُفعل
 
-  const baseName = (typeof displayName === 'string' && displayName.trim()) || 'مسافر جديد';
+  const trimmedDisplayName = typeof displayName === 'string' ? displayName.trim() : '';
+  const usedDefaultName = !trimmedDisplayName;
+  const baseName = trimmedDisplayName || DEFAULT_TRAVELER_NAME;
   const baseShortName = deriveShortNameJs(baseName);
 
   for (let attempt = 0; attempt < MAX_PROVISION_ATTEMPTS; attempt++) {
@@ -903,13 +918,14 @@ async function provisionTravelerForUid(tripId, uid, displayName) {
       batch.create(travelersCol.doc(String(id)), traveler);
       batch.create(dataRoot.collection('travelerNames').doc(shortName), { travelerId: id });
       await batch.commit();
-      return;
+      return { created: true, usedDefaultName };
     } catch {
       // الاسم المختصر (أو المعرّف، شبه مستحيل) مأخوذ — نجرّب لاحقة أخرى.
     }
   }
 
   console.error(`[provisionTravelerForUid] فشل تزويد مسافر تلقائي لـ ${uid} على ${tripId} بعد ${MAX_PROVISION_ATTEMPTS} محاولة.`);
+  return { created: false, usedDefaultName: false };
 }
 
 exports.manageInvite = onCall(
@@ -986,16 +1002,70 @@ exports.joinViaInvite = onCall(
 
     // 🆕 نموذج الهوية الهجين: تزويد ملف مسافر تلقائياً إن لم يوجد له واحد بعد
     // في هذه الرحلة تحديداً. لا يُفشل الانضمام إن فشل — انظر تعليق الدالة.
+    // 🆕 needsName في الاستجابة: صحيحة فقط حين أُنشئ ملف جديد فعلاً بلا اسم
+    // عرض حقيقي (جلسة مجهولة غالباً) — الواجهة تعرض عندها نموذج اسم من خطوة
+    // واحدة قبل التوجيه للرحلة (انظر useInviteJoin.ts). فشل التزويد أو ربط
+    // مسبق لا يستحقان سؤالاً — الأول لأن لا ملف وُلد أصلاً، والثاني لأن
+    // الملف مُسمّى بالفعل (ربما من هذا الحوار نفسه في زيارة سابقة).
+    let needsName = false;
     try {
-      await provisionTravelerForUid(
+      const result = await provisionTravelerForUid(
         tripId, request.auth.uid, request.auth.token.name || userRecord.displayName,
       );
+      needsName = result.created && result.usedDefaultName;
     } catch (err) {
       console.error(`[joinViaInvite] تعذّر تزويد مسافر تلقائي لـ ${request.auth.uid} على ${tripId}:`, err);
     }
 
     console.log(`[joinViaInvite] ${request.auth.uid} joined ${tripId} via invite`);
-    return { success: true, tripId };
+    return { success: true, tripId, needsName };
+  }
+);
+
+/**
+ * 🆕 updateMyTravelerName: يسمح لعضو انضمّ فعلاً بتسمية ملف مسافره الخاص —
+ * الاستخدام الوحيد اليوم هو نموذج الاسم من خطوة واحدة الذي يعقب الانضمام عبر
+ * رابط دعوة بلا اسم عرض حقيقي (انظر needsName في joinViaInvite أعلاه).
+ *
+ * ⚠️ **لماذا دالة سحابية لا كتابة مباشرة من العميل**: firestore.rules تمنح
+ * `update` على travelers/{travelerId} للمسؤول العالمي حصراً (isAdmin())، ولا
+ * تمييز فيها بين "عضو يعدّل ملفه هو" و"عضو يعدّل ملف غيره" — إضافة استثناء
+ * كهذا للقواعد تفتح باباً أوسع مما يحتاجه هذا الاستخدام الضيق (تسمية النفس
+ * مرة واحدة عند الانضمام). الدالة تفرض الحدّ الدقيق: هذا المستخدم يُسمّي
+ * الملف الذي uid فيه يطابقه هو حصراً، لا أي ملف آخر.
+ *
+ * ⚠️ **لا تُغيَّر shortName هنا** — هي مفتاح الربط مع Expense.participants ولا
+ * تتغيّر بعد الإنشاء (انظر تعليق Traveler.shortName في types.ts)، وتغييرها
+ * يتطلب نقل حجز الاسم (travelerNames/{shortName}) في دفعة ذرّية كما تفعل بقية
+ * مسارات كتابة المسافر (القاعدة ٦) — خارج نطاق هذه الدالة عمداً.
+ */
+exports.updateMyTravelerName = onCall(
+  { region: 'us-central1', maxInstances: 10 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+    }
+
+    const tripId = String(request.data?.tripId ?? '').trim();
+    const name = String(request.data?.name ?? '').trim();
+
+    if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
+      throw new HttpsError('invalid-argument', 'معرّف الرحلة غير صالح.');
+    }
+    if (!name || name.length > 100) {
+      throw new HttpsError('invalid-argument', 'الاسم مطلوب، بحد أقصى 100 حرف.');
+    }
+
+    const travelersCol = db.collection('artifacts').doc(tripId).collection('public').doc('data').collection('travelers');
+    const snap = await travelersCol.where('uid', '==', request.auth.uid).limit(1).get();
+    if (snap.empty) {
+      throw new HttpsError('not-found', 'لا يوجد ملف مسافر مرتبط بحسابك في هذه الرحلة.');
+    }
+
+    await snap.docs[0].ref.update({ name });
+
+    console.log(`[updateMyTravelerName] ${request.auth.uid} renamed own traveler on ${tripId}`);
+    return { success: true };
   }
 );
 

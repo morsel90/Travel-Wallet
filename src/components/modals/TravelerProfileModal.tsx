@@ -2,7 +2,7 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { X, Wallet, Receipt, Scale, Loader2, Download, Printer } from '../../icons'
+import { X, Wallet, Receipt, Scale, Loader2, Download, Printer, HandCoins } from '../../icons'
 import type { Expense, Traveler, TravelerBalance, Settlement } from '../../types'
 import { buildTravelerReport, buildAccountStatement } from '../../utils/reportData'
 import { useDepositLogs } from '../../hooks/useDepositLogs'
@@ -17,6 +17,8 @@ interface TravelerProfileModalProps {
   allTravelers: Traveler[]
   isAdmin: boolean
   onClose: () => void
+  /** 🆕 التبويب الذي تُفتح عليه النافذة — 'statement' لزر "كشف حسابي" على بطاقة المستخدم نفسه (TravelerSection.tsx)، افتراضياً 'summary' لبقية نقاط الفتح. */
+  initialTab?: TabType
 }
 
 type TabType = 'summary' | 'statement'
@@ -31,9 +33,10 @@ export default function TravelerProfileModal({
   settlements,
   allTravelers,
   isAdmin,
-  onClose
+  onClose,
+  initialTab = 'summary',
 }: TravelerProfileModalProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('summary')
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab)
 
   const nameById = useMemo(() => {
     const m = new Map<number, string>()
@@ -178,6 +181,17 @@ export default function TravelerProfileModal({
         {/* محتوى: كشف الحساب التفصيلي */}
         {activeTab === 'statement' && statement && (
           <div className="space-y-5">
+            {/* 🆕 صيغة الرصيد كاملة حين دفع مصروفاً واحداً على الأقل من جيبه — لا
+                تُعرض لغيره تفادياً لتكرار ما تقوله بطاقات "الخلاصة" أعلاه بالفعل. */}
+            {statement.totalPaidByPocket !== 0 && (
+              <section className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <KpiCard Icon={Wallet} label="المودَع" value={fmt(statement.opening)} tone="teal" />
+                <KpiCard Icon={HandCoins} label="دفعه من جيبه" value={fmt(statement.totalPaidByPocket)} tone="teal" />
+                <KpiCard Icon={Receipt} label="نصيبه من المصاريف" value={fmt(statement.totalShare)} tone="rose" />
+                <KpiCard Icon={Scale} label="المتبقي" value={fmt(statement.remaining)} tone={statement.remaining < 0 ? 'rose' : 'teal'} />
+              </section>
+            )}
+
             <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
                 <h3 className="text-sm font-bold text-slate-800">حركة المصاريف — رصيد جارٍ</h3>
@@ -186,20 +200,32 @@ export default function TravelerProfileModal({
                 <p className="text-center text-slate-400 font-medium text-sm py-8">لم يشارك في أي مصروف بعد.</p>
               ) : (
                 <div className="divide-y divide-slate-100">
-                  {statement.rows.map(r => (
-                    <div key={r.id} className="flex items-center justify-between px-4 py-3 gap-3">
-                      <div className="min-w-0">
-                        <p className="font-bold text-slate-800 text-sm truncate">{r.description}</p>
-                        <p className="text-[11px] text-slate-400 font-bold">{r.date} · {r.category}</p>
+                  {statement.rows.map(r => {
+                    const isPocketPay = r.kind === 'paidByPocket'
+                    return (
+                      <div key={r.id} className="flex items-center justify-between px-4 py-3 gap-3">
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-800 text-sm truncate flex items-center gap-1.5">
+                            {r.description}
+                            {isPocketPay && (
+                              <span className="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.5 rounded-full shrink-0">
+                                دفعها من جيبه
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-[11px] text-slate-400 font-bold">{r.date} · {r.category}</p>
+                        </div>
+                        <div className="text-left shrink-0">
+                          <p className={`font-black tabular-nums text-sm ${isPocketPay ? 'text-teal-600' : 'text-rose-600'}`} dir="ltr">
+                            {isPocketPay ? '+' : '−'}{fmt(r.amount)}
+                          </p>
+                          <p className={`text-[11px] font-bold tabular-nums ${r.balanceAfter < 0 ? 'text-rose-500' : 'text-teal-600'}`} dir="ltr">
+                            {fmt(r.balanceAfter)} ﷼
+                          </p>
+                        </div>
                       </div>
-                      <div className="text-left shrink-0">
-                        <p className="font-black text-rose-600 tabular-nums text-sm" dir="ltr">−{fmt(r.share)}</p>
-                        <p className={`text-[11px] font-bold tabular-nums ${r.balanceAfter < 0 ? 'text-rose-500' : 'text-teal-600'}`} dir="ltr">
-                          {fmt(r.balanceAfter)} ﷼
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </section>

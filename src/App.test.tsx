@@ -108,10 +108,10 @@ vi.mock('./hooks', () => ({
     isSaving: false, saveBankDetails: noop, saveItinerary: noop, saveTripName: noop,
     saveTripStatus: noop, createTrip: noop, resetTripPin: noop, deleteTrip: noop,
   }),
-  // 🆕 رابط دعوة بنقرة واحدة — 'done' دائماً هنا (لا رابط دعوة في بيئة
+  // 🆕 رابط دعوة بنقرة واحدة — status: 'done' دائماً هنا (لا رابط دعوة في بيئة
   // الاختبار: ./utils/tripId مُحاكى أعلاه بلا INVITE_TOKEN)، فلا تُعرض شاشة
   // InviteJoinScreen وتُتابع اختبارات ترتيب البوابات القائمة كما هي.
-  useInviteJoin: () => 'done' as const,
+  useInviteJoin: () => ({ status: 'done' as const, submitName: noop, skipName: noop, isSubmittingName: false }),
 }))
 
 vi.mock('./hooks/useFilteredExpenses', () => ({

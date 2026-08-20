@@ -74,6 +74,21 @@ export function useAppCoordinator() {
 
   const { balances, totalSpent, totalDeposited, totalRemaining } = useBalances(activeTravelers, activeExpenses)
 
+  // 🆕 نموذج الهوية الهجين — بطاقة المستخدم نفسه (إن وُجدت) أولاً في قائمة
+  // العرض. ⚠️ لا تُعاد ترتيب `balances` نفسها: تُستهلك في حساب التسويات
+  // (calculateSettlements لا يهمّها الترتيب) وتصدير Excel وطباعة تقرير الرحلة
+  // (ترتيبها هناك تاريخي/حسب Firestore، وإعادة ترتيبه أثر جانبي غير مقصود على
+  // مسارات لا علاقة لها بهذه الميزة). القائمة المُعاد ترتيبها لعرض
+  // TravelersPanel وحدها.
+  const myBalance = useMemo(
+    () => (user ? balances.find(b => b.uid === user.uid) ?? null : null),
+    [balances, user],
+  )
+  const travelersPanelBalances = useMemo(
+    () => (myBalance ? [myBalance, ...balances.filter(b => b !== myBalance)] : balances),
+    [balances, myBalance],
+  )
+
   const settlements    = useMemo(() => calculateSettlements(balances), [balances])
   const categoryTotals = useMemo(() => calculateCategoryTotals(activeExpenses), [activeExpenses])
   const spendingTrend  = useMemo(() => calculateSpendingTrend(activeExpenses), [activeExpenses])
@@ -97,7 +112,7 @@ export function useAppCoordinator() {
   // 🆕 رابط دعوة بنقرة واحدة (?invite=TOKEN) — يُستهلك مرة واحدة عند تحميل
   // الصفحة، قبل أي شيء آخر. النجاح إعادة توجيه كاملة (لا حالة تُستهلك هنا)،
   // والفشل يُنظّف الرابط ويعرض توستاً ثم يُكمل التدفّق المعتاد (رحلاتي/بوابة الرمز).
-  const inviteJoinStatus = useInviteJoin(user, showToast)
+  const inviteJoin = useInviteJoin(user, showToast)
 
   const admin = useAdminAuth({ showToast })
 
@@ -222,8 +237,8 @@ export function useAppCoordinator() {
   }, [hasAccess, showToast])
 
   return {
-    /** 🆕 رابط دعوة بنقرة واحدة — App.tsx يعرض شاشة تحميل حصراً طالما 'joining'. */
-    invite: { status: inviteJoinStatus },
+    /** 🆕 رابط دعوة بنقرة واحدة — App.tsx يعرض InviteJoinScreen طالما 'joining' أو 'needsName'. */
+    invite: inviteJoin,
     /** المصادقة والوصول وحالة الشبكة. */
     session: {
       user, isAdmin, hasAccess, isOnline,
@@ -242,6 +257,8 @@ export function useAppCoordinator() {
       activeExpenses, activeTravelers, deletedExpenses, deletedTravelers,
       balances, totalSpent, totalDeposited, totalRemaining,
       settlements, categoryTotals, spendingTrend,
+      // 🆕 نموذج الهوية الهجين — انظر التعليق عند تعريفهما أعلاه.
+      myBalance, travelersPanelBalances,
     },
     /** إعدادات الرحلة الحالية ودورة حياتها. */
     trip: { bankDetails, itinerary, canAddExpenses, tripClosedNotice },

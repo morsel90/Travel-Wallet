@@ -46,11 +46,13 @@ describe('buildAccountStatement', () => {
     const st = buildAccountStatement(1000, ahmed, expenses)
     expect(st.opening).toBe(1000)
     expect(st.totalShare).toBe(350)
+    expect(st.totalPaidByPocket).toBe(0)
     expect(st.remaining).toBe(650)
     // مرتّب زمنياً بـ createdAt تصاعدياً: e1(100)→900، e2(100)→800، e3(150)→650
     expect(st.rows.map(r => r.balanceAfter)).toEqual([900, 800, 650])
-    expect(st.rows[0].id).toBe('e1')
-    expect(st.rows[2].id).toBe('e3')
+    expect(st.rows.every(r => r.kind === 'share')).toBe(true)
+    expect(st.rows[0].id).toBe('e1:share')
+    expect(st.rows[2].id).toBe('e3:share')
   })
 
   it('handles a traveler in only some expenses', () => {
@@ -58,5 +60,37 @@ describe('buildAccountStatement', () => {
     // سعد: e1(100)→0، e3(150)→-150
     expect(st.rows.map(r => r.balanceAfter)).toEqual([0, -150])
     expect(st.remaining).toBe(-150)
+  })
+
+  it('credits an expense paid out of pocket, matching calculateBalances', () => {
+    // أحمد دفع e2 (100) من جيبه بدل الصندوق، مع بقاء مشاركته في الثلاثة كما هي.
+    const withPocketPay: Expense[] = expenses.map(e => e.id === 'e2' ? { ...e, paidBy: 1 } : e)
+    const st = buildAccountStatement(1000, ahmed, withPocketPay)
+
+    expect(st.totalPaidByPocket).toBe(100)
+    expect(st.totalShare).toBe(350)
+    // نفس صيغة calculateBalances بالضبط: المودَع + دفعه من جيبه − حصصه
+    expect(st.remaining).toBe(1000 + 100 - 350)
+
+    // e2 يُنتج سطرين: دفعه من جيبه (+100) وحصته فيه (−100) — أثرهما الصافي صفر،
+    // بالضبط ما يحدث في calculateBalances لمن يدفع مصروفاً يشارك فيه هو نفسه.
+    const e2Rows = st.rows.filter(r => r.id.startsWith('e2:'))
+    expect(e2Rows.map(r => r.kind).sort()).toEqual(['paidByPocket', 'share'])
+    expect(e2Rows.find(r => r.kind === 'paidByPocket')?.amount).toBe(100)
+    expect(e2Rows.find(r => r.kind === 'share')?.amount).toBe(100)
+  })
+
+  it('credits an expense paid out of pocket for a non-participant too', () => {
+    // سعد دفع e2 من جيبه لكنه لم يشارك فيها (participants: [1] فقط).
+    const withPocketPay: Expense[] = expenses.map(e => e.id === 'e2' ? { ...e, paidBy: 2 } : e)
+    const st = buildAccountStatement(100, saad, withPocketPay)
+
+    expect(st.totalPaidByPocket).toBe(100)
+    // لا يشارك في e2 فلا سطر 'share' له عنها — فقط سطر 'paidByPocket'.
+    expect(st.rows.filter(r => r.id.startsWith('e2:'))).toEqual([
+      expect.objectContaining({ id: 'e2:paidByPocket', kind: 'paidByPocket', amount: 100 }),
+    ])
+    // المودَع(100) + دفعه من جيبه(100) − حصصه في e1 وe3(250) = −50
+    expect(st.remaining).toBe(100 + 100 - 250)
   })
 })

@@ -1,5 +1,5 @@
 import { memo, useCallback, useState } from 'react'
-import { Pencil, Trash2, Plus, X, History, Loader2, UserCheck } from '../icons'
+import { Pencil, Trash2, Plus, X, History, Loader2, UserCheck, FileText } from '../icons'
 import type { Traveler, TravelerBalance } from '../types'
 import { useData } from '../context/DataContext'
 import { useUIActions } from '../context/UIContext'
@@ -27,8 +27,17 @@ export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
   // إجراءات فقط — البطاقة تتكرر لكل مسافر، فلا يجوز أن تشترك في حالة نموذج متقلبة
   const { openDeposit, requestDeleteTraveler, openDepositHistory } = useUIActions()
   
-  // حالة التحكم في ظهور نافذة ملف المسافر
+  // حالة التحكم في ظهور نافذة ملف المسافر + التبويب الذي تُفتح عليه — الفتح
+  // بالضغط على البطاقة نفسها يبدأ من "الخلاصة" كالمعتاد، أما زر "كشف حسابي"
+  // (لصاحب البطاقة وحده) فيفتح مباشرة على "كشف الحساب التفصيلي".
   const [showProfile, setShowProfile] = useState(false)
+  const [profileInitialTab, setProfileInitialTab] = useState<'summary' | 'statement'>('summary')
+
+  const openStatement = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    setProfileInitialTab('statement')
+    setShowProfile(true)
+  }, [])
   
   const hasExpenses = expenses.some(e => e.participants.some(p => matchesTraveler(traveler, p)))
   const isNegative = traveler.remaining < 0
@@ -40,7 +49,7 @@ export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
   return (
     <>
       <div
-        onClick={() => setShowProfile(true)}
+        onClick={() => { setProfileInitialTab('summary'); setShowProfile(true) }}
         className={`bg-white rounded-xl p-3.5 sm:p-4 shadow-sm flex flex-col gap-2.5 relative group transition-all hover:shadow-md cursor-pointer ${
           isMine ? 'border-2 border-teal-300 hover:border-teal-400' : 'border border-slate-100 hover:border-teal-300'
         }`}
@@ -88,6 +97,19 @@ export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
             />
           </div>
         </div>
+
+        {/* 🆕 نموذج الهوية الهجين — زر مباشر لصاحب البطاقة إلى كشف حسابه
+            الشخصي. ظاهر دائماً لا خلف التحويم (بخلاف أزرار المسؤول أدناه):
+            هذا زر لصاحب الحساب نفسه على جهاز قد يكون لمسياً بلا تحويم أصلاً. */}
+        {isMine && (
+          <button
+            type="button"
+            onClick={openStatement}
+            className="w-full flex items-center justify-center gap-1.5 bg-teal-50 hover:bg-teal-100 text-teal-700 font-bold text-xs py-2 rounded-lg transition-colors"
+          >
+            <FileText className="w-3.5 h-3.5" /> كشف حسابي
+          </button>
+        )}
 
         {isAdmin && (
           <div className="flex items-center justify-end gap-1.5 mt-1 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 transition-opacity">
@@ -138,6 +160,7 @@ export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
           settlements={[]}
           allTravelers={travelers}
           isAdmin={isAdmin}
+          initialTab={profileInitialTab}
           onClose={() => setShowProfile(false)}
         />
       )}
