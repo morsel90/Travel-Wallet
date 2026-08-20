@@ -354,4 +354,20 @@ Two implementation details worth keeping:
 
 **Still missing on purpose:** no invite records, no per-trip organizer role. That is phase 3 of `docs/PLAN-member-management.md`.
 
+⚠️ 🆕 **`components/admin/QrCode.tsx` and its test were deleted** when the PIN was removed entirely (see the entry below) — the manual "scan + tell them the PIN separately" flow it served no longer has a PIN to pair with. The reasoning above is kept as history for the `qrcode-generator` dependency choice itself, which is otherwise unexplained if the component is ever reintroduced (e.g. for an invite link).
+
+### 🆕 PIN access and anonymous sessions are removed entirely — mandatory Google/Email sign-in
+
+**This reverses two decisions above on purpose**: "Never call `signInAnonymously` unconditionally on load" assumed anonymous sign-in stays, and "Account linking preserves the `uid`" (below) exists only because anonymous sessions existed to link *from*. Both are now dead premises, not just dead code.
+
+**Why now:** the Hybrid Traveler Identity model (`Traveler.uid`, self-service personal statements, self-rename on join) all depend on a real, durable account. An anonymous `uid` that evaporates on cache-clear was always in tension with that — PINs also carry no audit trail (no record of *who* entered a code, only that *some* browser did). Once personal statements and self-rename shipped, the PIN/anonymous pair stopped being a viable long-term base rather than a convenience worth keeping alongside it.
+
+**What changed:**
+- `verifyTripPin`, `manageTrip`'s `resetPin` mode, `tripSecrets/{tripId}`, and the PIN-verification rate limiter are deleted from `functions/index.js` and `firestore.rules` outright — not deprecated, not left dark.
+- `useAuth.ts` no longer calls `signInAnonymously` under any circumstance. `AuthGate.tsx` (replacing `TripGate.tsx`) is a mandatory Google/Email sign-in screen shown whenever `user === null`, before any other routing branch.
+- `joinViaInvite` rejects `sign_in_provider === 'anonymous'` explicitly, and `isMember()` in `firestore.rules` folds in the same check (`isNotAnonymous()`) as its single choke point — see the comment there for why one function beats sprinkling the check across every `allow` block.
+- The account-linking machinery (`useAccountLink.ts`, `SaveAccountBanner.tsx`, `LinkWithEmailForm.tsx`, `mergeAnonymousTrips`) is deleted, not left inert: every one of them existed solely to rescue an anonymous session's memberships from a linking conflict, and that scenario cannot occur once no anonymous session is ever created. `docs/PLAN-account-linking.md` is kept as an archived design record with a superseded notice at its top, not deleted — this entry is the current source of truth going forward.
+
+⚠️ **This is an accepted breaking change with no migration path, by explicit product decision.** Every trip member who was still on an anonymous session (never linked a real account) loses access the instant `firestore.rules` is redeployed — their `trips` claim is untouched, but `isMember()` now rejects the session carrying it. There is no grace period and no client-side warning beforehand; the only way back in is joining again via a fresh invite link on a real account. This is the actual mechanism that makes the change real, not a side effect to work around.
+
 </div>

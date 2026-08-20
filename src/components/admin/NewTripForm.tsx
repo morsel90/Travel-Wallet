@@ -1,5 +1,4 @@
-// 🆕 نموذج إنشاء رحلة جديدة — يُرسَل إلى Cloud Function باسم manageTrip، لأن
-// إنشاء رحلة يستلزم كتابة هاش رمزها في tripSecrets/{tripId} المحظور على العميل.
+// 🆕 نموذج إنشاء رحلة جديدة — يُرسَل إلى Cloud Function باسم manageTrip.
 import { useState } from 'react'
 import { X, Save, Loader2 } from '../../icons'
 import { isValidTripId } from '../../utils/tripId'
@@ -7,7 +6,7 @@ import { isValidTripId } from '../../utils/tripId'
 interface NewTripFormProps {
   existingIds: string[]
   isSaving: boolean
-  onCreate: (tripId: string, name: string, pin: string) => Promise<boolean>
+  onCreate: (tripId: string, name: string) => Promise<boolean>
   onCancel: () => void
 }
 
@@ -18,7 +17,6 @@ const labelClass = 'block text-xs font-bold text-slate-500 mb-1.5'
 export default function NewTripForm({ existingIds, isSaving, onCreate, onCancel }: NewTripFormProps) {
   const [tripId, setTripId] = useState('')
   const [name, setName] = useState('')
-  const [pin, setPin] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const submit = async () => {
@@ -32,12 +30,8 @@ export default function NewTripForm({ existingIds, isSaving, onCreate, onCancel 
       setError(`المعرّف "${id}" مستخدم في رحلة أخرى — اختر غيره.`)
       return
     }
-    if (pin.trim().length < 4) {
-      setError('رمز الرحلة يجب أن يكون 4 خانات على الأقل.')
-      return
-    }
     setError(null)
-    const ok = await onCreate(id, name.trim(), pin.trim())
+    const ok = await onCreate(id, name.trim())
     if (ok) onCancel()
   }
 
@@ -87,23 +81,9 @@ export default function NewTripForm({ existingIds, isSaving, onCreate, onCancel 
         <p className="text-[11px] text-slate-400 mt-1.5">إن تركته فارغاً سيُستخدم المعرّف اسماً.</p>
       </div>
 
-      <div>
-        <label className={labelClass} htmlFor="new-trip-pin">رمز الدخول (PIN)</label>
-        <input
-          id="new-trip-pin"
-          type="text"
-          inputMode="numeric"
-          autoComplete="off"
-          value={pin}
-          onChange={e => setPin(e.target.value)}
-          placeholder="4 خانات فأكثر"
-          dir="ltr"
-          className={`${inputClass} text-right tabular-nums`}
-        />
-        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-1.5">
-          احفظ الرمز الآن — يُخزَّن مُجزَّأً (hash) على الخادم ولن يُعرض مرة أخرى. يمكنك تغييره لاحقاً لكن لا يمكن استرجاعه.
-        </p>
-      </div>
+      <p className="text-[11px] text-teal-800 bg-teal-50 border border-teal-200 rounded-lg p-2.5 leading-relaxed">
+        بعد الإنشاء، ادعُ الأعضاء عبر رابط دعوة من تبويب "الأعضاء" داخل تفاصيل الرحلة.
+      </p>
 
       {error && (
         <p role="alert" className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-2.5">

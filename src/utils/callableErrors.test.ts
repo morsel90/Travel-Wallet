@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { callableErrorCode, describeCallableError, describeInviteError } from './callableErrors'
+import { callableErrorCode, describeInviteError } from './callableErrors'
 
 const err = (code: string) => Object.assign(new Error(code), { code })
 
@@ -19,18 +19,18 @@ describe('callableErrorCode', () => {
   })
 })
 
-describe('describeCallableError — التمييز الذي كلّف غيابه ساعتين', () => {
-  it('permission-denied ⇒ رمز خاطئ، والسبب في المدخلات', () => {
-    const d = describeCallableError(err('functions/permission-denied'))
-    expect(d.text).toContain('رمز الرحلة غير صحيح')
+describe('describeInviteError', () => {
+  it('permission-denied ⇒ رسالة رابط دعوة، والسبب في المدخلات', () => {
+    const d = describeInviteError(err('functions/permission-denied'))
     expect(d.kind).toBe('input')
+    expect(d.text).toContain('رابط الدعوة')
   })
 
   // ⚠️ هذه هي الحالة التي أرسلت تشخيص عطل 2026-08-13 في الاتجاه الخاطئ.
   it('unauthenticated ⇒ رسالة تخصّ البيئة وتذكر مانع الإعلانات صراحةً', () => {
-    const d = describeCallableError(err('functions/unauthenticated'))
+    const d = describeInviteError(err('functions/unauthenticated'))
     expect(d.kind).toBe('environment')
-    expect(d.text).not.toContain('رمز الرحلة غير صحيح')
+    expect(d.text).not.toContain('رابط الدعوة')
     // ذِكر الامتداد ليس تجميلاً: هو السبب الفعلي والوحيد الذي يُصلحه المستخدم بنفسه
     expect(d.text).toContain('مانع إعلانات')
   })
@@ -40,63 +40,30 @@ describe('describeCallableError — التمييز الذي كلّف غيابه 
     ['functions/deadline-exceeded', 'اتصالك'],
     ['functions/not-found', 'غير متاحة'],
     ['functions/internal', 'خطأ في الخادم'],
-  ])('%s ⇒ سبب بيئي مسمّى لا رمز خاطئ', (code, fragment) => {
-    const d = describeCallableError(err(code))
+  ])('%s ⇒ سبب بيئي مسمّى لا رسالة رابط باطل', (code, fragment) => {
+    const d = describeInviteError(err(code))
     expect(d.kind).toBe('environment')
     expect(d.text).toContain(fragment)
-    expect(d.text).not.toContain('رمز الرحلة غير صحيح')
+    expect(d.text).not.toContain('رابط الدعوة')
   })
 
-  it('كود غير معروف يسقط إلى رسالة الرمز الخاطئ — الحالة الأشيع', () => {
-    expect(describeCallableError(err('functions/weird-new-code')).text)
-      .toContain('رمز الرحلة غير صحيح')
-  })
-})
-
-// ⚠️ هذا ليس اختبار صياغة بل اختبار **أمني**. verifyTripPin ترمي
-// permission-denied بنفس النص سواء كان الرمز خاطئاً أو الرحلة غير موجودة، حتى
-// لا يُكتشف وجود الرحلات بتخمين ?trip=. تفصيل الرسالتين هنا يكسر ذلك الكتمان.
-describe('describeCallableError — ما يجب أن يبقى مُوحَّداً', () => {
-  it('«الرمز خاطئ» و«الرحلة غير موجودة» رسالة واحدة لا تفرّق بينهما', () => {
-    // كلاهما يصل من الخادم بنفس الكود ونفس النص — فلا سبيل للعميل للتفريق،
-    // وهذا هو المقصود. الاختبار يثبّت أن أحداً لن «يحسّن» الرسالة لاحقاً.
-    const wrongPin = describeCallableError(err('functions/permission-denied'))
-    const noSuchTrip = describeCallableError(err('functions/permission-denied'))
-    expect(wrongPin).toEqual(noSuchTrip)
-    expect(wrongPin.text).not.toMatch(/غير موجودة|لا توجد رحلة/)
-  })
-})
-
-// 🆕 نظير describeCallableError لمسار joinViaInvite (رابط الدعوة بنقرة واحدة) —
-// نفس الأسباب البيئية بالضبط، لكن نص حالة الرمز/الافتراضي يخصّ الروابط لا الرمز
-// اليدوي. انظر functions/index.js: joinViaInvite.
-describe('describeInviteError', () => {
-  it('permission-denied ⇒ رسالة رابط دعوة، لا رسالة رمز الرحلة', () => {
-    const d = describeInviteError(err('functions/permission-denied'))
+  // 🆕 joinViaInvite ترفض الجلسات المجهولة صراحةً (لا رمز رحلة بعد الآن، انظر
+  // docs/DECISIONS.md) — الرسالة يجب أن تفسّر السبب الحقيقي (يلزم حساب حقيقي)
+  // لا أن تسقط على رسالة "الرابط باطل" المضلّلة.
+  it('failed-precondition ⇒ يطلب تسجيل الدخول بحساب حقيقي صراحةً', () => {
+    const d = describeInviteError(err('functions/failed-precondition'))
     expect(d.kind).toBe('input')
-    expect(d.text).toContain('رابط الدعوة')
-    expect(d.text).not.toContain('رمز الرحلة')
+    expect(d.text).toContain('حساباً حقيقياً')
+    expect(d.text).not.toContain('رابط الدعوة غير صالح')
   })
 
-  it('كود غير معروف يسقط إلى نفس رسالة الرابط الباطل، لا رسالة الرمز', () => {
+  it('كود غير معروف يسقط إلى نفس رسالة الرابط الباطل', () => {
     const d = describeInviteError(err('functions/weird-new-code'))
     expect(d.text).toContain('رابط الدعوة')
   })
 
-  it.each([
-    ['functions/unauthenticated', 'مانع إعلانات'],
-    ['functions/unavailable', 'اتصالك'],
-    ['functions/not-found', 'غير متاحة'],
-    ['functions/internal', 'خطأ في الخادم'],
-  ])('%s ⇒ نفس الأسباب البيئية المشتركة مع describeCallableError', (code, fragment) => {
-    const invite = describeInviteError(err(code))
-    const pin = describeCallableError(err(code))
-    expect(invite).toEqual(pin) // الأسباب البيئية موحّدة — لا فرق بين المسارين هنا
-    expect(invite.text).toContain(fragment)
-  })
-
-  // ⚠️ توكن غير موجود وتوكن مُبطَل يصلان بنفس الكود — نفس كتمان verifyTripPin
-  // (رمز خاطئ ورحلة غير موجودة)، انظر comment في manageInvite/joinViaInvite.
+  // ⚠️ اختبار أمني لا اختبار صياغة: توكن غير موجود وتوكن مُبطَل يصلان بنفس
+  // الكود من manageInvite/joinViaInvite، حتى لا يُكتشف وجود رابط صالح بالتخمين.
   it('«توكن غير موجود» و«توكن مُبطَل» رسالة واحدة لا تفرّق بينهما', () => {
     const missing = describeInviteError(err('functions/permission-denied'))
     const revoked = describeInviteError(err('functions/permission-denied'))

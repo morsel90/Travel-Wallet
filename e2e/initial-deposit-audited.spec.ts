@@ -12,19 +12,27 @@ import { test, expect } from '@playwright/test'
 import { seedTrip } from './utils/seed'
 import { openTripAsAdmin, addTraveler } from './utils/flows'
 
-const creds = {
-  tripId: 'e2e-initial-deposit',
-  pin: '246810',
+const baseCreds = {
+  memberEmail: 'member-initial-deposit@example.com', // غير مستخدَم في هذا السيناريو، لكن seedTrip يتطلبه
+  memberPassword: 'Passw0rd!',
   adminEmail: 'admin-initial-deposit@example.com',
   adminPassword: 'Passw0rd!',
 }
 
-test.beforeEach(async () => {
-  await seedTrip(creds)
+// ⚠️ رحلة منفصلة لكل اختبار لا رحلة مشتركة: seedTrip يهيّئ مستند الرحلة فقط،
+// ولا يمسح المسافرين المُضافين في اختبار سابق على نفس المعرّف. رحلة مشتركة
+// كانت ستُبقي "نورة السالم" (سطر تدقيقها الحقيقي) ظاهرة أمام الاختبار الثاني،
+// فيلتقط getByTitle('سجل التعديلات').first() سجلّها هي لا سجلّ "بدر الحارثي".
+const creds1 = { ...baseCreds, tripId: 'e2e-initial-deposit-1' }
+const creds2 = { ...baseCreds, tripId: 'e2e-initial-deposit-2' }
+
+test.beforeAll(async () => {
+  await seedTrip(creds1)
+  await seedTrip(creds2)
 })
 
 test('الرصيد الابتدائي يظهر في سجلّ التعديلات بمبلغه وسببه', async ({ page }) => {
-  await openTripAsAdmin(page, creds)
+  await openTripAsAdmin(page, creds1)
 
   await addTraveler(page, 'نورة السالم', '3000')
 
@@ -41,7 +49,7 @@ test('الرصيد الابتدائي يظهر في سجلّ التعديلات 
 })
 
 test('مسافر بلا رصيد ابتدائي لا يُنشئ سطراً — لا حركة، لا سجلّ', async ({ page }) => {
-  await openTripAsAdmin(page, creds)
+  await openTripAsAdmin(page, creds2)
 
   await addTraveler(page, 'بدر الحارثي')
 

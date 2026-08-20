@@ -2,6 +2,14 @@
 
 <div dir="rtl" style="text-align: right">
 
+> ⚠️ **مُلغاة بالكامل — أُرشِفت 2026-08-20.** الجلسات المجهولة نفسها أُلغيت
+> (لا `signInAnonymously` بعد الآن)، فلم يعد هناك ما يُرقَّى إليه أصلاً. كل ما
+> وثّقته هذه الخطة (`useAccountLink.ts`، `SaveAccountBanner.tsx`،
+> `LinkWithEmailForm.tsx`، `mergeAnonymousTrips`) حُذف من الكود، لا تُرك خاملاً.
+> السبب والتفاصيل في **docs/DECISIONS.md → "PIN access and anonymous sessions
+> are removed entirely"**، المرجع الحالي بدل هذا الملف. مُبقاة هنا كسجلّ
+> تاريخي لسبب القرارات المذكورة أدناه فقط — لا تنفّذ شيئاً منها.
+
 **الحالة:** ✅ **المراحل ٠ و١ و٢ و٣ منفَّذة** (٠-٢: 2026-08-11؛ ٣: 2026-08-17).
 تبقى مؤجَّلاً بوعي: `users/{uid}` — انظر §ما لا تفعله هذه الخطة.
 

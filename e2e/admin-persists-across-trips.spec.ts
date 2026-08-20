@@ -1,17 +1,21 @@
 // 🔴 وضع المسؤول يجب أن يصمد عبر إعادة تحميل الصفحة — والتبديل بين الرحلات
 // إعادة تحميل كاملة (TRIP_ID يُقرأ مرة واحدة عند تحميل الوحدة، utils/tripId.ts).
 //
-// ⚠️ اختبار انحدار لخلل حقيقي: كان signInAnonymously يُستدعى بلا شرط عند كل
-// تحميل، وسلوك Firebase أن إنشاء جلسة مجهولة بينما المستخدم الحالي غير مجهول
-// يُحلّها محلّه — فيُطرد المسؤول من جلسته مع كل إعادة تحميل. لم يظهر الأثر
-// عملياً إلا بعد إضافة التبديل بين الرحلات، لأنه أول ما يُعيد التحميل بانتظام.
+// ⚠️ سجل تاريخي: كان هذا اختبار انحدار لخلل حقيقي — signInAnonymously كان
+// يُستدعى بلا شرط عند كل تحميل، وسلوك Firebase أن إنشاء جلسة مجهولة بينما
+// المستخدم الحالي غير مجهول يُحلّها محلّه، فيُطرد المسؤول من جلسته مع كل إعادة
+// تحميل. لم يظهر الأثر عملياً إلا بعد إضافة التبديل بين الرحلات. بعد إلغاء PIN
+// والجلسات المجهولة تماماً (docs/DECISIONS.md) لم يعد signInAnonymously موجوداً
+// إطلاقاً في الكود، فهذا الخلل بعينه لم يعد ممكناً بنيوياً — لكن الاختبار يبقى
+// كتغطية عامة لصمود جلسة تسجيل الدخول عبر إعادة التحميل والتنقّل بين الرحلات.
 import { test, expect } from '@playwright/test'
 import { seedTrip } from './utils/seed'
 import { openTripAsAdmin } from './utils/flows'
 
 const CREDS = {
   tripId: 'e2e-admin-persist-a',
-  pin: '445566',
+  memberEmail: 'e2e-member-persist@test.local', // غير مستخدَم في هذا السيناريو، لكن seedTrip يتطلبه
+  memberPassword: 'E2eTestPass!1',
   adminEmail: 'e2e-admin-persist@test.local',
   adminPassword: 'E2eTestPass!1',
 }
@@ -21,7 +25,7 @@ const SECOND_TRIP_ID = 'e2e-admin-persist-b'
 test.beforeAll(async () => {
   await seedTrip(CREDS)
   // رحلة ثانية بنفس حساب المسؤول — لاختبار التبديل بينهما
-  await seedTrip({ ...CREDS, tripId: SECOND_TRIP_ID, pin: '667788' })
+  await seedTrip({ ...CREDS, tripId: SECOND_TRIP_ID })
 })
 
 test('وضع المسؤول يصمد عبر إعادة التحميل والتبديل بين الرحلات', async ({ page }) => {
@@ -34,17 +38,21 @@ test('وضع المسؤول يصمد عبر إعادة التحميل والتب
   // ── التبديل لرحلة أخرى (إعادة تحميل كاملة عبر ?trip=) ───────────────────
   await page.goto(`/?trip=${SECOND_TRIP_ID}`)
   await expect(page.getByRole('button', { name: 'إغلاق المسؤول' })).toBeVisible()
-  // ولا يُطالَب برمز الرحلة الثانية إطلاقاً — المسؤول يتجاوز البوابة
-  await expect(page.getByPlaceholder('رمز الرحلة')).not.toBeVisible()
+  // ولا يُطالَب بتسجيل دخول جديد إطلاقاً — الجلسة القائمة تكفي
+  await expect(page.getByRole('button', { name: /متابعة عبر Google/ })).not.toBeVisible()
 
   // ── العودة للرحلة الأولى ─────────────────────────────────────────────────
   await page.goto(`/?trip=${CREDS.tripId}`)
   await expect(page.getByRole('button', { name: 'إغلاق المسؤول' })).toBeVisible()
 })
 
-test('الخروج من وضع المسؤول يعيد الجلسة لعضو عادي', async ({ page }) => {
+test('الخروج من وضع المسؤول يُسجّل خروجاً كاملاً ويعيد بوابة تسجيل الدخول', async ({ page }) => {
+  // ⚠️ لا جلسة "عضو عادي" تظهر بعد الخروج بعد الآن: openTripAsAdmin يسجّل
+  // الدخول مباشرة بحساب المسؤول نفسه عبر AuthGate (لا جلسة مجهولة تحته يعود
+  // إليها signOut — انظر تعليق handleAdminSignOut في useAdminAuth.ts). الخروج
+  // إذاً خروج كامل من الحساب لا مجرّد تبديل دور.
   await openTripAsAdmin(page, CREDS)
 
   await page.getByRole('button', { name: 'إغلاق المسؤول' }).click()
-  await expect(page.getByRole('button', { name: 'وضع المسؤول' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /متابعة عبر Google/ })).toBeVisible()
 })

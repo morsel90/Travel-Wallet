@@ -1,6 +1,5 @@
 import { Luggage, ChevronLeft, Loader2, AlertTriangle, PieChart, ArrowRight } from '../icons'
 import type { MyTrip } from '../hooks/useMyTrips'
-import { SaveAccountBanner } from './SaveAccountBanner'
 import { TRIP_STATUS_LABEL } from '../types'
 import { tripUrl } from '../utils/tripId'
 import { haptic } from '../utils/haptics'
@@ -13,13 +12,12 @@ import { haptic } from '../utils/haptics'
 // الرحلات الموجودة، بل برحلات *هذا المستخدم* وحده (مصدرها خريطة trips في
 // claims توكنه). عرض كل الرحلات لغير المسؤول ليس خياراً: مستند الرحلة يحوي
 // تفاصيل الحساب البنكي (اسم المستفيد والآيبان)، وقائمة عامة تعني كشفها لأي
-// زائر، كما تُلغي كتمان وجود الرحلات الذي تتعمّده verifyTripPin (رسالة خطأ
-// واحدة سواء كانت الرحلة غير موجودة أو الرمز خاطئاً — انظر functions/index.js).
+// زائر.
 //
-// الدخول لرحلة جديدة يبقى عبر رابطها + رمزها من منظّم الرحلة — وهو ما يقابل
-// «رابط الدعوة» في تطبيقات المراسلة. الرمز خطوة انضمام لمرة واحدة، لا بوابة
-// تتكرر: بعد التحقق تُحفظ العضوية في claims الحساب ويدخل المستخدم مباشرةً
-// في كل زيارة لاحقة (انظر useAuth).
+// الدخول لرحلة جديدة يبقى عبر رابط دعوة من منظّم الرحلة — لا مسار انضمام ذاتي
+// آخر بعد إلغاء رمز الرحلة (انظر docs/DECISIONS.md). الانضمام خطوة لمرة
+// واحدة: بعد استهلاك الرابط تُحفظ العضوية في claims الحساب ويدخل المستخدم
+// مباشرةً في كل زيارة لاحقة (انظر useAuth).
 
 interface TripPickerProps {
   trips: MyTrip[]
@@ -29,11 +27,9 @@ interface TripPickerProps {
   currentTripId?: string
   /** يُمرَّر فقط حين فُتحت الشاشة اختيارياً من داخل رحلة — لا حين كانت شاشة البداية. */
   onBack?: () => void
-  /** 🆕 جلسة مجهولة؟ عندها يُعرض شريط ترقية الحساب — انظر SaveAccountBanner. */
-  isAnonymous?: boolean
 }
 
-const TripPicker = ({ trips, loading, error, currentTripId, onBack, isAnonymous = false }: TripPickerProps) => {
+const TripPicker = ({ trips, loading, error, currentTripId, onBack }: TripPickerProps) => {
   // التبديل بين الرحلات يتطلب إعادة تحميل كاملة: TRIP_ID يُقرأ مرة واحدة عند
   // تحميل الوحدة (utils/tripId.ts)، فلا يوجد تبديل حيّ داخل نفس الجلسة.
   const openTrip = (tripId: string) => {
@@ -60,12 +56,6 @@ const TripPicker = ({ trips, loading, error, currentTripId, onBack, isAnonymous 
         </div>
       </header>
 
-      {/* ⚠️ خارج شرط التحميل عمداً: التحذير يخصّ الحساب لا القائمة، فإخفاؤه
-          أثناء الجلب يجعله يظهر ويختفي بلا سبب مفهوم للمستخدم. */}
-      <div className="w-full max-w-md mx-auto px-4 pt-4">
-        <SaveAccountBanner isAnonymous={isAnonymous} tripCount={trips.length} />
-      </div>
-
       <main className="flex-1 w-full max-w-md mx-auto px-4 py-6">
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
@@ -84,8 +74,8 @@ const TripPicker = ({ trips, loading, error, currentTripId, onBack, isAnonymous 
             </div>
             <h2 className="font-bold text-slate-800 mb-2">لم تنضم لأي رحلة بعد</h2>
             <p className="text-sm text-slate-500 leading-relaxed">
-              للانضمام لرحلة، اطلب رابطها ورمزها من منظّم الرحلة. بعد إدخال الرمز
-              مرة واحدة ستجدها هنا دائماً.
+              للانضمام لرحلة، اطلب رابط دعوة من منظّم الرحلة. بعد الانضمام مرة
+              واحدة ستجدها هنا دائماً.
             </p>
           </div>
         ) : (
@@ -132,7 +122,7 @@ const TripPicker = ({ trips, loading, error, currentTripId, onBack, isAnonymous 
 
         {!loading && !error && trips.length > 0 && (
           <p className="text-xs text-slate-400 text-center mt-6 leading-relaxed px-4">
-            للانضمام لرحلة أخرى، افتح رابطها وأدخل رمزها مرة واحدة.
+            للانضمام لرحلة أخرى، افتح رابط دعوتها.
           </p>
         )}
       </main>

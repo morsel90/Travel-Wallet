@@ -13,7 +13,7 @@ import { isValidTripId } from '../../utils/tripId'
 
 interface RestoreTripFormProps {
   isSaving: boolean
-  onRestore: (tripId: string, pin: string, backup: unknown) => Promise<boolean>
+  onRestore: (tripId: string, backup: unknown) => Promise<boolean>
   onCancel: () => void
 }
 
@@ -30,7 +30,6 @@ function looksLikeBackup(value: unknown): value is { schemaVersion: number; trip
 
 export default function RestoreTripForm({ isSaving, onRestore, onCancel }: RestoreTripFormProps) {
   const [tripId, setTripId] = useState('')
-  const [pin, setPin] = useState('')
   const [fileName, setFileName] = useState<string | null>(null)
   const [backup, setBackup] = useState<unknown>(null)
   const [error, setError] = useState<string | null>(null)
@@ -65,12 +64,8 @@ export default function RestoreTripForm({ isSaving, onRestore, onCancel }: Resto
       setError('اختر ملف النسخة الاحتياطية أولاً.')
       return
     }
-    if (pin.trim().length < 4) {
-      setError('رمز الرحلة الجديد يجب أن يكون 4 خانات على الأقل.')
-      return
-    }
     setError(null)
-    const ok = await onRestore(id, pin.trim(), backup)
+    const ok = await onRestore(id, backup)
     if (ok) onCancel()
   }
 
@@ -127,24 +122,6 @@ export default function RestoreTripForm({ isSaving, onRestore, onCancel }: Resto
           placeholder="riyadh-2027"
           className={`${inputClass} text-right`}
         />
-      </div>
-
-      <div>
-        <label className={labelClass} htmlFor="restore-pin">رمز دخول جديد</label>
-        <input
-          id="restore-pin"
-          type="text"
-          inputMode="numeric"
-          autoComplete="off"
-          value={pin}
-          onChange={e => setPin(e.target.value)}
-          placeholder="4 خانات فأكثر"
-          dir="ltr"
-          className={`${inputClass} text-right tabular-nums`}
-        />
-        <p className="text-[11px] text-slate-400 mt-1.5">
-          النسخة الاحتياطية لا تحوي رمز الرحلة القديم أبداً — يجب تعيين رمز جديد.
-        </p>
       </div>
 
       {error && (

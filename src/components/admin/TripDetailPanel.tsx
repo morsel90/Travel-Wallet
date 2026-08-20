@@ -7,15 +7,13 @@
 // متلاحقة على نفس المستند وفرصة أكبر لضياع تعديل عند التحرير من جهازين معاً.
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Building2, Route, KeyRound, Save, Plane, Car, Train, Bus,
+  Building2, Route, Save, Plane, Car, Train, Bus,
   Pencil, Trash2, Plus, ArrowUp, ArrowDown, Loader2, AlertTriangle, Lock,
-  Users, UserMinus, Copy, Check, Download, ShieldCheck, Share2, Ban,
+  Users, UserMinus, Check, Download, ShieldCheck, Share2, Ban,
   UserCheck, Link2,
 } from '../../icons'
 import { useTripMembers } from '../../hooks/useTripMembers'
 import { useTripTravelers } from '../../hooks/useTripTravelers'
-import { tripUrl } from '../../utils/tripId'
-import QrCode from './QrCode'
 import SegmentForm from './SegmentForm'
 import EmptyState from '../EmptyState'
 import {
@@ -31,16 +29,15 @@ interface TripDetailPanelProps {
   trip: TripSummary
   /**
    * 🆕 المرحلة ٣: 'organizer' يخفي التبويبات الإدارية الحساسة (نسخة احتياطية،
-   * رمز الدخول، حذف الرحلة) ولا يرى زرّ تعيين/إلغاء منظّم في تبويب الأعضاء —
-   * تلك صلاحية للمسؤول العالمي حصراً (انظر functions/index.js: manageMember
-   * mode=setRole). الحماية الحقيقية خادمية بالكامل؛ هذا إخفاء واجهة فقط.
+   * حذف الرحلة) ولا يرى زرّ تعيين/إلغاء منظّم في تبويب الأعضاء — تلك صلاحية
+   * للمسؤول العالمي حصراً (انظر functions/index.js: manageMember mode=setRole).
+   * الحماية الحقيقية خادمية بالكامل؛ هذا إخفاء واجهة فقط.
    */
   viewerRole: 'admin' | 'organizer'
   isSaving: boolean
   onSaveTripName: (tripId: string, name: string) => Promise<boolean>
   onSaveBankDetails: (tripId: string, details: BankDetails) => Promise<boolean>
   onSaveItinerary: (tripId: string, itinerary: TripSummary['itinerary']) => Promise<boolean>
-  onResetPin: (tripId: string, pin: string) => Promise<boolean>
   /** 🆕 تغيير حالة دورة حياة الرحلة (active / completed / archived). */
   onSaveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
   /** حذف نهائي — الخادم يرفضه إن كانت الرحلة تحوي أي بيانات. */
@@ -63,7 +60,7 @@ interface TripDetailPanelProps {
   onDeleted: () => void
 }
 
-type DetailTab = 'bank' | 'itinerary' | 'members' | 'travelers' | 'backup' | 'pin' | 'danger'
+type DetailTab = 'bank' | 'itinerary' | 'members' | 'travelers' | 'backup' | 'danger'
 
 const ALL_TABS: Array<{ key: DetailTab; label: string; Icon: typeof Building2 }> = [
   { key: 'bank',      label: 'الاسم والحساب', Icon: Building2 },
@@ -71,13 +68,12 @@ const ALL_TABS: Array<{ key: DetailTab; label: string; Icon: typeof Building2 }>
   { key: 'members',   label: 'الأعضاء',       Icon: Users },
   { key: 'travelers', label: 'المسافرون',     Icon: UserCheck },
   { key: 'backup',    label: 'نسخة احتياطية', Icon: Download },
-  { key: 'pin',       label: 'رمز الدخول',    Icon: KeyRound },
   { key: 'danger',    label: 'حذف الرحلة',    Icon: Trash2 },
 ]
 
 // 🆕 منظّم الرحلة لا يرى ما ليس من صلاحياته أصلاً — لا مجرّد أزرار معطّلة.
-// النسخة الاحتياطية ورمز الدخول والحذف تبقى للمسؤول العالمي وحده (الخطة، المرحلة ٣).
-const ORGANIZER_HIDDEN_TABS: ReadonlySet<DetailTab> = new Set(['backup', 'pin', 'danger'])
+// النسخة الاحتياطية والحذف تبقيان للمسؤول العالمي وحده (الخطة، المرحلة ٣).
+const ORGANIZER_HIDDEN_TABS: ReadonlySet<DetailTab> = new Set(['backup', 'danger'])
 
 const MODE_ICON: Record<TransportMode, typeof Plane> = {
   flight: Plane, car: Car, train: Train, bus: Bus,
@@ -103,7 +99,7 @@ const STATUS_HELP: Record<TripStatus, string> = {
 }
 
 export default function TripDetailPanel({
-  trip, viewerRole, isSaving, onSaveTripName, onSaveBankDetails, onSaveItinerary, onResetPin,
+  trip, viewerRole, isSaving, onSaveTripName, onSaveBankDetails, onSaveItinerary,
   onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onLinkTravelerAccount, onExportBackup,
   onCreateInvite, onRevokeInvite, showToast, onDeleted,
 }: TripDetailPanelProps) {
@@ -126,7 +122,6 @@ export default function TripDetailPanel({
   // المختار فيها. سطر واحد يُفتح في كل مرة (نفس فكرة removingUid أعلاه).
   const [linkingTravelerId, setLinkingTravelerId] = useState<number | null>(null)
   const [linkTargetUid, setLinkTargetUid] = useState('')
-  const [linkCopied, setLinkCopied] = useState(false)
   // 🆕 رابط دعوة بنقرة واحدة — توكن هذه الجلسة فقط (لا قراءة من الخادم لمعرفة
   // رابط نشط سابق؛ العقد الوحيد المتاح هو create/revoke — انظر manageInvite في
   // functions/index.js). null يعني «لم نطلب رابطاً بعد في هذه الجلسة».
@@ -140,8 +135,6 @@ export default function TripDetailPanel({
   const [draft, setDraft] = useState<SegmentDraft | null>(null)
   const [draftError, setDraftError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [newPin, setNewPin] = useState('')
-  const [pinError, setPinError] = useState<string | null>(null)
   // تأكيد الحذف بكتابة المعرّف: الحذف نهائي ولا تراجع عنه، وضغطة زر واحدة
   // بالخطأ على رحلة خاطئة أسهل مما ينبغي في قائمة رحلات متشابهة الأسماء.
   const [deleteConfirm, setDeleteConfirm] = useState('')
@@ -155,8 +148,6 @@ export default function TripDetailPanel({
     setDraft(null)
     setEditingId(null)
     setDraftError(null)
-    setNewPin('')
-    setPinError(null)
     setDeleteConfirm('')
     setActiveTab('bank')
     // 🆕 توكن الجلسة السابقة يخصّ رحلة أخرى — لا معنى لمشاركته هنا.
@@ -182,15 +173,7 @@ export default function TripDetailPanel({
     await onSaveBankDetails(trip.id, bankForm)
   }
 
-  const inviteUrl = tripUrl(trip.id)
-
-  const copyInviteLink = () => {
-    navigator.clipboard.writeText(inviteUrl)
-    setLinkCopied(true)
-    window.setTimeout(() => setLinkCopied(false), 2000)
-  }
-
-  // 🆕 رابط الدخول المباشر (?invite=TOKEN) — يتجاوز رمز الرحلة كلياً لمن يفتحه.
+  // 🆕 رابط الدخول المباشر (?invite=TOKEN) — طريقة الانضمام الوحيدة لرحلة (لا رمز رحلة بعد الآن).
   const directJoinUrl = (token: string) =>
     `${window.location.origin}${window.location.pathname}?invite=${token}`
 
@@ -237,23 +220,6 @@ export default function TripDetailPanel({
   const handleRevokeInvite = async () => {
     const ok = await onRevokeInvite(trip.id)
     if (ok) setInviteToken(null)
-  }
-
-  // تنزيل الـ QR كـ SVG: نُسلسِل العقدة المرسومة فعلاً بدل إعادة توليدها، فما
-  // يُحفَظ هو نفسه ما رآه المسؤول على الشاشة حرفياً.
-  const downloadQr = () => {
-    const svg = document.getElementById(`qr-${trip.id}`)
-    if (!svg) return
-    const blob = new Blob(
-      ['<?xml version="1.0" encoding="UTF-8"?>\n', new XMLSerializer().serializeToString(svg)],
-      { type: 'image/svg+xml' },
-    )
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${trip.id}-qr.svg`
-    a.click()
-    URL.revokeObjectURL(url)
   }
 
   const submitRemoveMember = async (uid: string) => {
@@ -326,16 +292,6 @@ export default function TripDetailPanel({
       ;[next[index], next[target]] = [next[target], next[index]]
       return next
     })
-  }
-
-  const submitPin = async () => {
-    if (newPin.trim().length < 4) {
-      setPinError('رمز الرحلة يجب أن يكون 4 خانات على الأقل.')
-      return
-    }
-    setPinError(null)
-    const ok = await onResetPin(trip.id, newPin.trim())
-    if (ok) setNewPin('')
   }
 
   const submitDelete = async () => {
@@ -633,14 +589,14 @@ export default function TripDetailPanel({
 
       {activeTab === 'members' && (
         <>
-          {/* 🆕 دعوة بنقرة واحدة — رابط يمنح عضوية فورية بلا إدخال رمز الرحلة
-              يدوياً. لا يستبدل الرمز (يبقى فعّالاً دائماً)؛ طريقة دخول إضافية. */}
+          {/* 🆕 رابط دعوة بنقرة واحدة — طريقة الانضمام الوحيدة لرحلة (لا رمز
+              رحلة بعد الآن). رابط واحد نشط فقط لكل رحلة. */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-3">
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <Share2 className="w-4 h-4 text-teal-600" /> دعوة أعضاء — بنقرة واحدة
+              <Share2 className="w-4 h-4 text-teal-600" /> دعوة أعضاء
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed">
-              رابط يدخل به المدعوّ إلى الرحلة مباشرة بلا حاجة لرمز الرحلة. رابط واحد نشط فقط لكل
+              رابط يدخل به المدعوّ إلى الرحلة مباشرة بعد تسجيل دخوله. رابط واحد نشط فقط لكل
               رحلة — مشاركة رابط جديد تُبطل أي رابط سابق تلقائياً.
             </p>
 
@@ -679,66 +635,9 @@ export default function TripDetailPanel({
 
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
           <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <Plus className="w-4 h-4 text-teal-600" /> أو شارك رمز الرحلة يدوياً
+            <Users className="w-4 h-4 text-teal-600" /> أعضاء الرحلة
+            {members && <span className="text-xs font-normal text-slate-400">({members.length})</span>}
           </h3>
-
-          <div className="flex flex-col sm:flex-row gap-4 items-center">
-            <div className="bg-white border border-slate-200 rounded-xl p-2 shrink-0">
-              <QrCode value={inviteUrl} size={168} />
-            </div>
-
-            <div className="min-w-0 flex-1 w-full space-y-2.5">
-              <p className="text-xs text-slate-600 leading-relaxed">
-                امسح الرمز أو شارك الرابط، ثم أعطِ المدعوّ رمز الدخول.
-              </p>
-
-              <p
-                dir="ltr"
-                className="text-[11px] bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-600 break-all"
-              >
-                {inviteUrl}
-              </p>
-
-              {/* ⚠️ الرمز ليس داخل الـ QR، وليس ذلك نقصاً: الخادم لا يملكه أصلاً
-                  (يُخزَّن مُجزَّأً ولا يُسترجع). ولإدراجه يلزم أن يكتبه المسؤول
-                  هنا ثم يُدفن في صورة تُعاد مشاركتها — أي تحويل الرابط والرمز من
-                  عاملين منفصلين إلى أثر واحد يُلتقط بصورة شاشة. الفصل مقصود. */}
-              <p className="text-[11px] text-slate-400">
-                الرابط وحده لا يكفي للدخول — رمز الرحلة يبقى منفصلاً عنه عمداً.
-              </p>
-
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={copyInviteLink}
-                  className="flex items-center gap-1.5 border border-slate-200 hover:bg-slate-50 px-3 py-2 rounded-lg text-xs font-bold text-slate-700 transition-colors"
-                >
-                  {linkCopied ? <Check className="w-3.5 h-3.5 text-teal-600" /> : <Copy className="w-3.5 h-3.5" />}
-                  {linkCopied ? 'نُسخ' : 'نسخ الرابط'}
-                </button>
-                <button
-                  type="button"
-                  onClick={downloadQr}
-                  className="flex items-center gap-1.5 border border-slate-200 hover:bg-slate-50 px-3 py-2 rounded-lg text-xs font-bold text-slate-700 transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5" /> تنزيل الرمز
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* نسخة مخفية بمعرّف ثابت للتنزيل — العنصر المعروض داخل تخطيط مرن،
-              وإسناد معرّف له يخلط العرض بالتصدير. */}
-          <div className="hidden">
-            <QrCode value={inviteUrl} size={512} id={`qr-${trip.id}`} />
-          </div>
-
-          <div className="border-t border-slate-100 pt-4">
-            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <Users className="w-4 h-4 text-teal-600" /> أعضاء الرحلة
-              {members && <span className="text-xs font-normal text-slate-400">({members.length})</span>}
-            </h3>
-          </div>
 
           {/* ⚠️ التأخير يُقال هنا لا يُخفى: العضوية تُقرأ من التوكن وهو صالح ٦٠
               دقيقة، فالإزالة لا تُغلق الباب فوراً. مسؤول يظنّها فورية قد يعتمد
@@ -746,8 +645,8 @@ export default function TripDetailPanel({
           <div className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1.5">
             <p className="font-bold">الإزالة قد تستغرق حتى ساعة لتصبح فعّالة.</p>
             <p>
-              جلسة العضو صالحة ٦٠ دقيقة، والصلاحية تُقرأ منها. لقطع الوصول فوراً غيّر رمز
-              الرحلة — لكن ذلك يُخرج كل الأعضاء ويطالبهم بالرمز الجديد.
+              جلسة العضو صالحة ٦٠ دقيقة، والصلاحية تُقرأ منها. لا يوجد إجراء فوري بديل —
+              العضوية تبقى سارية حتى تنتهي صلاحية توكن العضو الحالي.
             </p>
           </div>
 
@@ -768,7 +667,7 @@ export default function TripDetailPanel({
             <EmptyState
               Icon={Users}
               title="لا أحد في السجلّ بعد"
-              description="يُسجَّل العضو تلقائياً عند إدخاله رمز الرحلة. ومن انضمّ قبل إضافة السجلّ يظهر بعد تشغيل سكربت الترحيل."
+              description="يُسجَّل العضو تلقائياً عند استهلاكه رابط دعوة. ومن انضمّ قبل إضافة السجلّ يظهر بعد تشغيل سكربت الترحيل."
             />
           )}
 
@@ -1006,8 +905,7 @@ export default function TripDetailPanel({
           </p>
 
           <p className="text-[11px] text-slate-400">
-            لا يشمل رمز الدخول (PIN) — يبقى محظوراً على العميل دائماً تحت أي ظرف — ولا يعيد وصول
-            الأعضاء عند استعادته لاحقاً، لأن العضوية تعيش في حساب كل عضو لا في هذا الملف.
+            لا يعيد وصول الأعضاء عند استعادته لاحقاً — العضوية تعيش في حساب كل عضو لا في هذا الملف.
           </p>
 
           <button
@@ -1022,58 +920,6 @@ export default function TripDetailPanel({
         </div>
       )}
 
-      {activeTab === 'pin' && (
-        <form
-          onSubmit={e => { e.preventDefault(); void submitPin() }}
-          className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4"
-        >
-          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <KeyRound className="w-4 h-4 text-teal-600" /> تغيير رمز الدخول
-          </h3>
-
-          <div className="text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-1.5">
-            <p className="font-bold">تغيير الرمز يُخرج كل الأعضاء الحاليين.</p>
-            <p>
-              سيُطلب من كل عضو إدخال الرمز الجديد مرة واحدة عند فتح الرحلة. لا تفعل هذا أثناء الرحلة
-              إلا لسبب — مثل تسرّب الرمز لغير المشاركين.
-            </p>
-          </div>
-
-          <div>
-            <label className={labelClass} htmlFor="reset-pin">الرمز الجديد</label>
-            <input
-              id="reset-pin"
-              type="text"
-              inputMode="numeric"
-              autoComplete="off"
-              value={newPin}
-              onChange={e => setNewPin(e.target.value)}
-              placeholder="4 خانات فأكثر"
-              dir="ltr"
-              className={`${inputClass} text-right tabular-nums`}
-            />
-            <p className="text-[11px] text-slate-400 mt-1.5">
-              يُخزَّن مُجزَّأً (hash) على الخادم — لا يمكن استرجاعه لاحقاً، فاحفظه عند تعيينه.
-            </p>
-          </div>
-
-          {pinError && (
-            <p role="alert" className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-2.5">
-              {pinError}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={isSaving || !newPin.trim()}
-            className="flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm disabled:opacity-40"
-          >
-            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
-            تغيير الرمز
-          </button>
-        </form>
-      )}
-
       {activeTab === 'danger' && (
         <form
           onSubmit={e => { e.preventDefault(); void submitDelete() }}
@@ -1086,7 +932,7 @@ export default function TripDetailPanel({
           <div className="text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-1.5">
             <p className="font-bold">لا يمكن التراجع عن هذا الإجراء.</p>
             <p>
-              يُحذف مستند الرحلة ورمز دخولها معاً. الحذف متاح <span className="font-bold">للرحلات الفارغة فقط</span> —
+              يُحذف مستند الرحلة نهائياً. الحذف متاح <span className="font-bold">للرحلات الفارغة فقط</span> —
               أي التي لا تحوي أي مسافر أو مصروف — حمايةً للسجلات المالية وسجلات الإيداع
               التي لا يمكن استرجاعها.
             </p>

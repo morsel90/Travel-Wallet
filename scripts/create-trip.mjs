@@ -1,14 +1,14 @@
 // ─── إنشاء/تحديث رحلة (دعم رحلات متعددة + مسار التنقل) ────────────────────────
-// 🆕 يُنشئ مستندي إعدادات الرحلة في Firestore:
-//   trips/{tripId}       — الاسم + تفاصيل الحساب البنكي + مسار الرحلة (itinerary)
-//   tripSecrets/{tripId} — هاش رمز PIN (salt + pinHash)، لا يُقرأ من العميل إطلاقاً
+// 🆕 ينشئ مستند إعدادات الرحلة trips/{tripId} — الاسم + تفاصيل الحساب البنكي +
+// مسار الرحلة (itinerary). لا رمز رحلة/PIN بعد الآن (انظر docs/DECISIONS.md) —
+// الانضمام يقع حصراً عبر رابط دعوة (يُنشَأ من واجهة إدارة الرحلة بعد إنشائها هنا).
 //
 // الاستخدام: node scripts/create-trip.mjs
 
 import { initializeApp, cert } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
 import { createInterface } from 'readline/promises'
-import { randomBytes, createHash } from 'crypto'
+import { randomBytes } from 'crypto'
 import { loadServiceAccount } from './serviceAccount.mjs'
 
 const serviceAccount = loadServiceAccount()
@@ -21,10 +21,6 @@ const TRIP_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/
 
 const rl = createInterface({ input: process.stdin, output: process.stdout })
 const ask = (q) => rl.question(q)
-
-function hashPin(pin, salt) {
-  return createHash('sha256').update(salt + pin).digest('hex')
-}
 
 // دالة مساعدة للتحقق من صحة التاريخ وتحويله إلى ISO
 function parseDate(dateStr) {
@@ -49,7 +45,7 @@ async function main() {
   if (existing.exists) {
     const overwrite = (await ask(
       `⚠️ الرحلة "${tripId}" موجودة مسبقاً.\n` +
-      `   سيُستبدل رمز الدخول (يُخرج كل أعضائها)، وتُحدَّث الحقول التي تُدخلها فقط.\n` +
+      `   ستُحدَّث الحقول التي تُدخلها فقط.\n` +
       `   الحقول التي لا تُدخلها (مثل مسار الرحلة) تبقى كما هي.\n` +
       `   المتابعة؟ (اكتب "نعم" للتأكيد): `
     )).trim()
@@ -64,13 +60,6 @@ async function main() {
   const bankName    = (await ask('اسم البنك: ')).trim()
   const beneficiary = (await ask('اسم المستفيد على الحساب: ')).trim()
   const iban        = (await ask('رقم الآيبان (IBAN): ')).trim()
-  const pin         = (await ask('رمز PIN الخاص بهذه الرحلة (سيُشارَك مع أعضائها): ')).trim()
-
-  if (!pin) {
-    console.error('❌ رمز PIN مطلوب.')
-    rl.close()
-    process.exit(1)
-  }
 
   // 🆕--- جمع بيانات مسار الرحلة (Itinerary) ---🆕
   const itinerary = []
@@ -140,22 +129,16 @@ async function main() {
     tripData.status = 'active'
   }
 
-  const salt = randomBytes(16).toString('hex')
-  const pinHash = hashPin(pin, salt)
-
   // ⚠️ merge إلزامي: مستند الرحلة يحوي أقساماً مستقلة (الاسم، البنك، المسار)،
   // وtripData أعلاه لا يحوي itinerary إلا إذا أدخلتَه في هذه الجلسة. بلا merge
   // كانت إعادة تشغيل السكربت لتغيير تفاصيل البنك تمحو مسار الرحلة بالكامل
   // بصمت. نفس القاعدة المطبَّقة في hooks/useTripAdminActions.ts.
   await db.collection('trips').doc(tripId).set(tripData, { merge: true })
 
-  // السرّ يُستبدل كاملاً عمداً — ملح وهاش جديدان لا يُدمجان مع القديم.
-  await db.collection('tripSecrets').doc(tripId).set({ salt, pinHash })
-
   console.log(`\n✅ تم إنشاء/تحديث الرحلة "${tripId}".`)
   console.log(`🔗 رابط الرحلة: <رابط موقعك>/?trip=${tripId}`)
-  console.log(`🔑 رمز PIN لهذه الرحلة: ${pin} — شاركه مع أعضاء هذه الرحلة فقط، ولن يُعرض مرة أخرى (الرمز نفسه غير مخزَّن، فقط هاشه).`)
-  
+  console.log('👥 لدعوة الأعضاء: افتح لوحة إدارة الرحلة داخل التطبيق وأنشئ رابط دعوة من تبويب "الأعضاء".')
+
   if (itinerary.length > 0) {
     console.log(`✈️ تم إضافة عدد (${itinerary.length}) مسار تنقل للرحلة بنجاح.`)
   }

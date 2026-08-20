@@ -36,8 +36,7 @@ interface TripAdminViewProps {
   onSaveTripName: (tripId: string, name: string) => Promise<boolean>
   onSaveBankDetails: (tripId: string, details: BankDetails) => Promise<boolean>
   onSaveItinerary: (tripId: string, itinerary: TripSummary['itinerary']) => Promise<boolean>
-  onCreateTrip: (tripId: string, name: string, pin: string) => Promise<boolean>
-  onResetPin: (tripId: string, pin: string) => Promise<boolean>
+  onCreateTrip: (tripId: string, name: string) => Promise<boolean>
   onSaveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
   onDeleteTrip: (tripId: string) => Promise<boolean>
   /** 🆕 إزالة عضو من الرحلة — تمرّ إلى TripDetailPanel كما هي. */
@@ -49,7 +48,7 @@ interface TripAdminViewProps {
   /** 🆕 تنزيل نسخة JSON احتياطية — docs/PLAN-backup-recovery.md المرحلة ١. */
   onExportBackup: (trip: TripSummary) => Promise<boolean>
   /** 🆕 استعادة رحلة من نسخة JSON — المرحلة ٢. */
-  onRestoreTrip: (tripId: string, pin: string, backup: unknown) => Promise<boolean>
+  onRestoreTrip: (tripId: string, backup: unknown) => Promise<boolean>
   /** 🆕 رابط دعوة بنقرة واحدة — ينشئ توكناً جديداً (يُبطل أي رابط سابق لنفس الرحلة ضمنياً). */
   onCreateInvite: (tripId: string) => Promise<string | null>
   /** 🆕 يُبطل رابط الدعوة النشط لهذه الرحلة. */
@@ -61,7 +60,7 @@ interface TripAdminViewProps {
 
 export default function TripAdminView({
   currentTripId, viewerRole, trips, loading, error, isSaving,
-  onSaveTripName, onSaveBankDetails, onSaveItinerary, onCreateTrip, onResetPin,
+  onSaveTripName, onSaveBankDetails, onSaveItinerary, onCreateTrip,
   onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onLinkTravelerAccount, onExportBackup, onRestoreTrip,
   onCreateInvite, onRevokeInvite, showToast, onClose,
 }: TripAdminViewProps) {
@@ -144,7 +143,6 @@ export default function TripAdminView({
             onSaveTripName={onSaveTripName}
             onSaveBankDetails={onSaveBankDetails}
             onSaveItinerary={onSaveItinerary}
-            onResetPin={onResetPin}
             onSaveTripStatus={onSaveTripStatus}
             onDeleteTrip={onDeleteTrip}
             onRemoveMember={onRemoveMember}
@@ -211,7 +209,7 @@ export default function TripAdminView({
                 <EmptyState
                   Icon={Luggage}
                   title="لا توجد رحلات بعد"
-                  description="أنشئ أول رحلة وشارك رابطها ورمزها مع المسافرين معك."
+                  description="أنشئ أول رحلة، ثم ادعُ المسافرين برابط دعوة من تبويب الأعضاء."
                   actionLabel="إنشاء رحلة"
                   onAction={() => setIsCreating(true)}
                   ActionIcon={Plus}

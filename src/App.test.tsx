@@ -26,15 +26,19 @@ vi.mock('./utils/haptics', () => ({
   haptic: { light: vi.fn(), medium: vi.fn(), success: vi.fn(), error: vi.fn(), flash: vi.fn() },
 }))
 vi.mock('./utils/preload', () => ({ onIdle: vi.fn(() => vi.fn()), preloadAll: vi.fn() }))
-vi.mock('./utils/tripId', () => ({ TRIP_ID: 'trip-1', HAS_EXPLICIT_TRIP_ID: true }))
+vi.mock('./utils/tripId', () => ({ TRIP_ID: 'trip-1', HAS_EXPLICIT_TRIP_ID: true, INVITE_TOKEN: null }))
 
 // قيم الخطافات قابلة للتعديل لكل اختبار — تُقرأ داخل المحاكاة عند كل استدعاء.
 const h = vi.hoisted(() => ({
   auth: {
-    // isAnonymous اختياري لأن المنسّق يقرؤه بـ `user?.isAnonymous === true`
-    user: { uid: 'u1' } as { uid: string; isAnonymous?: boolean },
-    isAdmin: false, needsTripPin: false, pinCheckLoading: false,
-    pinError: null, rateLimitSeconds: null, verifyTripPin: vi.fn(), joinedTripIds: [] as string[],
+    user: { uid: 'u1' } as { uid: string } | null,
+    isAdmin: false, authLoading: false,
+    // 🆕 لا رمز رحلة بعد الآن — الوصول عضوية مباشرة (claim). trip-1 هنا لأن
+    // ./utils/tripId مُحاكى أدناه بـ TRIP_ID: 'trip-1'؛ الأساس الافتراضي «عضو
+    // ولديه وصول» يوازي needsTripPin:false في النموذج القديم.
+    joinedTripIds: ['trip-1'] as string[],
+    signInError: null as string | null, isSigningIn: false,
+    signInWithGoogle: vi.fn(), signInWithEmail: vi.fn(),
   },
   isOnline: true,
   expenses: [] as unknown[],
@@ -106,7 +110,7 @@ vi.mock('./hooks', () => ({
   }),
   useTripAdminActions: () => ({
     isSaving: false, saveBankDetails: noop, saveItinerary: noop, saveTripName: noop,
-    saveTripStatus: noop, createTrip: noop, resetTripPin: noop, deleteTrip: noop,
+    saveTripStatus: noop, createTrip: noop, deleteTrip: noop,
   }),
   // 🆕 رابط دعوة بنقرة واحدة — status: 'done' دائماً هنا (لا رابط دعوة في بيئة
   // الاختبار: ./utils/tripId مُحاكى أعلاه بلا INVITE_TOKEN)، فلا تُعرض شاشة
@@ -124,9 +128,9 @@ vi.mock('./hooks/useFilteredExpenses', () => ({
 
 beforeEach(() => {
   h.auth = {
-    user: { uid: 'u1' } as { uid: string; isAnonymous?: boolean },
-    isAdmin: false, needsTripPin: false, pinCheckLoading: false,
-    pinError: null, rateLimitSeconds: null, verifyTripPin: vi.fn(), joinedTripIds: [],
+    user: { uid: 'u1' },
+    isAdmin: false, authLoading: false, joinedTripIds: ['trip-1'],
+    signInError: null, isSigningIn: false, signInWithGoogle: vi.fn(), signInWithEmail: vi.fn(),
   }
   h.isOnline = true
   h.expenses = []
@@ -141,39 +145,50 @@ beforeEach(() => {
 })
 
 // ─── ترتيب البوابات ───────────────────────────────────────────────────────────
-// الترتيب في App.tsx: شاشة «رحلاتي» أولاً، ثم بوابة رمز الرحلة، ثم التطبيق.
-// قلبُ هذا الترتيب لا يُنتج خطأ تصريفياً ولا يكسر أي اختبار آخر — ولهذا يُثبَّت.
+// الترتيب في App.tsx: استعادة الجلسة ← تسجيل الدخول ← رحلاتي ← عضوية هذه
+// الرحلة ← التطبيق. لا رمز رحلة بعد الآن (انظر docs/DECISIONS.md) — قلبُ هذا
+// الترتيب لا يُنتج خطأ تصريفياً ولا يكسر أي اختبار آخر، ولهذا يُثبَّت.
 
 describe('App — ترتيب البوابات', () => {
   it('يعرض التطبيق مباشرة حين يكون المعرّف صريحاً والوصول متاح', async () => {
     render(<App />)
     expect(await screen.findByText('أرصدة المسافرين')).toBeInTheDocument()
-    expect(screen.queryByText('أدخل رمز الرحلة')).not.toBeInTheDocument()
+    expect(screen.queryByText('سجّل الدخول لمتابعة')).not.toBeInTheDocument()
+    expect(screen.queryByText('لست عضواً في هذه الرحلة')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'رحلاتي' })).not.toBeInTheDocument()
   })
 
-  it('يعرض بوابة الرمز حين يُطلب رمز الرحلة ولم يكن المستخدم مسؤولاً', async () => {
-    h.auth = { ...h.auth, needsTripPin: true }
+  it('أثناء authLoading تظهر بوابة الدخول بحالة تحقّق لا بأزرار تسجيل الدخول', async () => {
+    // AuthGate يعرض «جارٍ التحقق من جلستك...» بدل الأزرار حين loading — وهذا
+    // مقصود: عرض أزرار تسجيل دخول قبل معرفة الحاجة إليها (قد تكون هناك جلسة
+    // محفوظة) يطالب المستخدم بما قد لا يُطلب منه.
+    h.auth = { ...h.auth, authLoading: true }
     render(<App />)
-    expect(await screen.findByText('أدخل رمز الرحلة')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('جارٍ التحقق من جلستك...')).toBeInTheDocument())
+    expect(screen.queryByText('متابعة عبر Google')).not.toBeInTheDocument()
     expect(screen.queryByText('أرصدة المسافرين')).not.toBeInTheDocument()
   })
 
-  it('المسؤول يتجاوز بوابة الرمز حتى مع needsTripPin', async () => {
-    h.auth = { ...h.auth, isAdmin: true, needsTripPin: true }
+  it('يعرض بوابة تسجيل الدخول حين لا يوجد مستخدم مسجَّل دخوله', async () => {
+    h.auth = { ...h.auth, user: null }
+    render(<App />)
+    expect(await screen.findByText('سجّل الدخول لمتابعة')).toBeInTheDocument()
+    expect(screen.getByText('متابعة عبر Google')).toBeInTheDocument()
+    expect(screen.queryByText('أرصدة المسافرين')).not.toBeInTheDocument()
+  })
+
+  it('يعرض شاشة "لست عضواً" حين يكون مسجَّل الدخول لكنه ليس عضواً في هذه الرحلة، ولم يكن مسؤولاً', async () => {
+    h.auth = { ...h.auth, joinedTripIds: [] }
+    render(<App />)
+    expect(await screen.findByText('لست عضواً في هذه الرحلة')).toBeInTheDocument()
+    expect(screen.queryByText('أرصدة المسافرين')).not.toBeInTheDocument()
+  })
+
+  it('المسؤول يتجاوز شاشة "لست عضواً" حتى بلا عضوية في هذه الرحلة', async () => {
+    h.auth = { ...h.auth, isAdmin: true, joinedTripIds: [] }
     render(<App />)
     expect(await screen.findByText('أرصدة المسافرين')).toBeInTheDocument()
-    expect(screen.queryByText('أدخل رمز الرحلة')).not.toBeInTheDocument()
-  })
-
-  it('أثناء pinCheckLoading تظهر البوابة بحالة تحقّق لا بحقل الإدخال', async () => {
-    // TripGate يعرض «جارٍ التحقق...» بدل العنوان حين loading — وهذا مقصود:
-    // عرض حقل رمز قبل معرفة الحاجة إليه يطالب المستخدم بما قد لا يُطلب منه.
-    h.auth = { ...h.auth, pinCheckLoading: true }
-    render(<App />)
-    await waitFor(() => expect(screen.getByText('جارٍ التحقق...')).toBeInTheDocument())
-    expect(screen.queryByText('أدخل رمز الرحلة')).not.toBeInTheDocument()
-    expect(screen.queryByText('أرصدة المسافرين')).not.toBeInTheDocument()
+    expect(screen.queryByText('لست عضواً في هذه الرحلة')).not.toBeInTheDocument()
   })
 })
 
@@ -271,36 +286,6 @@ describe('App — الحالات الفارغة', () => {
     h.tripStatus = 'archived'
     render(<App />)
     expect(await screen.findByText('لا توجد مصاريف في هذه الرحلة')).toBeInTheDocument()
-  })
-})
-
-// ─── شريط حفظ الحساب ──────────────────────────────────────────────────────────
-// ⚠️ هذه ليست اختبارات تثبيت للسلوك القديم بل حراسة لإصلاح: كان الشريط في
-// TripPicker وحده، وتلك الشاشة لا تظهر لمن يفتح رابط رحلة ولديه رحلة واحدة —
-// أي لأغلب الأعضاء، وهم بالضبط من صُنع لأجلهم (قاعدة المساهمة ١٧).
-
-describe('App — شريط حفظ الحساب', () => {
-  it('يظهر في الشاشة الرئيسية لجلسة مجهولة', async () => {
-    h.auth = { ...h.auth, user: { uid: 'u1', isAnonymous: true } }
-    render(<App />)
-    await screen.findByText('أرصدة المسافرين')
-    expect(screen.getByText(/محفوظة على هذا المتصفح وحده/)).toBeInTheDocument()
-    expect(screen.getByText(/حفظ الحساب عبر Google/)).toBeInTheDocument()
-  })
-
-  it('لا يظهر لحساب دائم — لا شيء يُرقَّى', async () => {
-    h.auth = { ...h.auth, user: { uid: 'u1', isAnonymous: false } }
-    render(<App />)
-    await screen.findByText('أرصدة المسافرين')
-    expect(screen.queryByText(/محفوظة على هذا المتصفح وحده/)).not.toBeInTheDocument()
-  })
-
-  it('لا يظهر أثناء التحميل الأولي — تحذير قبل وصول البيانات بلا معنى', async () => {
-    h.auth = { ...h.auth, user: { uid: 'u1', isAnonymous: true } }
-    h.expensesLoaded = false
-    render(<App />)
-    await screen.findByText('أرصدة المسافرين')
-    expect(screen.queryByText(/محفوظة على هذا المتصفح وحده/)).not.toBeInTheDocument()
   })
 })
 
