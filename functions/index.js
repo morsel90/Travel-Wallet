@@ -208,9 +208,8 @@ exports.manageTrip = onCall(
     //   • شرط الخلو هو ما يجعل تدمير رحلة حقيقية مستحيلاً بغلطة أو بنيّة. وهو
     //     أيضاً ما يُبقي المبرر الأصلي للمنع قائماً: لا بيانات في
     //     artifacts/{tripId} لتصبح يتيمة بعد حذف مستند الرحلة.
-    //   • سجلات الإيداع (depositLogs) غير قابلة للحذف بالتصميم لتكون مرجعاً في
-    //     أي نزاع مالي. وجود مسافر واحد يعني احتمال وجود سجل، فنرفض قبل الوصول
-    //     إلى ذلك أصلاً.
+    //   • الشرط الفعلي في checkTripHasProtectedData أدناه (مشتركة مع
+    //     restoreTrip) — انظر تعليقها لماذا "أي مسافر موجود" وحده لم يعد كافياً.
     //
     // الحاجة المخدومة: رحلة أُنشئت بالخطأ (معرّف مكتوب خطأً غالباً). وحذفها
     // يحرّر المعرّف لإعادة استخدامه، وهو ما لا تحققه الأرشفة.
@@ -219,19 +218,11 @@ exports.manageTrip = onCall(
         throw new HttpsError('not-found', `الرحلة "${tripId}" غير موجودة.`);
       }
 
-      // limit(1) يكفي: نسأل «هل توجد بيانات؟» لا «كم عددها»
-      const [travelers, expenses] = await Promise.all([
-        db.collection('artifacts').doc(tripId).collection('public').doc('data')
-          .collection('travelers').limit(1).get(),
-        db.collection('artifacts').doc(tripId).collection('public').doc('data')
-          .collection('expenses').limit(1).get(),
-      ]);
-
-      if (!travelers.empty || !expenses.empty) {
-        throw new HttpsError(
-          'failed-precondition',
-          `لا يمكن حذف "${tripId}" لأنها تحوي مسافرين أو مصاريف. الحذف متاح للرحلات الفارغة فقط حمايةً للسجلات المالية.`
-        );
+      const { hasProtectedData, reason } = await checkTripHasProtectedData(tripId);
+      if (hasProtectedData) {
+        throw new HttpsError('failed-precondition', reason === 'depositLogs'
+          ? `لا يمكن حذف "${tripId}" — لبعض مسافريها (حتى المحذوفين منهم) سجلّ إيداع فعلي، وسجلّات الإيداع لا تُحذف أبداً حمايةً للسجلّات المالية.`
+          : `لا يمكن حذف "${tripId}" لأنها تحوي مسافرين أو مصاريف. الحذف متاح للرحلات الفارغة فقط حمايةً للسجلّات المالية.`);
       }
 
       // ⚠️ 🆕 **Firestore لا يحذف المجموعات الفرعية مع مستندها.** حذف
@@ -715,6 +706,55 @@ async function getProfileDisplayName(uid) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+// 🆕 حدّ معقول لهذا الاستخدام (تنظيف رحلة تجريبية/بالخطأ، أو استعادة نسخة إلى
+// معرّف قائم) — رحلة بهذا العدد من المسافرين ليست كذلك أصلاً، ويبقى الرفض
+// قائماً في تلك الحالة (نجد على الأرجح مسافراً نشِطاً ضمن أول 300 فعلياً).
+const MAX_PROTECTED_DATA_CHECK_TRAVELERS = 300;
+
+/**
+ * 🆕 هل تحوي رحلة بيانات مالية تستحق الحماية من التدمير — شرط مشترك بين
+ * manageTrip (mode:'delete') وrestoreTrip (الكتابة فوق رحلة موجودة). كلاهما
+ * يرفض العملية على رحلة بهذه الحالة، كل بصياغة رسالة مناسبة لسياقه.
+ *
+ * ⚠️ **"أي مسافر موجود" لم يعد كافياً وحده منذ التزويد التلقائي.** كل إنشاء
+ * رحلة — ذاتياً أو من لوحة الإدارة — يُنشئ مسافراً للمنظّم فوراً
+ * (provisionTravelerForUid في manageTrip)، فصار كل مسافر واحد على الأقل
+ * موجوداً منذ لحظة الإنشاء دائماً. معاملة وجوده وحده كرفض كانت تُبطل كلا
+ * هذين المسارين على أي رحلة جديدة — حتى تجريبية لم تُلمَس إطلاقاً (رُصد
+ * فعلياً: منظّم حذف نفسه من قائمة المسافرين — حذفاً ليّناً، الوحيد المتاح
+ * له — ثم فوجئ برفض حذف رحلته رغم أنها "فارغة" ظاهرياً).
+ *
+ * الفحص الآن أدقّ: مسافر **نشِط** يرفض فوراً (بيانات حيّة). مسافر في سلة
+ * المهملات وحده لا يرفض — الملف نفسه ملخّص/فهرس (اسم، إجمالي إيداع)، لا
+ * سجلّاً مالياً — لكن سجلّات إيداعه (depositLogs) تبقى السجلّ المالي الفعلي
+ * غير القابل للحذف بالتصميم، فتُفحَص لكل مسافر بصرف النظر عن حالته.
+ *
+ * @returns {Promise<{ hasProtectedData: boolean, reason: 'expenses' | 'travelers' | 'depositLogs' | null }>}
+ */
+async function checkTripHasProtectedData(tripId) {
+  const dataRoot = db.collection('artifacts').doc(tripId).collection('public').doc('data');
+
+  // مصروف — نشِط أو في سلة المهملات — هو نفسه السجلّ المالي الوحيد من نوعه
+  // (لا "سجلّ" منفصل كما للإيداعات)، فوجوده يرفض دائماً. limit(1) يكفي:
+  // نسأل «هل توجد بيانات؟» لا «كم عددها».
+  const expenses = await dataRoot.collection('expenses').limit(1).get();
+  if (!expenses.empty) return { hasProtectedData: true, reason: 'expenses' };
+
+  const travelersSnap = await dataRoot.collection('travelers').limit(MAX_PROTECTED_DATA_CHECK_TRAVELERS).get();
+  if (travelersSnap.docs.some(doc => !doc.data().deletedAt)) {
+    return { hasProtectedData: true, reason: 'travelers' };
+  }
+
+  const depositLogChecks = await Promise.all(
+    travelersSnap.docs.map(doc => doc.ref.collection('depositLogs').limit(1).get())
+  );
+  if (depositLogChecks.some(snap => !snap.empty)) {
+    return { hasProtectedData: true, reason: 'depositLogs' };
+  }
+
+  return { hasProtectedData: false, reason: null };
+}
+
 /**
  * يبحث عن ملف مسافر بهذا uid في هذه الرحلة، وإن لم يوجد يُنشئ واحداً تلقائياً
  * ويربطه به فوراً — بدل انتظار ربط يدوي من المنظّم لاحقاً.
@@ -1077,20 +1117,17 @@ exports.restoreTrip = onCall(
     }
 
     // ── الرحلة الهدف: غير موجودة، أو موجودة وفارغة تماماً ──────────────────
-    // نفس شرط manageTrip mode=delete بالضبط — انظر التعليق أعلى الدالة.
+    // نفس شرط manageTrip mode=delete بالضبط — checkTripHasProtectedData
+    // مشتركة بين الاثنين، انظر تعليقها.
     const tripRef = db.collection('trips').doc(tripId);
     const dataRoot = db.collection('artifacts').doc(tripId).collection('public').doc('data');
     const existing = await tripRef.get();
     if (existing.exists) {
-      const [existingTravelers, existingExpenses] = await Promise.all([
-        dataRoot.collection('travelers').limit(1).get(),
-        dataRoot.collection('expenses').limit(1).get(),
-      ]);
-      if (!existingTravelers.empty || !existingExpenses.empty) {
-        throw new HttpsError(
-          'failed-precondition',
-          `لا يمكن الاستعادة إلى "${tripId}" لأنها تحوي مسافرين أو مصاريف بالفعل. الاستعادة متاحة للرحلات الفارغة أو غير الموجودة فقط.`
-        );
+      const { hasProtectedData, reason } = await checkTripHasProtectedData(tripId);
+      if (hasProtectedData) {
+        throw new HttpsError('failed-precondition', reason === 'depositLogs'
+          ? `لا يمكن الاستعادة إلى "${tripId}" — لبعض مسافريها (حتى المحذوفين منهم) سجلّ إيداع فعلي، وسجلّات الإيداع لا تُحذف أبداً حمايةً للسجلّات المالية.`
+          : `لا يمكن الاستعادة إلى "${tripId}" لأنها تحوي مسافرين أو مصاريف بالفعل. الاستعادة متاحة للرحلات الفارغة أو غير الموجودة فقط.`);
       }
     }
 
