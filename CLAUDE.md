@@ -25,7 +25,8 @@
 **Core features:**
 - Multi-trip support (each trip has its own data)
 - 🆕 Mandatory Google/Email sign-in + admin auth via Firebase Auth + Custom Claims — no PIN, no anonymous sessions (see *Design Decisions* in `docs/DECISIONS.md`)
-- 🆕 Trip membership granted exclusively via signed invite links (`?invite=TOKEN`), consumed once and stored as a `trips` custom claim
+- 🆕 Trip membership: join an *existing* trip only via a signed invite link (`?invite=TOKEN`); start a *new* trip yourself any time — any signed-in account can self-serve create a trip and becomes its organizer immediately (see *Design Decisions*)
+- 🆕 Per-user profile (`users/{uid}`: name + bank details) auto-fills bank details on trip creation, editable per trip afterward
 - Real-time Firestore listeners with optimistic updates
 - Offline-first: `persistentLocalCache` + `persistentMultipleTabManager`
 - Smart input bar for quick expense entry (bottom-fixed)

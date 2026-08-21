@@ -37,6 +37,22 @@ const TRIP_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 // خطأً يصل للمستخدم كـ `internal` غامض لا علاقة له بالسبب.
 const CLAIMS_BYTE_BUDGET = 900;
 
+// 🆕 حدّ زمني للإنشاء الذاتي للرحلات (manageTrip mode: 'create'، غير المسؤول
+// فقط — نفس مبدأ استثناء المسؤول من حدّ المصاريف في useExpenseActions.ts).
+// لا يمنع إساءة كاملة، فقط سكربتاً يُنشئ عشرات الرحلات في ثوانٍ.
+const SELF_SERVE_TRIP_COOLDOWN_MS = 60 * 1000;
+
+// 🆕 مطابقة JS لـ isValidBankDetails في firestore.rules — manageTrip دالة
+// Admin SDK فتتجاوز القواعد، فالتحقق من شكل bankDetails يجب أن يتكرر هنا.
+function isValidBankDetailsInput(b) {
+  if (b === undefined) return true;
+  if (typeof b !== 'object' || b === null || Array.isArray(b)) return false;
+  const allowedKeys = ['bankName', 'beneficiary', 'iban'];
+  if (Object.keys(b).some(k => !allowedKeys.includes(k))) return false;
+  const maxLen = { bankName: 100, beneficiary: 100, iban: 40 };
+  return allowedKeys.every(k => b[k] === undefined || (typeof b[k] === 'string' && b[k].length <= maxLen[k]));
+}
+
 function assertClaimsFitTokenLimit(claims) {
   const size = Buffer.byteLength(JSON.stringify(claims));
   if (size > CLAIMS_BYTE_BUDGET) {
@@ -96,16 +112,26 @@ async function recordMembership(tripId, userRecord, extra = {}) {
 }
 
 /**
- * 🆕 manageTrip: إنشاء رحلة جديدة أو حذفها — للمسؤول حصراً.
+ * 🆕 manageTrip: إنشاء رحلة جديدة أو حذفها.
+ *
+ * 🆕 **الحذف يبقى للمسؤول العالمي حصراً.** أما **الإنشاء فمتاح لأي حساب حقيقي
+ * مسجّل دخوله** (نموذج واتساب: من ينشئ رحلة يصبح منظّمها تلقائياً) — تغيير
+ * معماري مقصود، انظر ~/.claude/plans/cozy-discovering-ocean.md للسياق الكامل.
+ * غير المسؤول الذي ينشئ رحلة يُمنح عندها: claim العضوية (trips[tripId]=true)،
+ * سطر عضوية بدور 'organizer'، وملف مسافر تلقائي — بنفس آلية joinViaInvite
+ * تماماً، فقط دون استهلاك رمز دعوة لأنه هو نفسه مصدر الرحلة.
  *
  * 🆕 لم تعد تلمس أي سرّ (لا رمز رحلة بعد الآن — انظر تعليق أعلى الملف)، فالسبب
- * الوحيد المتبقي لبقائها دالة خادمية لا قاعدة Firestore هو الحذف: يحتاج قراءة
- * عبر مجموعات فرعية متعددة (members/travelers/expenses) والتحقّق من الخلوّ قبل
- * الكتابة الذرّية — تسلسل لا تعبّر عنه قاعدة واحدة بسهولة. الإنشاء مبنّى هنا
- * بجانبه لبساطة نقطة نهاية واحدة، لا لضرورة معمارية.
+ * الوحيد المتبقي لبقاء الحذف خادمياً لا قاعدة Firestore هو: يحتاج قراءة عبر
+ * مجموعات فرعية متعددة (members/travelers/expenses) والتحقّق من الخلوّ قبل
+ * الكتابة الذرّية — تسلسل لا تعبّر عنه قاعدة واحدة بسهولة. الإنشاء الذاتي
+ * يحتاجها أيضاً الآن لسبب مختلف: منح claim وسجلّ عضوية ودور منظّم معاً بذرّية
+ * واحدة — Admin SDK وحده يستطيع setCustomUserClaims.
  *
- * تفاصيل الرحلة غير السرّية (الاسم/البنك/المسار) لا تمرّ من هنا — تُكتب مباشرة
- * من الواجهة عبر قواعد Firestore (isValidTripConfig)، وهي المسار الأخف والأسرع.
+ * تفاصيل الرحلة غير السرّية (الاسم/البنك/المسار) بعد الإنشاء لا تمرّ من هنا —
+ * تُكتب مباشرة من الواجهة عبر قواعد Firestore (isValidTripConfig)، وهي المسار
+ * الأخف والأسرع. bankDetails هنا اختيارية فقط لتعبئة أول قيمة عند الإنشاء
+ * (من بروفايل المُنشئ users/{uid}) — التعديل اللاحق يمر من ذلك المسار المباشر.
  */
 exports.manageTrip = onCall(
   {
@@ -113,18 +139,34 @@ exports.manageTrip = onCall(
     maxInstances: 5,
   },
   async (request) => {
-    // ⚠️ التحقق من صلاحية المسؤول خادميًا من التوكن نفسه — لا نثق بأي علم
-    // يرسله العميل. نفس الـ Custom Claim الذي تفحصه isAdmin() في firestore.rules.
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
     }
-    if (request.auth.token.admin !== true) {
-      throw new HttpsError('permission-denied', 'هذا الإجراء متاح للمسؤول فقط.');
+
+    // ⚠️ نفس الـ Custom Claim الذي تفحصه isAdmin() في firestore.rules — لا نثق
+    // بأي علم يرسله العميل.
+    const isAdminCaller = request.auth.token.admin === true;
+
+    const mode = String(request.data?.mode ?? '').trim(); // 'create' | 'delete'
+
+    // 🆕 الحذف يبقى للمسؤول العالمي حصراً — لم يُطلب تغييره، وهو الأخطر
+    // (يُتلف بيانات مالية إن أُسيء استخدامه)، بخلاف الإنشاء الذاتي الجديد.
+    if (mode === 'delete' && !isAdminCaller) {
+      throw new HttpsError('permission-denied', 'حذف رحلة متاح للمسؤول فقط.');
+    }
+
+    // 🆕 لا رحلة بجلسة مجهولة — نفس المنطق ونفس الرسالة اللذين ترفض بهما
+    // joinViaInvite أدناه، ونفس المبرر: منح uid مجهول claim حقيقياً ثم اكتشاف
+    // أنه عديم الفائدة عند أول قراءة تجربة أسوأ من رفض واضح فوراً.
+    if (!isAdminCaller && request.auth.token.firebase?.sign_in_provider === 'anonymous') {
+      throw new HttpsError(
+        'failed-precondition',
+        'إنشاء رحلة يتطلب حساباً حقيقياً (Google أو بريد إلكتروني) — سجّل الدخول أولاً.',
+      );
     }
 
     const tripId = String(request.data?.tripId ?? '').trim();
     const name = String(request.data?.name ?? '').trim();
-    const mode = String(request.data?.mode ?? '').trim(); // 'create' | 'delete'
 
     if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
       throw new HttpsError(
@@ -137,6 +179,29 @@ exports.manageTrip = onCall(
     }
     if (mode === 'create' && name.length > 100) {
       throw new HttpsError('invalid-argument', 'اسم الرحلة طويل جداً (100 حرف كحد أقصى).');
+    }
+    const bankDetailsInput = mode === 'create' ? request.data?.bankDetails : undefined;
+    if (mode === 'create' && !isValidBankDetailsInput(bankDetailsInput)) {
+      throw new HttpsError('invalid-argument', 'بيانات البنك المُرسلة غير صالحة.');
+    }
+
+    // 🆕 حدّ زمني للإنشاء الذاتي (غير المسؤول فقط — نفس استثناء المسؤول من حدّ
+    // المصاريف). يُقرأ من بروفايل المُنشئ users/{uid}، ويُحدَّث بعد نجاح الإنشاء
+    // أدناه. المسؤول معفى بالكامل، تماماً كما كان سلوكه دائماً قبل هذا التغيير.
+    let userRecord = null;
+    if (mode === 'create' && !isAdminCaller) {
+      const profileRef = db.collection('users').doc(request.auth.uid);
+      const profileSnap = await profileRef.get();
+      const lastTripCreatedAt = profileSnap.exists ? profileSnap.data().lastTripCreatedAt : undefined;
+      if (typeof lastTripCreatedAt === 'number' && Date.now() - lastTripCreatedAt < SELF_SERVE_TRIP_COOLDOWN_MS) {
+        throw new HttpsError(
+          'resource-exhausted',
+          'أنشأتَ رحلة قبل قليل — انتظر دقيقة قبل إنشاء رحلة أخرى.',
+        );
+      }
+      // 🆕 نجلبه هنا (لا بعد الكتابة) ليفشل الطلب مبكراً إن تعذّر جلب الحساب،
+      // بدل إنشاء رحلة يتعذّر بعدها منح صاحبها عضويتها فيها.
+      userRecord = await admin.auth().getUser(request.auth.uid);
     }
 
     const tripRef = db.collection('trips').doc(tripId);
@@ -204,7 +269,11 @@ exports.manageTrip = onCall(
 
     await tripRef.set({
       name: name || tripId,
-      bankDetails: { bankName: '', beneficiary: '', iban: '' },
+      bankDetails: {
+        bankName:    bankDetailsInput?.bankName    ?? '',
+        beneficiary: bankDetailsInput?.beneficiary ?? '',
+        iban:        bankDetailsInput?.iban        ?? '',
+      },
       itinerary: [],
       // 🆕 status يُكتب صراحةً رغم أن غيابه يعني 'active' في القواعد وفي
       // utils/tripStatus.ts. السبب ليس تغيير سلوك — لا شيء يتغيّر اليوم — بل
@@ -215,9 +284,39 @@ exports.manageTrip = onCall(
       // كما فعلت قاعدة isOwnCreation مع createdByUid. انظر
       // scripts/audit-legacy-docs.mjs: هو ما يخبرك متى يصبح حذف الحارس آمناً.
       status: 'active',
+      // 🆕 مفيد الآن أن الإنشاء لم يعد حصراً بالمسؤول — تتبّع/تدقيق من أنشأ كل
+      // رحلة، بنفس نمط createdByUid الموجود أصلاً على المصاريف.
+      createdByUid: request.auth.uid,
     });
 
     console.log(`[manageTrip] create on ${tripId} by ${request.auth.uid}`);
+
+    // 🆕 الإنشاء الذاتي (غير المسؤول): يصبح المُنشئ منظّم رحلته فوراً — نفس ما
+    // تفعله joinViaInvite بالضبط (claim + سجلّ عضوية + ملف مسافر)، فقط بدور
+    // 'organizer' بدل 'member' الافتراضي، وبلا استهلاك رمز دعوة.
+    if (!isAdminCaller && userRecord) {
+      const existingTrips = (userRecord.customClaims && userRecord.customClaims.trips) || {};
+      const nextClaims = {
+        ...userRecord.customClaims,
+        trips: { ...existingTrips, [tripId]: true },
+      };
+      assertClaimsFitTokenLimit(nextClaims);
+      await admin.auth().setCustomUserClaims(request.auth.uid, nextClaims);
+
+      await recordMembership(tripId, userRecord, { role: 'organizer' });
+
+      // 🆕 أفضل جهد — لا يُفشل الإنشاء إن أخفق، تماماً كما في joinViaInvite.
+      try {
+        await provisionTravelerForUid(
+          tripId, request.auth.uid, request.auth.token.name || userRecord.displayName,
+        );
+      } catch (err) {
+        console.error(`[manageTrip] تعذّر تزويد مسافر تلقائي لـ ${request.auth.uid} على ${tripId}:`, err);
+      }
+
+      await db.collection('users').doc(request.auth.uid)
+        .set({ lastTripCreatedAt: Date.now() }, { merge: true });
+    }
 
     return { success: true, tripId };
   }

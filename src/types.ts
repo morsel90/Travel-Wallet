@@ -268,3 +268,14 @@ export interface BankDetails {
 // ملاحظة: واجهة إعدادات الرحلة الكاملة (TripConfig) معرّفة ومُصدَّرة من
 // hooks/useTripConfig.ts — وهي الشكل الفعلي الذي يُرجعه الـ hook
 // (tripName + bankDetails ككائن + itinerary). لا تُكرَّر هنا لتفادي التعارض.
+
+// 🆕 بروفايل المستخدم العام users/{uid} — مستقل عن أي رحلة، يُستخدم لتعبئة
+// بيانات البنك تلقائياً عند إنشاء رحلة جديدة (نسخ لحظي، لا مرجع حيّ — انظر
+// docs/DECISIONS.md). كل الحقول اختيارية لأن الكتابة تتم بـ merge (نفس مبدأ
+// isValidTripConfig).
+export interface UserProfile {
+  displayName?: string
+  bankDetails?: BankDetails
+  /** خادمي فقط — يكتبه manageTrip حصراً لحدّ إساءة الإنشاء الذاتي للرحلات. */
+  lastTripCreatedAt?: number
+}

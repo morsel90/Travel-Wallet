@@ -12,8 +12,13 @@ export interface TripCreds {
   adminPassword: string
 }
 
-/** يسجّل الدخول عبر AuthGate بالبريد/كلمة المرور — يفتح النموذج المطوي أولاً (Google هو الخيار الأول المعروض، لا نستخدمه هنا). */
-async function signInWithEmail(page: Page, email: string, password: string): Promise<void> {
+/**
+ * يسجّل الدخول عبر AuthGate بالبريد/كلمة المرور — يفتح النموذج المطوي أولاً
+ * (Google هو الخيار الأول المعروض، لا نستخدمه هنا). 🆕 مُصدَّرة (لا محلية فقط)
+ * لأن self-serve-trip-creation.spec.ts تحتاجها من صفحة بلا `?trip=` — بخلاف
+ * openTripAsMember/openTripAsAdmin أدناه اللتين تفترضان رحلة محدَّدة سلفاً.
+ */
+export async function signInWithEmail(page: Page, email: string, password: string): Promise<void> {
   await page.getByText('أو عبر البريد الإلكتروني').click()
   await page.getByPlaceholder('البريد الإلكتروني').fill(email)
   await page.getByPlaceholder('كلمة المرور').fill(password)

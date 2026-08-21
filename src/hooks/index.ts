@@ -21,3 +21,4 @@ export { useTripMembers }      from './useTripMembers' // 🆕 أعضاء رحل
 export { useMyTripRole }       from './useMyTripRole'  // 🆕 «هل أنا منظّم هذه الرحلة؟» (المرحلة ٣) — قراءة ذاتية واحدة
 export { useHeaderCollapse }   from './useHeaderCollapse' // 🆕 تتبّع اتجاه التمرير لتقليص/توسيع الهيدر (Sticky + Collapsible)
 export { useInviteJoin }       from './useInviteJoin' // 🆕 انضمام فوري عبر رابط دعوة (?invite=TOKEN) — بديل بوابة الرمز اليدوية
+export { useUserProfile }      from './useUserProfile' // 🆕 بروفايل المستخدم العام (اسم/بنك) — لتعبئة نموذج إنشاء رحلة تلقائياً

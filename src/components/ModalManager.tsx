@@ -20,12 +20,14 @@ const importDepositModal        = () => import('./modals/DepositModal')
 const importTrashBinModal       = () => import('./modals/TrashBinModal')
 const importDepositHistoryModal = () => import('./modals/DepositHistoryModal')
 const importTripAdminView       = () => import('./admin/TripAdminView')
+const importUserProfileModal    = () => import('./modals/UserProfileModal')
 
 const ReportsView         = lazy(importReportsView)
 const DepositModal        = lazy(importDepositModal)
 const TrashBinModal       = lazy(importTrashBinModal)
 const DepositHistoryModal = lazy(importDepositHistoryModal)
 const TripAdminView       = lazy(importTripAdminView)
+const UserProfileModal    = lazy(importUserProfileModal)
 
 /**
  * 🆕 أجزاء المودالات للتحميل المسبق الهادئ — تُستهلك من App.tsx.
@@ -43,6 +45,7 @@ export const modalImporters = [
   importTrashBinModal,
   importDepositHistoryModal,
   importTripAdminView,
+  importUserProfileModal,
 ]
 
 interface ModalManagerProps {
@@ -62,10 +65,12 @@ interface ModalManagerProps {
     'deletedExpenses' | 'deletedTravelers' | 'onRestoreExpense' | 'onRestoreTraveler'>
   // 🆕 إدارة الرحلات — للمسؤول فقط (onClose يُدار داخلياً)
   tripAdmin: Omit<ComponentProps<typeof TripAdminView>, 'onClose'>
+  // 🆕 بروفايل المستخدم العام (onClose يُدار داخلياً)
+  userProfile: Omit<ComponentProps<typeof UserProfileModal>, 'onClose'>
 }
 
 export default function ModalManager({
-  modal, closeModal, confirmDeleteTraveler, reports, deposit, closeDeposit, trash, tripAdmin,
+  modal, closeModal, confirmDeleteTraveler, reports, deposit, closeDeposit, trash, tripAdmin, userProfile,
 }: ModalManagerProps) {
   // اشتقاق الحمولة من الحالة كثوابت محلية — يضمن حفظ التضييق (narrowing) داخل الإغلاقات
   const deleteTarget    = modal.type === 'deleteTraveler'  ? modal.traveler : null
@@ -126,6 +131,14 @@ export default function ModalManager({
         {modal.type === 'tripAdmin' && (
           <Suspense key="trip-admin" fallback={<ModalFallback />}>
             <TripAdminView {...tripAdmin} onClose={closeModal} />
+          </Suspense>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {modal.type === 'userProfile' && (
+          <Suspense key="user-profile" fallback={<ModalFallback />}>
+            <UserProfileModal {...userProfile} onClose={closeModal} />
           </Suspense>
         )}
       </AnimatePresence>

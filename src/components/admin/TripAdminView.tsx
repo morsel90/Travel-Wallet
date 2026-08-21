@@ -36,7 +36,9 @@ interface TripAdminViewProps {
   onSaveTripName: (tripId: string, name: string) => Promise<boolean>
   onSaveBankDetails: (tripId: string, details: BankDetails) => Promise<boolean>
   onSaveItinerary: (tripId: string, itinerary: TripSummary['itinerary']) => Promise<boolean>
-  onCreateTrip: (tripId: string, name: string) => Promise<boolean>
+  onCreateTrip: (tripId: string, name: string, bankDetails?: BankDetails) => Promise<boolean>
+  /** 🆕 من بروفايل المسؤول نفسه (useUserProfile) — تعبئة أولية لنموذج الإنشاء. */
+  defaultBankDetails?: BankDetails
   onSaveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
   onDeleteTrip: (tripId: string) => Promise<boolean>
   /** 🆕 إزالة عضو من الرحلة — تمرّ إلى TripDetailPanel كما هي. */
@@ -60,7 +62,7 @@ interface TripAdminViewProps {
 
 export default function TripAdminView({
   currentTripId, viewerRole, trips, loading, error, isSaving,
-  onSaveTripName, onSaveBankDetails, onSaveItinerary, onCreateTrip,
+  onSaveTripName, onSaveBankDetails, onSaveItinerary, onCreateTrip, defaultBankDetails,
   onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onLinkTravelerAccount, onExportBackup, onRestoreTrip,
   onCreateInvite, onRevokeInvite, showToast, onClose,
 }: TripAdminViewProps) {
@@ -193,6 +195,7 @@ export default function TripAdminView({
                 isSaving={isSaving}
                 onCreate={onCreateTrip}
                 onCancel={() => setIsCreating(false)}
+                defaultBankDetails={defaultBankDetails}
               />
             )}
 

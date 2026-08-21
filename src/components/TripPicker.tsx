@@ -1,8 +1,11 @@
-import { Luggage, ChevronLeft, Loader2, AlertTriangle, PieChart, ArrowRight } from '../icons'
+import { useState } from 'react'
+import { Luggage, ChevronLeft, Loader2, AlertTriangle, PieChart, ArrowRight, Plus } from '../icons'
 import type { MyTrip } from '../hooks/useMyTrips'
+import type { BankDetails } from '../types'
 import { TRIP_STATUS_LABEL } from '../types'
 import { tripUrl } from '../utils/tripId'
 import { haptic } from '../utils/haptics'
+import NewTripForm from './admin/NewTripForm'
 
 // ─── TripPicker — شاشة «رحلاتي» ──────────────────────────────────────────────
 // 🆕 قائمة الرحلات التي انضم لها المستخدم، على نمط قائمة المحادثات في تطبيقات
@@ -14,10 +17,11 @@ import { haptic } from '../utils/haptics'
 // تفاصيل الحساب البنكي (اسم المستفيد والآيبان)، وقائمة عامة تعني كشفها لأي
 // زائر.
 //
-// الدخول لرحلة جديدة يبقى عبر رابط دعوة من منظّم الرحلة — لا مسار انضمام ذاتي
-// آخر بعد إلغاء رمز الرحلة (انظر docs/DECISIONS.md). الانضمام خطوة لمرة
-// واحدة: بعد استهلاك الرابط تُحفظ العضوية في claims الحساب ويدخل المستخدم
-// مباشرةً في كل زيارة لاحقة (انظر useAuth).
+// 🆕 الدخول لرحلة أخرى إما برابط دعوة من منظّمها، أو بإنشاء رحلة جديدة بنفسك
+// من هنا مباشرة (نموذج واتساب: من يُنشئ يصبح منظّم رحلته تلقائياً — انظر
+// functions/index.js manageTrip mode: 'create'، وdocs/DECISIONS.md/الخطة
+// المعتمدة لهذا التغيير). لا يوجد اليوم مسار انضمام ذاتي لرحلة *موجودة* بلا
+// دعوة — هذا لم يتغيّر.
 
 interface TripPickerProps {
   trips: MyTrip[]
@@ -27,14 +31,32 @@ interface TripPickerProps {
   currentTripId?: string
   /** يُمرَّر فقط حين فُتحت الشاشة اختيارياً من داخل رحلة — لا حين كانت شاشة البداية. */
   onBack?: () => void
+  /** 🆕 إنشاء ذاتي — متاح لأي مستخدم مسجّل دخوله، لا المسؤول فقط. */
+  onCreateTrip: (tripId: string, name: string, bankDetails: BankDetails) => Promise<boolean>
+  isCreatingTrip: boolean
+  /** 🆕 من بروفايل المستخدم (useUserProfile) — تعبئة أولية لنموذج الإنشاء. */
+  defaultBankDetails?: BankDetails
 }
 
-const TripPicker = ({ trips, loading, error, currentTripId, onBack }: TripPickerProps) => {
+const TripPicker = ({
+  trips, loading, error, currentTripId, onBack,
+  onCreateTrip, isCreatingTrip, defaultBankDetails,
+}: TripPickerProps) => {
+  const [isCreating, setIsCreating] = useState(false)
+
   // التبديل بين الرحلات يتطلب إعادة تحميل كاملة: TRIP_ID يُقرأ مرة واحدة عند
   // تحميل الوحدة (utils/tripId.ts)، فلا يوجد تبديل حيّ داخل نفس الجلسة.
   const openTrip = (tripId: string) => {
     haptic.light()
     window.location.href = tripUrl(tripId)
+  }
+
+  // 🆕 بعد الإنشاء الذاتي، يدخل المُنشئ رحلته مباشرة — لا يبقى في القائمة
+  // ليضغط عليها يدوياً. نفس التنقّل الكامل الذي تفعله openTrip أعلاه.
+  const handleCreate = async (tripId: string, name: string, bankDetails: BankDetails) => {
+    const ok = await onCreateTrip(tripId, name, bankDetails)
+    if (ok) openTrip(tripId)
+    return ok
   }
 
   return (
@@ -43,7 +65,16 @@ const TripPicker = ({ trips, loading, error, currentTripId, onBack }: TripPicker
         <div className="max-w-md mx-auto px-5 py-4 flex items-center gap-2.5">
           <PieChart className="w-6 h-6 text-teal-100 shrink-0" />
           <h1 className="font-bold text-lg flex-1">رحلاتي</h1>
-          {onBack && (
+          {!isCreating && (
+            <button
+              type="button"
+              onClick={() => { haptic.light(); setIsCreating(true) }}
+              className="flex items-center gap-1.5 bg-teal-800/60 hover:bg-teal-800 text-teal-50 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" /> رحلة جديدة
+            </button>
+          )}
+          {onBack && !isCreating && (
             <button
               type="button"
               onClick={onBack}
@@ -57,7 +88,15 @@ const TripPicker = ({ trips, loading, error, currentTripId, onBack }: TripPicker
       </header>
 
       <main className="flex-1 w-full max-w-md mx-auto px-4 py-6">
-        {loading ? (
+        {isCreating ? (
+          <NewTripForm
+            existingIds={trips.map(t => t.id)}
+            isSaving={isCreatingTrip}
+            onCreate={handleCreate}
+            onCancel={() => setIsCreating(false)}
+            defaultBankDetails={defaultBankDetails}
+          />
+        ) : loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
             <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
             <p className="text-sm font-bold">جارٍ جلب رحلاتك...</p>
@@ -74,9 +113,16 @@ const TripPicker = ({ trips, loading, error, currentTripId, onBack }: TripPicker
             </div>
             <h2 className="font-bold text-slate-800 mb-2">لم تنضم لأي رحلة بعد</h2>
             <p className="text-sm text-slate-500 leading-relaxed">
-              للانضمام لرحلة، اطلب رابط دعوة من منظّم الرحلة. بعد الانضمام مرة
-              واحدة ستجدها هنا دائماً.
+              للانضمام لرحلة قائمة، اطلب رابط دعوة من منظّمها. أو أنشئ رحلتك
+              الخاصة الآن وادعُ رفاقك إليها.
             </p>
+            <button
+              type="button"
+              onClick={() => { haptic.light(); setIsCreating(true) }}
+              className="mt-4 inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" /> إنشاء رحلة جديدة
+            </button>
           </div>
         ) : (
           <ul className="space-y-2.5">
@@ -120,7 +166,7 @@ const TripPicker = ({ trips, loading, error, currentTripId, onBack }: TripPicker
           </ul>
         )}
 
-        {!loading && !error && trips.length > 0 && (
+        {!isCreating && !loading && !error && trips.length > 0 && (
           <p className="text-xs text-slate-400 text-center mt-6 leading-relaxed px-4">
             للانضمام لرحلة أخرى، افتح رابط دعوتها.
           </p>

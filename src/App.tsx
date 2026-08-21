@@ -37,8 +37,10 @@ import { ExpensesPanel }    from './components/ExpensesPanel'
 // كل ما عدا ذلك انتقل: التركيب إلى hooks/useAppCoordinator.ts، وقيم السياق إلى
 // components/AppProviders.tsx، والتخطيط إلى أقسام components/*Panel.tsx.
 export default function App() {
-  const { session, ledger, trip, rates, status, picker, tripAdminPanel, filter, modals, expense, traveler, deposit, admin, invite } =
-    useAppCoordinator()
+  const {
+    session, ledger, trip, rates, status, picker, tripAdminPanel, filter, modals, expense, traveler, deposit, admin, invite,
+    profile, isSavingProfile, saveProfile,
+  } = useAppCoordinator()
 
   // نسخة محلية ليضيّق TypeScript نوعها: الوصول عبر `expense.expenseToDelete`
   // لا يُضيَّق عبر حدّ JSX، فكان سيتطلّب تأكيداً بـ `!` بلا داعٍ.
@@ -91,6 +93,9 @@ export default function App() {
         // الرجوع متاح فقط حين فُتحت الشاشة اختيارياً من داخل التطبيق — أما حين
         // كانت شاشة البداية (لا رحلة مقصودة) فلا يوجد ما يُرجع إليه أصلاً.
         onBack={picker.wasOpenedManually ? picker.hide : undefined}
+        onCreateTrip={picker.onCreateTrip}
+        isCreatingTrip={tripAdminPanel.isSaving}
+        defaultBankDetails={picker.defaultBankDetails}
       />
     )
   } else if (!session.isAdmin && !session.joinedTripIds.includes(TRIP_ID)) {
@@ -137,6 +142,7 @@ export default function App() {
               isOnline={session.isOnline}
               // زر التبديل يظهر متى وُجدت رحلة أخرى غير المفتوحة حالياً
               onShowMyTrips={picker.trips.length > 1 ? picker.show : undefined}
+              onShowProfile={modals.openUserProfile}
               onStatClick={(stat) => {
                 haptic.light()
                 const id =
@@ -271,6 +277,7 @@ export default function App() {
                 onSaveBankDetails: tripAdminPanel.saveBankDetails,
                 onSaveItinerary: tripAdminPanel.saveItinerary,
                 onCreateTrip: tripAdminPanel.createTrip,
+                defaultBankDetails: tripAdminPanel.defaultBankDetails,
                 onSaveTripStatus: tripAdminPanel.saveTripStatus,
                 onDeleteTrip: tripAdminPanel.deleteTrip,
                 onRemoveMember: tripAdminPanel.removeMember,
@@ -281,6 +288,11 @@ export default function App() {
                 onCreateInvite: tripAdminPanel.createInvite,
                 onRevokeInvite: tripAdminPanel.revokeInvite,
                 showToast: status.showToast,
+              }}
+              userProfile={{
+                profile,
+                isSaving: isSavingProfile,
+                onSave: saveProfile,
               }}
             />
   

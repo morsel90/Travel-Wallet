@@ -86,7 +86,13 @@ vi.mock('./hooks', () => ({
   useBalances: () => ({ balances: [], totalSpent: 0, totalDeposited: 0, totalRemaining: 0 }),
   useModals: () => ({
     modal: { type: 'none' }, openReports: noop, openTrashBin: noop, openTripAdmin: noop,
-    openDeleteTraveler: noop, openDeposit: noop, openDepositHistory: noop, closeModal: noop,
+    openDeleteTraveler: noop, openDeposit: noop, openDepositHistory: noop, openUserProfile: noop, closeModal: noop,
+  }),
+  // 🆕 بروفايل المستخدم العام (اسم/بنك) — لا يُستهلك في تجميعات هذا الاختبار
+  // بخلاف تمريره كخاصية، فكائن ثابت يكفي.
+  useUserProfile: () => ({
+    profile: { displayName: '', bankDetails: { bankName: '', beneficiary: '', iban: '' } },
+    isSaving: false, saveProfile: noop,
   }),
   useAdminAuth: () => ({
     showAdminSignIn: false, openAdminSignIn: noop, handleAdminSignOut: noop, adminModalProps: {},

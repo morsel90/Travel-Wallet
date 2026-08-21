@@ -2,21 +2,29 @@
 import { useState } from 'react'
 import { X, Save, Loader2 } from '../../icons'
 import { isValidTripId } from '../../utils/tripId'
+import type { BankDetails } from '../../types'
 
 interface NewTripFormProps {
   existingIds: string[]
   isSaving: boolean
-  onCreate: (tripId: string, name: string) => Promise<boolean>
+  onCreate: (tripId: string, name: string, bankDetails: BankDetails) => Promise<boolean>
   onCancel: () => void
+  /** 🆕 من بروفايل المستخدم (useUserProfile) — تعبئة أولية قابلة للتعديل الحر. */
+  defaultBankDetails?: BankDetails
 }
+
+const EMPTY_BANK_DETAILS: BankDetails = { bankName: '', beneficiary: '', iban: '' }
 
 const inputClass =
   'w-full border border-slate-200 rounded-xl px-3 py-2 text-base bg-white focus:ring-2 focus:ring-teal-500 outline-none'
 const labelClass = 'block text-xs font-bold text-slate-500 mb-1.5'
 
-export default function NewTripForm({ existingIds, isSaving, onCreate, onCancel }: NewTripFormProps) {
+export default function NewTripForm({ existingIds, isSaving, onCreate, onCancel, defaultBankDetails }: NewTripFormProps) {
   const [tripId, setTripId] = useState('')
   const [name, setName] = useState('')
+  // 🆕 auto-fill قابل للتعديل الحر — تعبئة أولية من بروفايل المستخدم، ثم حالة
+  // محلية مستقلة تماماً (لا نعيد المزامنة مع defaultBankDetails بعد أول عرض).
+  const [bankForm, setBankForm] = useState<BankDetails>(defaultBankDetails ?? EMPTY_BANK_DETAILS)
   const [error, setError] = useState<string | null>(null)
 
   const submit = async () => {
@@ -31,7 +39,11 @@ export default function NewTripForm({ existingIds, isSaving, onCreate, onCancel 
       return
     }
     setError(null)
-    const ok = await onCreate(id, name.trim())
+    const ok = await onCreate(id, name.trim(), {
+      bankName: bankForm.bankName.trim(),
+      beneficiary: bankForm.beneficiary.trim(),
+      iban: bankForm.iban.trim().replace(/\s+/g, ''),
+    })
     if (ok) onCancel()
   }
 
@@ -79,6 +91,46 @@ export default function NewTripForm({ existingIds, isSaving, onCreate, onCancel 
           className={inputClass}
         />
         <p className="text-[11px] text-slate-400 mt-1.5">إن تركته فارغاً سيُستخدم المعرّف اسماً.</p>
+      </div>
+
+      <hr className="border-slate-100" />
+
+      <div>
+        <label className={labelClass} htmlFor="new-trip-bank-name">اسم البنك</label>
+        <input
+          id="new-trip-bank-name"
+          type="text"
+          value={bankForm.bankName}
+          onChange={e => setBankForm({ ...bankForm, bankName: e.target.value })}
+          className={inputClass}
+        />
+      </div>
+
+      <div>
+        <label className={labelClass} htmlFor="new-trip-bank-beneficiary">اسم المستفيد</label>
+        <input
+          id="new-trip-bank-beneficiary"
+          type="text"
+          value={bankForm.beneficiary}
+          onChange={e => setBankForm({ ...bankForm, beneficiary: e.target.value })}
+          className={inputClass}
+        />
+      </div>
+
+      <div>
+        <label className={labelClass} htmlFor="new-trip-bank-iban">رقم الآيبان (IBAN)</label>
+        <input
+          id="new-trip-bank-iban"
+          type="text"
+          dir="ltr"
+          value={bankForm.iban}
+          onChange={e => setBankForm({ ...bankForm, iban: e.target.value })}
+          placeholder="SA0000000000000000000000"
+          className={`${inputClass} text-right tabular-nums`}
+        />
+        <p className="text-[11px] text-slate-400 mt-1.5">
+          {defaultBankDetails?.iban ? 'مُعبَّأة من بروفايلك — عدّلها إن احتجت حساباً مختلفاً لهذه الرحلة.' : 'تُحذف المسافات تلقائياً عند الحفظ.'}
+        </p>
       </div>
 
       <p className="text-[11px] text-teal-800 bg-teal-50 border border-teal-200 rounded-lg p-2.5 leading-relaxed">

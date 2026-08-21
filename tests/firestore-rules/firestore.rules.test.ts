@@ -101,6 +101,7 @@ const tripConfigDoc   = (db: Firestore, tripId = TRIP_ID) => doc(db, 'trips', tr
 const tripInvitesDoc  = (db: Firestore, token = 'inv-test') => doc(db, 'tripInvites', token)
 const tripMemberDoc   = (db: Firestore, uid: string, tripId = TRIP_ID) => doc(db, 'trips', tripId, 'members', uid)
 const tripMembersCol  = (db: Firestore, tripId = TRIP_ID) => collection(db, 'trips', tripId, 'members')
+const userProfileDoc  = (db: Firestore, uid: string) => doc(db, 'users', uid)
 
 // ─── حمولات صالحة (تطابق isValidExpense/isValidTraveler/isValidDepositLog) ───
 /** مصروف بلا نسبة — يمثّل المصاريف القديمة السابقة لحقل createdByUid. */
@@ -602,6 +603,30 @@ describe('إدارة الرحلات — trips/{tripId}', () => {
     await assertFails(setDoc(tripConfigDoc(adminDb()), { notAllowed: true }))
   })
 
+  // 🆕 القاعدة ١٨: انكسار حقيقي رُصد فعلاً (لا افتراضي) عبر
+  // e2e/self-serve-trip-creation.spec.ts — إضافة createdByUid لكتابة الإنشاء
+  // في manageTrip دون إدراجه في isValidTripConfig كانت تعني رفض *كل* تعديل
+  // لاحق على أي رحلة تحمله، لأن merge:true يُقيَّم بالمستند الناتج الكامل.
+  describe('createdByUid — يظهر في كل تعديل لاحق ولا يمنعه (وثبات الحقل)', () => {
+    it('تعديل رحلة تحمل createdByUid ينجح ولا يُرفض بسبب الحقل الإضافي', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة', createdByUid: 'creator-1' }))
+      await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { name: 'اسم جديد' }, { merge: true }))
+    })
+
+    it('لا يمكن تغيير createdByUid عبر تحديث — لا للمسؤول ولا للمنظّم', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة', createdByUid: 'creator-1' }))
+      await assertFails(setDoc(tripConfigDoc(adminDb()), { createdByUid: 'someone-else' }, { merge: true }))
+
+      await seedOrganizer('organizer-1')
+      await assertFails(setDoc(tripConfigDoc(organizerDb()), { createdByUid: 'someone-else' }, { merge: true }))
+    })
+
+    it('رحلة بلا createdByUid (أُنشئت قبل إضافة الحقل) تُعدَّل بلا أي قيد عليه', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة' }))
+      await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { name: 'اسم جديد' }, { merge: true }))
+    })
+  })
+
   // 🆕 المرحلة ٣ — منظّم الرحلة: تحديث لا إنشاء، ولرحلته وحدها.
   describe('منظّم الرحلة (المرحلة ٣)', () => {
     it('منظّم الرحلة يستطيع تحديث إعداداتها ببيانات صالحة', async () => {
@@ -704,6 +729,70 @@ describe('سجلّ عضوية الرحلة — trips/{tripId}/members', () => {
     await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة' }))
     await assertSucceeds(getDoc(tripConfigDoc(memberDb())))
     await assertFails(getDoc(tripMemberDoc(memberDb(), 'member-1')))
+  })
+})
+
+// 🆕 بروفايل المستخدم العام users/{uid} — انظر src/types.ts UserProfile
+// وfirestore.rules: isValidUserProfile. مستقل تماماً عن أي رحلة؛ يملكه صاحبه
+// حصراً، ولا صلة له بـ isMember/isAdmin.
+describe('بروفايل المستخدم العام — users/{uid}', () => {
+  it('المالك يقرأ ملفه الخاص', async () => {
+    await seed(db => setDoc(userProfileDoc(db, 'user-1'), { displayName: 'أحمد' }))
+    await assertSucceeds(getDoc(userProfileDoc(strangerDb('user-1'), 'user-1')))
+  })
+
+  it('المالك يكتب ملفه الخاص ببيانات صالحة', async () => {
+    await assertSucceeds(setDoc(
+      userProfileDoc(strangerDb('user-1'), 'user-1'),
+      { displayName: 'أحمد', bankDetails: { bankName: 'بنك', beneficiary: 'أحمد', iban: 'SA00' } },
+      { merge: true },
+    ))
+  })
+
+  it('لا أحد يقرأ أو يكتب ملف غيره', async () => {
+    await seed(db => setDoc(userProfileDoc(db, 'user-1'), { displayName: 'أحمد' }))
+    await assertFails(getDoc(userProfileDoc(strangerDb('user-2'), 'user-1')))
+    await assertFails(setDoc(userProfileDoc(strangerDb('user-2'), 'user-1'), { displayName: 'تخريب' }, { merge: true }))
+  })
+
+  // 🆕 القاعدة ١٨: نفس uid بالضبط، والفرق الوحيد مزوّد الدخول — فما يفصل بين
+  // النجاح والفشل هنا isNotAnonymous() وحدها، بنفس منطق باقي المسارات.
+  it('جلسة مجهولة تُمنع من قراءة وكتابة ملفها حتى لو كان uid مطابقاً', async () => {
+    await assertFails(getDoc(userProfileDoc(anonymousMemberDb('user-1'), 'user-1')))
+    await assertFails(setDoc(userProfileDoc(anonymousMemberDb('user-1'), 'user-1'), { displayName: 'أحمد' }))
+  })
+
+  it('حقل غير معروف أو شكل bankDetails غير صالح يُرفض', async () => {
+    await assertFails(setDoc(userProfileDoc(strangerDb('user-1'), 'user-1'), { notAllowed: true }))
+    await assertFails(setDoc(
+      userProfileDoc(strangerDb('user-1'), 'user-1'),
+      { bankDetails: { bankName: 'بنك', extra: 'x' } },
+    ))
+    await assertFails(setDoc(userProfileDoc(strangerDb('user-1'), 'user-1'), { displayName: 'a'.repeat(101) }))
+  })
+
+  // ⚠️ الحالة الموثّقة في تعليق isValidUserProfile: كتابة merge:true من العميل
+  // تُقيَّم بمستند الدمج **الكامل** الناتج، فلو رُفض lastTripCreatedAt من
+  // hasOnly لانكسرت كل كتابة بروفايل لاحقة لمن أنشأ رحلة من قبل. هذا الاختبار
+  // يتحقّق من ذلك فعلياً لا افتراضاً (القاعدة ١٨).
+  it('تعديل البروفايل من العميل ينجح حتى لو كان lastTripCreatedAt مكتوباً سلفاً (خادمياً)', async () => {
+    await seed(db => setDoc(userProfileDoc(db, 'user-1'), { lastTripCreatedAt: Date.now() }))
+    await assertSucceeds(setDoc(
+      userProfileDoc(strangerDb('user-1'), 'user-1'),
+      { displayName: 'اسم جديد' },
+      { merge: true },
+    ))
+  })
+
+  // ⚠️ العميل نفسه لا يكتب هذا الحقل أبداً (manageTrip وحدها عبر Admin SDK)،
+  // لكن القاعدة لا تستطيع تمييز "من" يكتب — فقط "ماذا" يُكتب. قيمة رقمية
+  // صالحة الشكل تُقبل، وهذا متوقَّع ومقصود (انظر تعليق isValidUserProfile).
+  it('كتابة lastTripCreatedAt رقمياً من العميل لا ترفضها القاعدة شكلياً', async () => {
+    await assertSucceeds(setDoc(
+      userProfileDoc(strangerDb('user-1'), 'user-1'),
+      { lastTripCreatedAt: Date.now() },
+      { merge: true },
+    ))
   })
 })
 

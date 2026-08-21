@@ -16,6 +16,7 @@ export type ModalState =
   | { type: 'deleteTraveler';  traveler: Traveler }
   | { type: 'deposit';         traveler: Traveler }
   | { type: 'depositHistory';  traveler: Traveler }
+  | { type: 'userProfile' } // 🆕 بروفايل المستخدم العام (اسم/بنك) — مستقل عن أي رحلة
 
 type ModalAction =
   | { type: 'OPEN_REPORTS' }
@@ -24,6 +25,7 @@ type ModalAction =
   | { type: 'OPEN_DELETE_TRAVELER';  traveler: Traveler }
   | { type: 'OPEN_DEPOSIT';          traveler: Traveler }
   | { type: 'OPEN_DEPOSIT_HISTORY';  traveler: Traveler }
+  | { type: 'OPEN_USER_PROFILE' }
   | { type: 'CLOSE' }
 
 const CLOSED: ModalState = { type: 'none' }
@@ -36,6 +38,7 @@ function modalReducer(state: ModalState, action: ModalAction): ModalState {
     case 'OPEN_DELETE_TRAVELER': return { type: 'deleteTraveler', traveler: action.traveler }
     case 'OPEN_DEPOSIT':         return { type: 'deposit', traveler: action.traveler }
     case 'OPEN_DEPOSIT_HISTORY': return { type: 'depositHistory', traveler: action.traveler }
+    case 'OPEN_USER_PROFILE':    return { type: 'userProfile' }
     case 'CLOSE':                return CLOSED
     default:                     return state
   }
@@ -50,6 +53,7 @@ export function useModals() {
   const openDeleteTraveler = useCallback((traveler: Traveler) => dispatch({ type: 'OPEN_DELETE_TRAVELER', traveler }), [])
   const openDeposit        = useCallback((traveler: Traveler) => dispatch({ type: 'OPEN_DEPOSIT', traveler }), [])
   const openDepositHistory = useCallback((traveler: Traveler) => dispatch({ type: 'OPEN_DEPOSIT_HISTORY', traveler }), [])
+  const openUserProfile    = useCallback(() => dispatch({ type: 'OPEN_USER_PROFILE' }), [])
   const closeModal         = useCallback(() => dispatch({ type: 'CLOSE' }), [])
 
   return {
@@ -60,6 +64,7 @@ export function useModals() {
     openDeleteTraveler,
     openDeposit,
     openDepositHistory,
+    openUserProfile,
     closeModal,
   }
 }
