@@ -10,17 +10,20 @@
 //   - rateLimits — حالة تشغيلية عابرة، لا بيانات
 //   - trips/{tripId}/members — فهرس إداري لا مصدر صلاحية؛ استعادته لا تُعيد
 //     لأحد وصوله (العضوية الفعلية في custom claims حساب كل عضو لا Firestore)
-import type { BankDetails, DepositLogEntry, Expense, ItinerarySegment, Traveler, TripStatus } from '../types'
+import type { DepositLogEntry, Expense, ItinerarySegment, Traveler, TripStatus } from '../types'
 
 export const BACKUP_SCHEMA_VERSION = 1 as const
 
+// 🆕 لا bankDetails في trip هنا بعد اليوم — بيانات البنك مصدرها الوحيد بروفايل
+// المنظّم (users/{organizerUid})، لا مستند الرحلة، فلا معنى لنسخها احتياطياً
+// ضمنه. استعادة رحلة قديمة (schemaVersion=1 من قبل هذا التغيير) تتجاهل حقل
+// bankDetails في الملف إن وُجد — انظر functions/index.js: restoreTrip.
 export interface TripBackup {
   schemaVersion: typeof BACKUP_SCHEMA_VERSION
   exportedAt: string
   tripId: string
   trip: {
     name: string
-    bankDetails: BankDetails
     itinerary: ItinerarySegment[]
     status: TripStatus
   }
@@ -33,7 +36,7 @@ export interface TripBackup {
 
 export interface BuildTripBackupParams {
   tripId: string
-  trip: { name: string; bankDetails: BankDetails; itinerary: ItinerarySegment[]; status: TripStatus }
+  trip: { name: string; itinerary: ItinerarySegment[]; status: TripStatus }
   travelers: Traveler[]
   expenses: Expense[]
   depositLogs: DepositLogEntry[]

@@ -4,6 +4,7 @@ import {
   useAuth, useAdminAuth, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
   useTripAdminActions, useAllTrips, useMyTrips, useMyTripRole, useInviteJoin, useUserProfile,
+  useOrganizerBankDetails,
 } from './index'
 import { useFilteredExpenses } from './useFilteredExpenses'
 import { calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from '../utils/calculations'
@@ -41,9 +42,10 @@ export function useAppCoordinator() {
     signInError, isSigningIn, signInWithGoogle, signInWithEmail,
   } = useAuth()
   const isOnline = useOnlineStatus()
-  // 🆕 بروفايل المستخدم العام (اسم/بنك) — يعبّئ نموذج إنشاء رحلة تلقائياً،
-  // ويُدار من شاشة بروفايل منفصلة (ModalManager). لا يحتاج hasAccess: مستقل عن
-  // أي رحلة، ومتاح لأي مستخدم مسجّل دخوله حتى قبل الانضمام لأي رحلة.
+  // 🆕 بروفايل المستخدم العام (اسم/بنك) — يُدار من شاشة بروفايل منفصلة
+  // (ModalManager). هو المصدر الوحيد لبيانات بنك أي رحلة ينظّمها هذا المستخدم
+  // (انظر useOrganizerBankDetails أدناه). لا يحتاج hasAccess: مستقل عن أي
+  // رحلة، ومتاح لأي مستخدم مسجّل دخوله حتى قبل الانضمام لأي رحلة.
   const profile = useUserProfile(user)
   // 🆕 لا رمز رحلة بعد الآن — الوصول عضوية مباشرة (claim) أو صلاحية مسؤول
   // عالمية، بلا خطوة تحقّق وسيطة. انظر docs/DECISIONS.md.
@@ -57,10 +59,14 @@ export function useAppCoordinator() {
   const { expenses,  setExpenses,  expensesLoaded,  refreshExpenses }  = useExpenses(hasAccess ? user : null, { setIsSyncing, setSyncError })
   const { travelers, setTravelers, travelersLoaded, refreshTravelers } = useTravelers(hasAccess ? user : null, setIsSyncing)
   // اسم الرحلة يُحرَّر من واجهة إدارة الرحلات (التي تقرأه من useAllTrips)، فلا
-  // تحتاجه هذه الشاشة — تفاصيل البنك للبطاقة، والمسار للويدجت والتقارير.
+  // تحتاجه هذه الشاشة — organizerUid للبطاقة البنكية، والمسار للويدجت والتقارير.
   // 🆕 tripName يُقرأ هنا أيضاً الآن — منظّم الرحلة (المرحلة ٣) يحتاجه لبناء
   // ملخّص رحلته الوحيدة بلا استعلام قائمة (انظر organizerTripSummary أدناه).
-  const { tripName, bankDetails, itinerary, status: tripStatus } = useTripConfig(hasAccess ? user : null)
+  const { tripName, organizerUid, itinerary, status: tripStatus } = useTripConfig(hasAccess ? user : null)
+  // 🆕 قراءة حيّة لبيانات بنك منظّم *هذه* الرحلة — المصدر الوحيد المعروض في
+  // BankDetailsCard. organizerUid قد يكون undefined (رحلة قديمة بلا منظّم
+  // معروف)، وuseOrganizerBankDetails تتعامل مع ذلك بحالة فارغة فوراً بلا اشتراك.
+  const organizerBank = useOrganizerBankDetails(organizerUid)
 
   // 🆕 المرحلة ٣ — «هل أنا منظّم هذه الرحلة؟» قراءة ذاتية واحدة، لا تُستهلك
   // إلا حين لا يكون المستخدم مسؤولاً عالمياً أصلاً (المسؤول يرى كل شيء بلا هذا).
@@ -167,10 +173,10 @@ export function useAppCoordinator() {
   const organizerTripSummary = useMemo(() => ({
     id: TRIP_ID,
     name: tripName ?? TRIP_ID,
-    bankDetails,
+    organizerUid,
     itinerary: itinerary ?? [],
     status: tripStatus,
-  }), [tripName, bankDetails, itinerary, tripStatus])
+  }), [tripName, organizerUid, itinerary, tripStatus])
 
   const tripAdmin = useTripAdminActions({ isAdmin, organizerTripId, showToast, handleFirestoreError })
 
@@ -260,7 +266,9 @@ export function useAppCoordinator() {
       myBalance, travelersPanelBalances,
     },
     /** إعدادات الرحلة الحالية ودورة حياتها. */
-    trip: { bankDetails, itinerary, canAddExpenses, tripClosedNotice },
+    trip: { itinerary, canAddExpenses, tripClosedNotice },
+    /** 🆕 بيانات بنك منظّم الرحلة الحالية — حيّة من users/{organizerUid}. */
+    organizerBank,
     /** أسعار الصرف الحيّة — تُقرأ من DataContext في نموذج المصروف. */
     rates: { currencies: CURRENCIES, ratesUpdatedAt },
     /** حالة المزامنة والتنبيهات. */
@@ -281,9 +289,9 @@ export function useAppCoordinator() {
       // فقط. نفس دالة tripAdmin.createTrip المستخدمة في لوحة الإدارة؛ الحدّ
       // الحقيقي (جلسة حقيقية، حدّ زمني) خادمي بالكامل في manageTrip.
       onCreateTrip: tripAdmin.createTrip,
-      defaultBankDetails: profile.profile.bankDetails,
     },
-    /** 🆕 بروفايل المستخدم العام — لشاشة البروفايل وتعبئة نموذج إنشاء الرحلة. */
+    /** 🆕 بروفايل المستخدم العام — لشاشة البروفايل، وهو مصدر بيانات البنك
+     * الوحيد لأي رحلة ينظّمها هذا المستخدم (انظر organizerBank أعلاه). */
     profile: profile.profile,
     isSavingProfile: profile.isSaving,
     saveProfile: profile.saveProfile,
@@ -297,7 +305,6 @@ export function useAppCoordinator() {
       loading: isAdmin ? tripsLoading : false,
       error: isAdmin ? tripsError : null,
       viewerRole: isAdmin ? 'admin' as const : 'organizer' as const,
-      defaultBankDetails: profile.profile.bankDetails,
       ...tripAdmin,
     },
     filter,

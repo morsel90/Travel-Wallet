@@ -1,12 +1,19 @@
 // ─── إنشاء/تحديث رحلة (دعم رحلات متعددة + مسار التنقل) ────────────────────────
-// 🆕 ينشئ مستند إعدادات الرحلة trips/{tripId} — الاسم + تفاصيل الحساب البنكي +
-// مسار الرحلة (itinerary). لا رمز رحلة/PIN بعد الآن (انظر docs/DECISIONS.md) —
-// الانضمام يقع حصراً عبر رابط دعوة (يُنشَأ من واجهة إدارة الرحلة بعد إنشائها هنا).
+// 🆕 ينشئ مستند إعدادات الرحلة trips/{tripId} — الاسم + مسار الرحلة
+// (itinerary). لا رمز رحلة/PIN بعد الآن (انظر docs/DECISIONS.md) — الانضمام
+// يقع حصراً عبر رابط دعوة (يُنشَأ من واجهة إدارة الرحلة بعد إنشائها هنا).
+//
+// 🆕 لا حقول بنك هنا — بيانات البنك المعروضة لأعضاء الرحلة تُقرأ حيّة من
+// بروفايل منظّمها (users/{organizerUid})، لا من مستند الرحلة. هذا السكربت
+// أداة يدوية بديلة عن الإنشاء الذاتي داخل التطبيق (الطريق الأساسي الآن)، لذا
+// يسأل اختيارياً عن بريد المنظّم ليكتب organizerUid + سجلّ عضويته — إن تُرك
+// فارغاً، الرحلة تبقى بلا منظّم معروف حتى يُعيَّن أحد لاحقاً من تبويب الأعضاء.
 //
 // الاستخدام: node scripts/create-trip.mjs
 
 import { initializeApp, cert } from 'firebase-admin/app'
-import { getFirestore } from 'firebase-admin/firestore'
+import { getAuth } from 'firebase-admin/auth'
+import { getFirestore, FieldValue } from 'firebase-admin/firestore'
 import { createInterface } from 'readline/promises'
 import { randomBytes } from 'crypto'
 import { loadServiceAccount } from './serviceAccount.mjs'
@@ -15,6 +22,7 @@ const serviceAccount = loadServiceAccount()
 
 initializeApp({ credential: cert(serviceAccount) })
 const db = getFirestore()
+const auth = getAuth()
 
 // ⚠️ يجب أن يطابق هذا التنسيق تماماً TRIP_ID_PATTERN في src/utils/tripId.ts وfunctions/index.js
 const TRIP_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/
@@ -56,10 +64,21 @@ async function main() {
     }
   }
 
-  const name        = (await ask('اسم الرحلة (يظهر لاحقاً في الواجهة): ')).trim()
-  const bankName    = (await ask('اسم البنك: ')).trim()
-  const beneficiary = (await ask('اسم المستفيد على الحساب: ')).trim()
-  const iban        = (await ask('رقم الآيبان (IBAN): ')).trim()
+  const name = (await ask('اسم الرحلة (يظهر لاحقاً في الواجهة): ')).trim()
+
+  // 🆕 منظّم الرحلة — اختياري، بريد حساب سجّل دخوله مرة واحدة على الأقل (نفس
+  // شرط set-admin.mjs). بلا منظّم، بطاقة التحويل تعرض حالة فارغة حتى يُعيَّن
+  // أحد لاحقاً من تبويب الأعضاء داخل التطبيق.
+  const organizerEmail = (await ask('بريد منظّم الرحلة (اختياري — اضغط Enter للتخطي): ')).trim()
+  let organizerUid = null
+  if (organizerEmail) {
+    try {
+      const organizerUser = await auth.getUserByEmail(organizerEmail)
+      organizerUid = organizerUser.uid
+    } catch {
+      console.error(`⚠️ لم يُعثر على حساب بالبريد "${organizerEmail}" — الرحلة ستُنشأ بلا منظّم معروف.`)
+    }
+  }
 
   // 🆕--- جمع بيانات مسار الرحلة (Itinerary) ---🆕
   const itinerary = []
@@ -109,9 +128,9 @@ async function main() {
   }
 
   // إعداد بيانات الرحلة للحفظ
-  const tripData = {
-    name,
-    bankDetails: { bankName, beneficiary, iban },
+  const tripData = { name }
+  if (organizerUid) {
+    tripData.organizerUid = organizerUid
   }
 
   // إذا تم إدخال مسار رحلة، أضفه للمستند
@@ -129,15 +148,35 @@ async function main() {
     tripData.status = 'active'
   }
 
-  // ⚠️ merge إلزامي: مستند الرحلة يحوي أقساماً مستقلة (الاسم، البنك، المسار)،
+  // ⚠️ merge إلزامي: مستند الرحلة يحوي أقساماً مستقلة (الاسم، المسار، المنظّم)،
   // وtripData أعلاه لا يحوي itinerary إلا إذا أدخلتَه في هذه الجلسة. بلا merge
-  // كانت إعادة تشغيل السكربت لتغيير تفاصيل البنك تمحو مسار الرحلة بالكامل
-  // بصمت. نفس القاعدة المطبَّقة في hooks/useTripAdminActions.ts.
+  // كانت إعادة تشغيل السكربت لتعديل الاسم فقط تمحو مسار الرحلة بالكامل بصمت.
+  // نفس القاعدة المطبَّقة في hooks/useTripAdminActions.ts.
   await db.collection('trips').doc(tripId).set(tripData, { merge: true })
+
+  // 🆕 claim العضوية + سطر عضوية بدور 'organizer' + organizesTripIds على
+  // بروفايله — نفس ما يفعله manageTrip عند الإنشاء الذاتي داخل التطبيق (انظر
+  // functions/index.js). بلا claim العضوية، المنظّم لا يستطيع فتح الرحلة أصلاً
+  // (isMember() تقرأها من التوكن)، فروسته وحدها لا تكفيه وصولاً حقيقياً.
+  if (organizerUid) {
+    const organizerRecord = await auth.getUser(organizerUid)
+    const existingTrips = (organizerRecord.customClaims && organizerRecord.customClaims.trips) || {}
+    await auth.setCustomUserClaims(organizerUid, {
+      ...organizerRecord.customClaims,
+      trips: { ...existingTrips, [tripId]: true },
+    })
+    await db.collection('trips').doc(tripId).collection('members').doc(organizerUid)
+      .set({ role: 'organizer', joinedAt: Date.now(), lastVerifiedAt: Date.now() }, { merge: true })
+    await db.collection('users').doc(organizerUid)
+      .set({ organizesTripIds: FieldValue.arrayUnion(tripId) }, { merge: true })
+  }
 
   console.log(`\n✅ تم إنشاء/تحديث الرحلة "${tripId}".`)
   console.log(`🔗 رابط الرحلة: <رابط موقعك>/?trip=${tripId}`)
   console.log('👥 لدعوة الأعضاء: افتح لوحة إدارة الرحلة داخل التطبيق وأنشئ رابط دعوة من تبويب "الأعضاء".')
+  if (!organizerUid) {
+    console.log('⚠️ لا منظّم معروف لهذه الرحلة — عيّن أحداً من تبويب "الأعضاء" داخل التطبيق ليظهر لبيانات بنكه.')
+  }
 
   if (itinerary.length > 0) {
     console.log(`✈️ تم إضافة عدد (${itinerary.length}) مسار تنقل للرحلة بنجاح.`)

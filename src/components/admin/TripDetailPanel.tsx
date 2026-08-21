@@ -23,7 +23,7 @@ import {
 import type { SegmentDraft } from '../../utils/itinerary'
 import type { TripSummary } from '../../hooks/useAllTrips'
 import { TRIP_STATUS_LABEL } from '../../types'
-import type { BankDetails, ToastMessage, TransportMode, TripStatus } from '../../types'
+import type { ToastMessage, TransportMode, TripStatus } from '../../types'
 
 interface TripDetailPanelProps {
   trip: TripSummary
@@ -36,7 +36,6 @@ interface TripDetailPanelProps {
   viewerRole: 'admin' | 'organizer'
   isSaving: boolean
   onSaveTripName: (tripId: string, name: string) => Promise<boolean>
-  onSaveBankDetails: (tripId: string, details: BankDetails) => Promise<boolean>
   onSaveItinerary: (tripId: string, itinerary: TripSummary['itinerary']) => Promise<boolean>
   /** 🆕 تغيير حالة دورة حياة الرحلة (active / completed / archived). */
   onSaveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
@@ -58,14 +57,12 @@ interface TripDetailPanelProps {
   showToast: (msg: ToastMessage, durationMs?: number) => void
   /** يُستدعى بعد نجاح الحذف — الرحلة لم تعد موجودة فلا يصح إبقاء لوحتها مفتوحة. */
   onDeleted: () => void
-  /** 🆕 بيانات بنك بروفايل المستخدم (useUserProfile) — لزر "استيراد من بروفايلي". */
-  profileBankDetails?: BankDetails
 }
 
-type DetailTab = 'bank' | 'itinerary' | 'members' | 'travelers' | 'backup' | 'danger'
+type DetailTab = 'details' | 'itinerary' | 'members' | 'travelers' | 'backup' | 'danger'
 
 const ALL_TABS: Array<{ key: DetailTab; label: string; Icon: typeof Building2 }> = [
-  { key: 'bank',      label: 'الاسم والحساب', Icon: Building2 },
+  { key: 'details',      label: 'اسم الرحلة', Icon: Building2 },
   { key: 'itinerary', label: 'مسار الرحلة',   Icon: Route },
   { key: 'members',   label: 'الأعضاء',       Icon: Users },
   { key: 'travelers', label: 'المسافرون',     Icon: UserCheck },
@@ -101,15 +98,15 @@ const STATUS_HELP: Record<TripStatus, string> = {
 }
 
 export default function TripDetailPanel({
-  trip, viewerRole, isSaving, onSaveTripName, onSaveBankDetails, onSaveItinerary,
+  trip, viewerRole, isSaving, onSaveTripName, onSaveItinerary,
   onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onLinkTravelerAccount, onExportBackup,
-  onCreateInvite, onRevokeInvite, showToast, onDeleted, profileBankDetails,
+  onCreateInvite, onRevokeInvite, showToast, onDeleted,
 }: TripDetailPanelProps) {
   const TABS = useMemo(
     () => viewerRole === 'admin' ? ALL_TABS : ALL_TABS.filter(t => !ORGANIZER_HIDDEN_TABS.has(t.key)),
     [viewerRole],
   )
-  const [activeTab, setActiveTab] = useState<DetailTab>('bank')
+  const [activeTab, setActiveTab] = useState<DetailTab>('details')
 
   // 🆕 لا نقرأ السجلّ إلا والتبويب مفتوح: القراءة مقصورة على المسؤول/المنظّم،
   // والقائمة لا تتغيّر إلا بفعله هو في هذه الشاشة نفسها — فلا داعي لجلبها مع كل
@@ -132,7 +129,6 @@ export default function TripDetailPanel({
   const [inviteMsgCopied, setInviteMsgCopied] = useState(false)
 
   const [nameForm, setNameForm] = useState(trip.name)
-  const [bankForm, setBankForm] = useState<BankDetails>(trip.bankDetails)
   const [workingItinerary, setWorkingItinerary] = useState(trip.itinerary)
   const [draft, setDraft] = useState<SegmentDraft | null>(null)
   const [draftError, setDraftError] = useState<string | null>(null)
@@ -145,13 +141,12 @@ export default function TripDetailPanel({
   // حتى لا تُعرض بيانات الرحلة السابقة في حقول الرحلة الجديدة.
   useEffect(() => {
     setNameForm(trip.name)
-    setBankForm(trip.bankDetails)
     setWorkingItinerary(trip.itinerary)
     setDraft(null)
     setEditingId(null)
     setDraftError(null)
     setDeleteConfirm('')
-    setActiveTab('bank')
+    setActiveTab('details')
     // 🆕 توكن الجلسة السابقة يخصّ رحلة أخرى — لا معنى لمشاركته هنا.
     setInviteToken(null)
     setInviteMsgCopied(false)
@@ -159,29 +154,14 @@ export default function TripDetailPanel({
     setLinkTargetUid('')
   }, [trip.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const bankDirty = useMemo(
-    () => nameForm !== trip.name ||
-      (['bankName', 'beneficiary', 'iban'] as const).some(k => bankForm[k] !== trip.bankDetails[k]),
-    [nameForm, bankForm, trip]
-  )
+  const nameDirty = nameForm !== trip.name
 
   const itineraryDirty = useMemo(
     () => JSON.stringify(workingItinerary) !== JSON.stringify(trip.itinerary),
     [workingItinerary, trip.itinerary]
   )
 
-  const saveNameAndBank = async () => {
-    if (nameForm !== trip.name) await onSaveTripName(trip.id, nameForm)
-    await onSaveBankDetails(trip.id, bankForm)
-  }
-
-  // 🆕 يملأ نموذج بنك *هذه* الرحلة من بروفايل المستخدم العام — لا يحفظ تلقائياً
-  // (لا يزال زر "حفظ التغييرات" مطلوباً)، ولا يمسّ الرحالات الأخرى ولا البروفايل
-  // نفسه: نسخة لحظية أحادية الاتجاه، بنفس منطق تعبئة NewTripForm عند الإنشاء.
-  const importBankFromProfile = () => {
-    if (!profileBankDetails) return
-    setBankForm(profileBankDetails)
-  }
+  const saveName = () => onSaveTripName(trip.id, nameForm)
 
   // 🆕 رابط الدخول المباشر (?invite=TOKEN) — طريقة الانضمام الوحيدة لرحلة (لا رمز رحلة بعد الآن).
   const directJoinUrl = (token: string) =>
@@ -333,9 +313,9 @@ export default function TripDetailPanel({
         ))}
       </div>
 
-      {activeTab === 'bank' && (
+      {activeTab === 'details' && (
         <form
-          onSubmit={e => { e.preventDefault(); void saveNameAndBank() }}
+          onSubmit={e => { e.preventDefault(); void saveName() }}
           className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4"
         >
           <div>
@@ -351,61 +331,16 @@ export default function TripDetailPanel({
 
           <hr className="border-slate-100" />
 
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-teal-600" /> تفاصيل الحساب البنكي
-            </h3>
-            {/* 🆕 مستقلة عمداً عن بروفايل المستخدم — استيراد لحظي بضغطة، لا مزامنة
-                حيّة. تعديل الحساب هنا لا يغيّر البروفايل، والعكس صحيح. */}
-            {profileBankDetails && (profileBankDetails.bankName || profileBankDetails.beneficiary || profileBankDetails.iban) && (
-              <button
-                type="button"
-                onClick={importBankFromProfile}
-                className="flex items-center gap-1.5 text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-2.5 py-1.5 rounded-lg transition-colors"
-              >
-                <User className="w-3.5 h-3.5" /> استيراد من بروفايلي
-              </button>
-            )}
-          </div>
-          <p className="text-xs text-slate-500 -mt-2">
-            تظهر لكل أعضاء هذه الرحلة في بطاقة التحويل، ويمكنهم نسخها أو مشاركتها.
-            بيانات هذه الرحلة مستقلة عن بروفايلك العام — تعديلها هنا يخصّها وحدها.
-          </p>
-
-          <div>
-            <label className={labelClass} htmlFor="bank-name">اسم البنك</label>
-            <input
-              id="bank-name"
-              type="text"
-              value={bankForm.bankName}
-              onChange={e => setBankForm({ ...bankForm, bankName: e.target.value })}
-              className={inputClass}
-            />
-          </div>
-
-          <div>
-            <label className={labelClass} htmlFor="bank-beneficiary">اسم المستفيد</label>
-            <input
-              id="bank-beneficiary"
-              type="text"
-              value={bankForm.beneficiary}
-              onChange={e => setBankForm({ ...bankForm, beneficiary: e.target.value })}
-              className={inputClass}
-            />
-          </div>
-
-          <div>
-            <label className={labelClass} htmlFor="bank-iban">رقم الآيبان (IBAN)</label>
-            <input
-              id="bank-iban"
-              type="text"
-              dir="ltr"
-              value={bankForm.iban}
-              onChange={e => setBankForm({ ...bankForm, iban: e.target.value })}
-              placeholder="SA0000000000000000000000"
-              className={`${inputClass} text-right tabular-nums`}
-            />
-            <p className="text-[11px] text-slate-400 mt-1.5">تُحذف المسافات تلقائياً عند الحفظ.</p>
+          {/* 🆕 لا حقول بنك هنا — بيانات البنك المعروضة لأعضاء هذه الرحلة تُقرأ
+              حيّة من بروفايل المنظّم (users/{organizerUid})، لا مستند الرحلة.
+              انظر docs/DECISIONS.md. */}
+          <div className="flex items-start gap-2.5 bg-slate-50 border border-slate-100 rounded-xl p-3">
+            <User className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-slate-600 leading-relaxed">
+              بيانات البنك المعروضة لأعضاء هذه الرحلة تُقرأ من بروفايل المنظّم
+              الحالي مباشرة — عدّلها من (بروفايلي)، وينعكس التعديل فوراً هنا
+              وفي كل رحلة أخرى ينظّمها نفس الحساب.
+            </p>
           </div>
 
           <hr className="border-slate-100" />
@@ -448,16 +383,16 @@ export default function TripDetailPanel({
           <div className="flex items-center gap-2 pt-1">
             <button
               type="submit"
-              disabled={isSaving || !bankDirty}
+              disabled={isSaving || !nameDirty}
               className="flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm disabled:opacity-40"
             >
               {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               حفظ التغييرات
             </button>
-            {bankDirty && (
+            {nameDirty && (
               <button
                 type="button"
-                onClick={() => { setNameForm(trip.name); setBankForm(trip.bankDetails) }}
+                onClick={() => setNameForm(trip.name)}
                 className="px-4 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
               >
                 تراجع

@@ -252,9 +252,14 @@ artifacts/{tripId}/public/data/
   rateLimits/{uid}               — Rate limit tracking per user
   travelers/{id}/depositLogs/{id} — Immutable deposit audit log (admin-only)
 
-trips/{tripId}                    — Trip config (name, bankDetails, itinerary[])
+trips/{tripId}                    — Trip config (name, organizerUid, itinerary[])
                                     Admin-writable from the app (validated by isValidTripConfig);
                                     delete stays forbidden — it would orphan artifacts/{tripId}
+                                    🆕 No bankDetails field — bank details are read live from
+                                    users/{organizerUid} instead. See Design Decisions.
+users/{uid}                       — 🆕 User profile { displayName?, bankDetails?, organizesTripIds?,
+                                    lastTripCreatedAt? }. Owner-only write; read by the owner or by
+                                    any member of a trip this account organizes (organizesSharedTrip).
 trips/{tripId}/members/{uid}      — 🆕 Membership roster. Written ONLY by the functions
                                     (joinViaInvite on join);
                                     `allow write: if false`, read admin-only.
@@ -295,7 +300,8 @@ await httpsCallable<{ tripId: string; name: string }, { success: boolean }>(
   functions, 'updateMyTravelerName',
 )({ tripId, name })
 
-// hooks/useTripAdminActions.ts — admin claim required, re-checked server-side
+// hooks/useTripAdminActions.ts — 🆕 create: any signed-in non-anonymous account
+// (self-serve, becomes organizer); delete: admin claim required, re-checked server-side
 await httpsCallable<
   { mode: 'create' | 'delete'; tripId: string; name?: string },
   { success: boolean; tripId: string }

@@ -12,7 +12,7 @@ const depositLog: DepositLogEntry = {
   mode: 'set', reason: null, changedByEmail: 'admin@example.com', changedByUid: 'admin1', createdAt: Date.now(),
 }
 const trip = {
-  name: 'رحلة تركيا', bankDetails: { bankName: '', beneficiary: '', iban: '' },
+  name: 'رحلة تركيا',
   itinerary: [], status: 'active' as const,
 }
 

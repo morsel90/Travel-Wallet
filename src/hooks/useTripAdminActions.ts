@@ -2,7 +2,7 @@
 //
 // مساران مختلفان عمداً بحسب طبيعة العملية:
 //
-// 1. البيانات غير السرّية (الاسم/البنك/المسار) → كتابة مباشرة على
+// 1. البيانات غير السرّية (الاسم/المسار/الحالة) → كتابة مباشرة على
 //    trips/{tripId} عبر قواعد Firestore (isValidTripConfig). أخفّ وأسرع، ولا
 //    تحتاج نشر دوال عند كل تعديل. القاعدة تشترط isAdmin() فقط ولا تشير للرحلة
 //    النشطة، فالمسؤول يعدّل أي رحلة دون مغادرة الرحلة المفتوحة.
@@ -13,8 +13,12 @@
 // ⚠️ كل كتابات المسار الأول تستخدم setDoc(..., { merge: true }):
 //   - الكتابة الكاملة بلا merge تمسح الحقول غير المذكورة — وهذه مصيدة
 //     scripts/create-trip.mjs، الذي يستدعي .set() بكائن بلا itinerary فيمحو
-//     مسار الرحلة عند تحديث تفاصيل البنك فقط.
+//     مسار الرحلة عند تحديث الاسم وحده.
 //   - merge يُنشئ المستند إن لم يكن موجوداً.
+//
+// 🆕 لا bankDetails هنا بعد اليوم — بيانات البنك مصدرها الوحيد بروفايل المنظّم
+// (users/{organizerUid})، تُقرأ حيّة عبر useOrganizerBankDetails، لا تُكتب على
+// مستند الرحلة إطلاقاً. انظر docs/DECISIONS.md.
 import { useState, useCallback } from 'react'
 import { setDoc, getDocs } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
@@ -26,7 +30,7 @@ import { haptic } from '../utils/haptics'
 import { MAX_SEGMENTS } from '../utils/itinerary'
 import { buildTripBackup, downloadTripBackup } from '../utils/backup'
 import { TRIP_STATUS_LABEL } from '../types'
-import type { BankDetails, DepositLogEntry, Expense, ItinerarySegment, ToastMessage, Traveler, TripStatus } from '../types'
+import type { DepositLogEntry, Expense, ItinerarySegment, ToastMessage, Traveler, TripStatus } from '../types'
 import type { TripSummary } from './useAllTrips'
 
 // عقد استدعاء manageTrip — يطابق ما تقرأه الدالة في functions/index.js
@@ -34,8 +38,6 @@ interface ManageTripRequest {
   mode: 'create' | 'delete'
   tripId: string
   name: string
-  /** 🆕 اختياري، mode: 'create' فقط — يُعبَّأ من بروفايل المُنشئ (useUserProfile). */
-  bankDetails?: BankDetails
 }
 interface ManageTripResponse { success: boolean; tripId: string }
 
@@ -97,13 +99,12 @@ interface UseTripAdminActionsParams {
 
 export interface UseTripAdminActionsResult {
   isSaving: boolean
-  saveBankDetails: (tripId: string, details: BankDetails) => Promise<boolean>
   saveItinerary: (tripId: string, itinerary: ItinerarySegment[]) => Promise<boolean>
   saveTripName: (tripId: string, name: string) => Promise<boolean>
   /** 🆕 تغيير حالة دورة حياة الرحلة — القواعد تفرض أثرها، هذا يكتب الحقل فقط. */
   saveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
   /** 🆕 متاحة لأي حساب حقيقي مسجّل دخوله، لا المسؤول فقط — من ينشئ يصبح منظّم رحلته. */
-  createTrip: (tripId: string, name: string, bankDetails?: BankDetails) => Promise<boolean>
+  createTrip: (tripId: string, name: string) => Promise<boolean>
   /** حذف نهائي — للرحلات الفارغة فقط، والخادم هو من يفرض ذلك (انظر functions/index.js). */
   deleteTrip: (tripId: string) => Promise<boolean>
   /** 🆕 إزالة عضو من رحلة واحدة — لا تمسّ بقية رحلاته، ولا تُلغي مصاريفه. */
@@ -163,19 +164,6 @@ export function useTripAdminActions({
     }
   }, [canAct, showToast, handleFirestoreError])
 
-  const saveBankDetails = useCallback((tripId: string, details: BankDetails) => write(
-    tripId,
-    {
-      bankDetails: {
-        bankName: details.bankName.trim(),
-        beneficiary: details.beneficiary.trim(),
-        iban: details.iban.trim().replace(/\s+/g, ''),
-      },
-    },
-    'تم حفظ تفاصيل الحساب البنكي',
-    'تعذّر حفظ تفاصيل الحساب البنكي.',
-  ), [write])
-
   const saveItinerary = useCallback((tripId: string, itinerary: ItinerarySegment[]) => {
     // نفس الحدّ المفروض في firestore.rules — نكشفه برسالة مفهومة بدل ترك
     // القواعد ترفض الكتابة بخطأ صلاحيات غامض.
@@ -210,7 +198,6 @@ export function useTripAdminActions({
     tripId: string,
     name: string,
     successText: string,
-    bankDetails?: BankDetails,
   ): Promise<boolean> => {
     // 🆕 الحذف يبقى للمسؤول فقط — نفس الحدّ المفروض خادمياً في manageTrip.
     // الإنشاء متاح لأي حساب حقيقي مسجّل دخوله (نموذج واتساب)، والحدّ الحقيقي
@@ -228,7 +215,7 @@ export function useTripAdminActions({
       await user.getIdToken(true)
 
       const manageTrip = httpsCallable<ManageTripRequest, ManageTripResponse>(functions, 'manageTrip')
-      await manageTrip({ mode, tripId, name, ...(bankDetails ? { bankDetails } : {}) })
+      await manageTrip({ mode, tripId, name })
 
       // 🆕 الإنشاء الذاتي (غير المسؤول) يمنح المُنشئ claim عضوية *جديداً* داخل
       // manageTrip نفسها — لم يكن موجوداً في التوكن المُحدَّث أعلاه لأنه لم
@@ -263,8 +250,8 @@ export function useTripAdminActions({
   }, [isAdmin, showToast, handleFirestoreError])
 
   const createTrip = useCallback(
-    (tripId: string, name: string, bankDetails?: BankDetails) =>
-      callManageTrip('create', tripId, name, `تم إنشاء الرحلة "${tripId}"`, bankDetails),
+    (tripId: string, name: string) =>
+      callManageTrip('create', tripId, name, `تم إنشاء الرحلة "${tripId}"`),
     [callManageTrip]
   )
 
@@ -523,7 +510,7 @@ export function useTripAdminActions({
 
       const backup = buildTripBackup({
         tripId: trip.id,
-        trip: { name: trip.name, bankDetails: trip.bankDetails, itinerary: trip.itinerary, status: trip.status },
+        trip: { name: trip.name, itinerary: trip.itinerary, status: trip.status },
         travelers, expenses, depositLogs, travelerNames,
       })
       downloadTripBackup(backup)
@@ -588,7 +575,7 @@ export function useTripAdminActions({
   }, [isAdmin, showToast, handleFirestoreError])
 
   return {
-    isSaving, saveBankDetails, saveItinerary, saveTripName, saveTripStatus, createTrip,
+    isSaving, saveItinerary, saveTripName, saveTripStatus, createTrip,
     deleteTrip, removeMember, setMemberRole, exportBackup, restoreTrip: restoreTripFn,
     createInvite, revokeInvite, linkTravelerAccount,
   }

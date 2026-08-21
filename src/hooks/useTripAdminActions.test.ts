@@ -71,7 +71,6 @@ beforeEach(() => {
 
 const tripSummary = {
   id: 'trip-1', name: 'رحلة تركيا',
-  bankDetails: { bankName: '', beneficiary: '', iban: '' },
   itinerary: [], status: 'active' as const,
 }
 
@@ -347,14 +346,6 @@ describe('createTrip — الصلاحية والعقد', () => {
     expect(mocks.callable).toHaveBeenCalledWith({ mode: 'create', tripId: 'trip-1', name: 'رحلة تركيا' })
   })
 
-  it('يمرّر bankDetails حين يُعطى (تعبئة من بروفايل المُنشئ)', async () => {
-    mocks.callable.mockResolvedValue({ data: { success: true, tripId: 'trip-1' } })
-    const { result } = setup(false)
-    const bankDetails = { bankName: 'بنك', beneficiary: 'أحمد', iban: 'SA00' }
-    await act(async () => { await result.current.createTrip('trip-1', 'اسم', bankDetails) })
-
-    expect(mocks.callable).toHaveBeenCalledWith({ mode: 'create', tripId: 'trip-1', name: 'اسم', bankDetails })
-  })
 })
 
 describe('deleteTrip — الصلاحية والعقد', () => {

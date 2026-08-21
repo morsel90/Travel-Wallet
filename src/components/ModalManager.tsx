@@ -1,10 +1,14 @@
 // 🆕 مُجمِّع عرض المودالات — استُخرج من App.tsx.
-// يستهلك حالة المودال الموحّدة (modal من useModals) ويعرض المودالات الخمسة العامة:
-// التقارير، حذف مسافر، الإيداع، سجل الإيداع، سلة المهملات.
-// مكوّن عرضي بحت: كل البيانات والمعالجات تُمرَّر إليه من App (حيث تعيش لأنها تلمس Firestore/الـ contexts).
+// يستهلك حالة المودال الموحّدة (modal من useModals) ويعرض المودالات العامة
+// المرتبطة بالرحلة المفتوحة: التقارير، حذف مسافر، الإيداع، سجل الإيداع، سلة
+// المهملات، إدارة الرحلات. مكوّن عرضي بحت: كل البيانات والمعالجات تُمرَّر إليه
+// من App (حيث تعيش لأنها تلمس Firestore/الـ contexts).
 //
-// خارج النطاق عمداً: تأكيد حذف المصروف (ضمن useExpenseActions) وتسجيل دخول المسؤول (AuthFlow) —
-// كلاهما يبقى في App لأنهما مملوكان لنطاقيهما ولا يمرّان عبر useModals.
+// خارج النطاق عمداً: تأكيد حذف المصروف (ضمن useExpenseActions) وتسجيل دخول
+// المسؤول (AuthFlow) — كلاهما يبقى في App لأنهما مملوكان لنطاقيهما ولا يمرّان
+// عبر useModals. 🆕 وبروفايل المستخدم العام أيضاً — يُعرض من App.tsx مباشرة لا
+// من هنا، لأنه مستقل عن أي رحلة ويجب أن يبقى متاحاً حتى في شاشات لا تصل إليها
+// هذه المكوّنة (مثل TripPicker لعضو بلا أي رحلة بعد — انظر App.tsx).
 import { lazy, Suspense } from 'react'
 import type { ComponentProps } from 'react'
 import { AnimatePresence } from 'framer-motion'
@@ -20,14 +24,12 @@ const importDepositModal        = () => import('./modals/DepositModal')
 const importTrashBinModal       = () => import('./modals/TrashBinModal')
 const importDepositHistoryModal = () => import('./modals/DepositHistoryModal')
 const importTripAdminView       = () => import('./admin/TripAdminView')
-const importUserProfileModal    = () => import('./modals/UserProfileModal')
 
 const ReportsView         = lazy(importReportsView)
 const DepositModal        = lazy(importDepositModal)
 const TrashBinModal       = lazy(importTrashBinModal)
 const DepositHistoryModal = lazy(importDepositHistoryModal)
 const TripAdminView       = lazy(importTripAdminView)
-const UserProfileModal    = lazy(importUserProfileModal)
 
 /**
  * 🆕 أجزاء المودالات للتحميل المسبق الهادئ — تُستهلك من App.tsx.
@@ -45,7 +47,6 @@ export const modalImporters = [
   importTrashBinModal,
   importDepositHistoryModal,
   importTripAdminView,
-  importUserProfileModal,
 ]
 
 interface ModalManagerProps {
@@ -65,12 +66,10 @@ interface ModalManagerProps {
     'deletedExpenses' | 'deletedTravelers' | 'onRestoreExpense' | 'onRestoreTraveler'>
   // 🆕 إدارة الرحلات — للمسؤول فقط (onClose يُدار داخلياً)
   tripAdmin: Omit<ComponentProps<typeof TripAdminView>, 'onClose'>
-  // 🆕 بروفايل المستخدم العام (onClose يُدار داخلياً)
-  userProfile: Omit<ComponentProps<typeof UserProfileModal>, 'onClose'>
 }
 
 export default function ModalManager({
-  modal, closeModal, confirmDeleteTraveler, reports, deposit, closeDeposit, trash, tripAdmin, userProfile,
+  modal, closeModal, confirmDeleteTraveler, reports, deposit, closeDeposit, trash, tripAdmin,
 }: ModalManagerProps) {
   // اشتقاق الحمولة من الحالة كثوابت محلية — يضمن حفظ التضييق (narrowing) داخل الإغلاقات
   const deleteTarget    = modal.type === 'deleteTraveler'  ? modal.traveler : null
@@ -135,13 +134,6 @@ export default function ModalManager({
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {modal.type === 'userProfile' && (
-          <Suspense key="user-profile" fallback={<ModalFallback />}>
-            <UserProfileModal {...userProfile} onClose={closeModal} />
-          </Suspense>
-        )}
-      </AnimatePresence>
     </>
   )
 }

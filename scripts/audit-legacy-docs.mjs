@@ -63,10 +63,10 @@ const findings = {
     count: 0,
     samples: [],
   },
-  tripsWithoutBankDetails: {
-    label: 'رحلات بلا حقل bankDetails',
-    where: 'hooks/useTripConfig.ts — السقوط إلى BANK_DETAILS في constants.ts',
-    note: '⚠️ هذه وحدها تعرض الحساب البنكي الافتراضي في constants.ts لمستخدميها.',
+  tripsWithoutOrganizerUid: {
+    label: 'رحلات بلا organizerUid (منظّم معروف)',
+    where: 'components/Misc.tsx (BankDetailsCard) — حالة "لا تتوفر بيانات بنك بعد"',
+    note: '⚠️ هذه وحدها تعرض حالة البطاقة الفارغة لأعضائها. عيّن منظّماً من تبويب "الأعضاء" لإغلاقها — لا سكربت ترحيل تلقائي، انظر docs/DECISIONS.md.',
     count: 0,
     samples: [],
   },
@@ -91,7 +91,7 @@ async function main() {
   for (const trip of trips.docs) {
     const data = trip.data()
     if (!('status' in data)) record('tripsWithoutStatus', trip.id)
-    if (!('bankDetails' in data)) record('tripsWithoutBankDetails', trip.id)
+    if (!('organizerUid' in data)) record('tripsWithoutOrganizerUid', trip.id)
 
     // المصاريف تعيش خارج مستند الرحلة — انظر بنية Firestore في CLAUDE.md
     const expenses = await db
