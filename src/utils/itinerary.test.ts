@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   toStoredTime, toInputTime, validateDraft, draftToSegment, segmentToDraft,
   isRenderableSegment, normalizeItinerary, findNextSegment, newSegmentId,
-  emptySegmentDraft,
+  emptySegmentDraft, tripEndTime,
 } from './itinerary'
 import type { SegmentDraft } from './itinerary'
 import type { ItinerarySegment } from '../types'
@@ -203,6 +203,48 @@ describe('findNextSegment', () => {
 
   it('يُرجع null لقائمة فارغة', () => {
     expect(findNextSegment([], Date.now())).toBeNull()
+  })
+})
+
+describe('tripEndTime', () => {
+  const segmentWithArrival = (id: string, depTime: string, arrTime: string): ItinerarySegment => ({
+    id,
+    mode: 'flight',
+    identifier: `QR ${id}`,
+    departure: { location: 'أ', time: depTime },
+    arrival: { location: 'ب', time: arrTime },
+  })
+
+  it('يُرجع null لمسار فارغ', () => {
+    expect(tripEndTime([])).toBeNull()
+  })
+
+  it('يُرجع وقت وصول المقطع الوحيد', () => {
+    const one = [segmentWithArrival('a', '2026-07-01T10:00:00', '2026-07-01T14:00:00')]
+    expect(tripEndTime(one)).toBe(new Date('2026-07-01T14:00:00').getTime())
+  })
+
+  it('يُرجع وصول آخر مقطع زمنياً (بترتيب الانطلاق)، لا أول عنصر في المصفوفة', () => {
+    // بلا ترتيب مسبق عمداً — normalizeItinerary داخل tripEndTime هي ما يرتّب.
+    const unsorted = [
+      segmentWithArrival('later',  '2026-09-01T10:00:00', '2026-09-01T14:00:00'),
+      segmentWithArrival('first',  '2026-07-01T10:00:00', '2026-07-01T14:00:00'),
+      segmentWithArrival('middle', '2026-08-01T10:00:00', '2026-08-01T14:00:00'),
+    ]
+    expect(tripEndTime(unsorted)).toBe(new Date('2026-09-01T14:00:00').getTime())
+  })
+
+  it('يتجاهل مقاطع تالفة عبر normalizeItinerary (نفس فلترة findNextSegment)', () => {
+    const withGarbage = [
+      segmentWithArrival('valid', '2026-07-01T10:00:00', '2026-07-01T14:00:00'),
+      { id: 'broken' } as unknown as ItinerarySegment,
+    ]
+    expect(tripEndTime(withGarbage)).toBe(new Date('2026-07-01T14:00:00').getTime())
+  })
+
+  it('يُرجع null لمدخل غير مصفوفة (undefined، نص، إلخ)', () => {
+    expect(tripEndTime(undefined)).toBeNull()
+    expect(tripEndTime('not-an-array')).toBeNull()
   })
 })
 

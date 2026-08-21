@@ -491,6 +491,34 @@ describe('دورة حياة الرحلة — status', () => {
   })
 })
 
+// 🆕 statusChangedAt — بداية عدّاد "منذ متى وهي بهذه الحالة"، يكتبه العميل
+// فعلاً عند كل تبديل يدوي (useTripAdminActions.ts: saveTripStatus)، لا فقط
+// يظهر عرضاً بسبب merge كـ createdByUid/organizerUid. انظر
+// advanceTripLifecycle في functions/index.js وdocs/DECISIONS.md.
+describe('statusChangedAt — بداية عدّاد دورة الحياة التلقائية', () => {
+  it('رقم صالح يُقبل مع status', async () => {
+    await assertSucceeds(setDoc(
+      tripConfigDoc(adminDb()),
+      { status: 'completed', statusChangedAt: Date.now() },
+      { merge: true },
+    ))
+  })
+
+  it('قيمة غير رقمية تُرفض', async () => {
+    await assertFails(setDoc(
+      tripConfigDoc(adminDb()),
+      { status: 'completed', statusChangedAt: '2026-08-22' },
+      { merge: true },
+    ))
+  })
+
+  it('رحلة تحمل statusChangedAt سابقاً تُعدَّل بلا أي قيد عليه — لا ثبات مطلوب (بخلاف createdByUid)', async () => {
+    await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة', statusChangedAt: 1000 }))
+    await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { name: 'اسم جديد' }, { merge: true }))
+    await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { statusChangedAt: 2000 }, { merge: true }))
+  })
+})
+
 describe('حدّ المعدّل — expense rate limiting', () => {
   it('عضو غير مسؤول بلا سجل حدّ معدّل سابق يستطيع إضافة مصروف', async () => {
     await assertSucceeds(setDoc(expenseDoc(memberDb('member-1'), 'e1'), expenseBy('member-1')))

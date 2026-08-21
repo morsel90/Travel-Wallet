@@ -97,6 +97,15 @@ const STATUS_HELP: Record<TripStatus, string> = {
   archived:  'للاطّلاع والتقارير فقط — لا تُقبل أي كتابة. وتختفي من قائمة الرحلات لمن ليس داخلها.',
 }
 
+/** "يومين"/"٥ أيام" — تقريب لأقرب يوم، كافٍ لتلميح لا لدقّة زمنية. */
+function daysSince(timestamp: number): string {
+  const days = Math.max(0, Math.floor((Date.now() - timestamp) / (24 * 60 * 60 * 1000)))
+  if (days === 0) return 'اليوم'
+  if (days === 1) return 'يوم واحد'
+  if (days === 2) return 'يومين'
+  return `${days} يوماً`
+}
+
 export default function TripDetailPanel({
   trip, viewerRole, isSaving, onSaveTripName, onSaveItinerary,
   onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onLinkTravelerAccount, onExportBackup,
@@ -376,6 +385,14 @@ export default function TripDetailPanel({
             <p className="text-[11px] text-slate-500 mt-2.5 leading-relaxed bg-slate-50 border border-slate-100 rounded-lg p-2.5">
               {STATUS_HELP[trip.status]}
             </p>
+
+            {/* 🆕 شفافية لا وظيفة جديدة — لا يظهر لرحلة لم تُلمَس منذ هذه
+                الميزة (statusChangedAt غائب، انظر useTripConfig.ts). */}
+            {typeof trip.statusChangedAt === 'number' && (
+              <p className="text-[11px] text-slate-400 mt-1.5">
+                منذ {daysSince(trip.statusChangedAt)} على آخر تغيير لحالتها — يدوياً أو تلقائياً.
+              </p>
+            )}
           </div>
 
           <hr className="border-slate-100" />

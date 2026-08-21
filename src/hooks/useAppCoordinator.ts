@@ -62,7 +62,7 @@ export function useAppCoordinator() {
   // تحتاجه هذه الشاشة — organizerUid للبطاقة البنكية، والمسار للويدجت والتقارير.
   // 🆕 tripName يُقرأ هنا أيضاً الآن — منظّم الرحلة (المرحلة ٣) يحتاجه لبناء
   // ملخّص رحلته الوحيدة بلا استعلام قائمة (انظر organizerTripSummary أدناه).
-  const { tripName, organizerUid, itinerary, status: tripStatus } = useTripConfig(hasAccess ? user : null)
+  const { tripName, organizerUid, itinerary, status: tripStatus, statusChangedAt } = useTripConfig(hasAccess ? user : null)
   // 🆕 قراءة حيّة لبيانات بنك منظّم *هذه* الرحلة — المصدر الوحيد المعروض في
   // BankDetailsCard. organizerUid قد يكون undefined (رحلة قديمة بلا منظّم
   // معروف)، وuseOrganizerBankDetails تتعامل مع ذلك بحالة فارغة فوراً بلا اشتراك.
@@ -181,7 +181,8 @@ export function useAppCoordinator() {
     organizerUid,
     itinerary: itinerary ?? [],
     status: tripStatus,
-  }), [tripName, organizerUid, itinerary, tripStatus])
+    statusChangedAt,
+  }), [tripName, organizerUid, itinerary, tripStatus, statusChangedAt])
 
   const tripAdmin = useTripAdminActions({ isAdmin, organizerTripId, showToast, handleFirestoreError })
 

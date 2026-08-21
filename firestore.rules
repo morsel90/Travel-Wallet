@@ -217,12 +217,19 @@ service cloud.firestore {
     // بالضبط: حذفه من hasOnly يرفض كل تعديل لاحق على كل رحلة قديمة. هذا ما
     // كشفه فعلاً e2e/organizer-role.spec.ts (القاعدة ١٨ مجدداً) — رحلة مزروعة
     // بـ bankDetails فارغة (نمط seedTrip القديم) عجز منظّمها عن حفظ أي تعديل.
+    // 🆕 statusChangedAt — بخلاف createdByUid/organizerUid/bankDetails أعلاه،
+    // هذا حقل يكتبه العميل فعلاً وعمداً (useTripAdminActions.ts: saveTripStatus
+    // تكتبه مع status معاً في كل تبديل يدوي)، لا فقط "يظهر" بسبب merge. تكتبه
+    // أيضاً advanceTripLifecycle (functions/index.js) عبر Admin SDK عند
+    // الانتقال التلقائي — الأثر مطابق أياً كان الكاتب: بداية عدّاد "منذ متى
+    // وهي بهذه الحالة"، تستهلكه لاحقاً أهلية الحذف النهائي (المرحلة ٢).
     function isValidTripConfig(d) {
-      return d.keys().hasOnly(['name', 'itinerary', 'status', 'createdByUid', 'organizerUid', 'bankDetails'])
+      return d.keys().hasOnly(['name', 'itinerary', 'status', 'statusChangedAt', 'createdByUid', 'organizerUid', 'bankDetails'])
         && (!('name' in d) || (d.name is string && d.name.size() <= 100))
         && (!('itinerary' in d) || (d.itinerary is list && d.itinerary.size() <= 50))
         && (!('bankDetails' in d) || isValidBankDetails(d.bankDetails))
         && (!('status' in d) || d.status in ['active', 'completed', 'archived'])
+        && (!('statusChangedAt' in d) || d.statusChangedAt is number)
         && (!('createdByUid' in d) || d.createdByUid is string)
         && (!('organizerUid' in d) || d.organizerUid is string);
     }

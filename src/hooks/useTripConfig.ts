@@ -26,6 +26,12 @@ export interface TripConfig {
   itinerary?: ItinerarySegment[]
   /** 🆕 حالة دورة الحياة — غياب الحقل يُعامَل كـ active (انظر utils/tripStatus.ts). */
   status: TripStatus
+  /**
+   * 🆕 متى تغيّرت status آخر مرة — يدوياً أو عبر advanceTripLifecycle
+   * (functions/index.js). غيابه يعني "غير معروف" لا "الآن"؛ لا افتراض
+   * رجعي لرحلة لم تُلمَس منذ هذه الميزة (نفس فلسفة organizerUid/createdByUid).
+   */
+  statusChangedAt?: number
 }
 
 const FALLBACK_CONFIG: TripConfig = { tripName: null, status: 'active' }
@@ -59,6 +65,7 @@ export function useTripConfig(user: User | null): TripConfig {
           organizerUid?: unknown
           itinerary?: unknown
           status?: unknown
+          statusChangedAt?: unknown
         }
 
         // normalizeItinerary تُسقط أي مقطع تالف وترتّب الباقي زمنياً — القواعد
@@ -70,6 +77,7 @@ export function useTripConfig(user: User | null): TripConfig {
           organizerUid: typeof data.organizerUid === 'string' ? data.organizerUid : undefined,
           itinerary: itinerary.length > 0 ? itinerary : undefined,
           status: normalizeTripStatus(data.status),
+          statusChangedAt: typeof data.statusChangedAt === 'number' ? data.statusChangedAt : undefined,
         })
       },
       err => {
