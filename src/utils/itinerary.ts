@@ -163,3 +163,23 @@ export function findNextSegment(
 ): ItinerarySegment | null {
   return itinerary.find(s => new Date(s.departure.time).getTime() > now) ?? null
 }
+
+/**
+ * 🆕 وقت وصول آخر مقطع في المسار — "متى انتهت الرحلة فعلياً"، تستخدمه دورة
+ * الحياة التلقائية (advanceTripLifecycle في functions/index.js) لتقرير متى
+ * تنتقل رحلة من `active` إلى `completed`. `itinerary` يُمرَّر خاماً (غير
+ * مرتَّب بالضرورة)، فيُمرَّر أولاً عبر normalizeItinerary — نفس ما تفعله كل
+ * دالة أخرى هنا. مسار فارغ أو بلا مقاطع صالحة يُعيد `null`: لا إشارة صادقة
+ * لـ"متى انتهت" رحلة بلا مسار، فتبقى خارج الانتقال التلقائي بالكامل (قرار
+ * نطاق، لا نقص — انظر docs/DECISIONS.md).
+ *
+ * ⚠️ **نسخة مطابقة خادمياً**: `tripEndTimeJs` في functions/index.js — الدالة
+ * المجدولة تعمل في بيئة Node منفصلة بلا حزمة مشتركة مع هذا الملف، فتُعاد
+ * كتابتها هناك يدوياً بنفس المنطق بالضبط، على نمط isValidNameKeyJs/
+ * deriveShortNameJs الموجود أصلاً لنفس السبب.
+ */
+export function tripEndTime(itinerary: unknown): number | null {
+  const normalized = normalizeItinerary(itinerary)
+  if (normalized.length === 0) return null
+  return new Date(normalized[normalized.length - 1].arrival.time).getTime()
+}

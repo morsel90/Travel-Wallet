@@ -12,6 +12,7 @@
  */
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
 const crypto = require('crypto');
@@ -684,6 +685,24 @@ function isValidNameKeyJs(shortName) {
   return Buffer.byteLength(shortName, 'utf8') <= 1500;
 }
 
+/**
+ * 🆕 نسخة خادمية من tripEndTime (src/utils/itinerary.ts) — انظر تعليقها هناك
+ * لماذا لا حزمة مشتركة بين هذا الملف وواجهة العميل. تُصفّي المقاطع التالفة
+ * وترتّب الباقي تصاعدياً حسب وقت الانطلاق، ثم تُعيد وقت وصول آخرها كـ epoch
+ * ms — أو null لمسار فارغ أو بلا مقاطع صالحة إطلاقاً.
+ */
+function tripEndTimeJs(itinerary) {
+  if (!Array.isArray(itinerary)) return null;
+  const valid = itinerary.filter(s =>
+    isPlainObject(s)
+    && isPlainObject(s.departure) && typeof s.departure.time === 'string'
+    && isPlainObject(s.arrival) && typeof s.arrival.time === 'string'
+  );
+  if (valid.length === 0) return null;
+  valid.sort((a, b) => new Date(a.departure.time).getTime() - new Date(b.departure.time).getTime());
+  return new Date(valid[valid.length - 1].arrival.time).getTime();
+}
+
 function randomTravelerId() {
   return (crypto.randomInt(0, 2147483646)) + 1;
 }
@@ -1205,3 +1224,91 @@ exports.restoreTrip = onCall(
     };
   }
 );
+
+/**
+ * ─── دورة حياة الرحلة التلقائية (المرحلة ١ فقط) ────────────────────────────
+ *
+ * 🆕 أول دالة onSchedule في هذا المستودع. تنقل الرحلة تلقائياً عبر
+ * active → completed → archived اعتماداً على تاريخ آخر مقطع في مسارها —
+ * انتقال عكوس بالكامل (الأزرار اليدوية في TripDetailPanel.tsx تعمل دائماً
+ * بصرف النظر عنه)، بلا أي حذف أو أثر على البيانات المالية. انظر
+ * docs/DECISIONS.md ونقاش المرحلة ٢ (إتاحة الحذف النهائي لاحقاً) هناك —
+ * غير مُنفَّذة هنا عمداً، تحتاج قراراً منفصلاً.
+ *
+ * ⚠️ **رحلة بلا مسار (itinerary فارغ) لا تدخل هذا المسار إطلاقاً** —
+ * tripEndTimeJs تُعيد null لها، فلا إشارة صادقة لـ"متى انتهت". تبقى `active`
+ * حتى يبدّل أحد حالتها يدوياً — قرار نطاق واضح، لا نقص.
+ *
+ * ⚠️ **رحلة بلا statusChangedAt (كل الرحلات الحالية اليوم) لا تُؤرشَف تلقائياً
+ * حتى تكتسب الحقل مرة واحدة** (يدوياً، أو بانتقالها التلقائي من active إلى
+ * completed هنا). لا افتراض رجعي لمتى "أُنجزت" رحلة قديمة فعلياً — نفس فلسفة
+ * organizerUid/createdByUid الموثَّقة في firestore.rules.
+ */
+const TRIP_COMPLETION_GRACE_MS = 7  * 24 * 60 * 60 * 1000; // 7 أيام بعد آخر مقطع في المسار
+const TRIP_ARCHIVE_GRACE_MS    = 30 * 24 * 60 * 60 * 1000; // 30 يوماً بحالة completed
+
+// حدّ معقول لكل استعلام — عدد الرحلات الواقعي اليوم أبعد ما يكون عن هذا الحجم.
+// رحلة تتجاوز هذا الحدّ ضمن دفعة واحدة تُعالَج في التشغيلة اليومية التالية،
+// لا فقدان — الدالة تعمل كل يوم لا مرة واحدة.
+const LIFECYCLE_BATCH_SIZE = 300;
+
+/**
+ * المنطق الفعلي، مُصدَّر كدالة مستقلة قابلة للاستدعاء المباشر من الاختبارات
+ * (بلا انتظار جدولة حقيقية أو محاكاة Cloud Scheduler) — exports.advanceTripLifecycle
+ * أدناه غلاف onSchedule رفيع حولها فقط.
+ *
+ * @returns {Promise<{ completed: number, archived: number }>} عدد الرحلات
+ * التي انتقلت في كل اتجاه، لتسهيل التحقّق في الاختبارات والسجلّ.
+ */
+async function advanceTripLifecycleLogic(now = Date.now()) {
+  // ── active → completed ────────────────────────────────────────────────
+  // ⚠️ where('status','==','active') لا يجد رحلة ناقصة الحقل إطلاقاً — مساواة
+  // Firestore الصريحة لا تطابق مستنداً غائب الحقل. تُترَك خارج هذا الاستعلام
+  // عمداً (تعامَل active بكل مكان آخر) حتى تُلمَس مرة فتكتسب الحقل صراحة.
+  const activeSnap = await db.collection('trips')
+    .where('status', '==', 'active')
+    .limit(LIFECYCLE_BATCH_SIZE)
+    .get();
+
+  const completeBatch = db.batch();
+  let completed = 0;
+  for (const doc of activeSnap.docs) {
+    const endTime = tripEndTimeJs(doc.data().itinerary);
+    if (endTime !== null && now - endTime > TRIP_COMPLETION_GRACE_MS) {
+      completeBatch.update(doc.ref, { status: 'completed', statusChangedAt: now });
+      completed++;
+    }
+  }
+  if (completed > 0) await completeBatch.commit();
+
+  // ── completed → archived ──────────────────────────────────────────────
+  const completedSnap = await db.collection('trips')
+    .where('status', '==', 'completed')
+    .limit(LIFECYCLE_BATCH_SIZE)
+    .get();
+
+  const archiveBatch = db.batch();
+  let archived = 0;
+  for (const doc of completedSnap.docs) {
+    const statusChangedAt = doc.data().statusChangedAt;
+    if (typeof statusChangedAt === 'number' && now - statusChangedAt > TRIP_ARCHIVE_GRACE_MS) {
+      archiveBatch.update(doc.ref, { status: 'archived', statusChangedAt: now });
+      archived++;
+    }
+  }
+  if (archived > 0) await archiveBatch.commit();
+
+  console.log(`[advanceTripLifecycle] completed=${completed} archived=${archived}`);
+  return { completed, archived };
+}
+
+// 🆕 يومياً منتصف الليل — تكرار كافٍ لمدد سماح بالأيام، بلا تكلفة حقيقية
+// (استعلامان محدودان بحجم دفعة معقول، بصرف النظر عن عدد الرحلات الكلي).
+exports.advanceTripLifecycle = onSchedule('every day 00:00', async () => {
+  await advanceTripLifecycleLogic();
+});
+
+// 🆕 مُصدَّرة للاستدعاء المباشر من الاختبارات فقط — انظر تعليق الدالة أعلاه.
+// ليست Cloud Function (لا onCall ولا onSchedule يغلّفها)، فأدوات نشر Firebase
+// تتجاهلها؛ متاحة فقط عبر require('./index.js') المباشر لهذا الملف.
+exports.advanceTripLifecycleLogic = advanceTripLifecycleLogic;

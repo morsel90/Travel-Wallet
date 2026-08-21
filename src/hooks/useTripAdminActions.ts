@@ -181,9 +181,13 @@ export function useTripAdminActions({
     'تعذّر حفظ اسم الرحلة.',
   ), [write])
 
+  // 🆕 statusChangedAt يُكتب مع status في نفس الطلب دائماً — لا تعديل منفصل.
+  // هذا ما يمنح رحلة أُرشفت يدوياً هنا نفس بداية عدّاد الأهلية للحذف النهائي
+  // (المرحلة ٢، لاحقاً) التي تحصل عليها رحلة انتقلت تلقائياً عبر
+  // advanceTripLifecycle في functions/index.js.
   const saveTripStatus = useCallback((tripId: string, status: TripStatus) => write(
     tripId,
-    { status },
+    { status, statusChangedAt: Date.now() },
     `تم تغيير حالة الرحلة إلى «${TRIP_STATUS_LABEL[status]}»`,
     'تعذّر تغيير حالة الرحلة.',
   ), [write])

@@ -20,6 +20,8 @@ export interface TripSummary {
   itinerary: ItinerarySegment[]
   /** 🆕 حالة دورة الحياة — غياب الحقل = active (توافق خلفي، انظر utils/tripStatus.ts). */
   status: TripStatus
+  /** 🆕 متى تغيّرت status آخر مرة — غيابها يعني "غير معروف" (انظر useTripConfig.ts). */
+  statusChangedAt?: number
 }
 
 export interface UseAllTripsResult {
@@ -48,12 +50,14 @@ export function useAllTrips(enabled: boolean): UseAllTripsResult {
         const list: TripSummary[] = snap.docs.map(d => {
           const data = d.data() as {
             name?: unknown; organizerUid?: unknown; itinerary?: unknown; status?: unknown
+            statusChangedAt?: unknown
           }
           return {
             id: d.id,
             name: typeof data.name === 'string' && data.name ? data.name : d.id,
             organizerUid: typeof data.organizerUid === 'string' ? data.organizerUid : undefined,
             status: normalizeTripStatus(data.status),
+            statusChangedAt: typeof data.statusChangedAt === 'number' ? data.statusChangedAt : undefined,
             itinerary: normalizeItinerary(data.itinerary),
           }
         })

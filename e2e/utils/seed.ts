@@ -83,6 +83,17 @@ export async function seedBareAdmin(email: string, password: string): Promise<st
   return ensureUser(email, password, { admin: true })
 }
 
+/**
+ * 🆕 نسخة Firestore عبر Admin SDK مباشرة — لاختبارات تحتاج تحكّماً دقيقاً في
+ * شكل مستند لا تغطّيه seedTrip/seedBareUser/seedBareAdmin (مثال:
+ * trip-lifecycle.spec.ts يحتاج itinerary وstatusChangedAt بقيم زمنية محدَّدة
+ * بدقّة). نفس تطبيق adminApp() الذي تستخدمه بقية هذا الملف داخلياً — مُصدَّرة
+ * هنا بدل تكرار التهيئة في كل ملف اختبار يحتاجها.
+ */
+export function adminFirestore() {
+  return getFirestore(adminApp())
+}
+
 export interface SeedTripOptions {
   /** معرّف رحلة فريد لهذا الملف الاختباري — تجنّب مشاركته بين ملفات مختلفة (Playwright يشغّل الملفات بالتوازي). */
   tripId: string
