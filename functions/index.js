@@ -709,38 +709,44 @@ async function getProfileDisplayName(uid) {
 // 🆕 حدّ معقول لهذا الاستخدام (تنظيف رحلة تجريبية/بالخطأ، أو استعادة نسخة إلى
 // معرّف قائم) — رحلة بهذا العدد من المسافرين ليست كذلك أصلاً، ويبقى الرفض
 // قائماً في تلك الحالة (نجد على الأرجح مسافراً نشِطاً ضمن أول 300 فعلياً).
-const MAX_PROTECTED_DATA_CHECK_TRAVELERS = 300;
+const MAX_PROTECTED_DATA_CHECK_DOCS = 300;
 
 /**
  * 🆕 هل تحوي رحلة بيانات مالية تستحق الحماية من التدمير — شرط مشترك بين
  * manageTrip (mode:'delete') وrestoreTrip (الكتابة فوق رحلة موجودة). كلاهما
  * يرفض العملية على رحلة بهذه الحالة، كل بصياغة رسالة مناسبة لسياقه.
  *
- * ⚠️ **"أي مسافر موجود" لم يعد كافياً وحده منذ التزويد التلقائي.** كل إنشاء
- * رحلة — ذاتياً أو من لوحة الإدارة — يُنشئ مسافراً للمنظّم فوراً
+ * ⚠️ **"أي مسافر/مصروف موجود" لم يعد كافياً وحده منذ التزويد التلقائي.** كل
+ * إنشاء رحلة — ذاتياً أو من لوحة الإدارة — يُنشئ مسافراً للمنظّم فوراً
  * (provisionTravelerForUid في manageTrip)، فصار كل مسافر واحد على الأقل
  * موجوداً منذ لحظة الإنشاء دائماً. معاملة وجوده وحده كرفض كانت تُبطل كلا
  * هذين المسارين على أي رحلة جديدة — حتى تجريبية لم تُلمَس إطلاقاً (رُصد
  * فعلياً: منظّم حذف نفسه من قائمة المسافرين — حذفاً ليّناً، الوحيد المتاح
  * له — ثم فوجئ برفض حذف رحلته رغم أنها "فارغة" ظاهرياً).
  *
- * الفحص الآن أدقّ: مسافر **نشِط** يرفض فوراً (بيانات حيّة). مسافر في سلة
- * المهملات وحده لا يرفض — الملف نفسه ملخّص/فهرس (اسم، إجمالي إيداع)، لا
- * سجلّاً مالياً — لكن سجلّات إيداعه (depositLogs) تبقى السجلّ المالي الفعلي
- * غير القابل للحذف بالتصميم، فتُفحَص لكل مسافر بصرف النظر عن حالته.
+ * الفحص الآن أدقّ: مصروف **أو** مسافر **نشِط** يرفض فوراً (بيانات حيّة قد
+ * يعتمد عليها أحد). عنصر في سلة المهملات وحده لا يرفض — بصرف النظر عن نوعه:
+ * لا فرق بنيوي بين مصروف ومسافر بسلة المهملات، كلاهما مستند عادي قابل
+ * للاستعادة، لا "سجلّ" خاص. الاستثناء الوحيد الحقيقي هو سجلّات إيداع
+ * المسافرين (depositLogs) — غير قابلة للحذف بالتصميم لتكون مرجعاً في أي نزاع
+ * مالي — فتُفحَص لكل مسافر (نشط أو بالسلة) بصرف النظر عن حالته.
+ *
+ * (🆕 رُصد فعلياً هذا التمييز الناقص أثناء الإصلاح الأول: مصروف واحد سُجِّل
+ * ثم حُذف — حذفاً ليّناً كالمعتاد — كان يكفي وحده لإبقاء الحذف مرفوضاً رغم
+ * تفريغ قائمة المسافرين تماماً، لأن الفحص الأول عامل المصروفات معاملة مختلفة
+ * عن المسافرين بلا مبرر بنيوي حقيقي.)
  *
  * @returns {Promise<{ hasProtectedData: boolean, reason: 'expenses' | 'travelers' | 'depositLogs' | null }>}
  */
 async function checkTripHasProtectedData(tripId) {
   const dataRoot = db.collection('artifacts').doc(tripId).collection('public').doc('data');
 
-  // مصروف — نشِط أو في سلة المهملات — هو نفسه السجلّ المالي الوحيد من نوعه
-  // (لا "سجلّ" منفصل كما للإيداعات)، فوجوده يرفض دائماً. limit(1) يكفي:
-  // نسأل «هل توجد بيانات؟» لا «كم عددها».
-  const expenses = await dataRoot.collection('expenses').limit(1).get();
-  if (!expenses.empty) return { hasProtectedData: true, reason: 'expenses' };
+  const expensesSnap = await dataRoot.collection('expenses').limit(MAX_PROTECTED_DATA_CHECK_DOCS).get();
+  if (expensesSnap.docs.some(doc => !doc.data().deletedAt)) {
+    return { hasProtectedData: true, reason: 'expenses' };
+  }
 
-  const travelersSnap = await dataRoot.collection('travelers').limit(MAX_PROTECTED_DATA_CHECK_TRAVELERS).get();
+  const travelersSnap = await dataRoot.collection('travelers').limit(MAX_PROTECTED_DATA_CHECK_DOCS).get();
   if (travelersSnap.docs.some(doc => !doc.data().deletedAt)) {
     return { hasProtectedData: true, reason: 'travelers' };
   }
