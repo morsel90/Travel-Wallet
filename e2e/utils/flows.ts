@@ -28,14 +28,23 @@ export async function signInWithEmail(page: Page, email: string, password: strin
 }
 
 /**
+ * 🆕 يفتح قائمة الحساب الموحّدة في الهيدر (AccountMenu.tsx) — نقطة الدخول
+ * الوحيدة الآن لـ«رحلاتي»/«بروفايلي»/«لوحة الإدارة»/«تسجيل الخروج»، بعد أن
+ * كانت أزراراً منفصلة في الهيدر مباشرة.
+ */
+export async function openAccountMenu(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'حسابي' }).click()
+}
+
+/**
  * يفتح رابط الرحلة ويسجّل دخول حساب المسؤول مباشرة عبر AuthGate.
  *
  * ⚠️ لا خطوة "وضع المسؤول" منفصلة هنا بعد الآن: حساب المسؤول في seedTrip يحمل
  * admin claim من البداية، وisAdmin() في firestore.rules لا تحتاج عضوية الرحلة
  * (`isMember(appId) || isAdmin()`) — فمروره عبر AuthGate وحده كافٍ للوصول
- * المباشر بصفة مسؤول. الزر "وضع المسؤول" داخل التطبيق يبقى موجوداً لسيناريو
- * مختلف (من سجّل دخوله كعضو عادي بحسابه الشخصي ويريد التبديل لحساب المسؤول
- * العالمي المنفصل) — انظر useAdminAuth.ts — لا للمسار الذي يختبره هذا الملف.
+ * المباشر بصفة مسؤول. عنصر "تسجيل الدخول كمسؤول" داخل AccountMenu يبقى متاحاً
+ * لسيناريو مختلف (من سجّل دخوله كعضو عادي بحسابه الشخصي ويريد التبديل لحساب
+ * المسؤول العالمي المنفصل) — انظر useAdminAuth.ts — لا للمسار الذي يختبره هذا الملف.
  *
  * ⚠️ هذا هو المسار الوحيد الفعلي لإضافة مسافر عبر الواجهة: زر "إضافة مسافر"
  * لا يظهر إطلاقاً لعضو غير مسؤول (انظر App.tsx وTravelerSection.tsx) — رغم أن
@@ -45,7 +54,11 @@ export async function signInWithEmail(page: Page, email: string, password: strin
 export async function openTripAsAdmin(page: Page, creds: TripCreds): Promise<void> {
   await page.goto(`/?trip=${creds.tripId}`)
   await signInWithEmail(page, creds.adminEmail, creds.adminPassword)
-  await expect(page.getByRole('button', { name: 'إغلاق المسؤول' })).toBeVisible()
+  // 🆕 «لوحة الإدارة» لا تظهر في القائمة إلا لحساب يحمل admin claim فعلاً —
+  // نفس الدور الذي كان زر "إغلاق المسؤول" الظاهر مباشرة يؤكّده سابقاً.
+  await openAccountMenu(page)
+  await expect(page.getByRole('menuitem', { name: 'لوحة الإدارة' })).toBeVisible()
+  await page.keyboard.press('Escape')
 }
 
 /** يفتح رابط الرحلة ويسجّل دخول حساب العضو العادي عبر AuthGate — بلا صلاحية مسؤول. */

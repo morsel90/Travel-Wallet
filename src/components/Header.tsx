@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
-import { PieChart, Lock, Unlock, Loader2, Wallet, Receipt, Scale, Luggage, User } from '../icons'
+import { PieChart, Loader2, Wallet, Receipt, Scale } from '../icons'
 import { useHeaderCollapse } from '../hooks/useHeaderCollapse'
+import AccountMenu from './AccountMenu'
 
 export interface HeaderStats {
   totalDeposited: number
@@ -12,15 +13,19 @@ export interface HeaderStats {
 interface HeaderProps {
   isSyncing: boolean
   isAdmin: boolean
-  onToggleAdmin: () => void
   stats: HeaderStats | null
   onStatClick?: (stat: 'deposited' | 'spent' | 'remaining') => void
   isOnline?: boolean // افتراضياً ستكون true إذا لم تُمرر
-  // 🆕 يُمرَّر فقط حين يكون المستخدم عضواً في أكثر من رحلة — لا معنى لزر تبديل
-  // لمن يملك رحلة واحدة، وهي الحالة الغالبة.
+  // 🆕 قائمة الحساب الموحّدة — تجمع رحلاتي/بروفايلي/وضع المسؤول/تسجيل الخروج.
+  // انظر AccountMenu.tsx وdocs/DECISIONS.md.
+  displayName: string | null
+  email: string | null
+  /** 🆕 يُمرَّر فقط حين يكون المستخدم عضواً في أكثر من رحلة — لا معنى لعنصر تبديل لمن يملك رحلة واحدة. */
   onShowMyTrips?: () => void
-  /** 🆕 فتح شاشة بروفايل المستخدم (اسم/بنك) — متاح لأي مستخدم مسجّل دخوله. */
   onShowProfile: () => void
+  onOpenAdminPanel: () => void
+  onAdminSignIn: () => void
+  onSignOut: () => void
 }
 
 // 2. تقييد نوع المفتاح (key) ليتطابق مع onStatClick
@@ -55,12 +60,16 @@ const SCROLL_ROW =
 const Header = ({
   isSyncing,
   isAdmin,
-  onToggleAdmin,
   stats,
   onStatClick,
   isOnline = true, // تعيين قيمة افتراضية
+  displayName,
+  email,
   onShowMyTrips,
   onShowProfile,
+  onOpenAdminPanel,
+  onAdminSignIn,
+  onSignOut,
 }: HeaderProps) => {
   const isCollapsed = useHeaderCollapse()
 
@@ -140,45 +149,16 @@ const Header = ({
           )}
         </div>
 
-        {onShowMyTrips && (
-          <button
-            type="button"
-            onClick={onShowMyTrips}
-            title="التبديل بين رحلاتي"
-            aria-label="التبديل بين رحلاتي"
-            className={`bg-teal-800/50 hover:bg-teal-800 text-teal-50 hover:text-white transition-all duration-200 flex items-center justify-center cursor-pointer rounded-xl font-bold border border-teal-500/30 backdrop-blur-sm shrink-0 min-h-[44px] min-w-[44px] ${
-              isCollapsed ? 'px-2 py-1.5' : 'px-3 py-1.5'
-            }`}
-          >
-            <Luggage className="w-4 h-4" />
-          </button>
-        )}
-
-        <button
-          type="button"
-          onClick={onShowProfile}
-          title="بروفايلي"
-          aria-label="بروفايلي"
-          className={`bg-teal-800/50 hover:bg-teal-800 text-teal-50 hover:text-white transition-all duration-200 flex items-center justify-center cursor-pointer rounded-xl font-bold border border-teal-500/30 backdrop-blur-sm shrink-0 min-h-[44px] min-w-[44px] ${
-            isCollapsed ? 'px-2 py-1.5' : 'px-3 py-1.5'
-          }`}
-        >
-          <User className="w-4 h-4" />
-        </button>
-
-        <button
-          type="button"
-          onClick={onToggleAdmin}
-          title={isAdmin ? 'الخروج من وضع المسؤول' : 'دخول وضع المسؤول'}
-          className={`bg-teal-800/50 hover:bg-teal-800 text-teal-50 hover:text-white transition-all duration-200 flex items-center gap-1.5 cursor-pointer rounded-xl font-bold border border-teal-500/30 backdrop-blur-sm shrink-0 min-h-[44px] min-w-[44px] ${
-            isCollapsed ? 'px-2 py-1.5 text-[11px]' : 'px-3 py-1.5 text-xs sm:text-sm'
-          }`}
-        >
-          {isAdmin
-            ? <><Unlock className="w-3.5 h-3.5" /> {!isCollapsed && 'إغلاق المسؤول'}</>
-            : <><Lock className="w-3.5 h-3.5" /> {!isCollapsed && 'وضع المسؤول'}</>
-          }
-        </button>
+        <AccountMenu
+          displayName={displayName}
+          email={email}
+          isAdmin={isAdmin}
+          onShowMyTrips={onShowMyTrips}
+          onShowProfile={onShowProfile}
+          onOpenAdminPanel={onOpenAdminPanel}
+          onAdminSignIn={onAdminSignIn}
+          onSignOut={onSignOut}
+        />
       </div>
 
       {!isCollapsed && (

@@ -133,7 +133,8 @@ export default function App() {
           <div className="min-h-screen pb-20 md:pb-8">
             <Header
               isSyncing={status.isSyncing} isAdmin={session.isAdmin}
-              onToggleAdmin={() => session.isAdmin ? admin.handleAdminSignOut() : admin.openAdminSignIn()}
+              displayName={profile.displayName || session.user?.displayName || null}
+              email={session.user?.email ?? null}
               stats={ledger.isInitialLoading ? null : {
                 totalDeposited: ledger.totalDeposited,
                 totalSpent: ledger.totalSpent,
@@ -143,6 +144,9 @@ export default function App() {
               // زر التبديل يظهر متى وُجدت رحلة أخرى غير المفتوحة حالياً
               onShowMyTrips={picker.trips.length > 1 ? picker.show : undefined}
               onShowProfile={modals.openUserProfile}
+              onOpenAdminPanel={modals.openTripAdmin}
+              onAdminSignIn={admin.openAdminSignIn}
+              onSignOut={admin.handleAdminSignOut}
               onStatClick={(stat) => {
                 haptic.light()
                 const id =
