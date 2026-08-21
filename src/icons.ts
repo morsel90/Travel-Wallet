@@ -56,4 +56,5 @@ export {
   FileText,     // 🆕 زر «كشف حسابي» على بطاقة المستخدم نفسه (نموذج الهوية الهجين)
   LogIn,        // 🆕 شاشة تسجيل الدخول الإلزامي (AuthGate) — حلّت محل رمز الرحلة/PIN
   UserX,        // 🆕 شاشة «لست عضواً في هذه الرحلة» (NotAMemberScreen)
+  User,         // 🆕 زر «بروفايلي» في Header + شاشة UserProfileModal
 } from 'lucide-react'

@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { PieChart, Lock, Unlock, Loader2, Wallet, Receipt, Scale, Luggage } from '../icons'
+import { PieChart, Lock, Unlock, Loader2, Wallet, Receipt, Scale, Luggage, User } from '../icons'
 import { useHeaderCollapse } from '../hooks/useHeaderCollapse'
 
 export interface HeaderStats {
@@ -19,6 +19,8 @@ interface HeaderProps {
   // 🆕 يُمرَّر فقط حين يكون المستخدم عضواً في أكثر من رحلة — لا معنى لزر تبديل
   // لمن يملك رحلة واحدة، وهي الحالة الغالبة.
   onShowMyTrips?: () => void
+  /** 🆕 فتح شاشة بروفايل المستخدم (اسم/بنك) — متاح لأي مستخدم مسجّل دخوله. */
+  onShowProfile: () => void
 }
 
 // 2. تقييد نوع المفتاح (key) ليتطابق مع onStatClick
@@ -58,6 +60,7 @@ const Header = ({
   onStatClick,
   isOnline = true, // تعيين قيمة افتراضية
   onShowMyTrips,
+  onShowProfile,
 }: HeaderProps) => {
   const isCollapsed = useHeaderCollapse()
 
@@ -150,6 +153,18 @@ const Header = ({
             <Luggage className="w-4 h-4" />
           </button>
         )}
+
+        <button
+          type="button"
+          onClick={onShowProfile}
+          title="بروفايلي"
+          aria-label="بروفايلي"
+          className={`bg-teal-800/50 hover:bg-teal-800 text-teal-50 hover:text-white transition-all duration-200 flex items-center justify-center cursor-pointer rounded-xl font-bold border border-teal-500/30 backdrop-blur-sm shrink-0 min-h-[44px] min-w-[44px] ${
+            isCollapsed ? 'px-2 py-1.5' : 'px-3 py-1.5'
+          }`}
+        >
+          <User className="w-4 h-4" />
+        </button>
 
         <button
           type="button"

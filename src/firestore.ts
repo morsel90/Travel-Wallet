@@ -70,3 +70,7 @@ export const travelerNamesColByTrip = (tripId: string) =>
   collection(db, 'artifacts', tripId, 'public', 'data', 'travelerNames')
 export const depositLogsColByTrip = (tripId: string, travelerId: number) =>
   collection(db, 'artifacts', tripId, 'public', 'data', 'travelers', String(travelerId), 'depositLogs')
+
+// 🆕 بروفايل المستخدم العام (users/{uid}) — مستقل عن أي رحلة، يملكه صاحبه
+// حصراً. انظر UserProfile في types.ts وfirestore.rules: isValidUserProfile.
+export const userProfileDoc = (uid: string) => doc(db, 'users', uid)

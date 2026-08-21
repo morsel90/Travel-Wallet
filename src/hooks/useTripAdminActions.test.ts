@@ -324,13 +324,18 @@ describe('restoreTrip', () => {
 })
 
 describe('createTrip — الصلاحية والعقد', () => {
-  it('غير المسؤول لا يستدعي الدالة إطلاقاً', async () => {
+  // 🆕 نموذج واتساب: أي حساب حقيقي مسجّل دخوله يُنشئ رحلة ويصبح منظّمها —
+  // لا فحص isAdmin هنا بعد الآن على الإطلاق. الحدّ الحقيقي (جلسة غير مجهولة،
+  // حدّ زمني) خادمي بالكامل في manageTrip؛ انظر functions/index.js.
+  it('غير المسؤول يستدعي الدالة أيضاً — الإنشاء الذاتي لم يعد حصراً بالمسؤول', async () => {
+    mocks.callable.mockResolvedValue({ data: { success: true, tripId: 'trip-1' } })
     const { result } = setup(false)
     let ok
     await act(async () => { ok = await result.current.createTrip('trip-1', 'اسم') })
 
-    expect(ok).toBe(false)
-    expect(mocks.callable).not.toHaveBeenCalled()
+    expect(ok).toBe(true)
+    expect(mocks.httpsCallable).toHaveBeenCalledWith({}, 'manageTrip')
+    expect(mocks.callable).toHaveBeenCalledWith({ mode: 'create', tripId: 'trip-1', name: 'اسم' })
   })
 
   it('يستدعي manageTrip بالوضع create والاسم بلا رمز رحلة', async () => {
@@ -341,9 +346,29 @@ describe('createTrip — الصلاحية والعقد', () => {
     expect(mocks.httpsCallable).toHaveBeenCalledWith({}, 'manageTrip')
     expect(mocks.callable).toHaveBeenCalledWith({ mode: 'create', tripId: 'trip-1', name: 'رحلة تركيا' })
   })
+
+  it('يمرّر bankDetails حين يُعطى (تعبئة من بروفايل المُنشئ)', async () => {
+    mocks.callable.mockResolvedValue({ data: { success: true, tripId: 'trip-1' } })
+    const { result } = setup(false)
+    const bankDetails = { bankName: 'بنك', beneficiary: 'أحمد', iban: 'SA00' }
+    await act(async () => { await result.current.createTrip('trip-1', 'اسم', bankDetails) })
+
+    expect(mocks.callable).toHaveBeenCalledWith({ mode: 'create', tripId: 'trip-1', name: 'اسم', bankDetails })
+  })
 })
 
 describe('deleteTrip — الصلاحية والعقد', () => {
+  // 🆕 الحذف يبقى للمسؤول فقط — لم يُطلب تغييره، وهو الأخطر بين الاثنين
+  // (يُتلف بيانات مالية إن أُسيء استخدامه)، بخلاف الإنشاء الذاتي الجديد.
+  it('غير المسؤول لا يستدعي الدالة إطلاقاً', async () => {
+    const { result } = setup(false)
+    let ok
+    await act(async () => { ok = await result.current.deleteTrip('trip-1') })
+
+    expect(ok).toBe(false)
+    expect(mocks.callable).not.toHaveBeenCalled()
+  })
+
   it('يستدعي manageTrip بالوضع delete بلا رمز رحلة', async () => {
     mocks.callable.mockResolvedValue({ data: { success: true, tripId: 'trip-1' } })
     const { result } = setup()

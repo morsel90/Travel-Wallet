@@ -34,6 +34,8 @@ interface ManageTripRequest {
   mode: 'create' | 'delete'
   tripId: string
   name: string
+  /** 🆕 اختياري، mode: 'create' فقط — يُعبَّأ من بروفايل المُنشئ (useUserProfile). */
+  bankDetails?: BankDetails
 }
 interface ManageTripResponse { success: boolean; tripId: string }
 
@@ -100,7 +102,8 @@ export interface UseTripAdminActionsResult {
   saveTripName: (tripId: string, name: string) => Promise<boolean>
   /** 🆕 تغيير حالة دورة حياة الرحلة — القواعد تفرض أثرها، هذا يكتب الحقل فقط. */
   saveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
-  createTrip: (tripId: string, name: string) => Promise<boolean>
+  /** 🆕 متاحة لأي حساب حقيقي مسجّل دخوله، لا المسؤول فقط — من ينشئ يصبح منظّم رحلته. */
+  createTrip: (tripId: string, name: string, bankDetails?: BankDetails) => Promise<boolean>
   /** حذف نهائي — للرحلات الفارغة فقط، والخادم هو من يفرض ذلك (انظر functions/index.js). */
   deleteTrip: (tripId: string) => Promise<boolean>
   /** 🆕 إزالة عضو من رحلة واحدة — لا تمسّ بقية رحلاته، ولا تُلغي مصاريفه. */
@@ -207,8 +210,12 @@ export function useTripAdminActions({
     tripId: string,
     name: string,
     successText: string,
+    bankDetails?: BankDetails,
   ): Promise<boolean> => {
-    if (!isAdmin) {
+    // 🆕 الحذف يبقى للمسؤول فقط — نفس الحدّ المفروض خادمياً في manageTrip.
+    // الإنشاء متاح لأي حساب حقيقي مسجّل دخوله (نموذج واتساب)، والحدّ الحقيقي
+    // (جلسة غير مجهولة، حدّ زمني) خادمي بالكامل — هذا فحص واجهة فقط.
+    if (mode === 'delete' && !isAdmin) {
       showToast({ text: 'هذا الإجراء متاح للمسؤول فقط.', type: 'error' }, 3000)
       return false
     }
@@ -221,7 +228,17 @@ export function useTripAdminActions({
       await user.getIdToken(true)
 
       const manageTrip = httpsCallable<ManageTripRequest, ManageTripResponse>(functions, 'manageTrip')
-      await manageTrip({ mode, tripId, name })
+      await manageTrip({ mode, tripId, name, ...(bankDetails ? { bankDetails } : {}) })
+
+      // 🆕 الإنشاء الذاتي (غير المسؤول) يمنح المُنشئ claim عضوية *جديداً* داخل
+      // manageTrip نفسها — لم يكن موجوداً في التوكن المُحدَّث أعلاه لأنه لم
+      // يُمنح بعد وقتها. بلا هذا التحديث الثاني، التوجيه الفوري لصفحة الرحلة
+      // (openTrip في TripPicker.tsx) يُحمَّل بتوكن لا يحمل العضوية بعد فيفشل
+      // isMember() — نفس المشكلة ونفس الحل اللذين تعالجهما useInviteJoin.ts
+      // بعد joinViaInvite بالضبط.
+      if (mode === 'create' && !isAdmin) {
+        await user.getIdToken(true)
+      }
 
       haptic.success()
       showToast({ text: successText, type: 'success' })
@@ -246,8 +263,8 @@ export function useTripAdminActions({
   }, [isAdmin, showToast, handleFirestoreError])
 
   const createTrip = useCallback(
-    (tripId: string, name: string) =>
-      callManageTrip('create', tripId, name, `تم إنشاء الرحلة "${tripId}"`),
+    (tripId: string, name: string, bankDetails?: BankDetails) =>
+      callManageTrip('create', tripId, name, `تم إنشاء الرحلة "${tripId}"`, bankDetails),
     [callManageTrip]
   )
 

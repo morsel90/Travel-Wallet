@@ -199,12 +199,21 @@ service cloud.firestore {
     // 🆕 التحقّق من بنية مستند إعدادات الرحلة trips/{tripId} — كل الحقول اختيارية
     // لأن الواجهة الإدارية تكتب بـ merge (تحدّث تفاصيل البنك وحدها أو المسار وحده،
     // انظر hooks/useTripAdminActions.ts)، فلا يصل للقواعد إلا الحقل المُعدَّل فعلاً.
+    //
+    // ⚠️ createdByUid مُدرَج هنا رغم أن العميل لا يكتبه أبداً بنفسه (manageTrip
+    // وحدها تكتبه عند الإنشاء عبر Admin SDK) — لنفس سبب lastTripCreatedAt في
+    // isValidUserProfile بالضبط: كتابة merge:true من العميل (تعديل الاسم مثلاً)
+    // تُقيَّم بالمستند الناتج **الكامل**، فيظهر هذا الحقل في كل تعديل لاحق حتى
+    // لو لم تلمسه تلك الكتابة تحديداً. غيابه من hasOnly كان سيرفض كل تعديل على
+    // أي رحلة أُنشئت بعد إضافة هذا الحقل — وهو ما كشفه فعلاً
+    // e2e/self-serve-trip-creation.spec.ts (القاعدة ١٨: انكسار حقيقي رُصد لا افتراضي).
     function isValidTripConfig(d) {
-      return d.keys().hasOnly(['name', 'bankDetails', 'itinerary', 'status'])
+      return d.keys().hasOnly(['name', 'bankDetails', 'itinerary', 'status', 'createdByUid'])
         && (!('name' in d) || (d.name is string && d.name.size() <= 100))
         && (!('bankDetails' in d) || isValidBankDetails(d.bankDetails))
         && (!('itinerary' in d) || (d.itinerary is list && d.itinerary.size() <= 50))
-        && (!('status' in d) || d.status in ['active', 'completed', 'archived']);
+        && (!('status' in d) || d.status in ['active', 'completed', 'archived'])
+        && (!('createdByUid' in d) || d.createdByUid is string);
     }
 
     // ─── دورة حياة الرحلة ────────────────────────────────────────────────────
@@ -244,6 +253,19 @@ service cloud.firestore {
         && (!('bankName' in b)    || (b.bankName is string    && b.bankName.size() <= 100))
         && (!('beneficiary' in b) || (b.beneficiary is string && b.beneficiary.size() <= 100))
         && (!('iban' in b)        || (b.iban is string        && b.iban.size() <= 40));
+    }
+
+    // 🆕 بروفايل المستخدم العام users/{uid} — انظر src/types.ts UserProfile.
+    // lastTripCreatedAt مُدرَج هنا رغم أن العميل لا يكتبه أبداً (manageTrip
+    // وحدها تكتبه عبر Admin SDK متجاوزةً هذه القاعدة): كتابة merge:true من
+    // العميل تُقيَّم بـ request.resource.data = المستند الناتج **الكامل** بعد
+    // الدمج، فلو كان هذا الحقل مكتوباً سلفاً لظهر في كل تعديل بروفايل لاحق حتى
+    // لو لم تلمسه تلك الكتابة تحديداً — غيابه من hasOnly كان سيرفض تلك الكتابة.
+    function isValidUserProfile(d) {
+      return d.keys().hasOnly(['displayName', 'bankDetails', 'lastTripCreatedAt'])
+        && (!('displayName' in d)       || (d.displayName is string && d.displayName.size() <= 100))
+        && (!('bankDetails' in d)       || isValidBankDetails(d.bankDetails))
+        && (!('lastTripCreatedAt' in d) || d.lastTripCreatedAt is number);
     }
 
     // ⚠️ لا نتحقق هنا من بنية كل مقطع مسار على حدة (mode/identifier/departure/
@@ -401,13 +423,22 @@ service cloud.firestore {
     // ويقطع الوصول عن كل أعضائها دون أي طريقة استرجاع من الواجهة.
     match /trips/{tripId} {
       allow read:   if isMember(tripId) || isAdmin();
-      // 🆕 الإنشاء يبقى للمسؤول العالمي حصراً — منظّم رحلة لا يُنشئ رحلات جديدة
-      // (docs/PLAN-member-management.md المرحلة ٣: "دون: إنشاء رحلات، ولا حذفها").
+      // 🆕 هذا الشرط لا يُشغَّل فعلياً عند الإنشاء الذاتي (أي عضو، انظر
+      // functions/index.js manageTrip mode: 'create') — تلك كتابة عبر Admin
+      // SDK تتجاوز هذه القواعد بالكامل، تماماً كما تفعل كتابة المسؤول دائماً.
+      // بقي الشرط isAdmin() هنا لأن العميل نفسه (لا عبر manageTrip) لا يزال
+      // ممنوعاً من إنشاء مستند trips/{tripId} مباشرة مهما كانت هويته — الإنشاء
+      // يمرّ حصراً عبر manageTrip، لا بديل من طرف العميل.
       allow create: if isAdmin() && isValidTripConfig(request.resource.data);
       // 🆕 التحديث متاح للمسؤول أو لمنظّم *هذه* الرحلة تحديداً — نفس الحقول
       // المسموحة بالضبط (isValidTripConfig لا تميّز بينهما)، فمنظّم يعدّل الاسم
       // والبنك والمسار وحالة الرحلة، تماماً كما تفعل TripDetailPanel.tsx اليوم.
-      allow update: if (isAdmin() || isOrganizer(tripId)) && isValidTripConfig(request.resource.data);
+      // 🆕 createdByUid لا يتغيّر بعد الإنشاء — لا للمسؤول ولا للمنظّم — نفس مبدأ
+      // ثباته على المصاريف (createdByUidUnchanged). resource.data بلا الحقل يعني
+      // رحلة أُنشئت قبل إضافته، فلا قيد عليها بعد.
+      allow update: if (isAdmin() || isOrganizer(tripId)) && isValidTripConfig(request.resource.data)
+        && (!('createdByUid' in resource.data)
+            || (('createdByUid' in request.resource.data) && request.resource.data.createdByUid == resource.data.createdByUid));
       allow delete: if false;
 
       // ─── 🆕 سجلّ عضوية الرحلة ───────────────────────────────────────────────
@@ -435,6 +466,17 @@ service cloud.firestore {
         // وهذا سجلّ يُتّخذ قراراً إدارياً بناءً عليه (من يُزال، ومن يُعيَّن منظّماً).
         allow write: if false;
       }
+    }
+
+    // ─── 🆕 بروفايل المستخدم العام ───────────────────────────────────────────
+    //
+    // users/{uid} — مستقل عن أي رحلة، يملكه صاحبه حصراً. يُستخدم لتعبئة بيانات
+    // البنك تلقائياً عند إنشاء رحلة (نسخ لحظي داخل trips/{tripId}.bankDetails
+    // وقت الإنشاء، لا مرجع حيّ — انظر docs/DECISIONS.md لمبدأ اللقطة).
+    match /users/{userId} {
+      allow read:  if isSignedIn() && isNotAnonymous() && request.auth.uid == userId;
+      allow write: if isSignedIn() && isNotAnonymous() && request.auth.uid == userId
+        && isValidUserProfile(request.resource.data);
     }
 
     // 🆕 دعوات الرحلة (روابط دخول بنقرة واحدة — الطريقة الوحيدة للانضمام الآن)

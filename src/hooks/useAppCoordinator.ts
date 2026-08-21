@@ -3,7 +3,7 @@ import type { ToastMessage } from '../types'
 import {
   useAuth, useAdminAuth, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
-  useTripAdminActions, useAllTrips, useMyTrips, useMyTripRole, useInviteJoin,
+  useTripAdminActions, useAllTrips, useMyTrips, useMyTripRole, useInviteJoin, useUserProfile,
 } from './index'
 import { useFilteredExpenses } from './useFilteredExpenses'
 import { calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from '../utils/calculations'
@@ -41,6 +41,10 @@ export function useAppCoordinator() {
     signInError, isSigningIn, signInWithGoogle, signInWithEmail,
   } = useAuth()
   const isOnline = useOnlineStatus()
+  // 🆕 بروفايل المستخدم العام (اسم/بنك) — يعبّئ نموذج إنشاء رحلة تلقائياً،
+  // ويُدار من شاشة بروفايل منفصلة (ModalManager). لا يحتاج hasAccess: مستقل عن
+  // أي رحلة، ومتاح لأي مستخدم مسجّل دخوله حتى قبل الانضمام لأي رحلة.
+  const profile = useUserProfile(user)
   // 🆕 لا رمز رحلة بعد الآن — الوصول عضوية مباشرة (claim) أو صلاحية مسؤول
   // عالمية، بلا خطوة تحقّق وسيطة. انظر docs/DECISIONS.md.
   const hasAccess = isAdmin || (!authLoading && joinedTripIds.includes(TRIP_ID))
@@ -190,9 +194,15 @@ export function useAppCoordinator() {
   //
   // ⚠️ لا نشترط عضوية الرحلة الافتراضية هنا: كان ذلك يخفي الشاشة عن كل عضو في
   // الرحلة الافتراضية (وهم الأغلبية)، فلا يراها أحد عملياً — القاعدة ١٧.
+  //
+  // 🆕 ولا نشترط pickerTrips.length > 0 بعد الآن: قبل الإنشاء الذاتي كانت
+  // شاشة فارغة عديمة الفائدة لعضو بلا أي رحلة (0 عناصر، لا فعل ممكن)، فسقط
+  // للمسار الأعمّ (NotAMemberScreen). أما الآن فحالتها الفارغة نفسها تحمل زرّ
+  // «إنشاء رحلة جديدة» — وهذا بالضبط أول مكان يحتاجه عضو جديد لا رحلة له
+  // إطلاقاً، فإخفاؤها عنه بالذات كان يقفل الباب الوحيد الذي فتحته هذه الميزة.
   const isPickerVisible =
     showTripPicker ||
-    (!HAS_EXPLICIT_TRIP_ID && !authLoading && !pickerLoading && pickerTrips.length > 0)
+    (!HAS_EXPLICIT_TRIP_ID && !authLoading && !pickerLoading)
 
   const hasUnsavedData = useCallback(() => {
     const hasExpenseData = expense.isAddingExpense && (
@@ -267,7 +277,16 @@ export function useAppCoordinator() {
       isVisible: isPickerVisible, wasOpenedManually: showTripPicker,
       show: () => setShowTripPicker(true),
       hide: () => setShowTripPicker(false),
+      // 🆕 الإنشاء الذاتي (نموذج واتساب) — أي مستخدم مسجّل دخوله، لا المسؤول
+      // فقط. نفس دالة tripAdmin.createTrip المستخدمة في لوحة الإدارة؛ الحدّ
+      // الحقيقي (جلسة حقيقية، حدّ زمني) خادمي بالكامل في manageTrip.
+      onCreateTrip: tripAdmin.createTrip,
+      defaultBankDetails: profile.profile.bankDetails,
     },
+    /** 🆕 بروفايل المستخدم العام — لشاشة البروفايل وتعبئة نموذج إنشاء الرحلة. */
+    profile: profile.profile,
+    isSavingProfile: profile.isSaving,
+    saveProfile: profile.saveProfile,
     /**
      * 🆕 قائمة الرحلات القابلة للإدارة + كتاباتها. للمسؤول: كل الرحلات
      * (useAllTrips، استعلام قائمة). لمنظّم: رحلته الوحيدة بنيوياً — لا فلترة
@@ -278,6 +297,7 @@ export function useAppCoordinator() {
       loading: isAdmin ? tripsLoading : false,
       error: isAdmin ? tripsError : null,
       viewerRole: isAdmin ? 'admin' as const : 'organizer' as const,
+      defaultBankDetails: profile.profile.bankDetails,
       ...tripAdmin,
     },
     filter,

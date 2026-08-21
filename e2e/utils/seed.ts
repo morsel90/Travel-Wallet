@@ -63,6 +63,16 @@ async function ensureUser(email: string, password: string, claims: Record<string
   return uid
 }
 
+/**
+ * 🆕 حساب بريد/كلمة مرور حقيقي بلا أي claim — لا trips ولا admin. يمثّل عضواً
+ * مسجَّل دخوله لم ينضمّ لأي رحلة بعد، لاختبار الإنشاء الذاتي للرحلات (نموذج
+ * واتساب: من ينشئ رحلة يصبح منظّمها) من نقطة البداية الحقيقية — بلا أي عضوية
+ * ممنوحة مسبقاً كاختصار كما تفعل seedTrip لبقية السيناريوهات.
+ */
+export async function seedBareUser(email: string, password: string): Promise<string> {
+  return ensureUser(email, password, {})
+}
+
 export interface SeedTripOptions {
   /** معرّف رحلة فريد لهذا الملف الاختباري — تجنّب مشاركته بين ملفات مختلفة (Playwright يشغّل الملفات بالتوازي). */
   tripId: string
