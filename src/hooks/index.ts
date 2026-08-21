@@ -23,3 +23,4 @@ export { useMyTripRole }       from './useMyTripRole'  // 🆕 «هل أنا م�
 export { useHeaderCollapse }   from './useHeaderCollapse' // 🆕 تتبّع اتجاه التمرير لتقليص/توسيع الهيدر (Sticky + Collapsible)
 export { useInviteJoin }       from './useInviteJoin' // 🆕 انضمام فوري عبر رابط دعوة (?invite=TOKEN) — بديل بوابة الرمز اليدوية
 export { useUserProfile }      from './useUserProfile' // 🆕 بروفايل المستخدم العام (اسم/بنك) — لتعبئة نموذج إنشاء رحلة تلقائياً
+export { useSyncTravelerNameFromProfile } from './useSyncTravelerNameFromProfile' // 🆕 يزامن اسم مسافري مع بروفايلي بلا أي واجهة جديدة

@@ -4,7 +4,7 @@ import {
   useAuth, useAdminAuth, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
   useTripAdminActions, useAllTrips, useMyTrips, useMyTripRole, useInviteJoin, useUserProfile,
-  useOrganizerBankDetails,
+  useOrganizerBankDetails, useSyncTravelerNameFromProfile,
 } from './index'
 import { useFilteredExpenses } from './useFilteredExpenses'
 import { calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from '../utils/calculations'
@@ -85,6 +85,11 @@ export function useAppCoordinator() {
 
   const deletedExpenses = useMemo(() => expenses.filter(e => e.deletedAt), [expenses])
   const deletedTravelers = useMemo(() => travelers.filter(t => t.deletedAt), [travelers])
+
+  // 🆕 يُصلح اسم مسافري تلقائياً إن اختلف عن بروفايلي — بديل ربط حيّ (كبيانات
+  // البنك) اخترناه لتفادي اشتراك منفصل لكل مسافر مربوط بحساب في كل مكان يُعرض
+  // فيه اسمه. انظر تعليق الملف. لا شيء يُعرض بسببه — صامت بالكامل.
+  useSyncTravelerNameFromProfile(TRIP_ID, hasAccess ? user : null, activeTravelers, profile.profile.displayName)
 
   const { balances, totalSpent, totalDeposited, totalRemaining } = useBalances(activeTravelers, activeExpenses)
 
