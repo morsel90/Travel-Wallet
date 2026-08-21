@@ -73,6 +73,16 @@ export async function seedBareUser(email: string, password: string): Promise<str
   return ensureUser(email, password, {})
 }
 
+/**
+ * 🆕 حساب مسؤول عالمي بلا claim عضوية أي رحلة — لاختبار سيناريو يبدأ من لوحة
+ * الإدارة مباشرة (إنشاء رحلة من هناك، لا انضماماً ذاتياً) دون أي عضوية ممنوحة
+ * مسبقاً كاختصار. isAdmin() في firestore.rules تكفي وحدها للوصول (لا تحتاج
+ * claim العضوية) — انظر تعليق openTripAsAdmin في flows.ts.
+ */
+export async function seedBareAdmin(email: string, password: string): Promise<string> {
+  return ensureUser(email, password, { admin: true })
+}
+
 export interface SeedTripOptions {
   /** معرّف رحلة فريد لهذا الملف الاختباري — تجنّب مشاركته بين ملفات مختلفة (Playwright يشغّل الملفات بالتوازي). */
   tripId: string
