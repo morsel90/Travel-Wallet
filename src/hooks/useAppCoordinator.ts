@@ -267,8 +267,10 @@ export function useAppCoordinator() {
       activeExpenses, activeTravelers, deletedExpenses, deletedTravelers,
       balances, totalSpent, totalDeposited, totalRemaining,
       settlements, categoryTotals, spendingTrend,
-      // 🆕 نموذج الهوية الهجين — انظر التعليق عند تعريفهما أعلاه.
-      myBalance, travelersPanelBalances,
+      // 🆕 نموذج الهوية الهجين — بطاقتك مثبَّتة أولاً هنا (انظر myBalance
+      // وتعليقه أعلاه) — هذا وحده كافٍ الآن، بلا بطاقة ملخّص منفصلة فوقها
+      // (MyBalanceBanner، حُذفت — كانت تكرر نفس الرقم بلا معلومة جديدة).
+      travelersPanelBalances,
     },
     /** إعدادات الرحلة الحالية ودورة حياتها. */
     trip: { itinerary, canAddExpenses, tripClosedNotice },

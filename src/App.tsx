@@ -26,7 +26,6 @@ import SmartInputBar        from './components/SmartInputBar'
 import { AppProviders }     from './components/AppProviders'
 import { AppErrorFallback } from './components/AppErrorFallback'
 import { StatusBanners }    from './components/StatusBanners'
-import MyBalanceBanner       from './components/MyBalanceBanner'
 import { TravelersPanel }   from './components/TravelersPanel'
 import { ChartsPanel }      from './components/ChartsPanel'
 import { ExpensesPanel }    from './components/ExpensesPanel'
@@ -169,11 +168,6 @@ export default function App() {
               <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
   
                 <OnboardingBanner />
-  
-                {/* 🆕 نموذج الهوية الهجين — يظهر فقط لمن مسافره مربوط بحسابه فعلاً. */}
-                {!ledger.isInitialLoading && ledger.myBalance && (
-                  <MyBalanceBanner balance={ledger.myBalance} />
-                )}
   
                 {!ledger.isInitialLoading && (
                   <NextSegmentWidget itinerary={trip.itinerary} />
