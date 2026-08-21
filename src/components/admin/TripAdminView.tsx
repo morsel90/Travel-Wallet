@@ -142,6 +142,7 @@ export default function TripAdminView({
             trip={selected}
             viewerRole={viewerRole}
             isSaving={isSaving}
+            profileBankDetails={defaultBankDetails}
             onSaveTripName={onSaveTripName}
             onSaveBankDetails={onSaveBankDetails}
             onSaveItinerary={onSaveItinerary}

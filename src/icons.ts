@@ -57,4 +57,6 @@ export {
   LogIn,        // 🆕 شاشة تسجيل الدخول الإلزامي (AuthGate) — حلّت محل رمز الرحلة/PIN
   UserX,        // 🆕 شاشة «لست عضواً في هذه الرحلة» (NotAMemberScreen)
   User,         // 🆕 زر «بروفايلي» في Header + شاشة UserProfileModal
+  LogOut,       // 🆕 «تسجيل الخروج» في AccountMenu — متاح لأي مستخدم مسجّل دخوله
+  ChevronDown,  // 🆕 مؤشّر فتح/إغلاق AccountMenu
 } from 'lucide-react'

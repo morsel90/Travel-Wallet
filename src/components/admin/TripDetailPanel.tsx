@@ -10,7 +10,7 @@ import {
   Building2, Route, Save, Plane, Car, Train, Bus,
   Pencil, Trash2, Plus, ArrowUp, ArrowDown, Loader2, AlertTriangle, Lock,
   Users, UserMinus, Check, Download, ShieldCheck, Share2, Ban,
-  UserCheck, Link2,
+  UserCheck, Link2, User,
 } from '../../icons'
 import { useTripMembers } from '../../hooks/useTripMembers'
 import { useTripTravelers } from '../../hooks/useTripTravelers'
@@ -58,6 +58,8 @@ interface TripDetailPanelProps {
   showToast: (msg: ToastMessage, durationMs?: number) => void
   /** يُستدعى بعد نجاح الحذف — الرحلة لم تعد موجودة فلا يصح إبقاء لوحتها مفتوحة. */
   onDeleted: () => void
+  /** 🆕 بيانات بنك بروفايل المستخدم (useUserProfile) — لزر "استيراد من بروفايلي". */
+  profileBankDetails?: BankDetails
 }
 
 type DetailTab = 'bank' | 'itinerary' | 'members' | 'travelers' | 'backup' | 'danger'
@@ -101,7 +103,7 @@ const STATUS_HELP: Record<TripStatus, string> = {
 export default function TripDetailPanel({
   trip, viewerRole, isSaving, onSaveTripName, onSaveBankDetails, onSaveItinerary,
   onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onLinkTravelerAccount, onExportBackup,
-  onCreateInvite, onRevokeInvite, showToast, onDeleted,
+  onCreateInvite, onRevokeInvite, showToast, onDeleted, profileBankDetails,
 }: TripDetailPanelProps) {
   const TABS = useMemo(
     () => viewerRole === 'admin' ? ALL_TABS : ALL_TABS.filter(t => !ORGANIZER_HIDDEN_TABS.has(t.key)),
@@ -171,6 +173,14 @@ export default function TripDetailPanel({
   const saveNameAndBank = async () => {
     if (nameForm !== trip.name) await onSaveTripName(trip.id, nameForm)
     await onSaveBankDetails(trip.id, bankForm)
+  }
+
+  // 🆕 يملأ نموذج بنك *هذه* الرحلة من بروفايل المستخدم العام — لا يحفظ تلقائياً
+  // (لا يزال زر "حفظ التغييرات" مطلوباً)، ولا يمسّ الرحالات الأخرى ولا البروفايل
+  // نفسه: نسخة لحظية أحادية الاتجاه، بنفس منطق تعبئة NewTripForm عند الإنشاء.
+  const importBankFromProfile = () => {
+    if (!profileBankDetails) return
+    setBankForm(profileBankDetails)
   }
 
   // 🆕 رابط الدخول المباشر (?invite=TOKEN) — طريقة الانضمام الوحيدة لرحلة (لا رمز رحلة بعد الآن).
@@ -341,11 +351,25 @@ export default function TripDetailPanel({
 
           <hr className="border-slate-100" />
 
-          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <Building2 className="w-4 h-4 text-teal-600" /> تفاصيل الحساب البنكي
-          </h3>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-teal-600" /> تفاصيل الحساب البنكي
+            </h3>
+            {/* 🆕 مستقلة عمداً عن بروفايل المستخدم — استيراد لحظي بضغطة، لا مزامنة
+                حيّة. تعديل الحساب هنا لا يغيّر البروفايل، والعكس صحيح. */}
+            {profileBankDetails && (profileBankDetails.bankName || profileBankDetails.beneficiary || profileBankDetails.iban) && (
+              <button
+                type="button"
+                onClick={importBankFromProfile}
+                className="flex items-center gap-1.5 text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-2.5 py-1.5 rounded-lg transition-colors"
+              >
+                <User className="w-3.5 h-3.5" /> استيراد من بروفايلي
+              </button>
+            )}
+          </div>
           <p className="text-xs text-slate-500 -mt-2">
             تظهر لكل أعضاء هذه الرحلة في بطاقة التحويل، ويمكنهم نسخها أو مشاركتها.
+            بيانات هذه الرحلة مستقلة عن بروفايلك العام — تعديلها هنا يخصّها وحدها.
           </p>
 
           <div>
