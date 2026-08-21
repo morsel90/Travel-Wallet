@@ -300,9 +300,12 @@ exports.manageTrip = onCall(
     await recordMembership(tripId, userRecord, { role: 'organizer' });
 
     // 🆕 أفضل جهد — لا يُفشل الإنشاء إن أخفق، تماماً كما في joinViaInvite.
+    // بروفايل المُنشئ يُفضَّل على اسم Auth — انظر تعليق getProfileDisplayName.
     try {
+      const profileDisplayName = await getProfileDisplayName(request.auth.uid);
       await provisionTravelerForUid(
-        tripId, request.auth.uid, request.auth.token.name || userRecord.displayName,
+        tripId, request.auth.uid,
+        profileDisplayName || request.auth.token.name || userRecord.displayName,
       );
     } catch (err) {
       console.error(`[manageTrip] تعذّر تزويد مسافر تلقائي لـ ${request.auth.uid} على ${tripId}:`, err);
@@ -700,6 +703,19 @@ function randomTravelerId() {
 const MAX_PROVISION_ATTEMPTS = 20;
 
 /**
+ * 🆕 اسم العرض من بروفايل المستخدم (users/{uid}.displayName) إن وُجد — يُفضَّل
+ * على اسم Auth (token.name / userRecord.displayName) عند تزويد مسافر تلقائي،
+ * لأنه الحقل الذي يعدّله المستخدم صراحةً عبر «بروفايلي» (UserProfileModal)،
+ * وقد يكون موجوداً حتى حين لا يملك حساب Auth نفسه اسماً (شائع لحساب
+ * بريد/كلمة مرور بلا اسم عرض مضبوط على Auth إطلاقاً).
+ */
+async function getProfileDisplayName(uid) {
+  const snap = await db.collection('users').doc(uid).get();
+  const value = snap.exists ? snap.data().displayName : undefined;
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/**
  * يبحث عن ملف مسافر بهذا uid في هذه الرحلة، وإن لم يوجد يُنشئ واحداً تلقائياً
  * ويربطه به فوراً — بدل انتظار ربط يدوي من المنظّم لاحقاً.
  *
@@ -860,10 +876,13 @@ exports.joinViaInvite = onCall(
     // (انظر useInviteJoin.ts). فشل التزويد أو ربط
     // مسبق لا يستحقان سؤالاً — الأول لأن لا ملف وُلد أصلاً، والثاني لأن
     // الملف مُسمّى بالفعل (ربما من هذا الحوار نفسه في زيارة سابقة).
+    // 🆕 بروفايل المنضمّ يُفضَّل على اسم Auth — انظر تعليق getProfileDisplayName.
     let needsName = false;
     try {
+      const profileDisplayName = await getProfileDisplayName(request.auth.uid);
       const result = await provisionTravelerForUid(
-        tripId, request.auth.uid, request.auth.token.name || userRecord.displayName,
+        tripId, request.auth.uid,
+        profileDisplayName || request.auth.token.name || userRecord.displayName,
       );
       needsName = result.created && result.usedDefaultName;
     } catch (err) {
