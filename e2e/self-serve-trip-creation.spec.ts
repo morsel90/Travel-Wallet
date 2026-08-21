@@ -25,6 +25,7 @@ const CREDS = {
 const TRIP_ID = 'e2e-self-serve-trip'
 const TRIP_NAME = 'رحلة أنشأها عضو بنفسه'
 const PROFILE_NAME = 'عبدالله المنظّم'
+const UPDATED_PROFILE_NAME = 'عبدالله بعد التعديل'
 
 test.beforeAll(async () => {
   await seedBareUser(CREDS.email, CREDS.password)
@@ -94,13 +95,19 @@ test('عضو بلا أي رحلة سابقة يملأ بروفايله، يُن�
 
   // ── جوهر الميزة: يعدّل بروفايله (لا الرحلة) — عبر AccountMenu المتاحة الآن
   // بعد الانضمام لرحلة — والتغيير ينعكس على بطاقة التحويل فوراً، بلا أي حفظ
-  // على مستند الرحلة نفسها. ──────────────────────────────────────────────
+  // على مستند الرحلة نفسها. يعدّل اسمه أيضاً في نفس الخطوة — تحقّق من
+  // useSyncTravelerNameFromProfile: بلا أي زر "تعديل اسم" على بطاقة المسافر
+  // (لا يوجد أصلاً)، الاسم الجديد يظهر عليها من تلقاء نفسه. ─────────────────
   await page.getByRole('button', { name: 'حسابي', exact: true }).click()
   await page.getByRole('menuitem', { name: 'بروفايلي' }).click()
+  await page.getByLabel('اسمك').fill(UPDATED_PROFILE_NAME)
   await page.getByLabel('اسم البنك').fill('بنك جديد بعد التعديل')
   await page.getByRole('button', { name: 'حفظ' }).click()
   await expect(page.getByRole('heading', { name: 'بروفايلي' })).not.toBeVisible()
 
   await expect(page.getByText('بنك جديد بعد التعديل')).toBeVisible()
   await expect(page.getByText('بنك الاختبار')).not.toBeVisible()
+
+  await expect(page.getByText(UPDATED_PROFILE_NAME)).toBeVisible()
+  await expect(page.getByText(PROFILE_NAME, { exact: true })).not.toBeVisible()
 })

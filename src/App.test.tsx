@@ -99,6 +99,10 @@ vi.mock('./hooks', () => ({
     profile: { displayName: '', bankDetails: { bankName: '', beneficiary: '', iban: '' } },
     isSaving: false, saveProfile: noop,
   }),
+  // 🆕 مزامنة صامتة لاسم المسافر من البروفايل — بلا أثر مرئي يستحق تجميعه هنا.
+  // دالة سهماً لا `noop` مباشرة: vi.mock مرفوعة فوق تعريف noop، فالوصول له هنا
+  // مباشرة (لا داخل إغلاق يُستدعى لاحقاً) يسبق تهيئته.
+  useSyncTravelerNameFromProfile: () => undefined,
   useAdminAuth: () => ({
     showAdminSignIn: false, openAdminSignIn: noop, handleAdminSignOut: noop, adminModalProps: {},
   }),
