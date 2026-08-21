@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import { exportTripToExcel } from './utils/reports'
 import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from './utils/tripId'
@@ -19,6 +20,7 @@ import InviteJoinScreen     from './components/InviteJoinScreen'
 import TripPicker           from './components/TripPicker'
 import AuthFlow             from './components/AuthFlow'
 import ModalManager         from './components/ModalManager'
+import ModalFallback        from './components/modals/ModalFallback'
 import PullToRefresh        from './components/PullToRefresh'
 import SmartInputBar        from './components/SmartInputBar'
 import { AppProviders }     from './components/AppProviders'
@@ -28,6 +30,12 @@ import MyBalanceBanner       from './components/MyBalanceBanner'
 import { TravelersPanel }   from './components/TravelersPanel'
 import { ChartsPanel }      from './components/ChartsPanel'
 import { ExpensesPanel }    from './components/ExpensesPanel'
+
+// 🆕 بروفايل المستخدم العام — يُعرض هنا لا داخل ModalManager عمداً: مستقل عن
+// أي رحلة، ويجب أن يبقى متاحاً حتى في شاشات لا يصل إليها ModalManager (مثل
+// TripPicker لعضو بلا أي رحلة بعد — بالضبط من يحتاج تعبئة بروفايله قبل إنشاء
+// أول رحلة ذاتياً). انظر docs/DECISIONS.md.
+const UserProfileModal = lazy(() => import('./components/modals/UserProfileModal'))
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 // مسؤوليتان اثنتان لا ثالث لهما:
@@ -39,7 +47,7 @@ import { ExpensesPanel }    from './components/ExpensesPanel'
 export default function App() {
   const {
     session, ledger, trip, rates, status, picker, tripAdminPanel, filter, modals, expense, traveler, deposit, admin, invite,
-    profile, isSavingProfile, saveProfile,
+    profile, isSavingProfile, saveProfile, organizerBank,
   } = useAppCoordinator()
 
   // نسخة محلية ليضيّق TypeScript نوعها: الوصول عبر `expense.expenseToDelete`
@@ -95,7 +103,7 @@ export default function App() {
         onBack={picker.wasOpenedManually ? picker.hide : undefined}
         onCreateTrip={picker.onCreateTrip}
         isCreatingTrip={tripAdminPanel.isSaving}
-        defaultBankDetails={picker.defaultBankDetails}
+        onShowProfile={modals.openUserProfile}
       />
     )
   } else if (!session.isAdmin && !session.joinedTripIds.includes(TRIP_ID)) {
@@ -210,7 +218,7 @@ export default function App() {
                         <ExpenseForm />
                       </section>
                     )}
-                    <BankDetailsCard bankDetails={trip.bankDetails} />
+                    <BankDetailsCard bankDetails={organizerBank.bankDetails} isLoading={organizerBank.loading} />
                   </div>
   
                   <div className="lg:col-span-2">
@@ -278,10 +286,8 @@ export default function App() {
                 error: tripAdminPanel.error,
                 isSaving: tripAdminPanel.isSaving,
                 onSaveTripName: tripAdminPanel.saveTripName,
-                onSaveBankDetails: tripAdminPanel.saveBankDetails,
                 onSaveItinerary: tripAdminPanel.saveItinerary,
                 onCreateTrip: tripAdminPanel.createTrip,
-                defaultBankDetails: tripAdminPanel.defaultBankDetails,
                 onSaveTripStatus: tripAdminPanel.saveTripStatus,
                 onDeleteTrip: tripAdminPanel.deleteTrip,
                 onRemoveMember: tripAdminPanel.removeMember,
@@ -292,11 +298,6 @@ export default function App() {
                 onCreateInvite: tripAdminPanel.createInvite,
                 onRevokeInvite: tripAdminPanel.revokeInvite,
                 showToast: status.showToast,
-              }}
-              userProfile={{
-                profile,
-                isSaving: isSavingProfile,
-                onSave: saveProfile,
               }}
             />
   
@@ -322,6 +323,13 @@ export default function App() {
   return (
     <>
       {screen}
+      <AnimatePresence>
+        {modals.modal.type === 'userProfile' && (
+          <Suspense fallback={<ModalFallback />}>
+            <UserProfileModal profile={profile} isSaving={isSavingProfile} onSave={saveProfile} onClose={modals.closeModal} />
+          </Suspense>
+        )}
+      </AnimatePresence>
       {status.toast && <Toast message={status.toast} />}
     </>
   )

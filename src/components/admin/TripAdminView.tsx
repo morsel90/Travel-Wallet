@@ -19,7 +19,7 @@ import RestoreTripForm from './RestoreTripForm'
 import EmptyState from '../EmptyState'
 import { tripUrl } from '../../utils/tripId'
 import type { TripSummary } from '../../hooks/useAllTrips'
-import type { BankDetails, ToastMessage, TripStatus } from '../../types'
+import type { ToastMessage, TripStatus } from '../../types'
 
 interface TripAdminViewProps {
   currentTripId: string
@@ -34,11 +34,8 @@ interface TripAdminViewProps {
   error: string | null
   isSaving: boolean
   onSaveTripName: (tripId: string, name: string) => Promise<boolean>
-  onSaveBankDetails: (tripId: string, details: BankDetails) => Promise<boolean>
   onSaveItinerary: (tripId: string, itinerary: TripSummary['itinerary']) => Promise<boolean>
-  onCreateTrip: (tripId: string, name: string, bankDetails?: BankDetails) => Promise<boolean>
-  /** 🆕 من بروفايل المسؤول نفسه (useUserProfile) — تعبئة أولية لنموذج الإنشاء. */
-  defaultBankDetails?: BankDetails
+  onCreateTrip: (tripId: string, name: string) => Promise<boolean>
   onSaveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
   onDeleteTrip: (tripId: string) => Promise<boolean>
   /** 🆕 إزالة عضو من الرحلة — تمرّ إلى TripDetailPanel كما هي. */
@@ -62,7 +59,7 @@ interface TripAdminViewProps {
 
 export default function TripAdminView({
   currentTripId, viewerRole, trips, loading, error, isSaving,
-  onSaveTripName, onSaveBankDetails, onSaveItinerary, onCreateTrip, defaultBankDetails,
+  onSaveTripName, onSaveItinerary, onCreateTrip,
   onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onLinkTravelerAccount, onExportBackup, onRestoreTrip,
   onCreateInvite, onRevokeInvite, showToast, onClose,
 }: TripAdminViewProps) {
@@ -142,9 +139,7 @@ export default function TripAdminView({
             trip={selected}
             viewerRole={viewerRole}
             isSaving={isSaving}
-            profileBankDetails={defaultBankDetails}
             onSaveTripName={onSaveTripName}
-            onSaveBankDetails={onSaveBankDetails}
             onSaveItinerary={onSaveItinerary}
             onSaveTripStatus={onSaveTripStatus}
             onDeleteTrip={onDeleteTrip}
@@ -196,7 +191,6 @@ export default function TripAdminView({
                 isSaving={isSaving}
                 onCreate={onCreateTrip}
                 onCancel={() => setIsCreating(false)}
-                defaultBankDetails={defaultBankDetails}
               />
             )}
 

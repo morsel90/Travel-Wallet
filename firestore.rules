@@ -197,23 +197,34 @@ service cloud.firestore {
     }
 
     // 🆕 التحقّق من بنية مستند إعدادات الرحلة trips/{tripId} — كل الحقول اختيارية
-    // لأن الواجهة الإدارية تكتب بـ merge (تحدّث تفاصيل البنك وحدها أو المسار وحده،
+    // لأن الواجهة الإدارية تكتب بـ merge (تحدّث الاسم وحده أو المسار وحده،
     // انظر hooks/useTripAdminActions.ts)، فلا يصل للقواعد إلا الحقل المُعدَّل فعلاً.
     //
-    // ⚠️ createdByUid مُدرَج هنا رغم أن العميل لا يكتبه أبداً بنفسه (manageTrip
-    // وحدها تكتبه عند الإنشاء عبر Admin SDK) — لنفس سبب lastTripCreatedAt في
-    // isValidUserProfile بالضبط: كتابة merge:true من العميل (تعديل الاسم مثلاً)
-    // تُقيَّم بالمستند الناتج **الكامل**، فيظهر هذا الحقل في كل تعديل لاحق حتى
-    // لو لم تلمسه تلك الكتابة تحديداً. غيابه من hasOnly كان سيرفض كل تعديل على
-    // أي رحلة أُنشئت بعد إضافة هذا الحقل — وهو ما كشفه فعلاً
-    // e2e/self-serve-trip-creation.spec.ts (القاعدة ١٨: انكسار حقيقي رُصد لا افتراضي).
+    // ⚠️ createdByUid وorganizerUid مُدرَجان هنا رغم أن العميل لا يكتبهما أبداً
+    // بنفسه (manageTrip/manageMember وحدهما تكتبانهما عبر Admin SDK) — لنفس سبب
+    // lastTripCreatedAt في isValidUserProfile بالضبط: كتابة merge:true من
+    // العميل (تعديل الاسم مثلاً) تُقيَّم بالمستند الناتج **الكامل**، فيظهر هذان
+    // الحقلان في كل تعديل لاحق حتى لو لم تلمسهما تلك الكتابة تحديداً. غيابهما
+    // من hasOnly كان سيرفض كل تعديل على أي رحلة لها منظّم — وهو ما كشفه فعلاً
+    // e2e/self-serve-trip-creation.spec.ts مع createdByUid (القاعدة ١٨: انكسار
+    // حقيقي رُصد لا افتراضي)، وorganizerUid يقع في نفس الفخ بالضبط.
+    //
+    // 🆕 لا bankDetails بعد اليوم كحقل *فعّال* — بيانات البنك تُقرأ حيّة من
+    // بروفايل المنظّم (users/{organizerUid}) لا مستند الرحلة، والعميل لا يكتب
+    // هذا الحقل بعد اليوم إطلاقاً (NewTripForm/TripDetailPanel لم يعودا
+    // يحمّلانه). ⚠️ **يبقى في hasOnly رغم ذلك** — كل رحلة أُنشئت *قبل* هذا
+    // التغيير لا تزال تحمله فعلياً، فينطبق عليه نفس فخ createdByUid أعلاه
+    // بالضبط: حذفه من hasOnly يرفض كل تعديل لاحق على كل رحلة قديمة. هذا ما
+    // كشفه فعلاً e2e/organizer-role.spec.ts (القاعدة ١٨ مجدداً) — رحلة مزروعة
+    // بـ bankDetails فارغة (نمط seedTrip القديم) عجز منظّمها عن حفظ أي تعديل.
     function isValidTripConfig(d) {
-      return d.keys().hasOnly(['name', 'bankDetails', 'itinerary', 'status', 'createdByUid'])
+      return d.keys().hasOnly(['name', 'itinerary', 'status', 'createdByUid', 'organizerUid', 'bankDetails'])
         && (!('name' in d) || (d.name is string && d.name.size() <= 100))
-        && (!('bankDetails' in d) || isValidBankDetails(d.bankDetails))
         && (!('itinerary' in d) || (d.itinerary is list && d.itinerary.size() <= 50))
+        && (!('bankDetails' in d) || isValidBankDetails(d.bankDetails))
         && (!('status' in d) || d.status in ['active', 'completed', 'archived'])
-        && (!('createdByUid' in d) || d.createdByUid is string);
+        && (!('createdByUid' in d) || d.createdByUid is string)
+        && (!('organizerUid' in d) || d.organizerUid is string);
     }
 
     // ─── دورة حياة الرحلة ────────────────────────────────────────────────────
@@ -256,16 +267,37 @@ service cloud.firestore {
     }
 
     // 🆕 بروفايل المستخدم العام users/{uid} — انظر src/types.ts UserProfile.
-    // lastTripCreatedAt مُدرَج هنا رغم أن العميل لا يكتبه أبداً (manageTrip
-    // وحدها تكتبه عبر Admin SDK متجاوزةً هذه القاعدة): كتابة merge:true من
-    // العميل تُقيَّم بـ request.resource.data = المستند الناتج **الكامل** بعد
-    // الدمج، فلو كان هذا الحقل مكتوباً سلفاً لظهر في كل تعديل بروفايل لاحق حتى
-    // لو لم تلمسه تلك الكتابة تحديداً — غيابه من hasOnly كان سيرفض تلك الكتابة.
+    // lastTripCreatedAt وorganizesTripIds مُدرَجان هنا رغم أن العميل لا يكتبهما
+    // أبداً (manageTrip/manageMember وحدهما تكتبانهما عبر Admin SDK متجاوزةً
+    // هذه القاعدة): كتابة merge:true من العميل تُقيَّم بـ request.resource.data
+    // = المستند الناتج **الكامل** بعد الدمج، فلو كان أحد هذين الحقلين مكتوباً
+    // سلفاً لظهر في كل تعديل بروفايل لاحق حتى لو لم تلمسه تلك الكتابة تحديداً
+    // — غيابهما من hasOnly كان سيرفض تلك الكتابة.
+    //
+    // organizesTripIds: قائمة معرّفات الرحلات التي هذا الحساب منظّمها حالياً
+    // (تُحدَّث عند الإنشاء وعند setRole في manageMember) — هي ما تُبنى عليه
+    // organizesSharedTrip أدناه، فتفتح قراءة هذا البروفايل لأعضاء تلك الرحلات
+    // تحديداً دون غيرهم.
     function isValidUserProfile(d) {
-      return d.keys().hasOnly(['displayName', 'bankDetails', 'lastTripCreatedAt'])
+      return d.keys().hasOnly(['displayName', 'bankDetails', 'lastTripCreatedAt', 'organizesTripIds'])
         && (!('displayName' in d)       || (d.displayName is string && d.displayName.size() <= 100))
         && (!('bankDetails' in d)       || isValidBankDetails(d.bankDetails))
-        && (!('lastTripCreatedAt' in d) || d.lastTripCreatedAt is number);
+        && (!('lastTripCreatedAt' in d) || d.lastTripCreatedAt is number)
+        && (!('organizesTripIds' in d)  || (d.organizesTripIds is list && d.organizesTripIds.size() <= 50));
+    }
+
+    // 🆕 هل القارئ عضو في رحلة يُنظّمها صاحب هذا البروفايل؟ لا حلقات في لغة
+    // القواعد — فلا سبيل للتكرار على خريطة trips في claim القارئ لفحص كل رحلة
+    // على حدة ضد organizerUid الخاص بها. الحل: قائمتان قابلتان للتقاطع بعملية
+    // واحدة (hasAny) — organizesTripIds على *هذا* البروفايل (الاتجاه الآخر،
+    // trips/{tripId}.organizerUid، ما يُعطي العميل uid المنظّم أصلاً ليبني
+    // مسار القراءة هذا). كلا الاتجاهين ضروري معاً؛ أحدهما لا يغني عن الآخر.
+    function organizesSharedTrip(profileData) {
+      return isSignedIn() && isNotAnonymous()
+        && ('trips' in request.auth.token)
+        && ('organizesTripIds' in profileData)
+        && profileData.organizesTripIds is list
+        && profileData.organizesTripIds.hasAny(request.auth.token.trips.keys());
     }
 
     // ⚠️ لا نتحقق هنا من بنية كل مقطع مسار على حدة (mode/identifier/departure/
@@ -432,13 +464,16 @@ service cloud.firestore {
       allow create: if isAdmin() && isValidTripConfig(request.resource.data);
       // 🆕 التحديث متاح للمسؤول أو لمنظّم *هذه* الرحلة تحديداً — نفس الحقول
       // المسموحة بالضبط (isValidTripConfig لا تميّز بينهما)، فمنظّم يعدّل الاسم
-      // والبنك والمسار وحالة الرحلة، تماماً كما تفعل TripDetailPanel.tsx اليوم.
-      // 🆕 createdByUid لا يتغيّر بعد الإنشاء — لا للمسؤول ولا للمنظّم — نفس مبدأ
-      // ثباته على المصاريف (createdByUidUnchanged). resource.data بلا الحقل يعني
-      // رحلة أُنشئت قبل إضافته، فلا قيد عليها بعد.
+      // والمسار وحالة الرحلة، تماماً كما تفعل TripDetailPanel.tsx اليوم.
+      // 🆕 createdByUid وorganizerUid لا يتغيّران عبر كتابة عميل مباشرة — لا
+      // للمسؤول ولا للمنظّم؛ كلاهما تكتبهما الدوال حصراً (manageTrip/manageMember
+      // عبر Admin SDK، يتجاوز هذا القيد أصلاً). نفس مبدأ ثبات createdByUid على
+      // المصاريف. resource.data بلا الحقل يعني رحلة لا تحمله بعد، فلا قيد عليها.
       allow update: if (isAdmin() || isOrganizer(tripId)) && isValidTripConfig(request.resource.data)
         && (!('createdByUid' in resource.data)
-            || (('createdByUid' in request.resource.data) && request.resource.data.createdByUid == resource.data.createdByUid));
+            || (('createdByUid' in request.resource.data) && request.resource.data.createdByUid == resource.data.createdByUid))
+        && (!('organizerUid' in resource.data)
+            || (('organizerUid' in request.resource.data) && request.resource.data.organizerUid == resource.data.organizerUid));
       allow delete: if false;
 
       // ─── 🆕 سجلّ عضوية الرحلة ───────────────────────────────────────────────
@@ -470,11 +505,14 @@ service cloud.firestore {
 
     // ─── 🆕 بروفايل المستخدم العام ───────────────────────────────────────────
     //
-    // users/{uid} — مستقل عن أي رحلة، يملكه صاحبه حصراً. يُستخدم لتعبئة بيانات
-    // البنك تلقائياً عند إنشاء رحلة (نسخ لحظي داخل trips/{tripId}.bankDetails
-    // وقت الإنشاء، لا مرجع حيّ — انظر docs/DECISIONS.md لمبدأ اللقطة).
+    // users/{uid} — مستقل عن أي رحلة، يملكه صاحبه حصراً للكتابة. 🆕 القراءة
+    // مفتوحة أيضاً لأعضاء أي رحلة يُنظّمها صاحب هذا الملف تحديداً
+    // (organizesSharedTrip) — هذا ما يجعل بطاقة التحويل داخل الرحلة تقرأ بيانات
+    // بنك المنظّم حيّة (users/{organizerUid}) بدل نسخة محلية على مستند الرحلة.
+    // مصدر الحقيقة الوحيد لبيانات البنك هو هذا المستند؛ انظر docs/DECISIONS.md.
     match /users/{userId} {
-      allow read:  if isSignedIn() && isNotAnonymous() && request.auth.uid == userId;
+      allow read: if (isSignedIn() && isNotAnonymous() && request.auth.uid == userId)
+        || organizesSharedTrip(resource.data);
       allow write: if isSignedIn() && isNotAnonymous() && request.auth.uid == userId
         && isValidUserProfile(request.resource.data);
     }

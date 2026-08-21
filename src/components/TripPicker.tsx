@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { Luggage, ChevronLeft, Loader2, AlertTriangle, PieChart, ArrowRight, Plus } from '../icons'
+import { Luggage, ChevronLeft, Loader2, AlertTriangle, PieChart, ArrowRight, Plus, User } from '../icons'
 import type { MyTrip } from '../hooks/useMyTrips'
-import type { BankDetails } from '../types'
 import { TRIP_STATUS_LABEL } from '../types'
 import { tripUrl } from '../utils/tripId'
 import { haptic } from '../utils/haptics'
@@ -13,9 +12,7 @@ import NewTripForm from './admin/NewTripForm'
 //
 // ⚠️ فرق جوهري عن ذلك النمط يجب ألا يُنسى عند التعديل هنا: هذه ليست قائمة بكل
 // الرحلات الموجودة، بل برحلات *هذا المستخدم* وحده (مصدرها خريطة trips في
-// claims توكنه). عرض كل الرحلات لغير المسؤول ليس خياراً: مستند الرحلة يحوي
-// تفاصيل الحساب البنكي (اسم المستفيد والآيبان)، وقائمة عامة تعني كشفها لأي
-// زائر.
+// claims توكنه). عرض كل الرحلات لغير المسؤول ليس خياراً — لا مبرر له.
 //
 // 🆕 الدخول لرحلة أخرى إما برابط دعوة من منظّمها، أو بإنشاء رحلة جديدة بنفسك
 // من هنا مباشرة (نموذج واتساب: من يُنشئ يصبح منظّم رحلته تلقائياً — انظر
@@ -32,15 +29,19 @@ interface TripPickerProps {
   /** يُمرَّر فقط حين فُتحت الشاشة اختيارياً من داخل رحلة — لا حين كانت شاشة البداية. */
   onBack?: () => void
   /** 🆕 إنشاء ذاتي — متاح لأي مستخدم مسجّل دخوله، لا المسؤول فقط. */
-  onCreateTrip: (tripId: string, name: string, bankDetails: BankDetails) => Promise<boolean>
+  onCreateTrip: (tripId: string, name: string) => Promise<boolean>
   isCreatingTrip: boolean
-  /** 🆕 من بروفايل المستخدم (useUserProfile) — تعبئة أولية لنموذج الإنشاء. */
-  defaultBankDetails?: BankDetails
+  /**
+   * 🆕 فتح شاشة البروفايل (اسم/بنك) — هذه هي نقطة الدخول الوحيدة إليها لعضو
+   * بلا أي رحلة بعد (Header/AccountMenu لا يُعرَضان قبل الانضمام لرحلة). بالضبط
+   * من يحتاج تعبئة بروفايله *قبل* إنشاء أول رحلة ذاتياً — انظر docs/DECISIONS.md.
+   */
+  onShowProfile: () => void
 }
 
 const TripPicker = ({
   trips, loading, error, currentTripId, onBack,
-  onCreateTrip, isCreatingTrip, defaultBankDetails,
+  onCreateTrip, isCreatingTrip, onShowProfile,
 }: TripPickerProps) => {
   const [isCreating, setIsCreating] = useState(false)
 
@@ -53,8 +54,8 @@ const TripPicker = ({
 
   // 🆕 بعد الإنشاء الذاتي، يدخل المُنشئ رحلته مباشرة — لا يبقى في القائمة
   // ليضغط عليها يدوياً. نفس التنقّل الكامل الذي تفعله openTrip أعلاه.
-  const handleCreate = async (tripId: string, name: string, bankDetails: BankDetails) => {
-    const ok = await onCreateTrip(tripId, name, bankDetails)
+  const handleCreate = async (tripId: string, name: string) => {
+    const ok = await onCreateTrip(tripId, name)
     if (ok) openTrip(tripId)
     return ok
   }
@@ -65,6 +66,17 @@ const TripPicker = ({
         <div className="max-w-md mx-auto px-5 py-4 flex items-center gap-2.5">
           <PieChart className="w-6 h-6 text-teal-100 shrink-0" />
           <h1 className="font-bold text-lg flex-1">رحلاتي</h1>
+          {!isCreating && (
+            <button
+              type="button"
+              onClick={() => { haptic.light(); onShowProfile() }}
+              title="بروفايلي"
+              aria-label="بروفايلي"
+              className="flex items-center justify-center bg-teal-800/60 hover:bg-teal-800 text-teal-50 p-2 rounded-xl transition-colors shrink-0"
+            >
+              <User className="w-4 h-4" />
+            </button>
+          )}
           {!isCreating && (
             <button
               type="button"
@@ -94,7 +106,6 @@ const TripPicker = ({
             isSaving={isCreatingTrip}
             onCreate={handleCreate}
             onCancel={() => setIsCreating(false)}
-            defaultBankDetails={defaultBankDetails}
           />
         ) : loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">

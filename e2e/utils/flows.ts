@@ -33,7 +33,8 @@ export async function signInWithEmail(page: Page, email: string, password: strin
  * كانت أزراراً منفصلة في الهيدر مباشرة.
  */
 export async function openAccountMenu(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'حسابي' }).click()
+  // exact: true — يتجنّب تطابقاً جزئياً مع زر "كشف حسابي" (نموذج الهوية الهجين).
+  await page.getByRole('button', { name: 'حسابي', exact: true }).click()
 }
 
 /**

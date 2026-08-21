@@ -1,12 +1,18 @@
 import { useState } from 'react'
-import { Building2, Copy, Check, Share2 } from '../icons'
+import { Building2, Copy, Check, Share2, Loader2 } from '../icons'
 import { haptic } from '../utils/haptics'
 import { cn } from '../utils/cn'
 
 import type { BankDetails } from '../types'
 
 interface BankDetailsCardProps {
-  bankDetails: BankDetails
+  /**
+   * 🆕 حيّة من بروفايل المنظّم (users/{organizerUid}) — لا نسخة على مستند
+   * الرحلة بعد اليوم. null تعني: لا منظّم معروف لهذه الرحلة بعد، أو المنظّم
+   * لم يُضِف بيانات بنكه بعد. انظر hooks/useOrganizerBankDetails.ts.
+   */
+  bankDetails: BankDetails | null
+  isLoading?: boolean
 }
 
 // 🆕 بطاقة الحساب البنكي — تصميم مينيمال بلمسة واحدة للنسخ: كل حقل (الآيبان،
@@ -22,8 +28,34 @@ interface BankDetailsCardProps {
 //   (ms-*/ps-*/gap-*) في كل مكان — الهوامش الفيزيائية لا تنعكس تلقائياً مع RTL.
 // - تنظيف المسافات (إزالة الفراغات) عند النسخ يُطبَّق على الآيبان فقط، وليس
 //   على اسم المستفيد — تطبيقه على الاسم كان سيُنتج نسخاً خاطئاً كـ"أحمدالغامدي".
-export const BankDetailsCard = ({ bankDetails }: BankDetailsCardProps) => {
+export const BankDetailsCard = ({ bankDetails, isLoading = false }: BankDetailsCardProps) => {
   const [copiedField, setCopiedField] = useState<string | null>(null)
+
+  if (isLoading) {
+    return (
+      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex items-center justify-center gap-2 text-slate-400 min-h-[120px]">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        <span className="text-xs font-bold">جارٍ جلب بيانات الحساب...</span>
+      </section>
+    )
+  }
+
+  // 🆕 لا منظّم معروف بعد (رحلة قديمة)، أو منظّم لم يُضِف بيانات بنكه بعد —
+  // حالة فارغة واضحة بدل حقول فارغة صامتة أو إخفاء البطاقة كلياً.
+  if (!bankDetails) {
+    return (
+      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm text-center">
+        <div className="w-11 h-11 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-3">
+          <Building2 className="w-5 h-5 text-slate-400" />
+        </div>
+        <p className="text-sm font-bold text-slate-700 mb-1">لا تتوفر بيانات بنك بعد</p>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          لم يُضِف منظّم هذه الرحلة بيانات حسابه البنكي بعد — تواصل معه مباشرة،
+          أو انتظر حتى يُكمل بروفايله.
+        </p>
+      </section>
+    )
+  }
 
   const handleCopy = (text: string, field: string, stripSpaces = false) => {
     const textToCopy = stripSpaces ? text.replace(/\s+/g, '') : text

@@ -98,7 +98,6 @@ export async function seedTrip({ tripId, memberEmail, memberPassword, adminEmail
 
   await db.collection('trips').doc(tripId).set({
     name: `رحلة اختبار E2E — ${tripId}`,
-    bankDetails: { bankName: '', beneficiary: '', iban: '' },
     itinerary: [],
   })
 

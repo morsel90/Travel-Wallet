@@ -72,13 +72,18 @@ vi.mock('./hooks', () => ({
     travelers: h.travelers, setTravelers: noop,
     travelersLoaded: h.travelersLoaded, refreshTravelers: vi.fn(),
   }),
-  // ⚠️ bankDetails كائن دائماً — الخطاف الحقيقي يسقط إلى BANK_DETAILS في
-  // constants.ts ولا يُرجع null أبداً، وBankDetailsCard يقرأ حقوله مباشرة.
   useTripConfig: () => ({
     tripName: 'رحلة الاختبار',
-    bankDetails: { bankName: 'بنك الاختبار', beneficiary: 'مسافر', iban: 'SA0000000000000000000000' },
+    organizerUid: 'organizer-1',
     itinerary: [],
     status: h.tripStatus,
+  }),
+  // 🆕 قراءة حيّة لبيانات بنك المنظّم — كائن ثابت يكفي، لا يُستهلك تفصيلياً
+  // في اختبارات ترتيب البوابات هذه.
+  useOrganizerBankDetails: () => ({
+    bankDetails: { bankName: 'بنك الاختبار', beneficiary: 'مسافر', iban: 'SA0000000000000000000000' },
+    displayName: null,
+    loading: false,
   }),
   // 🆕 المرحلة ٣ — «هل أنا منظّم الرحلة الحالية؟». افتراضياً false، وتُفعَّل
   // صراحةً في الاختبارات التي تحتاجها تحديداً.
@@ -115,7 +120,7 @@ vi.mock('./hooks', () => ({
     depositReason: '', setDepositReason: noop, handleAddDeposit: noop, closeDeposit: noop,
   }),
   useTripAdminActions: () => ({
-    isSaving: false, saveBankDetails: noop, saveItinerary: noop, saveTripName: noop,
+    isSaving: false, saveItinerary: noop, saveTripName: noop,
     saveTripStatus: noop, createTrip: noop, deleteTrip: noop,
   }),
   // 🆕 رابط دعوة بنقرة واحدة — status: 'done' دائماً هنا (لا رابط دعوة في بيئة

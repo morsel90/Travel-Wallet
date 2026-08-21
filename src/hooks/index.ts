@@ -13,8 +13,9 @@ export { useCountdown }        from './useCountdown' // 🆕 عدّ تنازلي
 export { useExpenseActions }   from './useExpenseActions' // 🆕 منطق نموذج/عمليات المصروف كاملاً — استُخرج من App.tsx لتقليل حجمه
 export { useTravelerActions }  from './useTravelerActions' // 🆕 منطق نموذج/عمليات المسافر كاملاً — استُخرج من App.tsx
 export { useDepositActions }   from './useDepositActions'  // 🆕 منطق نموذج/عمليات الإيداع كاملاً — استُخرج من App.tsx
-export { useTripConfig }       from './useTripConfig' // 🆕 إعدادات الرحلة النشطة (اسمها/تفاصيل البنك) من Firestore — لدعم رحلات متعددة
-export { useTripAdminActions } from './useTripAdminActions' // 🆕 كتابة إعدادات أي رحلة (البنك/المسار/الرمز) من واجهة الإدارة — للمسؤول فقط
+export { useTripConfig }       from './useTripConfig' // 🆕 إعدادات الرحلة النشطة (اسمها/منظّمها/مسارها) من Firestore — لدعم رحلات متعددة
+export { useOrganizerBankDetails } from './useOrganizerBankDetails' // 🆕 قراءة حيّة لبيانات بنك منظّم الرحلة — المصدر الوحيد لعرضها
+export { useTripAdminActions } from './useTripAdminActions' // 🆕 كتابة إعدادات أي رحلة (الاسم/المسار/الحالة) من واجهة الإدارة
 export { useAllTrips }         from './useAllTrips' // 🆕 قائمة كل الرحلات — استعلام يرضيه isAdmin() وحده
 export { useMyTrips }          from './useMyTrips'  // 🆕 رحلات المستخدم المنضم لها (شاشة «رحلاتي») — قراءة مستند كل رحلة على حدة
 export { useTripMembers }      from './useTripMembers' // 🆕 أعضاء رحلة بعينها من السجلّ — للمسؤول وحده (الـ claims لا تُستعلَم)

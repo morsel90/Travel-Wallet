@@ -267,15 +267,22 @@ export interface BankDetails {
 
 // ملاحظة: واجهة إعدادات الرحلة الكاملة (TripConfig) معرّفة ومُصدَّرة من
 // hooks/useTripConfig.ts — وهي الشكل الفعلي الذي يُرجعه الـ hook
-// (tripName + bankDetails ككائن + itinerary). لا تُكرَّر هنا لتفادي التعارض.
+// (tripName + organizerUid + itinerary). لا تُكرَّر هنا لتفادي التعارض.
 
-// 🆕 بروفايل المستخدم العام users/{uid} — مستقل عن أي رحلة، يُستخدم لتعبئة
-// بيانات البنك تلقائياً عند إنشاء رحلة جديدة (نسخ لحظي، لا مرجع حيّ — انظر
-// docs/DECISIONS.md). كل الحقول اختيارية لأن الكتابة تتم بـ merge (نفس مبدأ
-// isValidTripConfig).
+// 🆕 بروفايل المستخدم العام users/{uid} — مستقل عن أي رحلة، وهو **المصدر
+// الوحيد** لبيانات بنك المستخدم. أي رحلة ينظّمها هذا الحساب تقرأ bankDetails
+// حيّة من هنا مباشرة (لا نسخة محلية على مستند الرحلة) — انظر docs/DECISIONS.md.
+// كل الحقول اختيارية لأن الكتابة تتم بـ merge (نفس مبدأ isValidTripConfig).
 export interface UserProfile {
   displayName?: string
   bankDetails?: BankDetails
   /** خادمي فقط — يكتبه manageTrip حصراً لحدّ إساءة الإنشاء الذاتي للرحلات. */
   lastTripCreatedAt?: number
+  /**
+   * خادمي فقط — معرّفات الرحلات التي هذا الحساب منظّمها حالياً (يكتبها
+   * manageTrip عند الإنشاء وmanageMember عند setRole). تُستهلك في
+   * firestore.rules (organizesSharedTrip) لفتح قراءة هذا البروفايل لأعضاء
+   * تلك الرحلات تحديداً — لا استهلاك لها في الواجهة مباشرة.
+   */
+  organizesTripIds?: string[]
 }

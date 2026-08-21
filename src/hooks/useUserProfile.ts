@@ -2,17 +2,18 @@ import { useState, useEffect, useCallback } from 'react'
 import { onSnapshot, setDoc } from 'firebase/firestore'
 import type { User } from 'firebase/auth'
 import { userProfileDoc } from '../firestore'
-import { BANK_DETAILS as FALLBACK_BANK_DETAILS } from '../constants'
 import type { BankDetails, UserProfile } from '../types'
 
 // ─── useUserProfile ─────────────────────────────────────────────────────────
-// 🆕 بروفايل المستخدم العام (users/{uid}) — مستقل عن أي رحلة. يُستخدم لتعبئة
-// نموذج إنشاء رحلة جديدة تلقائياً ببيانات البنك (نسخ لحظي عند الإنشاء، لا
-// مرجع حيّ). قراءة وكتابة في نفس الملف عمداً بخلاف useTripConfig/
-// useTripAdminActions المنفصلين: هذا مستند صغير مستقل الاستهلاك (شاشة بروفايل
-// واحدة فقط)، فلا يبرر فصلاً كالذي تحتاجه إعدادات الرحلة متعددة المستهلكين.
+// 🆕 بروفايل المستخدم العام (users/{uid}) — مستقل عن أي رحلة، وهو **المصدر
+// الوحيد** لبيانات بنك المستخدم؛ أي رحلة ينظّمها تقرأ منه حيّاً (انظر
+// useOrganizerBankDetails وdocs/DECISIONS.md). قراءة وكتابة في نفس الملف عمداً
+// بخلاف useTripConfig/useTripAdminActions المنفصلين: هذا مستند صغير مستقل
+// الاستهلاك (شاشة بروفايل واحدة فقط)، فلا يبرر فصلاً كالذي تحتاجه إعدادات
+// الرحلة متعددة المستهلكين.
 
-const FALLBACK_PROFILE: UserProfile = { displayName: '', bankDetails: FALLBACK_BANK_DETAILS }
+const EMPTY_BANK_DETAILS: BankDetails = { bankName: '', beneficiary: '', iban: '' }
+const FALLBACK_PROFILE: UserProfile = { displayName: '', bankDetails: EMPTY_BANK_DETAILS }
 
 export function useUserProfile(user: User | null) {
   const [profile, setProfile] = useState<UserProfile>(FALLBACK_PROFILE)
@@ -41,9 +42,9 @@ export function useUserProfile(user: User | null) {
         setProfile({
           displayName: typeof data.displayName === 'string' ? data.displayName : '',
           bankDetails: {
-            bankName:    data.bankDetails?.bankName    ?? FALLBACK_BANK_DETAILS.bankName,
-            beneficiary: data.bankDetails?.beneficiary ?? FALLBACK_BANK_DETAILS.beneficiary,
-            iban:        data.bankDetails?.iban        ?? FALLBACK_BANK_DETAILS.iban,
+            bankName:    data.bankDetails?.bankName    ?? EMPTY_BANK_DETAILS.bankName,
+            beneficiary: data.bankDetails?.beneficiary ?? EMPTY_BANK_DETAILS.beneficiary,
+            iban:        data.bankDetails?.iban        ?? EMPTY_BANK_DETAILS.iban,
           },
           lastTripCreatedAt: typeof data.lastTripCreatedAt === 'number' ? data.lastTripCreatedAt : undefined,
         })

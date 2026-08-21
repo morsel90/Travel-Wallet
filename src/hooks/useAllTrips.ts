@@ -10,18 +10,17 @@ import { onSnapshot } from 'firebase/firestore'
 import { tripsCol } from '../firestore'
 import { normalizeItinerary } from '../utils/itinerary'
 import { normalizeTripStatus } from '../utils/tripStatus'
-import type { BankDetails, ItinerarySegment, TripStatus } from '../types'
+import type { ItinerarySegment, TripStatus } from '../types'
 
 export interface TripSummary {
   id: string
   name: string
-  bankDetails: BankDetails
+  /** 🆕 uid منظّم الرحلة الحالي — غيابه يعني رحلة قديمة بلا منظّم معروف بعد. */
+  organizerUid?: string
   itinerary: ItinerarySegment[]
   /** 🆕 حالة دورة الحياة — غياب الحقل = active (توافق خلفي، انظر utils/tripStatus.ts). */
   status: TripStatus
 }
-
-const EMPTY_BANK: BankDetails = { bankName: '', beneficiary: '', iban: '' }
 
 export interface UseAllTripsResult {
   trips: TripSummary[]
@@ -48,17 +47,13 @@ export function useAllTrips(enabled: boolean): UseAllTripsResult {
       snap => {
         const list: TripSummary[] = snap.docs.map(d => {
           const data = d.data() as {
-            name?: unknown; bankDetails?: Partial<BankDetails>; itinerary?: unknown; status?: unknown
+            name?: unknown; organizerUid?: unknown; itinerary?: unknown; status?: unknown
           }
           return {
             id: d.id,
             name: typeof data.name === 'string' && data.name ? data.name : d.id,
+            organizerUid: typeof data.organizerUid === 'string' ? data.organizerUid : undefined,
             status: normalizeTripStatus(data.status),
-            bankDetails: {
-              bankName:    data.bankDetails?.bankName    ?? EMPTY_BANK.bankName,
-              beneficiary: data.bankDetails?.beneficiary ?? EMPTY_BANK.beneficiary,
-              iban:        data.bankDetails?.iban        ?? EMPTY_BANK.iban,
-            },
             itinerary: normalizeItinerary(data.itinerary),
           }
         })

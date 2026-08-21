@@ -1,5 +1,6 @@
-// 🆕 بروفايل المستخدم العام (اسم/بنك) — مستقل عن أي رحلة. يُستخدم لتعبئة
-// نموذج إنشاء رحلة جديدة تلقائياً (انظر NewTripForm.tsx وuseUserProfile.ts).
+// 🆕 بروفايل المستخدم العام (اسم/بنك) — مستقل عن أي رحلة، وهو **المصدر
+// الوحيد** لبيانات البنك المعروضة في كل رحلة ينظّمها هذا الحساب (قراءة حيّة،
+// لا نسخة — انظر useOrganizerBankDetails.ts وdocs/DECISIONS.md).
 import { useState } from 'react'
 import { Save, Loader2, User } from '../../icons'
 import { Modal } from '../Modal'
@@ -41,8 +42,8 @@ export default function UserProfileModal({ profile, isSaving, onSave, onClose }:
         <h3 className="font-bold text-slate-800">بروفايلي</h3>
       </div>
       <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-        تُستخدم بيانات البنك هنا لتعبئة نموذج إنشاء رحلة جديدة تلقائياً — يمكنك
-        تعديلها لكل رحلة على حدة عند الإنشاء.
+        بيانات البنك هنا تظهر مباشرة في كل رحلة تنظّمها — أي تعديل هنا ينعكس
+        فوراً على كل تلك الرحلات، بلا حاجة لتعديل كل رحلة على حدة.
       </p>
 
       <form onSubmit={e => { e.preventDefault(); void submit() }} className="space-y-4">

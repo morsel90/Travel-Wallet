@@ -627,6 +627,52 @@ describe('إدارة الرحلات — trips/{tripId}', () => {
     })
   })
 
+  // 🆕 نفس الفخ بالضبط، لحقل مختلف: organizerUid هو مصدر uid المنظّم الجديد
+  // (البيانات نفسها تُقرأ حيّة من users/{organizerUid} — انظر
+  // docs/DECISIONS.md). لو نُسي إدراجه في isValidTripConfig.hasOnly لانكسر كل
+  // تعديل لاحق على أي رحلة لها منظّم — هذا الاختبار يتحقّق من ذلك فعلياً قبل
+  // الدفع، لا بعده.
+  describe('organizerUid — يظهر في كل تعديل لاحق ولا يمنعه (وثبات الحقل)', () => {
+    it('تعديل رحلة تحمل organizerUid ينجح ولا يُرفض بسبب الحقل الإضافي', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة', organizerUid: 'organizer-1' }))
+      await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { name: 'اسم جديد' }, { merge: true }))
+    })
+
+    it('لا يمكن تغيير organizerUid عبر تحديث — لا للمسؤول ولا للمنظّم', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة', organizerUid: 'organizer-1' }))
+      await assertFails(setDoc(tripConfigDoc(adminDb()), { organizerUid: 'someone-else' }, { merge: true }))
+
+      await seedOrganizer('organizer-1')
+      await assertFails(setDoc(tripConfigDoc(organizerDb()), { organizerUid: 'someone-else' }, { merge: true }))
+    })
+
+    it('رحلة بلا organizerUid (لا منظّم معروف بعد) تُعدَّل بلا أي قيد عليه', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة' }))
+      await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { name: 'اسم جديد' }, { merge: true }))
+    })
+  })
+
+  // 🆕 bankDetails لم يعد يُكتب من أي مسار في التطبيق (البيانات تُقرأ حيّة من
+  // بروفايل المنظّم بدلاً منه)، لكنه يبقى حقلاً صالحاً "بتساهل قديم" في
+  // isValidTripConfig.hasOnly تحديداً لأن كل مستند رحلة سابق لهذه الميزة
+  // يحمله فعلياً — لو رُفض هذا الحقل لانكسر تعديل *كل* رحلة قديمة (نفس فخ
+  // createdByUid/organizerUid أعلاه، رُصد حقيقةً أثناء تطوير هذه الميزة عبر
+  // organizer-role.spec.ts، لا افتراضاً). انظر التعليق في firestore.rules.
+  describe('bankDetails — تساهل قديم لا يمنع تعديل رحلة تحمله (لا حقل نشط بعد اليوم)', () => {
+    it('رحلة قديمة تحمل bankDetails تُعدَّل بنجاح (اسمها فقط) رغم عدم كتابته من التطبيق بعد اليوم', async () => {
+      await seed(db => setDoc(
+        tripConfigDoc(db),
+        { name: 'رحلة قديمة', bankDetails: { bankName: 'بنك', beneficiary: 'أحمد', iban: 'SA00' } },
+      ))
+      await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { name: 'اسم جديد' }, { merge: true }))
+    })
+
+    it('رحلة جديدة بلا bankDetails تُنشأ وتُعدَّل بلا أي إشارة له', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة جديدة' }))
+      await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { name: 'اسم أحدث' }, { merge: true }))
+    })
+  })
+
   // 🆕 المرحلة ٣ — منظّم الرحلة: تحديث لا إنشاء، ولرحلته وحدها.
   describe('منظّم الرحلة (المرحلة ٣)', () => {
     it('منظّم الرحلة يستطيع تحديث إعداداتها ببيانات صالحة', async () => {
@@ -762,13 +808,14 @@ describe('بروفايل المستخدم العام — users/{uid}', () => {
     await assertFails(setDoc(userProfileDoc(anonymousMemberDb('user-1'), 'user-1'), { displayName: 'أحمد' }))
   })
 
-  it('حقل غير معروف أو شكل bankDetails غير صالح يُرفض', async () => {
+  it('حقل غير معروف أو شكل bankDetails/organizesTripIds غير صالح يُرفض', async () => {
     await assertFails(setDoc(userProfileDoc(strangerDb('user-1'), 'user-1'), { notAllowed: true }))
     await assertFails(setDoc(
       userProfileDoc(strangerDb('user-1'), 'user-1'),
       { bankDetails: { bankName: 'بنك', extra: 'x' } },
     ))
     await assertFails(setDoc(userProfileDoc(strangerDb('user-1'), 'user-1'), { displayName: 'a'.repeat(101) }))
+    await assertFails(setDoc(userProfileDoc(strangerDb('user-1'), 'user-1'), { organizesTripIds: 'not-a-list' }))
   })
 
   // ⚠️ الحالة الموثّقة في تعليق isValidUserProfile: كتابة merge:true من العميل
@@ -793,6 +840,38 @@ describe('بروفايل المستخدم العام — users/{uid}', () => {
       { lastTripCreatedAt: Date.now() },
       { merge: true },
     ))
+  })
+
+  // 🆕 المصدر الوحيد لبيانات بنك أي رحلة: عضو في رحلة ينظّمها صاحب هذا
+  // البروفايل يقرأ ملفه — لا التقاطع مع claim القارئ عبر organizesTripIds
+  // (organizesSharedTrip)، لا مجرد كون القارئ عضواً في *أي* رحلة. انظر
+  // docs/DECISIONS.md.
+  describe('organizesSharedTrip — قراءة بروفايل المنظّم لأعضاء رحلته', () => {
+    it('عضو في رحلة ينظّمها صاحب البروفايل يقرأ ملفه', async () => {
+      await seed(db => setDoc(
+        userProfileDoc(db, 'organizer-1'),
+        { displayName: 'منظّم', bankDetails: { bankName: 'بنك', beneficiary: 'منظّم', iban: 'SA00' }, organizesTripIds: [TRIP_ID] },
+      ))
+      await assertSucceeds(getDoc(userProfileDoc(memberDb(), 'organizer-1')))
+    })
+
+    it('عضو في رحلة أخرى لا يقرأ ملف منظّم لا ينظّم رحلته', async () => {
+      await seed(db => setDoc(
+        userProfileDoc(db, 'organizer-1'),
+        { organizesTripIds: [TRIP_ID] },
+      ))
+      await assertFails(getDoc(userProfileDoc(otherTripMemberDb(), 'organizer-1')))
+    })
+
+    it('ملف بلا organizesTripIds لا يقرأه أحد غير صاحبه — حتى عضو رحلة يديرها المسؤول فعلياً', async () => {
+      await seed(db => setDoc(userProfileDoc(db, 'organizer-1'), { displayName: 'منظّم' }))
+      await assertFails(getDoc(userProfileDoc(memberDb(), 'organizer-1')))
+    })
+
+    it('جلسة مجهولة لا تقرأ بروفايل المنظّم حتى لو كانت claim العضوية صالحة', async () => {
+      await seed(db => setDoc(userProfileDoc(db, 'organizer-1'), { organizesTripIds: [TRIP_ID] }))
+      await assertFails(getDoc(userProfileDoc(anonymousMemberDb(), 'organizer-1')))
+    })
   })
 })
 
