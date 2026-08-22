@@ -24,6 +24,7 @@ import type { SegmentDraft } from '../../utils/itinerary'
 import type { TripSummary } from '../../hooks/useAllTrips'
 import { TRIP_STATUS_LABEL } from '../../types'
 import type { ToastMessage, TransportMode, TripStatus } from '../../types'
+import { isEligibleForAgePurge } from '../../utils/tripStatus'
 
 interface TripDetailPanelProps {
   trip: TripSummary
@@ -302,6 +303,12 @@ export default function TripDetailPanel({
   // هنا لا تعرف عدد المصاريف/المسافرين (لا تُقرأ في هذه الشاشة)، وحتى لو عرفت
   // لكانت لقطة قديمة قد يضيف عليها جهاز آخر بين العرض والضغط.
   const hasItinerary = trip.itinerary.length > 0
+
+  // 🆕 المرحلة ٢ من دورة حياة الرحلة التلقائية — مؤشّر إرشادي أيضاً (الفرض
+  // الفعلي خادمي، manageTrip mode:'delete'). حين تصحّ، الحذف متاح رغم بيانات
+  // مالية حقيقية محتملة — الرسالة أدناه تشرح ذلك صراحةً بدل ترك المسؤول يظنّها
+  // "فارغة" لمجرّد أن الزرّ لم يُرفَض.
+  const agePurgeEligible = isEligibleForAgePurge(trip.status, trip.statusChangedAt)
 
   return (
     <div className="space-y-5">
@@ -914,6 +921,14 @@ export default function TripDetailPanel({
             </p>
             <p>بعد الحذف يصبح المعرّف <span dir="ltr" className="font-mono">{trip.id}</span> متاحاً لإنشاء رحلة جديدة به.</p>
           </div>
+
+          {agePurgeEligible && (
+            <p className="text-xs font-bold text-rose-900 bg-rose-100 border border-rose-300 rounded-xl p-2.5 leading-relaxed">
+              استثناء: هذه الرحلة مؤرشفة منذ أكثر من 90 يوماً، فالحذف متاح لها
+              حتى لو كانت تحوي مسافرين أو مصاريف أو سجلات إيداع فعلية — وستُحذف
+              كل هذه البيانات نهائياً معها، لا تُترَك يتيمة.
+            </p>
+          )}
 
           {hasItinerary && (
             <p className="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-2.5">
