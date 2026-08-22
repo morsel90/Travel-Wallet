@@ -49,8 +49,11 @@ export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
     <>
       <div
         onClick={() => { setProfileInitialTab('summary'); setShowProfile(true) }}
+        // 🆕 لا حدّ افتراضي — بطاقة عائمة تعتمد على shadow-sm/hover:shadow-md وحده
+        // للتمايز عن خلفية الصفحة الرمادية، لا خطاً محيطاً. isMine يبقى استثناءً
+        // مقصوداً: حدّ تيل واضح تمييزٌ دلالي («بطاقتك أنت»)، لا خط فاصل قائمة.
         className={`bg-white rounded-xl p-3.5 sm:p-4 shadow-sm flex flex-col gap-2.5 relative group transition-all hover:shadow-md cursor-pointer ${
-          isMine ? 'border-2 border-teal-300 hover:border-teal-400' : 'border border-slate-100 hover:border-teal-300'
+          isMine ? 'border-2 border-teal-300 hover:border-teal-400' : ''
         }`}
       >
         {traveler._pending && (

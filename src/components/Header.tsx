@@ -108,7 +108,13 @@ const Header = ({
     ))
 
   return (
-    <header className="bg-teal-700 text-white shadow-md sticky top-0 z-[100]">
+    // 🆕 pt-[env(safe-area-inset-top)] على <header> نفسه لا على الـ div الداخلي:
+    // الخلفية التيل تمتد فتغطي منطقة الشقّ (notch)/شريط الحالة بلون متجانس (مظهر
+    // native)، بينما المحتوى الفعلي (الشعار/الإحصاءات/AccountMenu) يبقى تحت هذا
+    // الحشو بمسافته الحالية py-2/py-3 كما هي — لا "max()" هنا: القيمة صفر أصلاً
+    // على كل الأجهزة الحالية بلا شقّ (بخلاف SmartInputBar حيث كان مطلوباً حدّ أدنى
+    // 1rem دائماً). راجع index.html وdocs/DECISIONS.md.
+    <header className="bg-teal-700 text-white shadow-md sticky top-0 z-[100] pt-[env(safe-area-inset-top)]">
       <div
         className={`max-w-7xl mx-auto px-4 flex items-center justify-between gap-3 transition-all duration-200 ${
           isCollapsed ? 'py-2' : 'py-3'

@@ -18,7 +18,8 @@ const pulse = 'animate-pulse bg-slate-200 rounded'
 // تخطيط بسيطة عند اكتمال التحميل، خصوصاً في شبكة العمودين الجديدة على الجوال.
 export function TravelerCardSkeleton() {
   return (
-    <div className="bg-white rounded-xl p-3 sm:p-4 shadow-sm border border-slate-100">
+    // 🆕 بلا border — مطابق للبطاقة الفعلية بعد إزالة الحدّ الافتراضي منها.
+    <div className="bg-white rounded-xl p-3 sm:p-4 shadow-sm">
       <div className="flex justify-between items-start mb-2 sm:mb-3">
         <div className="flex items-start gap-2 min-w-0">
           <div className={`${pulse} w-8 h-8 sm:w-9 sm:h-9 rounded-full shrink-0`} />
@@ -39,7 +40,9 @@ export function TravelerCardSkeleton() {
 
 export function ExpenseListItemSkeleton() {
   return (
-    <div className="p-4 border-b border-slate-100 last:border-none">
+    // 🆕 بطاقة عائمة مطابقة لـ ExpenseListItem الفعلي (bg-white rounded-2xl
+    // shadow-sm mb-3، لا border-b) — بلا هذا تظهر قفزة تخطيط عند اكتمال التحميل.
+    <div className="bg-white rounded-2xl shadow-sm p-4 mb-3">
       <div className="flex justify-between items-start">
         <div className="flex-1 space-y-2">
           <div className={`${pulse} h-4 w-40`} />

@@ -2,7 +2,7 @@
 // بروفايلي، تبديل وضع المسؤول) في نقطة دخول واحدة بنمط تطبيقات جوجل: صورة/حرف
 // أول للمستخدم، وقائمة منسدلة عند الضغط. انظر docs/DECISIONS.md للسياق.
 import { useEffect, useRef, useState } from 'react'
-import { User, Luggage, Settings, Lock, LogOut, ChevronDown } from '../icons'
+import { Luggage, Settings, Lock, LogOut, ChevronDown, ChevronLeft } from '../icons'
 import { haptic } from '../utils/haptics'
 
 interface AccountMenuProps {
@@ -79,10 +79,25 @@ export default function AccountMenu({
           aria-label="حسابي"
           className="absolute left-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-lg border border-slate-200 py-2 z-[110] text-right"
         >
-          <div className="px-4 py-2 border-b border-slate-100">
-            <p className="text-sm font-bold text-slate-800 truncate">{label}</p>
-            {email && <p className="text-xs text-slate-400 truncate">{email}</p>}
-          </div>
+          {/* 🆕 بطاقة المستخدم نفسها هي زر «بروفايلي» الآن — نمط تطبيقات الجوّال
+              الأصلية (إعدادات iOS/Android: بطاقة الحساب العلوية تفتح صفحة الحساب
+              مباشرة)، بدل عنصر قائمة منفصل يكرّر نفس المعلومات المعروضة أصلاً هنا. */}
+          <button
+            type="button" role="menuitem"
+            // 🆕 aria-label ثابت: الاسم/البريد داخل الزر بيانات المستخدم المتغيّرة،
+            // فالاسم الوصولي (accessible name) يجب ألا يعتمد عليها — aria-label
+            // يتجاوز محتوى الزر النصّي في حساب الاسم الوصولي (لهذا لم يتغيّر أي
+            // اختبار e2e كان يستهدف عنصر «بروفايلي» سابقاً).
+            aria-label="بروفايلي"
+            onClick={() => runAndClose(onShowProfile)}
+            className="w-full flex items-center gap-2.5 px-4 py-2.5 border-b border-slate-100 hover:bg-slate-50 active:bg-slate-100 cursor-pointer transition-colors text-right"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-bold text-slate-800 truncate">{label}</span>
+              {email && <span className="block text-xs text-slate-400 truncate">{email}</span>}
+            </span>
+            <ChevronLeft className="w-4 h-4 text-slate-300 shrink-0" />
+          </button>
 
           <div className="py-1">
             {onShowMyTrips && (
@@ -94,14 +109,6 @@ export default function AccountMenu({
                 <Luggage className="w-4 h-4 text-slate-500" /> رحلاتي
               </button>
             )}
-
-            <button
-              type="button" role="menuitem"
-              onClick={() => runAndClose(onShowProfile)}
-              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              <User className="w-4 h-4 text-slate-500" /> بروفايلي
-            </button>
 
             {isAdmin ? (
               <button
