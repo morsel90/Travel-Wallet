@@ -61,13 +61,21 @@ const SmartInputBar = ({ visible, onQuickAdd, onExpand }: SmartInputBarProps) =>
       haptic.error()
       setError(resultError)
     } else {
+      haptic.success()
       setDesc('')
       setAmount('')
     }
   }
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-lg bg-white/95 backdrop-blur-xl border border-slate-200/60 p-2 rounded-2xl z-40 shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-transform">
+    // 🆕 bottom-[max(...)] لا bottom-4 وحدها: على iPhone بشريط منزلي (home indicator)
+    // env(safe-area-inset-bottom) يكبر المسافة فلا يتداخل الشريط مع لمسة السحب للخروج؛
+    // max(1rem, ...) يحافظ على نفس المسافة الحالية 1rem حين تكون القيمة 0 (كل الأجهزة
+    // الأخرى، أو أي متصفح لا يدعمها) — تغيير آمن بلا أثر مرئي إلا على الأجهزة المعنية.
+    // ⚠️ لتفعيل env() فعلياً على iOS Safari يلزم أيضاً `viewport-fit=cover` في
+    // index.html — لم أضفه هنا عمداً لأنه يؤثر على كامل الصفحة (يحتاج Header أيضاً
+    // padding علوي مطابق)، لا على SmartInputBar وحده. راجع ردّي المرفق قبل الخطوة التالية.
+    <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-lg bg-white/95 backdrop-blur-xl border border-slate-200/60 p-2 rounded-2xl z-40 shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-transform">
       <form onSubmit={handleSubmit}>
         <div className="flex items-center gap-1.5">
 

@@ -92,42 +92,41 @@ export const ExpensesPanel = ({
 
     {/* ⚠️ حدّ خطأ منفصل عن حدّ التطبيق: صفٌّ واحد فاسد في القائمة يجب ألا
         يُسقط الأرصدة والترويسة معه. */}
+    {/* 🆕 لا حاوية بطاقة مشتركة هنا بعد الآن — كل صفّ بطاقته العائمة الخاصة
+        (ExpenseListItem)، فحاوية بيضاء واحدة تغلّفها جميعاً كانت تُنتج بطاقة
+        داخل بطاقة. EmptyState لا يحتاج حاوية أصلاً (نفس نمط TravelersPanel.tsx). */}
     <ErrorBoundary fallback={<ExpenseListErrorFallback />}>
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        {isInitialLoading ? (
-          <div>{Array.from({ length: 5 }, (_, i) => <ExpenseListItemSkeleton key={i} />)}</div>
-        ) : activeExpenses.length === 0 ? (
-          <EmptyState
-            Icon={Receipt}
-            title={canAddExpenses ? 'لا توجد مصاريف بعد' : 'لا توجد مصاريف في هذه الرحلة'}
-            description={canAddExpenses
-              ? 'ابدأ بتسجيل أول مصروف للرحلة، وسيتولّى التطبيق حساب حصة كل مسافر تلقائياً.'
-              : 'أُغلقت هذه الرحلة دون تسجيل أي مصروف فيها.'}
-            actionLabel={canAddExpenses ? 'سجّل أول مصروف' : undefined}
-            onAction={canAddExpenses ? onOpenExpenseForm : undefined}
-            ActionIcon={canAddExpenses ? Plus : undefined}
-          />
-        ) : filteredExpenses.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 font-medium">لا توجد نتائج لـ "{searchQuery}"</div>
-        ) : (
-          <Virtuoso
-            useWindowScroll
-            data={filteredExpenses}
-            itemContent={(_index, exp) => (
-              <div className="border-b border-slate-100 last:border-none">
-                <ExpenseListItem expense={exp} />
-              </div>
-            )}
-            scrollSeekConfiguration={{
-              enter: velocity => Math.abs(velocity) > 900,
-              exit: velocity => Math.abs(velocity) < 30,
-            }}
-            components={{
-              ScrollSeekPlaceholder: () => <ExpenseListItemSkeleton />,
-            }}
-          />
-        )}
-      </div>
+      {isInitialLoading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 5 }, (_, i) => <ExpenseListItemSkeleton key={i} />)}
+        </div>
+      ) : activeExpenses.length === 0 ? (
+        <EmptyState
+          Icon={Receipt}
+          title={canAddExpenses ? 'لا توجد مصاريف بعد' : 'لا توجد مصاريف في هذه الرحلة'}
+          description={canAddExpenses
+            ? 'ابدأ بتسجيل أول مصروف للرحلة، وسيتولّى التطبيق حساب حصة كل مسافر تلقائياً.'
+            : 'أُغلقت هذه الرحلة دون تسجيل أي مصروف فيها.'}
+          actionLabel={canAddExpenses ? 'سجّل أول مصروف' : undefined}
+          onAction={canAddExpenses ? onOpenExpenseForm : undefined}
+          ActionIcon={canAddExpenses ? Plus : undefined}
+        />
+      ) : filteredExpenses.length === 0 ? (
+        <div className="p-8 text-center text-slate-400 font-medium bg-white rounded-2xl shadow-sm">لا توجد نتائج لـ "{searchQuery}"</div>
+      ) : (
+        <Virtuoso
+          useWindowScroll
+          data={filteredExpenses}
+          itemContent={(_index, exp) => <ExpenseListItem expense={exp} />}
+          scrollSeekConfiguration={{
+            enter: velocity => Math.abs(velocity) > 900,
+            exit: velocity => Math.abs(velocity) < 30,
+          }}
+          components={{
+            ScrollSeekPlaceholder: () => <ExpenseListItemSkeleton />,
+          }}
+        />
+      )}
     </ErrorBoundary>
 
     {searchQuery && filteredExpenses.length > 0 && (
