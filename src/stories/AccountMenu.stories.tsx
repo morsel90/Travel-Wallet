@@ -32,6 +32,7 @@ export const عضو_برحلة_واحدة: Story = {
     displayName: 'أحمد الغامدي',
     email: 'ahmad@example.com',
     isAdmin: false,
+    isOrganizer: false,
     onShowMyTrips: undefined,
     onShowProfile: noop,
     onOpenAdminPanel: noop,
@@ -51,6 +52,14 @@ export const مسؤول: Story = {
   args: {
     ...عضو_بعدة_رحلات.args,
     isAdmin: true,
+  },
+}
+
+/** منظّم رحلة غير مسؤول عالمي — يرى «إدارة الرحلة» بدل «تسجيل الدخول كمسؤول». */
+export const منظّم_رحلة: Story = {
+  args: {
+    ...عضو_برحلة_واحدة.args,
+    isOrganizer: true,
   },
 }
 

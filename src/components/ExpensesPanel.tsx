@@ -6,13 +6,11 @@ import { ExpenseListItem } from './ExpenseSection'
 import { ExpenseListItemSkeleton } from './Skeleton'
 import { ExpenseListErrorFallback } from './AppErrorFallback'
 import { haptic } from '../utils/haptics'
-import { Receipt, Download, Search, Plus, BarChart3, Settings } from '../icons'
+import { Receipt, Download, Search, Plus, BarChart3 } from '../icons'
 
 interface ExpensesPanelProps {
   isInitialLoading: boolean
   isAdmin: boolean
-  /** 🆕 منظّم هذه الرحلة تحديداً (المرحلة ٣) — يرى زر «إدارة الرحلة» أيضاً، لا سلة المهملات. */
-  isOrganizer: boolean
   /** هل تقبل الرحلة مصاريف جديدة؟ يغيّر نص الحالة الفارغة وزرّها. */
   canAddExpenses: boolean
   activeExpenses: Expense[]
@@ -22,7 +20,6 @@ interface ExpensesPanelProps {
   sortOrder: SortOrder
   setSortOrder: (value: SortOrder) => void
   onOpenReports: () => void
-  onOpenTripAdmin: () => void
   onOpenTrashBin: () => void
   onExport: () => void
   onOpenExpenseForm: () => void
@@ -30,11 +27,15 @@ interface ExpensesPanelProps {
 
 // ─── سجل المصاريف ─────────────────────────────────────────────────────────────
 // شريط الأدوات + البحث + القائمة الافتراضية. ExpenseListItem وحده يقرأ السياق.
+//
+// 🆕 لا زرّ «إدارة الرحلة/الرحلات» هنا بعد الآن — كان مكرَّراً مع AccountMenu
+// (الهيدر)، الذي وُسِّع ليخدم isOrganizer أيضاً لا isAdmin فقط. نقطة الوصول
+// الوحيدة الآن للوحة الإدارة. انظر AccountMenu.tsx وdocs/DECISIONS.md.
 export const ExpensesPanel = ({
-  isInitialLoading, isAdmin, isOrganizer, canAddExpenses,
+  isInitialLoading, isAdmin, canAddExpenses,
   activeExpenses, filteredExpenses,
   searchQuery, setSearchQuery, sortOrder, setSortOrder,
-  onOpenReports, onOpenTripAdmin, onOpenTrashBin, onExport, onOpenExpenseForm,
+  onOpenReports, onOpenTrashBin, onExport, onOpenExpenseForm,
 }: ExpensesPanelProps) => (
   <section id="expenses-section" className="scroll-mt-24">
     <div className="flex flex-wrap justify-between items-center gap-3 mb-4 px-1">
@@ -48,15 +49,6 @@ export const ExpensesPanel = ({
         >
           <BarChart3 className="w-3.5 h-3.5" /> التقارير
         </button>
-        {(isAdmin || isOrganizer) && (
-          <button
-            onClick={() => { haptic.light(); onOpenTripAdmin() }}
-            className="flex items-center gap-1.5 text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm"
-          >
-            {/* 🆕 منظّم لديه رحلة واحدة يديرها — الجمع هنا يعني قائمة رحلات، وهذا خطأ له تحديداً. */}
-            <Settings className="w-3.5 h-3.5 text-slate-500" /> {isAdmin ? 'إدارة الرحلات' : 'إدارة الرحلة'}
-          </button>
-        )}
         {isAdmin && (
           <button
             onClick={onOpenTrashBin}

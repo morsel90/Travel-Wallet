@@ -261,7 +261,7 @@ export function useAppCoordinator() {
       // 🆕 لا PIN بعد الآن — تسجيل الدخول (AuthGate) هو الحارس الوحيد المتبقي.
       signInError, isSigningIn, signInWithGoogle, signInWithEmail,
       // 🆕 المرحلة ٣: منظّم الرحلة الحالية (لا رحلة أخرى — انظر organizerTripId
-      // أعلاه). يُستهلك لإظهار زر «إدارة الرحلة» في ExpensesPanel لمن ليس
+      // أعلاه). يُستهلك لإظهار «إدارة الرحلة» في AccountMenu (الهيدر) لمن ليس
       // مسؤولاً عالمياً لكنه منظّم.
       isOrganizer,
     },

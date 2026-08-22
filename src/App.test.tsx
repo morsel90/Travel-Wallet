@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import App from './App'
 
 // ─── اختبار تثبيت سلوك (Characterization Test) ────────────────────────────────
@@ -280,16 +280,22 @@ describe('App — الحالات الفارغة', () => {
     h.auth = { ...h.auth, isAdmin: true }
     render(<App />)
     expect(await screen.findByText('إضافة أول مسافر')).toBeInTheDocument()
-    expect(screen.getByText('إدارة الرحلات')).toBeInTheDocument()
     expect(screen.getByText('سلة المهملات')).toBeInTheDocument()
+    // 🆕 «إدارة الرحلات» انتقلت من ExpensesPanel إلى AccountMenu (الهيدر) —
+    // لا تظهر إلا بعد فتح القائمة. انظر AccountMenu.tsx وdocs/DECISIONS.md.
+    fireEvent.click(screen.getByRole('button', { name: 'حسابي' }))
+    expect(screen.getByText('لوحة الإدارة')).toBeInTheDocument()
   })
 
   it('غير المسؤول لا يرى أزرار الإدارة', async () => {
     render(<App />)
     await screen.findByText('أرصدة المسافرين')
-    expect(screen.queryByText('إدارة الرحلات')).not.toBeInTheDocument()
     expect(screen.queryByText('سلة المهملات')).not.toBeInTheDocument()
     expect(screen.getByText('التقارير')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'حسابي' }))
+    expect(screen.queryByText('لوحة الإدارة')).not.toBeInTheDocument()
+    expect(screen.queryByText('إدارة الرحلة')).not.toBeInTheDocument()
+    expect(screen.getByText('تسجيل الدخول كمسؤول')).toBeInTheDocument()
   })
 
   it('بلا مصاريف: حالة فارغة في السجل ولا قسم إحصائيات', async () => {

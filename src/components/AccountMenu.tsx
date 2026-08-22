@@ -9,18 +9,22 @@ interface AccountMenuProps {
   displayName: string | null
   email: string | null
   isAdmin: boolean
+  /** 🆕 منظّم هذه الرحلة تحديداً (لا مسؤول عالمي) — يرى «إدارة الرحلة» أيضاً. نقطة الوصول
+   * الوحيدة الآن للوحة الإدارة، بعد إزالة زرّها المكرَّر من ExpensesPanel. */
+  isOrganizer: boolean
   /** 🆕 يُمرَّر فقط حين يكون المستخدم عضواً في أكثر من رحلة — لا معنى لعنصر تبديل لمن يملك رحلة واحدة. */
   onShowMyTrips?: () => void
   onShowProfile: () => void
-  /** 🆕 فتح لوحة إدارة الرحلات — يظهر فقط حين يملك الحساب صلاحية admin بالفعل. */
+  /** 🆕 فتح لوحة الإدارة — يظهر لمن يملك صلاحية admin (بتسمية «لوحة الإدارة») أو منظّم
+   * هذه الرحلة (بتسمية «إدارة الرحلة»). كلاهما نفس الدالة (modals.openTripAdmin). */
   onOpenAdminPanel: () => void
-  /** 🆕 تسجيل الدخول بحساب مسؤول منفصل — يظهر فقط حين لا يملك الحساب الحالي صلاحية admin. */
+  /** 🆕 تسجيل الدخول بحساب مسؤول منفصل — يظهر فقط لمن لا يملك admin ولا isOrganizer. */
   onAdminSignIn: () => void
   onSignOut: () => void
 }
 
 export default function AccountMenu({
-  displayName, email, isAdmin,
+  displayName, email, isAdmin, isOrganizer,
   onShowMyTrips, onShowProfile, onOpenAdminPanel, onAdminSignIn, onSignOut,
 }: AccountMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
@@ -106,6 +110,14 @@ export default function AccountMenu({
                 className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
               >
                 <Settings className="w-4 h-4 text-slate-500" /> لوحة الإدارة
+              </button>
+            ) : isOrganizer ? (
+              <button
+                type="button" role="menuitem"
+                onClick={() => runAndClose(onOpenAdminPanel)}
+                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                <Settings className="w-4 h-4 text-slate-500" /> إدارة الرحلة
               </button>
             ) : (
               <button
