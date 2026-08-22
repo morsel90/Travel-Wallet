@@ -225,7 +225,7 @@ Every admin script prints the project id it is about to touch before doing anyth
 For deployment:
 - `.env.local` is **git-ignored** (`*.local` in `.gitignore`) and holds the real values. `.env.example` is tracked as the template.
 - A service-account key is required for all admin scripts. The default is `serviceAccountKey.json`; override per environment with `FIREBASE_SERVICE_ACCOUNT`. All `serviceAccountKey*.json` files are git-ignored. **Never commit one.**
-- `.npmrc` sets `legacy-peer-deps=true` — required for Vercel installs to resolve.
+- 🆕 No `.npmrc` / `legacy-peer-deps` anymore — the one conflicting pin (`@vitest/ui@^4.x` against `vitest@^1.6.0`) was resolved by aligning `@vitest/ui` back to `^1.6.1`. `npm install` resolves cleanly with npm's default (strict) peer-dependency resolution.
 
 ---
 
