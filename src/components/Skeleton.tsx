@@ -33,7 +33,8 @@ export function TravelerCardSkeleton() {
           <div className={`${pulse} h-5 w-14`} />
         </div>
       </div>
-      <div className={`${pulse} h-1.5 sm:h-2 w-full`} />
+      {/* 🆕 h-1 مطابق لارتفاع الشريط الفعلي بعد تنعيمه في TravelerCard */}
+      <div className={`${pulse} h-1 w-full`} />
     </div>
   )
 }
