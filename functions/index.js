@@ -13,13 +13,56 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const { FieldValue } = require('firebase-admin/firestore');
 const crypto = require('crypto');
+const Sentry = require('@sentry/google-cloud-serverless');
+const { scrubServerEvent } = require('./errorScrubbing');
 
 admin.initializeApp();
 
 const db = admin.firestore();
+
+// 🆕 تتبع الأخطاء (Sentry) — أول استخدام لـ defineSecret في هذا الملف. كل
+// دالة onCall/onSchedule مُصدَّرة تحتاج secrets: [SENTRY_DSN] في إعداداتها كي
+// تصل النسخة السرّ فعلياً (Cloud Functions v2 لا تتيحه إلا لما أُعلِن صراحة).
+// انظر docs/DECISIONS.md لسبب اختيار Sentry موحّداً مع العميل بدل الاكتفاء
+// بـ Cloud Error Reporting المجاني (الذي يبقى يعمل تلقائياً بصرف النظر، عبر
+// console.error أدناه).
+const SENTRY_DSN = defineSecret('SENTRY_DSN');
+
+function initSentryOnce() {
+  if (Sentry.getClient()) return; // نسخة دافئة (warm start) — لا تُهيَّأ مرتين
+  const dsn = SENTRY_DSN.value();
+  if (!dsn) return; // نفس منطق العميل (src/sentry.ts): بلا DSN لا تتبع، بلا كسر
+  Sentry.init({
+    dsn,
+    environment: process.env.GCLOUD_PROJECT === 'travelapp-87206' ? 'production' : 'staging',
+    sendDefaultPii: false,
+    tracesSampleRate: 0,
+    beforeSend: scrubServerEvent,
+  });
+}
+
+// يغلّف كل دالة مُصدَّرة: يسجّل الاستثناء في Sentry محتفظاً بوسم [اسم_الدالة]
+// الحالي في console.error، ثم يعيد رميه كما هو — لا يغيّر HttpsError ولا
+// الكود الذي يصل العميل. لا يُضاف لالتقاطات best-effort الداخلية (مثال:
+// [recordMembership] تعذّر تسجيل...) — تلك فشل مُحتوى عمداً لا يُفشل الطلب
+// كاملاً، Cloud Logging يلتقطها بصرف النظر عن Sentry.
+function withSentry(fnName, handler) {
+  return async (...args) => {
+    initSentryOnce();
+    try {
+      return await handler(...args);
+    } catch (err) {
+      console.error(`[${fnName}]`, err);
+      Sentry.captureException(err, { tags: { function: fnName } });
+      await Sentry.flush(2000);
+      throw err;
+    }
+  };
+}
 
 // ⚠️ يجب أن يطابق هذا التنسيق تماماً TRIP_ID_PATTERN في src/utils/tripId.ts —
 // إنجليزي/أرقام وشرطة (-) وشرطة سفلية (_) فقط، بطول 1-64 حرفاً، لمنع tripId
@@ -133,8 +176,9 @@ exports.manageTrip = onCall(
   {
     region: 'us-central1',
     maxInstances: 5,
+    secrets: [SENTRY_DSN],
   },
-  async (request) => {
+  withSentry('manageTrip', async (request) => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
     }
@@ -337,7 +381,7 @@ exports.manageTrip = onCall(
     );
 
     return { success: true, tripId };
-  }
+  })
 );
 /**
  * 🆕 manageMember: إزالة عضو من رحلة واحدة، أو تعيين/إلغاء دور «منظّم الرحلة».
@@ -373,8 +417,9 @@ exports.manageMember = onCall(
   {
     region: 'us-central1',
     maxInstances: 5,
+    secrets: [SENTRY_DSN],
   },
-  async (request) => {
+  withSentry('manageMember', async (request) => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
     }
@@ -513,7 +558,7 @@ exports.manageMember = onCall(
 
     console.log(`[manageMember] remove ${uid} from ${tripId} by ${request.auth.uid} (wasMember=${wasMember})`);
     return { success: true, uid, tripId, claimRemoved: wasMember, stillHasAccess };
-  }
+  })
 );
 
 // ─── 🆕 restoreTrip: استعادة رحلة من نسخة JSON احتياطية ─────────────────────
@@ -886,8 +931,8 @@ async function provisionTravelerForUid(tripId, uid, displayName) {
 }
 
 exports.manageInvite = onCall(
-  { region: 'us-central1', maxInstances: 5 },
-  async (request) => {
+  { region: 'us-central1', maxInstances: 5, secrets: [SENTRY_DSN] },
+  withSentry('manageInvite', async (request) => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
     }
@@ -922,12 +967,12 @@ exports.manageInvite = onCall(
 
     console.log(`[manageInvite] create on ${tripId} by ${request.auth.uid}`);
     return { success: true, token };
-  }
+  })
 );
 
 exports.joinViaInvite = onCall(
-  { region: 'us-central1', maxInstances: 5 },
-  async (request) => {
+  { region: 'us-central1', maxInstances: 5, secrets: [SENTRY_DSN] },
+  withSentry('joinViaInvite', async (request) => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
     }
@@ -992,7 +1037,7 @@ exports.joinViaInvite = onCall(
 
     console.log(`[joinViaInvite] ${request.auth.uid} joined ${tripId} via invite`);
     return { success: true, tripId, needsName };
-  }
+  })
 );
 
 /**
@@ -1013,8 +1058,8 @@ exports.joinViaInvite = onCall(
  * مسارات كتابة المسافر (القاعدة ٦) — خارج نطاق هذه الدالة عمداً.
  */
 exports.updateMyTravelerName = onCall(
-  { region: 'us-central1', maxInstances: 10 },
-  async (request) => {
+  { region: 'us-central1', maxInstances: 10, secrets: [SENTRY_DSN] },
+  withSentry('updateMyTravelerName', async (request) => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
     }
@@ -1039,7 +1084,7 @@ exports.updateMyTravelerName = onCall(
 
     console.log(`[updateMyTravelerName] ${request.auth.uid} renamed own traveler on ${tripId}`);
     return { success: true };
-  }
+  })
 );
 
 /**
@@ -1056,8 +1101,8 @@ exports.updateMyTravelerName = onCall(
  * عميل لذلك اليوم — نطاق مقصود، ليس نسياناً).
  */
 exports.linkTravelerAccount = onCall(
-  { region: 'us-central1', maxInstances: 5 },
-  async (request) => {
+  { region: 'us-central1', maxInstances: 5, secrets: [SENTRY_DSN] },
+  withSentry('linkTravelerAccount', async (request) => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
     }
@@ -1101,12 +1146,12 @@ exports.linkTravelerAccount = onCall(
 
     console.log(`[linkTravelerAccount] ${request.auth.uid} linked traveler ${travelerId} to ${targetUid} on ${tripId}`);
     return { success: true, tripId, travelerId, targetUid };
-  }
+  })
 );
 
 exports.restoreTrip = onCall(
-  { region: 'us-central1', maxInstances: 2, timeoutSeconds: 120 },
-  async (request) => {
+  { region: 'us-central1', maxInstances: 2, timeoutSeconds: 120, secrets: [SENTRY_DSN] },
+  withSentry('restoreTrip', async (request) => {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
     }
@@ -1258,7 +1303,7 @@ exports.restoreTrip = onCall(
       tripId,
       restored: { travelers: travelers.length, expenses: expenses.length, depositLogs: depositLogs.length },
     };
-  }
+  })
 );
 
 /**
@@ -1340,9 +1385,12 @@ async function advanceTripLifecycleLogic(now = Date.now()) {
 
 // 🆕 يومياً منتصف الليل — تكرار كافٍ لمدد سماح بالأيام، بلا تكلفة حقيقية
 // (استعلامان محدودان بحجم دفعة معقول، بصرف النظر عن عدد الرحلات الكلي).
-exports.advanceTripLifecycle = onSchedule('every day 00:00', async () => {
-  await advanceTripLifecycleLogic();
-});
+exports.advanceTripLifecycle = onSchedule(
+  { schedule: 'every day 00:00', secrets: [SENTRY_DSN] },
+  withSentry('advanceTripLifecycle', async () => {
+    await advanceTripLifecycleLogic();
+  }),
+);
 
 // 🆕 مُصدَّرة للاستدعاء المباشر من الاختبارات فقط — انظر تعليق الدالة أعلاه.
 // ليست Cloud Function (لا onCall ولا onSchedule يغلّفها)، فأدوات نشر Firebase

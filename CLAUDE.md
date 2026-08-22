@@ -193,6 +193,8 @@ These are not secrets — a Firebase client config is public by design and ships
 
 **Missing vars fail loudly at startup, by design.** The only sensible fallback would be the production config, and silently falling back to it means a misconfigured staging build writes to the production database. `src/firebase.ts` throws and names the missing variables instead.
 
+🆕 **Error tracking (Sentry) is the one deliberate exception to that rule — it's fully optional.** `VITE_SENTRY_DSN` (client) and a Firebase secret `SENTRY_DSN` (Cloud Functions, `firebase functions:secrets:set SENTRY_DSN`) both default to absent, and `src/sentry.ts`/`functions/index.js`'s `initSentryOnce` simply skip initialization when unset — the app and functions work identically either way. See `docs/DECISIONS.md` for why Sentry was added and why it's unified across client + functions instead of relying on GCP's free automatic Error Reporting alone. Source-map upload (`@sentry/vite-plugin` in `vite.config.js`) needs three more build-time-only vars — `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` — and no-ops silently when `SENTRY_AUTH_TOKEN` is absent (true for every CI run; only Vercel's real build has it once configured).
+
 **Vite substitutes `VITE_*` at build time, not runtime.** They must exist in the build environment: `.env.local` locally, and Vercel › Project Settings › Environment Variables for deploys. Adding them to Vercel *after* a deploy does nothing until you redeploy.
 
 🆕 **A second environment now works from the env vars alone.** Everything the client touches — Firestore, Auth **and Cloud Functions** — follows `VITE_FIREBASE_PROJECT_ID`.
