@@ -1,6 +1,6 @@
-// 🆕 مزوّدات السياق للقصص.
+// 🆕 مزوّدات مخزن الرحلة للقصص.
 //
-// ثلاثة مكوّنات فقط من أصل 32 تقرأ من السياق (TravelerSection, ExpenseSection,
+// ثلاثة مكوّنات فقط من أصل 32 تقرأ من المخزن (TravelerSection, ExpenseSection,
 // ChartsSection)، والباقي يعمل بـ props مباشرةً ولا يحتاج شيئاً من هنا.
 //
 // المعالجات كلها no-op مع تسجيل في actions: القصة مكان لفحص الشكل والحالة، لا
@@ -8,10 +8,8 @@
 // معطّلاً؛ تسجيلها يجعل الأثر مرئياً في لوحة Actions.
 import type { ReactNode } from 'react'
 import type { Decorator } from '@storybook/react-vite'
-import { DataContext } from '../context/DataContext'
-import type { DataContextType } from '../context/DataContext'
-import { UIActionsContext, UIFormContext } from '../context/UIContext'
-import type { UIActionsContextType, UIFormContextType } from '../context/UIContext'
+import { TripStoreProvider } from '../store/TripStoreProvider'
+import type { TripDataSlice, TripActionsSlice, TripFormSlice } from '../store/tripStore'
 import { CURRENCY_LABELS, FALLBACK_RATES } from '../constants'
 import * as fx from '../fixtures'
 import type { CurrencyMap } from '../types'
@@ -27,7 +25,7 @@ const currencies: CurrencyMap = Object.fromEntries(
   ])
 )
 
-export const baseData: DataContextType = {
+export const baseData: TripDataSlice = {
   travelers: fx.travelers,
   expenses: fx.expenses,
   user: null,
@@ -37,7 +35,7 @@ export const baseData: DataContextType = {
   ratesUpdatedAt: new Date('2026-07-21T09:00:00'),
 }
 
-export const baseUIActions: UIActionsContextType = {
+export const baseUIActions: TripActionsSlice = {
   cancelExpenseForm: log('cancelExpenseForm'),
   startEditExpense: log('startEditExpense'),
   requestDeleteExpense: log('requestDeleteExpense'),
@@ -46,7 +44,7 @@ export const baseUIActions: UIActionsContextType = {
   openDepositHistory: log('openDepositHistory'),
 }
 
-export const baseUIForm: UIFormContextType = {
+export const baseUIForm: TripFormSlice = {
   expenseForm: {
     date: '2026-07-21',
     description: '',
@@ -69,20 +67,20 @@ export const baseUIForm: UIFormContextType = {
 
 interface ProvidersProps {
   children: ReactNode
-  data?: Partial<DataContextType>
-  uiActions?: Partial<UIActionsContextType>
-  uiForm?: Partial<UIFormContextType>
+  data?: Partial<TripDataSlice>
+  uiActions?: Partial<TripActionsSlice>
+  uiForm?: Partial<TripFormSlice>
 }
 
 export function Providers({ children, data, uiActions, uiForm }: ProvidersProps) {
   return (
-    <DataContext.Provider value={{ ...baseData, ...data }}>
-      <UIActionsContext.Provider value={{ ...baseUIActions, ...uiActions }}>
-        <UIFormContext.Provider value={{ ...baseUIForm, ...uiForm }}>
-          {children}
-        </UIFormContext.Provider>
-      </UIActionsContext.Provider>
-    </DataContext.Provider>
+    <TripStoreProvider
+      {...{ ...baseData, ...data }}
+      {...{ ...baseUIActions, ...uiActions }}
+      {...{ ...baseUIForm, ...uiForm }}
+    >
+      {children}
+    </TripStoreProvider>
   )
 }
 
