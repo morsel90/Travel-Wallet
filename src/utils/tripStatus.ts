@@ -41,3 +41,23 @@ export function closedTripNotice(status: TripStatus): string | null {
   }
   return null
 }
+
+// 🆕 المرحلة ٢ من دورة حياة الرحلة التلقائية (docs/DECISIONS.md): رحلة مؤرشفة
+// منذ مدة كافية يصبح حذفها النهائي متاحاً — حتى لو كانت تحوي بيانات مالية
+// حقيقية (checkTripHasProtectedData في functions/index.js تتجاوزها عندئذ) —
+// لكن الحذف يبقى بفعل بشري دائماً (المسؤول يضغط "حذف الرحلة" كما هو)، لا
+// تلقائياً ضمن الدالة المجدولة. هذا الثابت والدالة هنا للعرض فقط (يشرحان
+// للمسؤول *لماذا* صار الحذف متاحاً قبل الضغط) — الفرض الفعلي خادمي بالكامل،
+// بنسخة مطابقة في functions/index.js (TRIP_PURGE_ELIGIBLE_MS).
+export const TRIP_PURGE_ELIGIBLE_MS = 90 * 24 * 60 * 60 * 1000 // 90 يوماً مؤرشفة
+
+/** هل بلغت رحلة مؤرشفة مدة السماح الكافية لإتاحة حذفها النهائي رغم بياناتها؟ */
+export function isEligibleForAgePurge(
+  status: TripStatus,
+  statusChangedAt: number | undefined,
+  now: number = Date.now(),
+): boolean {
+  return status === 'archived'
+    && typeof statusChangedAt === 'number'
+    && now - statusChangedAt > TRIP_PURGE_ELIGIBLE_MS
+}

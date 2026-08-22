@@ -201,7 +201,7 @@ exports.manageTrip = onCall(
     const tripRef = db.collection('trips').doc(tripId);
     const existing = await tripRef.get();
 
-    // ── الحذف: للرحلات الفارغة حصراً ────────────────────────────────────────
+    // ── الحذف: للرحلات الفارغة، أو المؤرشفة منذ مدة كافية ───────────────────
     //
     // ⚠️ لماذا خادميًا ولماذا بشرط الخلو:
     //   • firestore.rules تُبقي `allow delete: if false` على trips/{tripId}
@@ -212,18 +212,30 @@ exports.manageTrip = onCall(
     //   • الشرط الفعلي في checkTripHasProtectedData أدناه (مشتركة مع
     //     restoreTrip) — انظر تعليقها لماذا "أي مسافر موجود" وحده لم يعد كافياً.
     //
-    // الحاجة المخدومة: رحلة أُنشئت بالخطأ (معرّف مكتوب خطأً غالباً). وحذفها
-    // يحرّر المعرّف لإعادة استخدامه، وهو ما لا تحققه الأرشفة.
+    // 🆕 **المرحلة ٢ من دورة حياة الرحلة التلقائية (docs/DECISIONS.md):**
+    // رحلة مؤرشفة منذ أكثر من TRIP_PURGE_ELIGIBLE_MS تتجاوز checkTripHasProtectedData
+    // بالكامل — حتى لو كانت تحوي بيانات مالية حقيقية (مسافرين، مصاريف، سجلات
+    // إيداع). الحذف نفسه يبقى بفعل بشري دائماً — لا فرق هنا عن المسار العادي
+    // سوى تجاوز الفحص، ثم — عند الأهلية بالعمر تحديداً — حذف artifacts/{tripId}
+    // فعلياً لا مجرّد تركه يتيماً (انظر أدناه)، لأن الغاية من هذا المسار هي
+    // التخلّص الحقيقي من بيانات قديمة، لا مجرّد إخفاء الرحلة.
+    //
+    // الحاجة المخدومة: رحلة أُنشئت بالخطأ (معرّف مكتوب خطأً غالباً)، أو رحلة
+    // حقيقية قديمة لم يعد أحد بحاجة للاحتفاظ ببياناتها. الحذف يحرّر المعرّف
+    // لإعادة استخدامه، وهو ما لا تحققه الأرشفة.
     if (mode === 'delete') {
       if (!existing.exists) {
         throw new HttpsError('not-found', `الرحلة "${tripId}" غير موجودة.`);
       }
 
-      const { hasProtectedData, reason } = await checkTripHasProtectedData(tripId);
-      if (hasProtectedData) {
-        throw new HttpsError('failed-precondition', reason === 'depositLogs'
-          ? `لا يمكن حذف "${tripId}" — لبعض مسافريها (حتى المحذوفين منهم) سجلّ إيداع فعلي، وسجلّات الإيداع لا تُحذف أبداً حمايةً للسجلّات المالية.`
-          : `لا يمكن حذف "${tripId}" لأنها تحوي مسافرين أو مصاريف. الحذف متاح للرحلات الفارغة فقط حمايةً للسجلّات المالية.`);
+      const eligibleForAgePurge = isEligibleForAgePurgeJs(existing.data());
+      if (!eligibleForAgePurge) {
+        const { hasProtectedData, reason } = await checkTripHasProtectedData(tripId);
+        if (hasProtectedData) {
+          throw new HttpsError('failed-precondition', reason === 'depositLogs'
+            ? `لا يمكن حذف "${tripId}" — لبعض مسافريها (حتى المحذوفين منهم) سجلّ إيداع فعلي، وسجلّات الإيداع لا تُحذف أبداً حمايةً للسجلّات المالية.`
+            : `لا يمكن حذف "${tripId}" لأنها تحوي مسافرين أو مصاريف. الحذف متاح للرحلات الفارغة فقط حمايةً للسجلّات المالية.`);
+        }
       }
 
       // ⚠️ 🆕 **Firestore لا يحذف المجموعات الفرعية مع مستندها.** حذف
@@ -241,7 +253,17 @@ exports.manageTrip = onCall(
       deleteBatch.delete(tripRef);
       await deleteBatch.commit();
 
-      console.log(`[manageTrip] delete on ${tripId} by ${request.auth.uid}`);
+      // 🆕 المسار العادي (رحلة فارغة فعلاً) لا يحتاج هذا — artifacts/{tripId}
+      // إما غير موجود أصلاً أو يحوي مستندات محذوفة ليّناً لا وزن مالي حقيقي
+      // لها (checkTripHasProtectedData ضمنت ذلك للتوّ). أما المسار المؤهَّل
+      // بالعمر فبياناته حقيقية عمداً — تركها يتيمة يناقض معنى "حذف نهائي".
+      if (eligibleForAgePurge) {
+        await db.recursiveDelete(db.collection('artifacts').doc(tripId));
+        console.log(`[manageTrip] PURGE (age-eligible, had real data) on ${tripId} by ${request.auth.uid}`);
+      } else {
+        console.log(`[manageTrip] delete on ${tripId} by ${request.auth.uid}`);
+      }
+
       return { success: true, tripId };
     }
 
@@ -701,6 +723,20 @@ function tripEndTimeJs(itinerary) {
   if (valid.length === 0) return null;
   valid.sort((a, b) => new Date(a.departure.time).getTime() - new Date(b.departure.time).getTime());
   return new Date(valid[valid.length - 1].arrival.time).getTime();
+}
+
+// 🆕 المرحلة ٢ من دورة حياة الرحلة التلقائية (docs/DECISIONS.md) — نسخة خادمية
+// من isEligibleForAgePurge (src/utils/tripStatus.ts)، هي المصدر الفعلي للحكم
+// (النسخة العميلة للعرض فقط). رحلة مؤرشفة منذ أكثر من هذه المدة يتجاوز حذفها
+// checkTripHasProtectedData بالكامل — حتى لو كانت تحوي بيانات مالية حقيقية.
+// الحذف يبقى بفعل بشري دائماً (manageTrip mode:'delete')، لا تلقائياً ضمن
+// advanceTripLifecycle — تلك الدالة تُقدِّم الرحلة إلى archived فقط، لا تحذفها.
+const TRIP_PURGE_ELIGIBLE_MS = 90 * 24 * 60 * 60 * 1000; // 90 يوماً مؤرشفة
+
+function isEligibleForAgePurgeJs(tripData, now = Date.now()) {
+  return tripData.status === 'archived'
+    && typeof tripData.statusChangedAt === 'number'
+    && now - tripData.statusChangedAt > TRIP_PURGE_ELIGIBLE_MS;
 }
 
 function randomTravelerId() {
