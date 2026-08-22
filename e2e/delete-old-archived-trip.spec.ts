@@ -8,7 +8,7 @@
 // إخفاء الرحلة. انظر functions/index.js: isEligibleForAgePurgeJs.
 import { test, expect, type Page } from '@playwright/test'
 import { seedBareAdmin, adminFirestore } from './utils/seed'
-import { signInWithEmail } from './utils/flows'
+import { signInWithEmail, openAccountMenu } from './utils/flows'
 
 const CREDS = {
   email: 'e2e-purge-old-archived-admin@test.local',
@@ -35,9 +35,14 @@ async function seedArchivedTripWithRealData(tripId: string, name: string, archiv
     .set({ id: 1, name: 'مسافر حقيقي', shortName: 'مسافر', deposited: 500, deletedAt: null })
 }
 
-/** لوحة إدارة المسؤول تفتح دائماً على قائمة كل الرحلات — انظر delete-empty-trip.spec.ts لنفس الشرح. */
+/**
+ * لوحة إدارة المسؤول تفتح دائماً على قائمة كل الرحلات — انظر delete-empty-trip.spec.ts
+ * لنفس الشرح. 🆕 نقطة الدخول الآن AccountMenu (الهيدر) وحدها — انظر
+ * docs/DECISIONS.md لسبب إزالة الزرّ المكرَّر من ExpensesPanel.
+ */
 async function openTripDetailAsAdmin(page: Page, tripId: string): Promise<void> {
-  await page.getByRole('button', { name: /^(إدارة الرحلة|إدارة الرحلات)$/ }).click()
+  await openAccountMenu(page)
+  await page.getByRole('menuitem', { name: 'لوحة الإدارة' }).click()
   const tripRow = page.locator('div.bg-white.rounded-2xl.shadow-sm.border.border-slate-200.p-4')
     .filter({ hasText: tripId })
   await tripRow.getByRole('button', { name: 'تعديل' }).click()

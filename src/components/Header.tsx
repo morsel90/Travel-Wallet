@@ -13,6 +13,8 @@ export interface HeaderStats {
 interface HeaderProps {
   isSyncing: boolean
   isAdmin: boolean
+  /** 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يمرَّر إلى AccountMenu ليعرض «إدارة الرحلة». */
+  isOrganizer: boolean
   stats: HeaderStats | null
   onStatClick?: (stat: 'deposited' | 'spent' | 'remaining') => void
   isOnline?: boolean // افتراضياً ستكون true إذا لم تُمرر
@@ -60,6 +62,7 @@ const SCROLL_ROW =
 const Header = ({
   isSyncing,
   isAdmin,
+  isOrganizer,
   stats,
   onStatClick,
   isOnline = true, // تعيين قيمة افتراضية
@@ -153,6 +156,7 @@ const Header = ({
           displayName={displayName}
           email={email}
           isAdmin={isAdmin}
+          isOrganizer={isOrganizer}
           onShowMyTrips={onShowMyTrips}
           onShowProfile={onShowProfile}
           onOpenAdminPanel={onOpenAdminPanel}

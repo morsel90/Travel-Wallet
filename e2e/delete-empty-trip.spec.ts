@@ -17,7 +17,7 @@
 // عادياً كبقية سيناريوهات الإنشاء الذاتي.
 import { test, expect, type Page } from '@playwright/test'
 import { seedBareAdmin } from './utils/seed'
-import { signInWithEmail, addExpense, expenseCard } from './utils/flows'
+import { signInWithEmail, addExpense, expenseCard, openAccountMenu } from './utils/flows'
 
 const CREDS = {
   email: 'e2e-delete-empty-trip-admin@test.local',
@@ -35,9 +35,13 @@ test.beforeAll(async () => {
  * للمنظّم) — والقائمة تضمّ رحلات كل ملفات الاختبار الأخرى المشتركة في نفس
  * محاكي Firestore. نحدّد صفّ رحلتنا بالضبط عبر معرّفها الفريد قبل الضغط على
  * "تعديل" لفتح تفاصيلها.
+ *
+ * 🆕 نقطة الدخول الآن AccountMenu (الهيدر) وحدها — انظر docs/DECISIONS.md
+ * لسبب إزالة الزرّ المكرَّر من ExpensesPanel.
  */
 async function openTripDetailAsAdmin(page: Page): Promise<void> {
-  await page.getByRole('button', { name: /^(إدارة الرحلة|إدارة الرحلات)$/ }).click()
+  await openAccountMenu(page)
+  await page.getByRole('menuitem', { name: 'لوحة الإدارة' }).click()
   const tripRow = page.locator('div.bg-white.rounded-2xl.shadow-sm.border.border-slate-200.p-4')
     .filter({ hasText: TRIP_ID })
   await tripRow.getByRole('button', { name: 'تعديل' }).click()

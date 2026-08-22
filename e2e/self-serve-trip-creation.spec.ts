@@ -16,7 +16,7 @@
 // على الرحلة بلا أي حفظ على مستند الرحلة نفسه — جوهر الميزة.
 import { test, expect } from '@playwright/test'
 import { seedBareUser } from './utils/seed'
-import { signInWithEmail } from './utils/flows'
+import { signInWithEmail, openAccountMenu } from './utils/flows'
 
 const CREDS = {
   email: 'e2e-self-serve-creator@test.local',
@@ -75,9 +75,11 @@ test('عضو بلا أي رحلة سابقة يملأ بروفايله، يُن�
   await expect(page.getByText(PROFILE_NAME)).toBeVisible()
   await expect(page.getByText('مسافر جديد')).not.toBeVisible()
 
-  // ── يظهر كمنظّم فوراً: زرّ إدارة الرحلة ظاهر بلا أي تدخّل من مسؤول ────────
-  await expect(page.getByRole('button', { name: 'إدارة الرحلة' })).toBeVisible()
-  await page.getByRole('button', { name: 'إدارة الرحلة' }).click()
+  // ── يظهر كمنظّم فوراً: عنصر إدارة الرحلة في AccountMenu ظاهر بلا أي تدخّل
+  // من مسؤول — الهيدر نفسه لا يُعرَض إلا بعد الانضمام لرحلة، وهذا أول ظهور له.
+  await openAccountMenu(page)
+  await expect(page.getByRole('menuitem', { name: 'إدارة الرحلة' })).toBeVisible()
+  await page.getByRole('menuitem', { name: 'إدارة الرحلة' }).click()
 
   // ⚠️ تحقّق سلبي حقيقي (القاعدة ١٨): تبويبات المسؤول العالمي غائبة تماماً من
   // الـ DOM، لا مجرّد معطّلة أو غير ظاهرة بالخطأ.

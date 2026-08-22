@@ -139,7 +139,7 @@ export default function App() {
         <ErrorBoundary fallback={<AppErrorFallback />}>
           <div className="min-h-screen pb-20 md:pb-8">
             <Header
-              isSyncing={status.isSyncing} isAdmin={session.isAdmin}
+              isSyncing={status.isSyncing} isAdmin={session.isAdmin} isOrganizer={session.isOrganizer}
               displayName={profile.displayName || session.user?.displayName || null}
               email={session.user?.email ?? null}
               stats={ledger.isInitialLoading ? null : {
@@ -219,7 +219,6 @@ export default function App() {
                     <ExpensesPanel
                       isInitialLoading={ledger.isInitialLoading}
                       isAdmin={session.isAdmin}
-                      isOrganizer={session.isOrganizer}
                       canAddExpenses={trip.canAddExpenses}
                       activeExpenses={ledger.activeExpenses}
                       filteredExpenses={filter.filteredExpenses}
@@ -228,7 +227,6 @@ export default function App() {
                       sortOrder={filter.sortOrder}
                       setSortOrder={filter.setSortOrder}
                       onOpenReports={modals.openReports}
-                      onOpenTripAdmin={modals.openTripAdmin}
                       onOpenTrashBin={modals.openTrashBin}
                       onExport={() => exportTripToExcel({
                         expenses: ledger.activeExpenses, travelers: ledger.activeTravelers,
