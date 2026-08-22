@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
+import * as Sentry from '@sentry/react'
 import type { ToastMessage } from '../types'
 import {
   useAuth, useAdminAuth, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
@@ -141,6 +142,7 @@ export function useAppCoordinator() {
   // fallback يُستخدم فقط حين لا يكون الخطأ من Firestore أصلاً — انظر utils/writeErrors.ts.
   const handleFirestoreError = useCallback((err: unknown, fallback: string) => {
     const code = writeErrorCode(err)
+    Sentry.captureException(err, { tags: { source: 'firestore-write' } })
     setSyncError(code ? describeWriteError(err, 'generic').text : fallback)
   }, [])
 

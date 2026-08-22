@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import react            from '@vitejs/plugin-react'
 import { VitePWA }      from 'vite-plugin-pwa'
+import { sentryVitePlugin } from '@sentry/vite-plugin'
 
 export default defineConfig(({ mode }) => {
   // تحميل كافة المتغيرات المضافة في Vercel أو .env
@@ -9,6 +10,10 @@ export default defineConfig(({ mode }) => {
   // 🔴 وضع اختبارات E2E (Playwright) فقط — انظر playwright.config.ts الذي يشغّل
   // `vite --mode e2e`. لا يُفعَّل أبداً بأي أمر آخر (dev/build العاديين).
   const isE2E = mode === 'e2e';
+  // 🆕 بلا هذا التوكن، @sentry/vite-plugin لن يرفع خرائط المصدر ولن يحذفها —
+  // فتوليدها أصلاً معطَّل في هذه الحالة (CI، أو قبل ضبط Sentry) بدل أن تبقى
+  // خرائط .map غير مُنظَّفة في dist/ ومتاحة للجمهور بلا داعٍ.
+  const hasSentryToken = Boolean(pick('SENTRY_AUTH_TOKEN'));
 
   return {
     resolve: {
@@ -25,6 +30,8 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_FIREBASE_APP_ID': JSON.stringify(pick('VITE_FIREBASE_APP_ID')),
       // 🔴 E2E فقط — انظر src/firebase.ts (connectAuthEmulator/connectFirestoreEmulator)
       'import.meta.env.VITE_USE_FIREBASE_EMULATORS': JSON.stringify(pick('VITE_USE_FIREBASE_EMULATORS')),
+      // 🆕 اختياري — انظر src/sentry.ts. غيابه لا يمنع البناء ولا التشغيل.
+      'import.meta.env.VITE_SENTRY_DSN': JSON.stringify(pick('VITE_SENTRY_DSN')),
     },
 
     // 🗑️ لا حاجة لأي وسيط `/api/*` بعد الآن: العميل يستدعي الدوال عبر
@@ -36,6 +43,11 @@ export default defineConfig(({ mode }) => {
 
     // إعدادات البناء وتقسيم الحزم (Code Splitting)
     build: {
+      // 🆕 مطلوب حتى يجد @sentry/vite-plugin خرائط لرفعها — تُحذَف بعد الرفع
+      // (filesToDeleteAfterUpload أدناه)، فلا تصل النسخة المنشورة أبداً. مُقيَّد
+      // بنفس شرط تفعيل الإضافة (hasSentryToken): توليد خرائط لا تُرفَع ولا
+      // تُحذَف يعني شحنها للجمهور في dist/ بلا فائدة — أسوأ من عدم توليدها.
+      sourcemap: hasSentryToken,
       chunkSizeWarningLimit: 600,
       rollupOptions: {
         output: {
@@ -105,6 +117,17 @@ export default defineConfig(({ mode }) => {
             },
           ],
         },
+      }),
+      // 🆕 رفع خرائط المصدر لـ Sentry — يعمل فقط حين يوجد SENTRY_AUTH_TOKEN
+      // (بناء Vercel الحقيقي بعد ضبط إعدادات المشروع). في CI (GitHub Actions)
+      // لا يوجد التوكن إطلاقاً، فـ disable يجعل الإضافة تتجاوز نفسها بصمت —
+      // بلا أي تعديل على .github/workflows/ci.yml.
+      sentryVitePlugin({
+        org: pick('SENTRY_ORG'),
+        project: pick('SENTRY_PROJECT'),
+        authToken: pick('SENTRY_AUTH_TOKEN'),
+        disable: !hasSentryToken,
+        sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] },
       }),
     ],
   };

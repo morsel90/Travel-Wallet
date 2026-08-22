@@ -21,6 +21,13 @@ serviceAccountKey*.json
 # ملفات النظام والمحرر
 .DS_Store
 *.local
+# 🆕 استثناء: functions/.secret.local ليس سرّاً حقيقياً — قيمة وهمية غير
+# صالحة عمداً (Sentry.init تتجاهلها بصمت، انظر docs/DECISIONS.md)، وجودها
+# يمنع محاكي Cloud Functions من محاولة الاتصال الشبكي الحقيقي بـ Secret
+# Manager لكل استدعاء دالة أثناء اختبارات e2e — بلا هذا الملف كانت تلك
+# المحاولات (تفشل دائماً ضد مشروع demo وهمي) تُبطئ الاختبارات وتسبّب تذبذباً
+# حقيقياً في المهلات الزمنية الحسّاسة. يجب أن يبقى مُتتبَّعاً لتعمل CI بلا تذبذب.
+!functions/.secret.local
 *.log
 .vscode/*
 !.vscode/extensions.json

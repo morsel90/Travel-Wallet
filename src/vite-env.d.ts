@@ -17,6 +17,8 @@ interface ImportMetaEnv {
   // غير معرَّفة أبداً في .env المحلي ولا في إعداد Vercel — فقط webServer.env
   // في playwright.config.ts يمررها عند تشغيل `vite --mode e2e`.
   readonly VITE_USE_FIREBASE_EMULATORS?: string
+  // 🆕 اختياري — انظر src/sentry.ts. غيابه لا يمنع البناء ولا التشغيل.
+  readonly VITE_SENTRY_DSN?: string
 }
 
 interface ImportMeta {

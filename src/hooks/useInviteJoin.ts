@@ -9,6 +9,7 @@
 // ⚠️ لا نستهلك التوكن أكثر من مرة واحدة لكل تحميل صفحة (attemptedRef لا state):
 // state إضافية كانت ستُعيد المحاولة عند كل إعادة رسم بسبب تغيّر مرجع showToast.
 import { useCallback, useEffect, useRef, useState } from 'react'
+import * as Sentry from '@sentry/react'
 import { httpsCallable } from 'firebase/functions'
 import type { User } from 'firebase/auth'
 import { functions } from '../firebase'
@@ -94,6 +95,7 @@ export function useInviteJoin(
       })
       .catch((err: unknown) => {
         clearInviteParam()
+        Sentry.captureException(err, { tags: { source: 'callable' } })
         showToast({ text: describeInviteError(err).text, type: 'error' }, 6000)
         setStatus('done')
       })

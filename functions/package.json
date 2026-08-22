@@ -11,6 +11,7 @@
     "deploy": "firebase deploy --only functions"
   },
   "dependencies": {
+    "@sentry/google-cloud-serverless": "^10.70.0",
     "firebase-admin": "^12.1.0",
     "firebase-functions": "^7.3.2"
   },
