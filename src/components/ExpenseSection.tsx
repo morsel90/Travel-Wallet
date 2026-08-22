@@ -2,6 +2,7 @@ import { memo, useRef, useState, useCallback, useMemo } from 'react'
 import type { TouchEvent as ReactTouchEvent } from 'react'
 import { Plus, Pencil, Trash2, X, Loader2 } from '../icons'
 import type { Expense } from '../types'
+import { Modal } from './Modal'
 import { useTripData, useTripActions, useTripFormState } from '../store/tripStore'
 import { toDisplayNames } from '../utils/participants'
 import { EXPENSE_CATEGORIES } from '../constants'
@@ -136,8 +137,16 @@ export const ExpenseForm = memo(() => {
   // "Rendered more hooks than during the previous render" (مخالفة Rules of Hooks).
   if (!isExpenseFormOpen) return null
 
+  // 🆕 Modal بدل <div> عادية — كان هذا النموذج الوحيد في التطبيق يُرسَم داخل
+  // تدفّق الصفحة (App.tsx) بدل نافذة/Bottom Sheet ثابتة، فيظهر خارج نطاق
+  // الرؤية أحياناً (المستخدم مُمرَّر لأسفل عند فتحه من SmartInputBar) بلا أي
+  // تمرير تلقائي، وبلا حركة ظهور حقيقية (CSS transition لا يُحرِّك ظهور عنصر
+  // React مشروط أصلاً — framer-motion وحدها تفعل). Modal يحلّ الثلاثة معاً:
+  // ثابت الموضع (fixed)، فلا داعٍ للتمرير إليه؛ حركة دخول/خروج حقيقية
+  // (spring)؛ وBottom Sheet على الجوال كبقية نوافذ التطبيق. راجع
+  // docs/DECISIONS.md.
   return (
-    <div className="p-5 sm:p-6 bg-white">
+    <Modal onClose={cancelExpenseForm} label={isEditingExpense ? 'تعديل المصروف' : 'تفاصيل المصروف'} maxWidth="max-w-md">
       <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
         <h3 className="font-bold text-lg text-slate-800">
           {isEditingExpense ? 'تعديل المصروف' : 'تفاصيل المصروف'}
@@ -379,7 +388,7 @@ export const ExpenseForm = memo(() => {
           {isEditingExpense ? 'حفظ التعديلات' : 'اعتماد المصروف'}
         </button>
       </form>
-    </div>
+    </Modal>
   )
 })
 

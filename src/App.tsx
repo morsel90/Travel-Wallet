@@ -206,11 +206,16 @@ export default function App() {
   
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   <div className="space-y-6 lg:col-span-1">
-                    {/* نموذج المصروف يختفي كلياً في الرحلة المنتهية/المؤرشفة */}
+                    {/* نموذج المصروف يختفي كلياً في الرحلة المنتهية/المؤرشفة.
+                        🆕 Modal (Bottom Sheet) لا قسم داخل تدفّق الصفحة بعد الآن —
+                        انظر تعليق ExpenseForm في ExpenseSection.tsx وdocs/DECISIONS.md.
+                        الشرط الخارجي (isAddingExpense) صريح هنا لا داخل ExpenseForm
+                        وحدها: AnimatePresence يحتاج التبديل عند نقطة العرض الشرطي
+                        نفسها ليكتشف الإزالة ويُشغّل حركة الخروج — نفس نمط ModalManager.tsx. */}
                     {trip.canAddExpenses && (
-                      <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                        <ExpenseForm />
-                      </section>
+                      <AnimatePresence>
+                        {expense.isAddingExpense && <ExpenseForm />}
+                      </AnimatePresence>
                     )}
                     <BankDetailsCard bankDetails={organizerBank.bankDetails} isLoading={organizerBank.loading} />
                   </div>
