@@ -83,18 +83,23 @@ export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
             </div>
           </div>
 
-          <div className="text-left shrink-0 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+          {/* 🆕 شارة ناعمة (Soft Badge) — خلفية مُلوَّنة شفافة جداً (rose-50/teal-50)
+              بدل خلفية محايدة + حدّ، ونصّ داكن اللون فوقها. نمط Fintech حديث: يوصل
+              حالة الرصيد بوضوح دون أن يقرأه المستخدم كرسالة خطأ/تنبيه حرج. */}
+          <div className={`text-left shrink-0 px-3 py-1.5 rounded-2xl ${isNegative ? 'bg-rose-50' : 'bg-teal-50'}`}>
             <div className="text-[10px] sm:text-xs font-medium text-slate-400 mb-0.5 text-center">المتبقي</div>
-            <div className={`text-sm sm:text-base font-black tabular-nums text-center leading-none ${isNegative ? 'text-rose-600' : 'text-teal-600'}`} dir="ltr">
+            <div className={`text-sm sm:text-base font-black tabular-nums text-center leading-none ${isNegative ? 'text-rose-700' : 'text-teal-700'}`} dir="ltr">
               {traveler.remaining.toFixed(2)}
             </div>
           </div>
         </div>
 
+        {/* 🆕 شريط تقدّم نحيف (h-1 = 4px) بلون هادئ بدل خط سفلي عريض صارخ —
+            bg-rose-400 لا rose-500: نفس المعلومة بحدّة أقلّ. */}
         <div className="w-full flex items-center gap-2 mt-0.5" dir="ltr" title={`استهلاك ${percentage.toFixed(1)}%`}>
-          <div className="flex-1 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+          <div className="flex-1 bg-slate-100 rounded-full h-1 overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${isNegative ? 'bg-rose-500' : 'bg-gradient-to-r from-teal-400 to-teal-600'}`}
+              className={`h-full rounded-full transition-all duration-500 ${isNegative ? 'bg-rose-400' : 'bg-gradient-to-r from-teal-400 to-teal-600'}`}
               style={{ width: `${isNegative ? 100 : percentage}%` }}
             />
           </div>
