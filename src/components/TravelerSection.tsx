@@ -1,8 +1,7 @@
 import { memo, useCallback, useState } from 'react'
 import { Pencil, Trash2, Plus, X, History, Loader2, UserCheck, FileText } from '../icons'
 import type { Traveler, TravelerBalance } from '../types'
-import { useData } from '../context/DataContext'
-import { useUIActions } from '../context/UIContext'
+import { useTripData, useTripActions } from '../store/tripStore'
 import { matchesTraveler } from '../utils/participants'
 // تأكد من مسار استيراد النافذة الجديدة بناءً على مكان حفظك لها
 import TravelerProfileModal from './modals/TravelerProfileModal' 
@@ -19,13 +18,13 @@ const convertArabicNumerals = (str: string): string => {
 // مكوّن عرض بطاقة رصيد المسافر المنفرد (Traveler Card)
 export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
   // جلبنا settlements و travelers لدعم بيانات النافذة المنبثقة
-  const { isAdmin, expenses, travelers, user } = useData()
+  const { isAdmin, expenses, travelers, user } = useTripData()
   // 🆕 نموذج الهوية الهجين: تمييز بطاقة المستخدم نفسه بين بطاقات بقية المسافرين
   // — traveler.uid يُقارَن لا يُفترض، فمن دون حساب (تصفّح محلي) أو مسافر غير
   // مربوط لا يرى الشارة على أي بطاقة، وهذا صحيح ومقصود.
   const isMine = !!(traveler.uid && user && traveler.uid === user.uid)
   // إجراءات فقط — البطاقة تتكرر لكل مسافر، فلا يجوز أن تشترك في حالة نموذج متقلبة
-  const { openDeposit, requestDeleteTraveler, openDepositHistory } = useUIActions()
+  const { openDeposit, requestDeleteTraveler, openDepositHistory } = useTripActions()
   
   // حالة التحكم في ظهور نافذة ملف المسافر + التبويب الذي تُفتح عليه — الفتح
   // بالضغط على البطاقة نفسها يبدأ من "الخلاصة" كالمعتاد، أما زر "كشف حسابي"

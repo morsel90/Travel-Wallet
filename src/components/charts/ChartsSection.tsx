@@ -1,6 +1,6 @@
 import { memo, useState } from 'react'
 import { PieChart, TrendingUp, ArrowRightLeft } from '../../icons'
-import { useData } from '../../context/DataContext'
+import { useTripData } from '../../store/tripStore'
 import { cn } from '../../utils/cn'
 import { haptic } from '../../utils/haptics'
 import type { Settlement, CategoryTotal, SpendingTrendPoint } from '../../types'
@@ -21,7 +21,7 @@ const TABS: Array<{ key: ChartTab; label: string; icon: typeof PieChart }> = [
 
 function ChartsSection({ settlements, categoryTotals, spendingTrend }: ChartsSectionProps) {
   const [activeTab, setActiveTab] = useState<ChartTab>('settlements')
-  const { travelers } = useData()
+  const { travelers } = useTripData()
 
   // المشاركون قد يُخزَّنون كمعرّف رقمي (الصيغة الحالية) أو كاسم مختصر نصي
   // (مصاريف قديمة) — نفس اتحاد الأنواع المستخدم في Expense['participants'].

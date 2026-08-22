@@ -23,7 +23,7 @@ import ModalManager         from './components/ModalManager'
 import ModalFallback        from './components/modals/ModalFallback'
 import PullToRefresh        from './components/PullToRefresh'
 import SmartInputBar        from './components/SmartInputBar'
-import { AppProviders }     from './components/AppProviders'
+import { TripStoreProvider } from './store/TripStoreProvider'
 import { AppErrorFallback } from './components/AppErrorFallback'
 import { StatusBanners }    from './components/StatusBanners'
 import { TravelersPanel }   from './components/TravelersPanel'
@@ -41,8 +41,8 @@ const UserProfileModal = lazy(() => import('./components/modals/UserProfileModal
 //   ١. التوجيه — أي شاشة تُعرض (رحلاتي ← بوابة الرمز ← التطبيق). الترتيب مقصود.
 //   ٢. التركيب — توصيل ناتج useAppCoordinator بالأقسام المرئية.
 //
-// كل ما عدا ذلك انتقل: التركيب إلى hooks/useAppCoordinator.ts، وقيم السياق إلى
-// components/AppProviders.tsx، والتخطيط إلى أقسام components/*Panel.tsx.
+// كل ما عدا ذلك انتقل: التركيب إلى hooks/useAppCoordinator.ts، ومخزن الحالة إلى
+// store/TripStoreProvider.tsx، والتخطيط إلى أقسام components/*Panel.tsx.
 export default function App() {
   const {
     session, ledger, trip, rates, status, picker, tripAdminPanel, filter, modals, expense, traveler, deposit, admin, invite,
@@ -115,7 +115,7 @@ export default function App() {
     )
   } else {
     screen = (
-      <AppProviders
+      <TripStoreProvider
         travelers={ledger.activeTravelers}
         expenses={ledger.activeExpenses}
         user={session.user}
@@ -310,7 +310,7 @@ export default function App() {
             <UpdatePrompt hasUnsavedData={status.hasUnsavedData} />
           </div>
         </ErrorBoundary>
-      </AppProviders>
+      </TripStoreProvider>
     )
   }
 

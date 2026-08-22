@@ -2,8 +2,7 @@ import { memo, useRef, useState, useCallback, useMemo } from 'react'
 import type { TouchEvent as ReactTouchEvent } from 'react'
 import { Plus, Pencil, Trash2, X, Loader2 } from '../icons'
 import type { Expense } from '../types'
-import { useData } from '../context/DataContext'
-import { useUIActions, useUIForm } from '../context/UIContext'
+import { useTripData, useTripActions, useTripFormState } from '../store/tripStore'
 import { toDisplayNames } from '../utils/participants'
 import { EXPENSE_CATEGORIES } from '../constants'
 import { splitByShares } from '../utils/calculations'
@@ -21,17 +20,17 @@ const PINNED_CURRENCIES = ['SAR', 'USD', 'EUR', 'AED', 'GBP']
 
 // 1️⃣ مكوّن نموذج تفاصيل المصروف الكامل (Fintech Style)
 export const ExpenseForm = memo(() => {
-  const { travelers, currencies, ratesUpdatedAt, expenses } = useData()
+  const { travelers, currencies, ratesUpdatedAt, expenses } = useTripData()
 
-  // هذا المكوّن وحده يستهلك سياق النموذج المتقلب — وهو نسخة واحدة، فإعادة رسمه
-  // مع كل حرف صحيحة ومطلوبة. أما زر الإلغاء فإجراء ثابت يأتي من السياق الآخر.
+  // هذا المكوّن وحده يستهلك مفتاح النموذج المتقلب — وهو نسخة واحدة، فإعادة رسمه
+  // مع كل حرف صحيحة ومطلوبة. أما زر الإلغاء فإجراء ثابت يأتي من مفتاح آخر.
   const {
     isExpenseFormOpen,
     expenseForm, setExpenseForm,
     isEditingExpense, submitExpense,
     toggleParticipant, toggleAllParticipants,
-  } = useUIForm()
-  const { cancelExpenseForm } = useUIActions()
+  } = useTripFormState()
+  const { cancelExpenseForm } = useTripActions()
 
   // 🆕 منطق فصل العملات لقائمة منسدلة لا تُزدحم مهما بلغ عددها:
   //   • "الشائعة": العملات المثبّتة (PINNED، بترتيب ثابت) + العملات المستخدمة فعلياً
@@ -395,10 +394,10 @@ const SWIPE_TRIGGER_PX = 60
 
 // 2️⃣ مكوّن عرض كارت بطاقة المصروف المنفرد في السجل
 export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
-  const { isAdmin, currencies, travelers, user } = useData()
+  const { isAdmin, currencies, travelers, user } = useTripData()
   // ⚠️ الإجراءات وحدها عمداً — هذا المكوّن يتكرر لكل صف في القائمة، واستهلاكه
-  // لسياق النموذج كان يعيد رسم كل الصفوف المعروضة مع كل ضغطة مفتاح.
-  const { startEditExpense, requestDeleteExpense } = useUIActions()
+  // لمفتاح النموذج كان يعيد رسم كل الصفوف المعروضة مع كل ضغطة مفتاح.
+  const { startEditExpense, requestDeleteExpense } = useTripActions()
   const canManage = isAdmin || (user?.uid != null && expense.createdByUid === user.uid)
 
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
