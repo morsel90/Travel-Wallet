@@ -95,8 +95,13 @@ export async function addExpense(page: Page, opts: AddExpenseOptions): Promise<v
   await page.waitForTimeout(600)
   await amountInput.fill(opts.amount)
   await page.getByLabel('الوصف').fill(opts.description)
-  for (const name of opts.deselectParticipants ?? []) {
-    await page.getByRole('button', { name, exact: true }).click()
+  if (opts.deselectParticipants?.length) {
+    // 🆕 قسم التقسيم مطويّ افتراضياً خلف سطر ملخّص (إفصاح تدريجي) — يجب فتحه
+    // أولاً قبل الوصول لبطاقات المسافرين القابلة للاستبعاد.
+    await page.getByRole('button', { name: 'خيارات التقسيم' }).click()
+    for (const name of opts.deselectParticipants) {
+      await page.getByRole('button', { name, exact: true }).click()
+    }
   }
   await page.getByRole('button', { name: 'اعتماد المصروف' }).click()
 }

@@ -59,4 +59,5 @@ export {
   User,         // 🆕 زر «بروفايلي» في Header + شاشة UserProfileModal
   LogOut,       // 🆕 «تسجيل الخروج» في AccountMenu — متاح لأي مستخدم مسجّل دخوله
   ChevronDown,  // 🆕 مؤشّر فتح/إغلاق AccountMenu
+  Tag,          // 🆕 محدد الفئة المدمج بجانب الوصف في ExpenseForm (إعادة تصميم Progressive Disclosure)
 } from 'lucide-react'

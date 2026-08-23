@@ -1,6 +1,6 @@
 import { memo, useRef, useState, useCallback, useMemo } from 'react'
 import type { TouchEvent as ReactTouchEvent } from 'react'
-import { Plus, Pencil, Trash2, X, Loader2 } from '../icons'
+import { Plus, Pencil, Trash2, X, Loader2, Users, ChevronDown, Tag } from '../icons'
 import type { Expense } from '../types'
 import { Modal } from './Modal'
 import { useTripData, useTripActions, useTripFormState } from '../store/tripStore'
@@ -132,10 +132,33 @@ export const ExpenseForm = memo(() => {
     return splitByShares(previewTotal, expenseForm.participants, expenseForm.shares);
   }, [amountSAR, expenseForm.participants, expenseForm.shares]);
 
-  // ⚠️ الخروج المبكر يجب أن يأتي بعد كل الـ hooks (useMemo/useCallback أعلاه) وليس
-  // قبلها — وإلا اختلف عدد الـ hooks بين فتح النموذج وإغلاقه فيرمي React خطأ
+  // 🆕 إفصاح تدريجي (Progressive Disclosure): قسم التقسيم وقسم التاريخ/طريقة
+  // الدفع مطويّان افتراضياً، ويظهر بدلاً منهما سطر ملخّص قابل للنقر. التقسيم
+  // وحده يبدأ موسَّعاً حين يكون بالفعل غير افتراضي (تعديل مصروف باستثناءات أو
+  // تقسيم مخصّص سابق) — "افتراضي ذكي" يُظهر التفاصيل المهمة فوراً بدل إخفائها
+  // خلف نقرة إضافية. التاريخ وطريقة الدفع يبدآن مطويَّين دائماً: سطر الملخّص
+  // يعرض قيمتهما الفعليّة أياً كانت، فلا حاجة لتوسيعهما تلقائياً ليكونا صادقين.
+  const [isSplitExpanded, setIsSplitExpanded] = useState(
+    () => expenseForm.splitMode === 'custom' || expenseForm.participants.length !== travelers.length
+  )
+  const [isDefaultsExpanded, setIsDefaultsExpanded] = useState(false)
+
+  // ⚠️ الخروج المبكر يجب أن يأتي بعد كل الـ hooks (useMemo/useCallback/useState أعلاه)
+  // وليس قبلها — وإلا اختلف عدد الـ hooks بين فتح النموذج وإغلاقه فيرمي React خطأ
   // "Rendered more hooks than during the previous render" (مخالفة Rules of Hooks).
   if (!isExpenseFormOpen) return null
+
+  const splitSummary = expenseForm.splitMode === 'custom'
+    ? `تقسيم مخصّص بين ${expenseForm.participants.length} ${expenseForm.participants.length === 1 ? 'مسافر' : 'مسافرين'}`
+    : expenseForm.participants.length === travelers.length
+      ? 'يُقسم بالتساوي على الجميع'
+      : `يُقسم بالتساوي على ${expenseForm.participants.length} من ${travelers.length}`
+
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const dateSummary = expenseForm.date === todayStr ? 'اليوم' : expenseForm.date
+  const payerSummary = expenseForm.paidBy === 'fund'
+    ? 'الصندوق المشترك'
+    : `دفعها: ${travelers.find(t => t.id === expenseForm.paidBy)?.shortName ?? '—'}`
 
   // 🆕 Modal بدل <div> عادية — كان هذا النموذج الوحيد في التطبيق يُرسَم داخل
   // تدفّق الصفحة (App.tsx) بدل نافذة/Bottom Sheet ثابتة، فيظهر خارج نطاق
@@ -163,230 +186,275 @@ export const ExpenseForm = memo(() => {
 
       <form onSubmit={submitExpense} className="space-y-5">
 
-        {/* المبلغ والعملة */}
-        <div className="flex gap-3">
-          <div className="flex-1">
-            <label className="block text-xs font-bold text-slate-500 mb-1.5 ms-1">المبلغ</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              required 
-              value={expenseForm.amount}
-              onChange={handleAmountChange}
-              className="w-full bg-white border border-slate-200 rounded-xl p-3 text-lg text-teal-700 font-black focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all"
-              dir="ltr"
-              aria-label="المبلغ"
-            />
+        {/* 🆕 منطقة المبلغ (Hero Area) — بلا عناوين صريحة، الحقل نفسه هو بطل
+            الشاشة. العملة أصبحت زراً صغيراً (Pill) تحته، لا حقلاً موازياً له
+            بنفس الحجم. */}
+        <div className="text-center pt-1">
+          <input
+            type="text"
+            inputMode="decimal"
+            required
+            value={expenseForm.amount}
+            onChange={handleAmountChange}
+            placeholder="0"
+            className="w-full bg-transparent border-none text-5xl font-bold text-center text-slate-800 outline-none focus:ring-0 placeholder-slate-300 tabular-nums"
+            dir="ltr"
+            aria-label="المبلغ"
+          />
+
+          <div className="mt-2 flex items-center justify-center">
+            <div className="relative inline-flex">
+              <select
+                value={expenseForm.currency}
+                onChange={handleCurrencyChange}
+                className="appearance-none bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold pl-7 pr-3 py-1.5 rounded-full outline-none focus:ring-2 focus:ring-teal-200 transition-colors cursor-pointer"
+                aria-label="العملة"
+              >
+                {popular.length > 0 && (
+                  <optgroup label="⭐ العملات الشائعة">
+                    {popular.map((code: string) => (
+                      <option key={code} value={code}>{currencies[code]?.label || code}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {others.length > 0 && (
+                  <optgroup label="جميع العملات (أبجدياً)">
+                    {others.map((code: string) => (
+                      <option key={code} value={code}>{currencies[code]?.label || code}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+              <ChevronDown className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
+            </div>
           </div>
 
-          <div className="w-[140px]">
-            <label className="block text-xs font-bold text-slate-500 mb-1.5 ms-1">العملة</label>
-            <select
-              value={expenseForm.currency}
-              onChange={handleCurrencyChange}
-              className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm text-slate-800 font-bold focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all"
-              aria-label="العملة"
-            >
-              {popular.length > 0 && (
-                <optgroup label="⭐ العملات الشائعة">
-                  {popular.map((code: string) => (
-                    <option key={code} value={code}>{currencies[code]?.label || code}</option>
-                  ))}
-                </optgroup>
+          {/* سعر الصرف — يظهر فقط لعملة أجنبية، بشكل هادئ لا يُنافس المبلغ على الاهتمام */}
+          {expenseForm.currency !== 'SAR' && (
+            <div className="mt-3 flex flex-col items-center gap-1">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-400 font-bold">سعر الصرف:</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  required
+                  value={expenseForm.exchangeRate}
+                  onChange={handleRateChange}
+                  className="w-20 text-center bg-slate-50 border border-slate-200 rounded-lg py-1 text-sm font-bold text-slate-700 focus:border-teal-500 focus:ring-1 focus:ring-teal-100 outline-none"
+                  dir="ltr"
+                  aria-label="سعر الصرف"
+                />
+                <span className="text-amber-600 font-bold">≈ {amountSAR} ﷼</span>
+              </div>
+              {ratesUpdatedAt && (
+                <p className="text-[10px] text-slate-300 font-medium">
+                  السوق: {ratesUpdatedAt.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
+                </p>
               )}
-              {others.length > 0 && (
-                <optgroup label="جميع العملات (أبجدياً)">
-                  {others.map((code: string) => (
-                    <option key={code} value={code}>{currencies[code]?.label || code}</option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-          </div>
+            </div>
+          )}
         </div>
 
-        {/* سعر الصرف للعملات الأجنبية */}
-        {expenseForm.currency !== 'SAR' && (
-          <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-4">
-            <div className="flex justify-between items-center mb-2">
-              <label className="text-xs font-bold text-amber-700">سعر الصرف المستخدَم</label>
-              <span className="text-[11px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-lg">
-                المعادل: {amountSAR} ﷼
-              </span>
-            </div>
-            <input
-              type="text"
-              inputMode="decimal"
-              required
-              value={expenseForm.exchangeRate}
-              onChange={handleRateChange}
-              className="w-full bg-white border border-amber-200 rounded-lg p-2.5 text-base text-amber-900 font-bold focus:border-amber-500 focus:ring-2 focus:ring-amber-100 outline-none transition-all"
-              aria-label="سعر الصرف"
-            />
-            <p className="text-[10px] text-amber-600 mt-2 font-medium">
-              {ratesUpdatedAt ? `السوق: ${ratesUpdatedAt.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}` : 'سعر تقريبي (يمكنك تعديله)'}
-            </p>
-          </div>
-        )}
-
-        {/* الوصف / البيان */}
-        <div>
-          <label className="block text-xs font-bold text-slate-500 mb-1.5 ms-1">الوصف / البيان</label>
+        {/* 🆕 الوصف والفئة (Inline Grouping) — حقل الوصف بلا إطار، يظهر خط
+            سفلي فقط عند التركيز داخل الصفّ (focus-within)؛ الفئة محدِّد مدمَج
+            مضغوط بجانبه بدل حقل منفصل كامل العرض. */}
+        <div className="flex items-center gap-2 border-b-2 border-transparent focus-within:border-teal-200 transition-colors pb-1.5">
           <input
-            type="text" 
-            required 
-            placeholder="مثال: وقود، عشاء..." 
+            type="text"
+            required
+            placeholder="مثال: وقود، عشاء..."
             value={expenseForm.description}
             onChange={handleDescriptionChange}
-            className="w-full bg-white border border-slate-200 rounded-xl p-3 text-base text-slate-800 font-bold focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all placeholder:text-slate-300 placeholder:font-normal"
+            className="flex-1 min-w-0 bg-transparent border-none outline-none focus:ring-0 text-base font-bold text-slate-800 placeholder:text-slate-300 placeholder:font-normal py-1.5"
             aria-label="الوصف"
           />
-        </div>
-
-        {/* التاريخ والفئة */}
-        <div className="grid grid-cols-2 gap-3 w-full">
-          <div className="min-w-0">
-            <label className="block text-xs font-bold text-slate-500 mb-1.5 ms-1">التاريخ</label>
-            <input
-              type="date" 
-              required 
-              value={expenseForm.date}
-              onChange={handleDateChange}
-              className="block w-full min-h-[44px] bg-white border border-slate-200 rounded-xl p-2 text-base text-slate-800 font-bold focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all"
-              aria-label="التاريخ"
-            />
-          </div>
-
-          <div className="min-w-0 relative">
-            <label className="block text-xs font-bold text-slate-500 mb-1.5 ms-1">الفئة</label>
+          <div className="relative shrink-0 flex items-center">
+            <Tag className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
             <select
               value={expenseForm.category}
               onChange={handleCategoryChange}
-              className="block w-full min-h-[44px] bg-white border border-slate-200 rounded-xl p-2 pl-8 text-base text-slate-800 font-bold focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all"
+              className="appearance-none bg-slate-50 hover:bg-slate-100 text-slate-500 text-xs font-bold pl-6 pr-7 py-1.5 rounded-full outline-none focus:ring-2 focus:ring-teal-200 cursor-pointer max-w-[110px]"
               aria-label="الفئة"
             >
               {EXPENSE_CATEGORIES.map(cat => (
                 <option key={cat} value={cat}>{cat}</option>
               ))}
             </select>
-            <svg 
-              className="pointer-events-none absolute bottom-3 left-3 w-4 h-4 text-slate-400" 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
+            <ChevronDown className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
           </div>
         </div>
 
-        {/* طريقة الدفع */}
-        <div>
-          <label className="block text-xs font-bold text-slate-500 mb-1.5 ms-1">طريقة الدفع</label>
-          <select
-            value={String(expenseForm.paidBy)}
-            onChange={handlePaidByChange}
-            className="w-full bg-white border border-slate-200 rounded-xl p-3 text-sm text-slate-800 font-bold focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all"
-            aria-label="طريقة الدفع"
+        {/* 🆕 قسم التقسيم — مطويّ افتراضياً خلف سطر ملخّص واحد قابل للنقر
+            (Progressive Disclosure)؛ لا تظهر بطاقات المسافرين ولا أزرار
+            الاستبعاد إلا بعد نقرة صريحة. */}
+        {!isSplitExpanded ? (
+          <button
+            type="button"
+            onClick={() => setIsSplitExpanded(true)}
+            className="w-full flex items-center justify-between gap-2 bg-slate-50 hover:bg-slate-100 rounded-xl px-4 py-3 text-sm font-bold text-slate-600 transition-colors"
+            aria-label="خيارات التقسيم"
           >
-            <option value="fund">الصندوق المشترك</option>
-            {travelers.map(t => (
-              <option key={t.id} value={t.id}>دفعها: {t.shortName}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* اختيار المشاركين */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <div className="flex items-center justify-between mb-4">
-            <label className="text-xs font-bold text-slate-800">يُقسم على:</label>
-            <button 
-              type="button" 
-              onClick={toggleAllParticipants} 
-              className="text-[11px] font-bold text-teal-600 hover:text-teal-700 bg-teal-50 border border-teal-100 px-2.5 py-1 rounded-lg transition-colors"
-            >
-              {expenseForm.participants.length === travelers.length ? 'إلغاء الكل' : 'تحديد الكل'}
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {travelers.map(t => {
-              const isSelected = expenseForm.participants.includes(t.id)
-              return (
-                <button
-                  key={t.id} 
-                  type="button" 
-                  onClick={() => toggleParticipant(t.id)}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
-                    isSelected
-                      ? 'bg-teal-600 text-white border border-teal-600 shadow-sm'
-                      : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
-                  }`}
-                  aria-pressed={isSelected}
-                >
-                  {isSelected && <Plus className="w-3.5 h-3.5 rotate-45" />}
-                  {t.shortName}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* التخصيص غير المتساوي للحصص */}
-        {expenseForm.participants.length > 0 && (
-          <div>
+            <span className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-slate-400" />
+              {splitSummary}
+            </span>
+            <ChevronDown className="w-4 h-4 text-slate-400" />
+          </button>
+        ) : (
+          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
             <button
               type="button"
-              onClick={handleToggleSplitMode}
-              className="w-full py-3 text-xs font-bold text-slate-500 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors"
+              onClick={() => setIsSplitExpanded(false)}
+              className="w-full flex items-center justify-between gap-2 text-sm font-bold text-slate-600"
+              aria-label="طيّ خيارات التقسيم"
             >
-              {expenseForm.splitMode === 'custom' ? 'العودة للتقسيم بالتساوي' : 'تخصيص التقسيم بنسب مختلفة؟'}
+              <span className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-slate-400" />
+                {splitSummary}
+              </span>
+              <ChevronDown className="w-4 h-4 text-slate-400 rotate-180" />
             </button>
 
-            {expenseForm.splitMode === 'custom' && (
-              <div className="mt-2 space-y-2 bg-slate-50 border border-slate-100 rounded-xl p-4">
-                {expenseForm.participants.map((id, i) => {
-                  const traveler = travelers.find(t => t.id === id)
-                  if (!traveler) return null
-                  const weight = expenseForm.shares[id] ?? 1
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-xs font-bold text-slate-800">يُقسم على:</label>
+                <button
+                  type="button"
+                  onClick={toggleAllParticipants}
+                  className="text-[11px] font-bold text-teal-600 hover:text-teal-700 bg-teal-50 border border-teal-100 px-2.5 py-1 rounded-lg transition-colors"
+                >
+                  {expenseForm.participants.length === travelers.length ? 'إلغاء الكل' : 'تحديد الكل'}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {travelers.map(t => {
+                  const isSelected = expenseForm.participants.includes(t.id)
                   return (
-                    <div key={id} className="flex items-center justify-between gap-3 bg-white p-2.5 rounded-lg border border-slate-200">
-                      <span className="text-sm font-bold text-slate-700 ms-1">{traveler.shortName}</span>
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={weight}
-                          onChange={(e) => {
-                            const converted = convertArabicNumerals(e.target.value);
-                            const sanitized = converted.replace(/[^0-9.]/g, '');
-                            const w = parseFloat(sanitized);
-                            setExpenseForm(prev => ({
-                              ...prev,
-                              shares: { ...prev.shares, [id]: isNaN(w) || w <= 0 ? 1 : w },
-                            }));
-                          }}
-                          className="w-16 bg-slate-50 border border-slate-200 rounded-lg py-1.5 text-base text-center focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none font-bold text-teal-700"
-                          aria-label={`حصة ${traveler.shortName}`}
-                        />
-                        <span className="text-xs font-bold text-slate-400 w-16 text-left" dir="ltr">
-                          {(previewShares[i] ?? 0).toFixed(2)} ﷼
-                        </span>
-                      </div>
-                    </div>
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => toggleParticipant(t.id)}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                        isSelected
+                          ? 'bg-teal-600 text-white border border-teal-600 shadow-sm'
+                          : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+                      }`}
+                      aria-pressed={isSelected}
+                    >
+                      {isSelected && <Plus className="w-3.5 h-3.5 rotate-45" />}
+                      {t.shortName}
+                    </button>
                   )
                 })}
+              </div>
+            </div>
+
+            {/* التخصيص غير المتساوي للحصص */}
+            {expenseForm.participants.length > 0 && (
+              <div>
+                <button
+                  type="button"
+                  onClick={handleToggleSplitMode}
+                  className="w-full py-3 text-xs font-bold text-slate-500 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  {expenseForm.splitMode === 'custom' ? 'العودة للتقسيم بالتساوي' : 'تخصيص التقسيم بنسب مختلفة؟'}
+                </button>
+
+                {expenseForm.splitMode === 'custom' && (
+                  <div className="mt-2 space-y-2 bg-slate-50 border border-slate-100 rounded-xl p-4">
+                    {expenseForm.participants.map((id, i) => {
+                      const traveler = travelers.find(t => t.id === id)
+                      if (!traveler) return null
+                      const weight = expenseForm.shares[id] ?? 1
+                      return (
+                        <div key={id} className="flex items-center justify-between gap-3 bg-white p-2.5 rounded-lg border border-slate-200">
+                          <span className="text-sm font-bold text-slate-700 ms-1">{traveler.shortName}</span>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={weight}
+                              onChange={(e) => {
+                                const converted = convertArabicNumerals(e.target.value);
+                                const sanitized = converted.replace(/[^0-9.]/g, '');
+                                const w = parseFloat(sanitized);
+                                setExpenseForm(prev => ({
+                                  ...prev,
+                                  shares: { ...prev.shares, [id]: isNaN(w) || w <= 0 ? 1 : w },
+                                }));
+                              }}
+                              className="w-16 bg-slate-50 border border-slate-200 rounded-lg py-1.5 text-base text-center focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none font-bold text-teal-700"
+                              aria-label={`حصة ${traveler.shortName}`}
+                            />
+                            <span className="text-xs font-bold text-slate-400 w-16 text-left" dir="ltr">
+                              {(previewShares[i] ?? 0).toFixed(2)} ﷼
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
-        <button
-          type="submit"
-          disabled={expenseForm.participants.length === 0}
-          className="w-full bg-teal-600 text-white font-bold py-4 rounded-xl hover:bg-teal-700 transition-colors disabled:opacity-50 mt-2 text-base shadow-sm"
-        >
-          {isEditingExpense ? 'حفظ التعديلات' : 'اعتماد المصروف'}
-        </button>
+        {/* 🆕 الافتراضيات الهادئة — التاريخ وطريقة الدفع مدموجان في سطر واحد
+            باهت، لا حقلين ضخمين. النقر عليه يكشف الحقلين الفعليين للتعديل. */}
+        {!isDefaultsExpanded ? (
+          <button
+            type="button"
+            onClick={() => setIsDefaultsExpanded(true)}
+            className="w-full text-center text-sm text-slate-400 hover:text-slate-600 font-bold py-1 transition-colors"
+          >
+            {dateSummary} • {payerSummary}
+          </button>
+        ) : (
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => setIsDefaultsExpanded(false)}
+              className="text-sm text-slate-400 hover:text-slate-600 font-bold"
+            >
+              {dateSummary} • {payerSummary}
+            </button>
+            <div className="grid grid-cols-2 gap-3 w-full">
+              <input
+                type="date"
+                required
+                value={expenseForm.date}
+                onChange={handleDateChange}
+                className="w-full min-h-[40px] bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-sm text-slate-700 font-bold focus:border-teal-500 focus:ring-1 focus:ring-teal-100 outline-none"
+                aria-label="التاريخ"
+              />
+              <select
+                value={String(expenseForm.paidBy)}
+                onChange={handlePaidByChange}
+                className="w-full min-h-[40px] bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-sm text-slate-700 font-bold focus:border-teal-500 focus:ring-1 focus:ring-teal-100 outline-none"
+                aria-label="طريقة الدفع"
+              >
+                <option value="fund">الصندوق المشترك</option>
+                {travelers.map(t => (
+                  <option key={t.id} value={t.id}>دفعها: {t.shortName}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {/* 🆕 زر الاعتماد ثابت أسفل اللوحة (sticky) — الهامش الأفقي السالب
+            (-mx-6) يُلغي padding لوحة Modal فيمتدّ الشريط حافة لحافة، ثم px-6
+            يعيده لمحتوى الزر ليتماشى مع بقية النموذج. */}
+        <div className="sticky bottom-0 -mx-6 px-6 pt-3 pb-1 bg-white border-t border-slate-100 -mb-3">
+          <button
+            type="submit"
+            disabled={expenseForm.participants.length === 0}
+            className="w-full bg-teal-600 text-white font-bold py-4 rounded-xl hover:bg-teal-700 transition-colors disabled:opacity-50 text-base shadow-sm"
+          >
+            {isEditingExpense ? 'حفظ التعديلات' : 'اعتماد المصروف'}
+          </button>
+        </div>
       </form>
     </Modal>
   )
