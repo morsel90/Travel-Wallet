@@ -428,17 +428,25 @@ export const ExpenseForm = memo(() => {
                 className="w-full min-h-[40px] bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-sm text-slate-700 font-bold focus:border-teal-500 focus:ring-1 focus:ring-teal-100 outline-none"
                 aria-label="التاريخ"
               />
-              <select
-                value={String(expenseForm.paidBy)}
-                onChange={handlePaidByChange}
-                className="w-full min-h-[40px] bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-sm text-slate-700 font-bold focus:border-teal-500 focus:ring-1 focus:ring-teal-100 outline-none"
-                aria-label="طريقة الدفع"
-              >
-                <option value="fund">الصندوق المشترك</option>
-                {travelers.map(t => (
-                  <option key={t.id} value={t.id}>دفعها: {t.shortName}</option>
-                ))}
-              </select>
+              {/* ⚠️ appearance-none + سهم مخصَّص (لا مظهر <select> الافتراضي) —
+                  بدونها يرسم Safari/iOS أيقونته الأصلية (سهمان لأعلى/أسفل)
+                  فيكسر تطابق التصميم المسطّح مع بقية النموذج؛ لا يظهر هذا في
+                  Chromium (المستخدَم في اختبارات E2E) فلم يُكتشَف إلا على جهاز
+                  حقيقي. نفس المعالجة المطبَّقة على محدِّدَي العملة والفئة أعلاه. */}
+              <div className="relative">
+                <select
+                  value={String(expenseForm.paidBy)}
+                  onChange={handlePaidByChange}
+                  className="appearance-none w-full min-h-[40px] bg-slate-50 border border-slate-200 rounded-lg pr-2.5 pl-7 py-2 text-sm text-slate-700 font-bold focus:border-teal-500 focus:ring-1 focus:ring-teal-100 outline-none"
+                  aria-label="طريقة الدفع"
+                >
+                  <option value="fund">الصندوق المشترك</option>
+                  {travelers.map(t => (
+                    <option key={t.id} value={t.id}>دفعها: {t.shortName}</option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              </div>
             </div>
           </div>
         )}
