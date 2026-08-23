@@ -98,7 +98,7 @@ export async function addExpense(page: Page, opts: AddExpenseOptions): Promise<v
   if (opts.deselectParticipants?.length) {
     // 🆕 قسم التقسيم مطويّ افتراضياً خلف سطر ملخّص (إفصاح تدريجي) — يجب فتحه
     // أولاً قبل الوصول لبطاقات المسافرين القابلة للاستبعاد.
-    await page.getByRole('button', { name: 'خيارات التقسيم' }).click()
+    await page.getByRole('button', { name: 'خيارات التقسيم', exact: true }).click()
     for (const name of opts.deselectParticipants) {
       await page.getByRole('button', { name, exact: true }).click()
     }

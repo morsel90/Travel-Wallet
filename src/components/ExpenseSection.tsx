@@ -138,8 +138,18 @@ export const ExpenseForm = memo(() => {
   // تقسيم مخصّص سابق) — "افتراضي ذكي" يُظهر التفاصيل المهمة فوراً بدل إخفائها
   // خلف نقرة إضافية. التاريخ وطريقة الدفع يبدآن مطويَّين دائماً: سطر الملخّص
   // يعرض قيمتهما الفعليّة أياً كانت، فلا حاجة لتوسيعهما تلقائياً ليكونا صادقين.
+  //
+  // ⚠️ الشرط مقصور على isEditingExpense — لا يُقيَّم عبر participants/travelers
+  // وحدها. عند إضافة مصروف جديد (لا تعديل)، expenseForm.participants يأتي من
+  // useState(emptyExpenseForm) بمُهيِّئ كسول يُستدعى مرة واحدة، وقد يقرأ
+  // activeTravelers قبل اكتمال أول تحميل من Firestore فيبقى []، بينما
+  // travelers (من useTripData) يتحدّث لاحقاً فيصير غير مساوٍ لـ 0 — فيُقيَّم
+  // isSplitExpanded خطأً كـ true عند كل فتح أول لنموذج جديد، رغم أن الحقول
+  // تُصحَّح صحيحة بعد ذلك (سباق تزامن رُصد فعلياً عبر اختبار E2E). أما عند
+  // التعديل (startEditExpense) فـ participants يُضبَط مباشرة ومتزامناً مع نفس
+  // استدعاء setNewExpense الذي يفتح النموذج — لا سباق هناك، فالشرط آمن هنا حصراً.
   const [isSplitExpanded, setIsSplitExpanded] = useState(
-    () => expenseForm.splitMode === 'custom' || expenseForm.participants.length !== travelers.length
+    () => isEditingExpense && (expenseForm.splitMode === 'custom' || expenseForm.participants.length !== travelers.length)
   )
   const [isDefaultsExpanded, setIsDefaultsExpanded] = useState(false)
 
