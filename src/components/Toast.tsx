@@ -28,7 +28,15 @@ const Toast = ({ message }: ToastProps) => {
     // بالضبط ما كشفه توست تحذير دمج الحساب الجديد (utils/mergeNotice.ts).
     // الحل: التمركز على غلاف كامل العرض بلا transform، والحركة/اللون على
     // العنصر الداخلي وحده.
-    <div className="fixed bottom-6 inset-x-0 z-[9999] flex justify-center px-4 pointer-events-none">
+    // ⚠️ z-[10000] لا z-[9999] — أعلى صراحةً من خلفية Modal (z-[9999]). منذ أن
+    // صار Modal يُنقَل عبر createPortal إلى نهاية document.body، صار ترتيبه في
+    // DOM لاحقاً لعنصر Toast (الذي يبقى في مكانه الطبيعي داخل الشجرة)، فتساوي
+    // z-index بينهما يُحسَم لصالح Modal (الأحدث في ترتيب DOM) أثناء نافذة
+    // حركة خروجه القصيرة — فيغطّي طبقة Toast بخلفيته `fixed inset-0`، ويلتقط
+    // أي نقرة (ولو بـ force:true في الاختبارات) بدل الوصول لأزرار Toast تحته،
+    // مثل "تراجع". هذا بالضبط ما كان يمنع استعادة مصروف محذوف حديثاً عبر
+    // "تراجع" الفوري إن سبقه إغلاق نافذة تأكيد — انظر docs/DECISIONS.md.
+    <div className="fixed bottom-6 inset-x-0 z-[10000] flex justify-center px-4 pointer-events-none">
       <div className={`pointer-events-auto max-w-full text-white text-sm font-bold px-6 py-3 rounded-2xl shadow-xl flex items-center gap-3 ${
         // إيقاف حركة الارتداد (bounce) وتغيير اللون للوردي الغامق في حالة الخطأ ليكون واضحاً وجاداً
         isError ? 'bg-rose-600 animate-none' : 'bg-teal-600 animate-bounce'

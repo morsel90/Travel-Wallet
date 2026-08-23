@@ -1,4 +1,5 @@
-import { Virtuoso } from 'react-virtuoso'
+import { useEffect, useRef } from 'react'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import type { Expense, SortOrder } from '../types'
 import ErrorBoundary from './ErrorBoundary'
 import EmptyState from './EmptyState'
@@ -36,7 +37,27 @@ export const ExpensesPanel = ({
   activeExpenses, filteredExpenses,
   searchQuery, setSearchQuery, sortOrder, setSortOrder,
   onOpenReports, onOpenTrashBin, onExport, onOpenExpenseForm,
-}: ExpensesPanelProps) => (
+}: ExpensesPanelProps) => {
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
+  const isShowingList = !isInitialLoading && activeExpenses.length > 0 && filteredExpenses.length > 0
+  // ⚠️ رُصد أن Virtuoso (useWindowScroll) قد يقيس نطاق النافذة خطأً — إما عند
+  // أول تركيب له (انتقال من EmptyState إليه، إن سبقه تسلسل نوافذ/تنقّلات
+  // كلوحة الإدارة ثم نموذج مصروف)، أو حتى وهو مُركَّب مسبقاً بعد تغيّر عدد
+  // العناصر (مثال: حذف مصروف بالتراجع الفوري — hidden محلياً ثم يعود دون أن
+  // يُعيد Virtuoso تركيبه بالضرورة). filteredExpenses.length (لا isShowingList
+  // وحده) في الاعتماديات يضمن إعادة النداء عند أي تغيّر فعلي في العدد، لا
+  // فقط عند الانتقال من/إلى الفراغ. scrollTo رخيصة الاستدعاء ولا تُحرِّك
+  // موضع التمرير الفعلي (نفس top الحالي) — مجرّد إجبار على إعادة القياس.
+  // انظر docs/DECISIONS.md.
+  useEffect(() => {
+    if (!isShowingList) return
+    const id = requestAnimationFrame(() => {
+      virtuosoRef.current?.scrollTo({ top: window.scrollY })
+    })
+    return () => cancelAnimationFrame(id)
+  }, [isShowingList, filteredExpenses.length])
+
+  return (
   <section id="expenses-section" className="scroll-mt-24">
     <div className="flex flex-wrap justify-between items-center gap-3 mb-4 px-1">
       <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -115,6 +136,7 @@ export const ExpensesPanel = ({
         <div className="p-8 text-center text-slate-400 font-medium bg-white rounded-2xl shadow-sm">لا توجد نتائج لـ "{searchQuery}"</div>
       ) : (
         <Virtuoso
+          ref={virtuosoRef}
           useWindowScroll
           data={filteredExpenses}
           itemContent={(_index, exp) => <ExpenseListItem expense={exp} />}
@@ -135,4 +157,5 @@ export const ExpensesPanel = ({
       </p>
     )}
   </section>
-)
+  )
+}

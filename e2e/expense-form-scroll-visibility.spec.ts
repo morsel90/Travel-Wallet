@@ -35,7 +35,41 @@ test.beforeAll(async () => {
   }
 })
 
-test('نموذج المصروف يظهر داخل نطاق الرؤية بعد التوسّع من SmartInputBar، حتى بعد تمرير طويل لأسفل', async ({ page }) => {
+async function expectAmountFieldInViewport(page: import('@playwright/test').Page): Promise<void> {
+  await page.getByTitle('إضافة تفاصيل').click()
+  const amountInput = page.getByLabel('المبلغ')
+  await expect(amountInput).toBeVisible()
+
+  // ⚠️ حركة الدخول (spring: damping 30, stiffness 300 في Modal.tsx) تحتاج وقتاً
+  // لتستقرّ — فحص الموضع فوراً بعد toBeVisible() يلتقط إطاراً منتصف الحركة
+  // (النافذة لا تزال تنزلق من y:100% نحو y:0)، لا موضعها النهائي. toBeVisible()
+  // وحدها لا تنتظر استقرار الحركة، فقط أن العنصر ليس hidden/display:none.
+  await page.waitForTimeout(600)
+
+  const isInViewport = await amountInput.evaluate((el) => {
+    const rect = el.getBoundingClientRect()
+    return rect.top >= 0 && rect.bottom <= window.innerHeight
+  })
+  expect(isInViewport).toBe(true)
+  await page.getByRole('button', { name: 'إغلاق النموذج' }).click()
+}
+
+// ⚠️ اختباران، لا واحد — نقطتا تمرير مختلفتان عمداً: التمرير الطويل جداً وحده
+// كان يُخفي انحداراً حقيقياً ثانياً (PullToRefresh.tsx: transform: translateY(0px)
+// عند السكون يُنشئ containing block جديداً لأي position:fixed سليل، فتُحسَب
+// النافذة نسبةً لصندوق الصفحة الطويل كاملاً لا نسبةً لإطار العرض الفعلي — تصادف
+// أن التمرير حتى القاع كان يضع النافذة الموضوعة خطأً داخل نطاق الرؤية بالمصادفة
+// رغم الخلل، فمرّ الاختبار الأول بسبب خاطئ لا صحيح). قمّة الصفحة تكشف هذا النوع
+// من الأخطاء تحديداً: بلا القاعدة الصحيحة (position:fixed نسبةً لإطار العرض
+// فعلاً)، ستكون النافذة بعيدة تماماً عن نطاق الرؤية عند القمة.
+test('نموذج المصروف يظهر داخل نطاق الرؤية بعد التوسّع من SmartInputBar، عند قمة الصفحة', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await openTripAsMember(page, CREDS)
+  await expect(page.getByText('أرصدة المسافرين')).toBeVisible()
+  await expectAmountFieldInViewport(page)
+})
+
+test('نموذج المصروف يظهر داخل نطاق الرؤية بعد التوسّع من SmartInputBar، بعد تمرير طويل لأسفل', async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 })
   await openTripAsMember(page, CREDS)
   await expect(page.getByText('أرصدة المسافرين')).toBeVisible()
@@ -44,14 +78,5 @@ test('نموذج المصروف يظهر داخل نطاق الرؤية بعد �
   await page.mouse.wheel(0, 6000)
   await page.waitForTimeout(300)
 
-  await page.getByTitle('إضافة تفاصيل').click()
-
-  // الفحص الحقيقي (لا وجود العنصر في DOM فقط): حقل "المبلغ" داخل نطاق الرؤية فعلياً.
-  const amountInput = page.getByLabel('المبلغ')
-  await expect(amountInput).toBeVisible()
-  const isInViewport = await amountInput.evaluate((el) => {
-    const rect = el.getBoundingClientRect()
-    return rect.top >= 0 && rect.bottom <= window.innerHeight
-  })
-  expect(isInViewport).toBe(true)
+  await expectAmountFieldInViewport(page)
 })
