@@ -1,6 +1,6 @@
 import { useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { motion } from 'framer-motion'
+import { motion, useDragControls } from 'framer-motion'
 import { useDialogA11y } from '../hooks/useDialogA11y'
 
 interface ModalProps {
@@ -25,7 +25,10 @@ interface ModalProps {
 // نافذة مركزية عادية بزوايا كاملة الاستدارة (لا فائدة من Bottom Sheet على
 // شاشة عريضة). framer-motion (motion.div + drag="y") يوفّر حركة دخول/خروج
 // طبيعية بفيزياء حركة حقيقية (spring)، وسحب لأسفل بما يكفي (أو بسرعة كافية)
-// يُغلق النافذة كما في تطبيقات الجوال المعتادة.
+// يُغلق النافذة كما في تطبيقات الجوال المعتادة. ⚠️ السحب-للإغلاق مقصور على
+// المقبض العلوي وحده (dragListener={false} + dragControls) لا اللوحة كلها —
+// وإلا يتعارض مع تمرير محتوى طويل (overflow-y-auto) داخلها، انظر التعليق
+// عند المقبض أسفله.
 //
 // onClose يُستدعى من ثلاث طرق: الضغط خلف النافذة (الخلفية الداكنة)، السحب
 // لأسفل بما يكفي (offset.y > 120px أو سرعة > 500px/ث)، أو أي زر إغلاق صريح
@@ -53,6 +56,7 @@ export const Modal = ({ children, maxWidth = 'max-w-sm', onClose, label }: Modal
   const panelRef = useRef<HTMLDivElement>(null)
   // Escape، وحصر التركيز، ودخوله وعودته — انظر hooks/useDialogA11y.ts
   useDialogA11y(panelRef, onClose)
+  const dragControls = useDragControls()
 
   return createPortal(
   <motion.div
@@ -79,6 +83,8 @@ export const Modal = ({ children, maxWidth = 'max-w-sm', onClose, label }: Modal
       exit={{ y: '100%' }}
       transition={{ type: 'spring', damping: 30, stiffness: 300 }}
       drag="y"
+      dragListener={false}
+      dragControls={dragControls}
       dragConstraints={{ top: 0, bottom: 600 }}
       dragSnapToOrigin
       onDragEnd={(_e, info) => {
@@ -86,8 +92,20 @@ export const Modal = ({ children, maxWidth = 'max-w-sm', onClose, label }: Modal
       }}
     >
       {/* 🆕 مقبض السحب المرئي — إشارة بصرية أن النافذة قابلة للسحب لأسفل
-          لإغلاقها؛ يظهر فقط على الجوال (sm:hidden) حيث لا معنى له في نافذة مركزية */}
-      <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-200 sm:hidden" />
+          لإغلاقها؛ يظهر فقط على الجوال (sm:hidden) حيث لا معنى له في نافذة مركزية.
+          ⚠️ dragListener={false} + dragControls أعلاه، وonPointerDown هنا فقط —
+          لا drag="y" مُطلَق على اللوحة كلها كما كان سابقاً. بلا هذا، أي سحب
+          رأسي بالإصبع في أي مكان من محتوى النافذة (بطاقات المسافرين، الحقول،
+          ...) كان يُفسَّر كسحب للوحة نفسها (لإغلاقها) لا كتمرير لمحتواها —
+          فيتعطّل overflow-y-auto عملياً ولا يستطيع المستخدم النزول لرؤية
+          محتوى يتجاوز ارتفاع الشاشة (بلاغ مستخدم فعلي بعد توسيع قسم التقسيم
+          في ExpenseForm). حصر بدء السحب على هذا المقبض وحده يفصل الحركتين
+          تماماً: التمرير العادي يعمل في أي مكان آخر، والسحب-للإغلاق يعمل من
+          المقبض فقط — تماماً كسلوك Bottom Sheet في تطبيقات الجوال الأصلية. */}
+      <div
+        className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-200 sm:hidden touch-none cursor-grab active:cursor-grabbing"
+        onPointerDown={(e) => dragControls.start(e)}
+      />
       {children}
     </motion.div>
   </motion.div>,
