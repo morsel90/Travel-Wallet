@@ -1,4 +1,5 @@
 import { useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { useDialogA11y } from '../hooks/useDialogA11y'
 
@@ -35,12 +36,25 @@ interface ModalProps {
 // <AnimatePresence>{condition && <DepositModal .../>}</AnimatePresence>)
 // حتى تُشغَّل حركة الخروج (exit) قبل إزالة العنصر من الشجرة فعلياً — بدونها
 // يختفي بلا أي حركة إغلاق (نفس مبدأ AnimatePresence في أي React app).
+//
+// 🆕 createPortal إلى document.body — لا رسم في مكانه الطبيعي داخل شجرة
+// المكوّنات. رغم fixed inset-0، أي سلف (ancestor) بقيمة transform/translate/
+// rotate/scale ليست none (حتى لو بلا أثر بصري كـ translateY(0px)) يُنشئ
+// containing block جديداً حسب مواصفة CSS، فيُحسَب موضع fixed نسبةً لصندوق ذلك
+// السلف لا نسبةً لإطار العرض الفعلي — هذا بالضبط ما كان يُخفي ExpenseForm خارج
+// نطاق الرؤية على الجوال حين أصبح Modal-based، لأن PullToRefresh.tsx يُغلِّف
+// <main> بأكمله بـ transform دائم (لازم لتأثير السحب المطاطي). portal إلى
+// document.body يحلّ التعارض جذرياً: Modal لم يعد سليلاً لأي عنصر متحوّل
+// إطلاقاً، بصرف النظر عمّا يتغيّر مستقبلاً في أسلافه — لا حاجة لتتبّع كل سلف
+// محتمل بحثاً عن transform. z-[9999] يبقى كافياً للطبقة العليا فوق أي محتوى.
+// (انظر أيضاً ExpensesPanel.tsx: نداء scrollTo لقائمة react-virtuoso، مطلوب
+// بصرف النظر عن هذا التغيير — انظر docs/DECISIONS.md للتفاصيل الكاملة.)
 export const Modal = ({ children, maxWidth = 'max-w-sm', onClose, label }: ModalProps) => {
   const panelRef = useRef<HTMLDivElement>(null)
   // Escape، وحصر التركيز، ودخوله وعودته — انظر hooks/useDialogA11y.ts
   useDialogA11y(panelRef, onClose)
 
-  return (
+  return createPortal(
   <motion.div
     className="fixed inset-0 bg-slate-900/60 flex items-end sm:items-center justify-center z-[9999]"
     initial={{ opacity: 0 }}
@@ -76,7 +90,8 @@ export const Modal = ({ children, maxWidth = 'max-w-sm', onClose, label }: Modal
       <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-200 sm:hidden" />
       {children}
     </motion.div>
-  </motion.div>
+  </motion.div>,
+  document.body
   )
 }
 

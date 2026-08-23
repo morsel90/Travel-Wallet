@@ -86,7 +86,14 @@ export interface AddExpenseOptions {
 /** يفتح نموذج المصروف الكامل عبر زر "إضافة تفاصيل" في الشريط السفلي ويُدخل مصروفاً. */
 export async function addExpense(page: Page, opts: AddExpenseOptions): Promise<void> {
   await page.getByTitle('إضافة تفاصيل').click()
-  await page.getByLabel('المبلغ').fill(opts.amount)
+  const amountInput = page.getByLabel('المبلغ')
+  await expect(amountInput).toBeVisible()
+  // ⚠️ ExpenseForm أصبح Modal (Bottom Sheet) بحركة دخول (spring: damping 30,
+  // stiffness 300 في Modal.tsx) — toBeVisible() لا ينتظر استقرارها، فقط أن
+  // العنصر ليس hidden. الملء أثناء الحركة قد يصادف إعادة رسم للـDOM فيُفقَد
+  // (نفس السبب الذي احتاج انتظاراً مماثلاً في expense-form-scroll-visibility.spec.ts).
+  await page.waitForTimeout(600)
+  await amountInput.fill(opts.amount)
   await page.getByLabel('الوصف').fill(opts.description)
   for (const name of opts.deselectParticipants ?? []) {
     await page.getByRole('button', { name, exact: true }).click()
