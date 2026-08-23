@@ -438,14 +438,33 @@ export const ExpenseForm = memo(() => {
                 لكل حقل يتجنّب المشكلة جذرياً بصرف النظر عن العرض الأدنى الفعلي
                 لأي عنصر تحكّم أصلي، حالياً أو مستقبلاً. */}
             <div className="space-y-2 w-full">
-              <input
-                type="date"
-                required
-                value={expenseForm.date}
-                onChange={handleDateChange}
-                className="w-full min-h-[40px] bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-sm text-slate-700 font-bold focus:border-teal-500 focus:ring-1 focus:ring-teal-100 outline-none"
-                aria-label="التاريخ"
-              />
+              {/* ⚠️ حقل <input type="date"> نفسه مخفيّ بصرياً (sr-only، لا
+                  display:none) داخل <label> مصمَّم بالكامل — بلاغ مستخدم فعلي
+                  ثانٍ على آيفون: حتى بعمود كامل العرض (الإصلاح أعلاه)، صندوق
+                  التاريخ الأصلي استمرّ يتجاوز حدود حاويته (زوايا حادة، عرض
+                  يمتدّ لحافتي الشاشة) — عنصر <input type="date"> على iOS
+                  Safari له حساب حجم داخلي (shadow DOM) لا يلتزم بـwidth:100%
+                  ولا بـborder-radius/background دائماً، بصرف النظر عن أي CSS.
+                  النقر على <label htmlFor> يفتح منتقي التاريخ الأصلي لأي حقل
+                  مرتبط به تلقائياً في كل المتصفحات — بلا حاجة لـshowPicker()
+                  (غير مدعومة في إصدارات Safari الأقدم) — فيبقى العنصر الأصلي
+                  وظيفياً بالكامل (لوحة اختيار حقيقية) بينما المظهر المرئي
+                  بالكامل من تصميمنا، غير خاضع لأي غرابات حجم أصلية. */}
+              <label
+                htmlFor="expense-date-input"
+                className="flex items-center w-full min-h-[40px] bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-sm text-slate-700 font-bold cursor-pointer focus-within:border-teal-500 focus-within:ring-1 focus-within:ring-teal-100"
+              >
+                {expenseForm.date}
+                <input
+                  id="expense-date-input"
+                  type="date"
+                  required
+                  value={expenseForm.date}
+                  onChange={handleDateChange}
+                  className="sr-only"
+                  aria-label="التاريخ"
+                />
+              </label>
               {/* ⚠️ appearance-none + سهم مخصَّص (لا مظهر <select> الافتراضي) —
                   بدونها يرسم Safari/iOS أيقونته الأصلية (سهمان لأعلى/أسفل)
                   فيكسر تطابق التصميم المسطّح مع بقية النموذج؛ لا يظهر هذا في
