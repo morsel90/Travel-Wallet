@@ -50,6 +50,10 @@ const h = vi.hoisted(() => ({
   allTrips: [] as unknown[],
   isAddingExpense: false,
   isOrganizer: false,
+  // 🆕 نوع الرحلة — 'standard' افتراضياً هنا عمداً: كل اختبارات هذا الملف
+  // القائمة تصف الرحلة القياسية، ويجب أن تبقى كذلك حرفياً بعد إضافة الرحلات
+  // الطويلة. الاختبار الذي يحتاج 'long_term' يضبطها صراحةً.
+  tripType: 'standard' as string,
 }))
 
 const noop = () => {}
@@ -77,6 +81,11 @@ vi.mock('./hooks', () => ({
     organizerUid: 'organizer-1',
     itinerary: [],
     status: h.tripStatus,
+    // 🆕 الرحلات طويلة المدى — currentPeriod ثابت هنا لأن مطابقة الشهر تُختبر
+    // في utils/period.test.ts، وما يُثبَّت هنا هو *ظهور* القسم لا حسابه.
+    tripType: h.tripType,
+    currentPeriod: '2026-08',
+    lastClosedPeriod: undefined,
   }),
   // 🆕 قراءة حيّة لبيانات بنك المنظّم — كائن ثابت يكفي، لا يُستهلك تفصيلياً
   // في اختبارات ترتيب البوابات هذه.
@@ -92,6 +101,7 @@ vi.mock('./hooks', () => ({
   useModals: () => ({
     modal: { type: 'none' }, openReports: noop, openTrashBin: noop, openTripAdmin: noop,
     openDeleteTraveler: noop, openDeposit: noop, openDepositHistory: noop, openUserProfile: noop, closeModal: noop,
+    openMonthlyRollover: noop, openExitTraveler: noop,
   }),
   // 🆕 بروفايل المستخدم العام (اسم/بنك) — لا يُستهلك في تجميعات هذا الاختبار
   // بخلاف تمريره كخاصية، فكائن ثابت يكفي.
@@ -131,6 +141,12 @@ vi.mock('./hooks', () => ({
   // الاختبار: ./utils/tripId مُحاكى أعلاه بلا INVITE_TOKEN)، فلا تُعرض شاشة
   // InviteJoinScreen وتُتابع اختبارات ترتيب البوابات القائمة كما هي.
   useInviteJoin: () => ({ status: 'done' as const, submitName: noop, skipName: noop, isSubmittingName: false }),
+  // 🆕 استدعاءات الرحلة الطويلة — لا تُستدعى في هذه الاختبارات (لا ضغط على
+  // زرّ إغلاق)، لكن الخطاف يُستدعى في كل عرض فيجب أن يوجد في المحاكاة.
+  useLongTermActions: () => ({
+    isClosingMonth: false, isExitingTraveler: false,
+    closeMonth: async () => null, exitTraveler: async () => false,
+  }),
 }))
 
 vi.mock('./hooks/useFilteredExpenses', () => ({
@@ -157,6 +173,7 @@ beforeEach(() => {
   h.allTrips = []
   h.isAddingExpense = false
   h.isOrganizer = false
+  h.tripType = 'standard'
 })
 
 // ─── ترتيب البوابات ───────────────────────────────────────────────────────────
@@ -320,5 +337,46 @@ describe('App — التحميل الأولي', () => {
     // الحالة الفارغة مضلّلة أثناء التحميل: تقول «لا يوجد» بينما لم يصل شيء بعد
     expect(screen.queryByText('لا يوجد مسافرون بعد')).not.toBeInTheDocument()
     expect(screen.queryByText('لا توجد مصاريف بعد')).not.toBeInTheDocument()
+  })
+})
+
+// ─── 🆕 عزل الرحلات طويلة المدى ───────────────────────────────────────────────
+//
+// ⚠️ **الاختبار الأول هنا هو الأهم في هذا الملف كلّه بالنسبة لهذه الميزة**:
+// الشرط المتّفق عليه كان «لا تمسّ الرحلات القياسية». وذلك الشرط لا يُثبته تعليق
+// ولا مراجعة — يُثبته أن يُرصد ظهور أي عنصر من الميزة في رحلة قياسية بوصفه فشلاً.
+describe('App — الرحلات طويلة المدى', () => {
+  it('لا يظهر أي أثر للميزة في الرحلة القياسية', async () => {
+    h.tripType = 'standard'
+    h.isOrganizer = true   // حتى مع أعلى صلاحية ممكنة في الرحلة
+    render(<App />)
+
+    await screen.findByText('أرصدة المسافرين')
+    expect(screen.queryByText('الشهر المحاسبي')).not.toBeInTheDocument()
+    expect(screen.queryByText(/إغلاق أغسطس 2026/)).not.toBeInTheDocument()
+  })
+
+  it('يظهر قسم الشهر المحاسبي في الرحلة طويلة المدى', async () => {
+    h.tripType = 'long_term'
+    render(<App />)
+
+    expect(await screen.findByText('الشهر المحاسبي')).toBeInTheDocument()
+    expect(screen.getByText('أغسطس 2026')).toBeInTheDocument()
+    // لم يُغلق شهر بعد — تُعرض الحقيقة كما هي لا شهرٌ مُفترض.
+    expect(screen.getByText('لم يُغلق شهر بعد')).toBeInTheDocument()
+  })
+
+  it('زرّ إغلاق الشهر لا يظهر لعضو عادي، ويظهر للمنظّم', async () => {
+    h.tripType = 'long_term'
+    h.isOrganizer = false
+    const { unmount } = render(<App />)
+    await screen.findByText('الشهر المحاسبي')
+    expect(screen.queryByRole('button', { name: /إغلاق أغسطس 2026/ })).not.toBeInTheDocument()
+    unmount()
+
+    h.isOrganizer = true
+    render(<App />)
+    await screen.findByText('الشهر المحاسبي')
+    expect(screen.getByRole('button', { name: /إغلاق أغسطس 2026/ })).toBeInTheDocument()
   })
 })

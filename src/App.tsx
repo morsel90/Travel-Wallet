@@ -29,6 +29,7 @@ import { StatusBanners }    from './components/StatusBanners'
 import { TravelersPanel }   from './components/TravelersPanel'
 import { ChartsPanel }      from './components/ChartsPanel'
 import { ExpensesPanel }    from './components/ExpensesPanel'
+import { LongTermPanel }    from './components/longterm/LongTermPanel'
 
 // 🆕 بروفايل المستخدم العام — يُعرض هنا لا داخل ModalManager عمداً: مستقل عن
 // أي رحلة، ويجب أن يبقى متاحاً حتى في شاشات لا يصل إليها ModalManager (مثل
@@ -46,7 +47,7 @@ const UserProfileModal = lazy(() => import('./components/modals/UserProfileModal
 export default function App() {
   const {
     session, ledger, trip, rates, status, picker, tripAdminPanel, filter, modals, expense, traveler, deposit, admin, invite,
-    profile, isSavingProfile, saveProfile, organizerBank,
+    profile, isSavingProfile, saveProfile, organizerBank, longTerm, requestDeleteTraveler,
   } = useAppCoordinator()
 
   // نسخة محلية ليضيّق TypeScript نوعها: الوصول عبر `expense.expenseToDelete`
@@ -126,7 +127,7 @@ export default function App() {
         startEditExpense={expense.startEditExpense}
         requestDeleteExpense={expense.requestDeleteExpense}
         openDeposit={modals.openDeposit}
-        requestDeleteTraveler={modals.openDeleteTraveler}
+        requestDeleteTraveler={requestDeleteTraveler}
         openDepositHistory={modals.openDepositHistory}
         expenseForm={expense.newExpense}
         setExpenseForm={expense.setNewExpense}
@@ -204,6 +205,23 @@ export default function App() {
                   spendingTrend={ledger.spendingTrend}
                 />
   
+                {/* 🆕 الرحلات طويلة المدى — شرط واحد لا أكثر، ومكوّن مستقل
+                    تماماً. `longTerm` هي null في الرحلة القياسية (انظر
+                    useAppCoordinator.ts)، فلا يُقيَّم شيء من هذه الميزة فيها. */}
+                {longTerm && (
+                  <LongTermPanel
+                    period={longTerm.period}
+                    lastClosedPeriod={longTerm.lastClosedPeriod}
+                    balances={ledger.travelersPanelBalances}
+                    periodTotal={longTerm.periodTotal}
+                    periodCount={longTerm.periodCount}
+                    canManage={longTerm.canManage}
+                    isBusy={longTerm.isClosingMonth || longTerm.isExitingTraveler}
+                    onCloseMonth={longTerm.openRollover}
+                    onExitTraveler={longTerm.openExitTraveler}
+                  />
+                )}
+
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   <div className="space-y-6 lg:col-span-1">
                     {/* نموذج المصروف يختفي كلياً في الرحلة المنتهية/المؤرشفة.
@@ -296,6 +314,16 @@ export default function App() {
                 onRevokeInvite: tripAdminPanel.revokeInvite,
                 showToast: status.showToast,
               }}
+              // 🆕 غير مُمرَّرة إطلاقاً في الرحلة القياسية — وهو ما يجعل
+              // مودالَي الترحيل/الخروج غير قابلين للعرض فيها بنيوياً، لا بشرط.
+              longTerm={longTerm ? {
+                period: longTerm.period,
+                movements: longTerm.movements,
+                isClosingMonth: longTerm.isClosingMonth,
+                isExitingTraveler: longTerm.isExitingTraveler,
+                onConfirmRollover: longTerm.onConfirmRollover,
+                onConfirmExit: longTerm.onConfirmExit,
+              } : undefined}
             />
   
             <AnimatePresence>

@@ -732,6 +732,76 @@ describe('إدارة الرحلات — trips/{tripId}', () => {
     })
   })
 
+  // ─── 🆕 الرحلات طويلة المدى ───────────────────────────────────────────────
+  //
+  // ⚠️ **الاختبار الحاكم هنا هو «لا يمكن إرجاع lastClosedPeriod»**، وليس
+  // شكلياً: العميل الذي يستطيع إرجاع هذا الحقل شهراً للوراء يستطيع دفع
+  // closeMonth لإعادة ترحيل نفس الشهر، فيتضاعف الرصيد المُرحَّل لكل عضو. هذه
+  // ثغرة مالية لا تجميلية، وحارسها الأول هذه القاعدة (والثاني داخل الدالة).
+  describe('نوع الرحلة وسجلّ الترحيل الشهري', () => {
+    it('المسؤول ومنظّم الرحلة يستطيعان تحويلها إلى long_term', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'انتداب' }))
+      await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { tripType: 'long_term' }, { merge: true }))
+
+      await seedOrganizer('organizer-1')
+      await assertSucceeds(setDoc(tripConfigDoc(organizerDb()), { tripType: 'long_term' }, { merge: true }))
+    })
+
+    it('نوع رحلة غير معروف يُرفض حتى من المسؤول', async () => {
+      await assertFails(setDoc(tripConfigDoc(adminDb()), { tripType: 'monthly' }, { merge: true }))
+      await assertFails(setDoc(tripConfigDoc(adminDb()), { tripType: true }, { merge: true }))
+    })
+
+    // نفس فخّ createdByUid/organizerUid/bankDetails بالضبط — أُدرجت الحقول
+    // الأربعة في hasOnly تحديداً لأن merge:true يُقيَّم بالمستند الناتج الكامل.
+    it('تعديل رحلة أُغلق فيها شهر (تحمل حقول الترحيل) ينجح ولا يُرفض بسببها', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), {
+        name: 'انتداب',
+        tripType: 'long_term',
+        currentPeriod: '2026-09',
+        lastClosedPeriod: '2026-08',
+        lastClosedAt: 1_700_000_000_000,
+      }))
+      await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { name: 'اسم جديد' }, { merge: true }))
+
+      await seedOrganizer('organizer-1')
+      await assertSucceeds(setDoc(tripConfigDoc(organizerDb()), { name: 'اسم أحدث' }, { merge: true }))
+    })
+
+    it('لا يمكن إرجاع lastClosedPeriod — لا للمسؤول ولا للمنظّم (منع الترحيل المزدوج)', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), {
+        name: 'انتداب', tripType: 'long_term',
+        currentPeriod: '2026-09', lastClosedPeriod: '2026-08',
+      }))
+      await assertFails(setDoc(tripConfigDoc(adminDb()), { lastClosedPeriod: '2026-07' }, { merge: true }))
+
+      await seedOrganizer('organizer-1')
+      await assertFails(setDoc(tripConfigDoc(organizerDb()), { lastClosedPeriod: '2026-07' }, { merge: true }))
+    })
+
+    it('لا يمكن تحريك currentPeriod ولا lastClosedAt من العميل — closeMonth وحدها تكتبهما', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), {
+        name: 'انتداب', tripType: 'long_term',
+        currentPeriod: '2026-09', lastClosedAt: 1_700_000_000_000,
+      }))
+      await assertFails(setDoc(tripConfigDoc(adminDb()), { currentPeriod: '2026-08' }, { merge: true }))
+      await assertFails(setDoc(tripConfigDoc(adminDb()), { lastClosedAt: 1 }, { merge: true }))
+    })
+
+    it('مفتاح شهر غير صالح يُرفض — الشهر مقيَّد بـ 01..12 لا برقمين أيَّين كانا', async () => {
+      await assertFails(setDoc(tripConfigDoc(adminDb()), { currentPeriod: '2026-13' }, { merge: true }))
+      await assertFails(setDoc(tripConfigDoc(adminDb()), { currentPeriod: '2026-00' }, { merge: true }))
+      await assertFails(setDoc(tripConfigDoc(adminDb()), { currentPeriod: '2026-8' }, { merge: true }))
+      await assertFails(setDoc(tripConfigDoc(adminDb()), { currentPeriod: 202608 }, { merge: true }))
+    })
+
+    // التوافق الخلفي: رحلة قياسية قائمة لا تحمل أياً من هذه الحقول ولا تتأثر.
+    it('رحلة بلا أي من حقول الترحيل تُعدَّل بلا قيد عليها', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة قياسية' }))
+      await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { name: 'اسم جديد' }, { merge: true }))
+    })
+  })
+
   // ⚠️ يبقى الحذف ممنوعاً على العميل حتى بعد إضافة «حذف رحلة» للواجهة: الحذف
   // يمرّ حصراً عبر manageTrip (Cloud Function بصلاحيات Admin SDK تتجاوز القواعد)،
   // وهناك يُفرض شرط أن تكون الرحلة فارغة. لو سُمح للعميل بالحذف مباشرةً لأمكن

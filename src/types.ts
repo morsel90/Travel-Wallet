@@ -286,3 +286,68 @@ export interface UserProfile {
    */
   organizesTripIds?: string[]
 }
+// ─── نوع الرحلة: قياسية أم طويلة المدى ───────────────────────────────────────
+// 🆕 مخزَّن في trips/{tripId}.tripType ومسموح به في firestore.rules
+// (isValidTripConfig). يفصل بين نمطين مختلفين جوهرياً:
+//
+//   standard  → رحلة قصيرة لها بداية ونهاية. الدفتر كله فترة واحدة، وينتهي
+//               بتسوية واحدة. هذا سلوك التطبيق منذ البداية وكل الرحلات القائمة.
+//   long_term → انتداب/إقامة طويلة بلا نهاية معروفة. الدفتر مستمر، ويُقسَّم
+//               إلى **شهور** تُغلق واحداً تلو الآخر بترحيل الرصيد (انظر
+//               utils/longTerm.ts وcloseMonth في functions/index.js).
+//
+// ⚠️ غياب الحقل = standard، تماماً كغياب `status` = active وغياب `role` =
+// member. كل رحلة أُنشئت قبل هذه الميزة بلا الحقل، ولو عُوملت كطويلة المدى
+// لظهرت لكل مسافريها واجهة إغلاق شهر لا معنى لها. **لا ترحيل بيانات مطلوب** —
+// لا هنا ولا في القواعد.
+//
+// ⚠️ وهذا الحقل **ليس صلاحية ولا قيداً أمنياً** — هو وصف لنمط الرحلة. ما يفرضه
+// فعلاً: أن دوال الترحيل (closeMonth/exitTraveler) ترفض العمل على رحلة قياسية،
+// وأن الواجهة تفتح مكوّنات مستقلة كلياً (components/longterm/) بدل تكديس شروط
+// داخل مكوّنات الرحلة القياسية الناضجة.
+export type TripType = 'standard' | 'long_term'
+
+export const TRIP_TYPE_LABEL: Record<TripType, string> = {
+  standard:  'رحلة قياسية',
+  long_term: 'انتداب طويل المدى',
+}
+
+/**
+ * 🆕 مفتاح الشهر المحاسبي بصيغة `YYYY-MM` — الوحدة التي تُغلق ويُرحَّل رصيدها.
+ * نص لا كائن تاريخ عمداً: يُقارن ويُرتَّب معجمياً، ويُطابق بادئة `Expense.date`
+ * (‏`YYYY-MM-DD`) مباشرةً بلا أي تحويل منطقة زمنية. انظر utils/period.ts.
+ */
+export type PeriodKey = string
+
+/**
+ * 🆕 حركة واحدة ضمن خطة ترحيل شهر — ما سيحدث لمسافر واحد عند الإغلاق.
+ *
+ * ⚠️ هذه **معاينة (preview) لا أمر تنفيذ**. الخطة الفعلية تُحسب من جديد داخل
+ * closeMonth (functions/index.js) على بيانات الخادم لحظة التنفيذ، ولا تُرسَل
+ * من العميل إطلاقاً — وإلا لأصبح المتصفح قادراً على إملاء حركات مالية.
+ */
+export interface RolloverMovement {
+  travelerId: number
+  travelerName: string
+  /** رصيد المسافر لحظة الإغلاق: موجب = له، سالب = عليه. */
+  remaining: number
+  /**
+   * `credit` → له رصيد: يُصفَّر بمصروف تسوية في الشهر المنتهي، ويُفتح الشهر
+   * الجديد بإيداع بنفس القيمة.
+   * `debt` → عليه عجز: يُصفَّر بإيداع تسوية في الشهر المنتهي، ويُفتح الشهر
+   * الجديد بمصروف بنفس القيمة.
+   * `settled` → رصيده صفر عملياً؛ لا حركة له إطلاقاً.
+   */
+  direction: 'credit' | 'debt' | 'settled'
+}
+
+/** 🆕 ناتج استدعاء closeMonth — ما نُفِّذ فعلاً، لا ما كان مُتوقَّعاً. */
+export interface RolloverResult {
+  success: boolean
+  tripId: string
+  closedPeriod: PeriodKey
+  openedPeriod: PeriodKey
+  movements: RolloverMovement[]
+  /** عدد المستندات المكتوبة فعلاً — مصاريف التسوية + حركات الإيداع. */
+  written: { expenses: number; deposits: number }
+}

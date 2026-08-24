@@ -8,6 +8,54 @@
 
 Decisions that look like oversights but are not. Read this before "fixing" them.
 
+### 🆕 Monthly rollover is a Cloud Function because the client *cannot* do it — not because a server is tidier
+
+The feature was specified as a client-side `writeBatch`. That batch cannot commit under this project's own rules, and three independent reasons each kill it on their own:
+
+1. `travelers` allows `update: if isAdmin()`. The trip **organizer** — precisely the person who closes the month — cannot write `deposited` from a browser at all.
+2. `depositLogs` allows `create: if isAdmin()` too, and `utils/deposits.ts` establishes that every change to `deposited` must leave an audit line. No client path satisfies both.
+3. `withinExpenseRateLimit` caps non-admins at one expense per second. Rolling over twenty members means twenty expenses in one batch.
+
+Admin SDK bypasses all three. The transaction adds the fourth thing a batch could not guarantee anyway: **atomicity across "zero out" and "reopen."** A browser tab closed mid-batch leaves members zeroed with no opening balance — money missing from the ledger, silently.
+
+**No client rule was weakened to make this work.** That was the alternative on the table, and it would have traded a permanent hole (any member writing `deposited` directly) for a feature used once a month.
+
+### 🆕 Rollover deliberately changes nobody's net balance — that is the whole design, not a limitation
+
+The ledger is cumulative and has no concept of months: `remaining = deposited + paid-out-of-pocket − share of expenses`. So closing a month **must** be net-zero, and the two movements are built to cancel exactly:
+
+| balance | closing (last day of month) | opening (first day of next) |
+|---|---|---|
+| credit (`+`) | expense consuming it → 0 | deposit of the same value |
+| debt (`−`) | deposit clearing it → 0 | expense re-applying it |
+
+What it buys is the **line between the months**: filter expenses by the closed month's dates and every member reads exactly zero; the new month opens with an explicit, dated carried figure. Both directions reuse only the two mechanisms that already exist — a normal expense and an audited deposit movement — which is why this shipped with **zero schema change** to expenses, travelers, or deposit logs, and zero rule changes to any of them.
+
+Two consequences follow, and both are intentional:
+
+- Expense rules forbid `amount < 0`, so the debt case **inverts the order** of the same two mechanisms rather than writing a negative expense or adding a field.
+- Rollover expenses are identified by a reserved `category` value (`تسوية شهرية`), not a new boolean. A category costs nothing — the field already exists and is already optional.
+
+### 🆕 The double-rollover guard is threefold because a second run doubles everyone's balance
+
+This is the one failure in this feature with real financial consequence, so no single guard carries it:
+
+1. `period > lastClosedPeriod` inside `closeMonth` — lexicographic comparison of `YYYY-MM` *is* chronological comparison, which is why the period key is a string and not a `Date` (see `utils/period.ts` for the timezone trap that motivated it).
+2. The trip doc is re-read **inside** the transaction before writing, catching two simultaneous clicks from different tabs.
+3. `firestore.rules` refuses any client write to `lastClosedPeriod` / `currentPeriod` / `lastClosedAt` — admin and organizer alike. Only `closeMonth` writes them.
+
+Guard 3 was verified by deleting it and confirming exactly one test out of 119 failed (guideline 18), then restoring it.
+
+⚠️ And all four rollover fields sit in `isValidTripConfig`'s `hasOnly` list even though the client writes only `tripType`. This is the same trap already documented for `createdByUid`, `organizerUid`, and `bankDetails`: a `merge: true` write is evaluated against the **complete resulting document**, so omitting them would not block rollover — it would block **every later edit** to any trip that has ever closed a month.
+
+### 🆕 Exit blocking lives in the function; the client check is an optional parameter, not a condition
+
+`exitTraveler` recomputes the balance server-side and refuses a non-settled exit, naming the amount and direction. The client's `describeExitBlockFor` is an **optional** parameter of `useTravelerActions` — passed only by long-term trips. Its absence *is* standard-trip behaviour, which is why all 25 pre-existing traveler tests pass unmodified.
+
+This shape was chosen over an `if (tripType === 'long_term')` inside the hook on purpose: a condition inside mature code is a thing that can be evaluated wrongly; an argument that is never supplied cannot be.
+
+The same reasoning drives the UI split — `LongTermPanel` is a separate component behind one condition in `App.tsx`, and `ModalManager` receives no long-term props at all in a standard trip, so those modals are structurally unreachable there rather than conditionally hidden.
+
 ### Optimistic updates roll back automatically — do not build a retry queue
 
 `firebase.ts` enables `persistentLocalCache`, and that is the rollback mechanism. On every write the Firestore SDK:

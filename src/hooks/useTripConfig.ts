@@ -4,7 +4,9 @@ import type { User } from 'firebase/auth'
 import { tripConfigDoc } from '../firestore'
 import { normalizeItinerary } from '../utils/itinerary'
 import { normalizeTripStatus } from '../utils/tripStatus'
-import type { ItinerarySegment, TripStatus } from '../types'
+import { normalizeTripType } from '../utils/tripType'
+import { normalizePeriodKey, isValidPeriodKey } from '../utils/period'
+import type { ItinerarySegment, PeriodKey, TripStatus, TripType } from '../types'
 
 // ─── useTripConfig ──────────────────────────────────────────────────────────
 // 🆕 دعم رحلات متعددة: اسم الرحلة ومسارها لم يعودا ثابتَين بالكود لكل الرحلات
@@ -32,9 +34,30 @@ export interface TripConfig {
    * رجعي لرحلة لم تُلمَس منذ هذه الميزة (نفس فلسفة organizerUid/createdByUid).
    */
   statusChangedAt?: number
+  /**
+   * 🆕 نمط الرحلة — غيابه يعني `standard` (انظر utils/tripType.ts). هذا الحقل
+   * وحده هو ما يفتح مكوّنات components/longterm/؛ لا شرط آخر في الواجهة.
+   */
+  tripType: TripType
+  /**
+   * 🆕 الشهر المحاسبي المفتوح حالياً (`YYYY-MM`) — للرحلات الطويلة وحدها.
+   * غيابه يُطبَّع إلى الشهر الميلادي الجاري، فرحلة حُوِّلت للتو إلى long_term
+   * تعمل فوراً بلا أي كتابة تمهيدية. لا معنى له في الرحلة القياسية ولا يُقرأ فيها.
+   */
+  currentPeriod: PeriodKey
+  /** 🆕 آخر شهر أُغلق فعلاً — غيابه يعني «لم يُغلق أي شهر بعد»، لا شهراً بعينه. */
+  lastClosedPeriod?: PeriodKey
+  /** 🆕 متى نُفِّذ آخر إغلاق. غيابه «غير معروف» لا «الآن» — نفس مبدأ statusChangedAt. */
+  lastClosedAt?: number
 }
 
-const FALLBACK_CONFIG: TripConfig = { tripName: null, status: 'active' }
+const FALLBACK_CONFIG: TripConfig = {
+  tripName: null,
+  status: 'active',
+  // ⚠️ رحلة بلا مستند إعدادات هي رحلة قياسية بالتعريف — لا واجهة ترحيل لها.
+  tripType: 'standard',
+  currentPeriod: normalizePeriodKey(undefined),
+}
 
 // 🆕 مرّر hasAccess ? user : null من App.tsx (تماماً كما مع useTravelers/
 // useExpenses) — وليس user مباشرة. وإلا فمحاولة القراءة الأولى (قبل التحقق من
@@ -66,6 +89,10 @@ export function useTripConfig(user: User | null): TripConfig {
           itinerary?: unknown
           status?: unknown
           statusChangedAt?: unknown
+          tripType?: unknown
+          currentPeriod?: unknown
+          lastClosedPeriod?: unknown
+          lastClosedAt?: unknown
         }
 
         // normalizeItinerary تُسقط أي مقطع تالف وترتّب الباقي زمنياً — القواعد
@@ -78,6 +105,13 @@ export function useTripConfig(user: User | null): TripConfig {
           itinerary: itinerary.length > 0 ? itinerary : undefined,
           status: normalizeTripStatus(data.status),
           statusChangedAt: typeof data.statusChangedAt === 'number' ? data.statusChangedAt : undefined,
+          tripType: normalizeTripType(data.tripType),
+          currentPeriod: normalizePeriodKey(data.currentPeriod),
+          // ⚠️ لا تطبيع بالسقوط للشهر الجاري هنا: «لم يُغلق شيء بعد» معلومة
+          // حقيقية مختلفة تماماً عن «أُغلق الشهر الجاري»، والخلط بينهما يجعل
+          // زرّ الإغلاق يبدو منفَّذاً في رحلة لم تُغلق شهراً قط.
+          lastClosedPeriod: isValidPeriodKey(data.lastClosedPeriod) ? data.lastClosedPeriod : undefined,
+          lastClosedAt: typeof data.lastClosedAt === 'number' ? data.lastClosedAt : undefined,
         })
       },
       err => {

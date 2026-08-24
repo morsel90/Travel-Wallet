@@ -223,15 +223,45 @@ service cloud.firestore {
     // أيضاً advanceTripLifecycle (functions/index.js) عبر Admin SDK عند
     // الانتقال التلقائي — الأثر مطابق أياً كان الكاتب: بداية عدّاد "منذ متى
     // وهي بهذه الحالة"، تستهلكه لاحقاً أهلية الحذف النهائي (المرحلة ٢).
+    // 🆕 tripType/currentPeriod/lastClosedPeriod/lastClosedAt — الرحلات طويلة
+    // المدى (انظر src/types.ts: TripType وsrc/utils/period.ts).
+    //
+    // ⚠️ **الأربعة في hasOnly ولو لم يكتبها العميل** — نفس فخّ createdByUid
+    // وbankDetails الموثّق أعلاه بالحرف: كتابة merge:true (تعديل اسم الرحلة
+    // مثلاً) تُقيَّم بالمستند الناتج **الكامل**، فتظهر فيها حقول كتبتها
+    // closeMonth عبر Admin SDK ولم تلمسها تلك الكتابة إطلاقاً. إغفال أيٍّ منها
+    // هنا لا يمنع الترحيل — بل يمنع **كل تعديل لاحق** على أي رحلة سبق أن أُغلق
+    // فيها شهر، وهو عطل يظهر بعد أسابيع من النشر لا عنده.
+    //
+    // ⚠️ وثلاثة منها (currentPeriod/lastClosedPeriod/lastClosedAt) لا يكتبها
+    // العميل عملياً أبداً — تُكتب داخل closeMonth حصراً. ثباتها مفروض في
+    // allow update أدناه لا هنا، لأن الشرط يقارن بالمستند القائم لا بشكله.
     function isValidTripConfig(d) {
-      return d.keys().hasOnly(['name', 'itinerary', 'status', 'statusChangedAt', 'createdByUid', 'organizerUid', 'bankDetails'])
+      return d.keys().hasOnly([
+               'name', 'itinerary', 'status', 'statusChangedAt', 'createdByUid', 'organizerUid', 'bankDetails',
+               'tripType', 'currentPeriod', 'lastClosedPeriod', 'lastClosedAt'
+             ])
         && (!('name' in d) || (d.name is string && d.name.size() <= 100))
         && (!('itinerary' in d) || (d.itinerary is list && d.itinerary.size() <= 50))
         && (!('bankDetails' in d) || isValidBankDetails(d.bankDetails))
         && (!('status' in d) || d.status in ['active', 'completed', 'archived'])
         && (!('statusChangedAt' in d) || d.statusChangedAt is number)
         && (!('createdByUid' in d) || d.createdByUid is string)
-        && (!('organizerUid' in d) || d.organizerUid is string);
+        && (!('organizerUid' in d) || d.organizerUid is string)
+        // غياب الحقل = 'standard' (نفس مبدأ غياب status = active) — لا ترحيل بيانات.
+        && (!('tripType' in d) || d.tripType in ['standard', 'long_term'])
+        && (!('currentPeriod' in d) || isValidPeriodKey(d.currentPeriod))
+        && (!('lastClosedPeriod' in d) || isValidPeriodKey(d.lastClosedPeriod))
+        && (!('lastClosedAt' in d) || d.lastClosedAt is number);
+    }
+
+    // 🆕 مفتاح الشهر المحاسبي `YYYY-MM` — نفس النمط الذي تفرضه
+    // src/utils/period.ts (PERIOD_KEY_PATTERN) وfunctions/index.js
+    // (PERIOD_KEY_PATTERN) حرفياً. الشهر مقيَّد بـ 01..12 لا `\d{2}` عمداً:
+    // «2026-13» نص يطابق الطول ولا يوجد له شهر، ويُفسد كل مقارنة معجمية بُنيت
+    // على أن الترتيب النصي هو الترتيب الزمني.
+    function isValidPeriodKey(v) {
+      return v is string && v.matches('^[0-9]{4}-(0[1-9]|1[0-2])$');
     }
 
     // ─── دورة حياة الرحلة ────────────────────────────────────────────────────
@@ -476,11 +506,23 @@ service cloud.firestore {
       // للمسؤول ولا للمنظّم؛ كلاهما تكتبهما الدوال حصراً (manageTrip/manageMember
       // عبر Admin SDK، يتجاوز هذا القيد أصلاً). نفس مبدأ ثبات createdByUid على
       // المصاريف. resource.data بلا الحقل يعني رحلة لا تحمله بعد، فلا قيد عليها.
+      // 🆕 وسجلّ الترحيل الشهري كذلك: currentPeriod/lastClosedPeriod/lastClosedAt
+      // لا يغيّرها عميل مهما كانت صفته — تكتبها closeMonth حصراً عبر Admin SDK
+      // (يتجاوز هذه القواعد أصلاً). وهذا ليس تجميلاً: العميل الذي يستطيع إرجاع
+      // lastClosedPeriod شهراً للوراء يستطيع **إعادة ترحيل نفس الشهر مرتين**،
+      // فيتضاعف رصيد كل عضو مُرحَّل. الحارس الثاني (period > lastClosedPeriod)
+      // داخل closeMonth نفسها — لا نعتمد على واحد منهما وحده.
       allow update: if (isAdmin() || isOrganizer(tripId)) && isValidTripConfig(request.resource.data)
         && (!('createdByUid' in resource.data)
             || (('createdByUid' in request.resource.data) && request.resource.data.createdByUid == resource.data.createdByUid))
         && (!('organizerUid' in resource.data)
-            || (('organizerUid' in request.resource.data) && request.resource.data.organizerUid == resource.data.organizerUid));
+            || (('organizerUid' in request.resource.data) && request.resource.data.organizerUid == resource.data.organizerUid))
+        && (!('currentPeriod' in resource.data)
+            || (('currentPeriod' in request.resource.data) && request.resource.data.currentPeriod == resource.data.currentPeriod))
+        && (!('lastClosedPeriod' in resource.data)
+            || (('lastClosedPeriod' in request.resource.data) && request.resource.data.lastClosedPeriod == resource.data.lastClosedPeriod))
+        && (!('lastClosedAt' in resource.data)
+            || (('lastClosedAt' in request.resource.data) && request.resource.data.lastClosedAt == resource.data.lastClosedAt));
       allow delete: if false;
 
       // ─── 🆕 سجلّ عضوية الرحلة ───────────────────────────────────────────────
