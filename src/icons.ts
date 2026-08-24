@@ -60,4 +60,7 @@ export {
   LogOut,       // 🆕 «تسجيل الخروج» في AccountMenu — متاح لأي مستخدم مسجّل دخوله
   ChevronDown,  // 🆕 مؤشّر فتح/إغلاق AccountMenu
   Tag,          // 🆕 محدد الفئة المدمج بجانب الوصف في ExpenseForm (إعادة تصميم Progressive Disclosure)
+  CalendarCheck, // 🆕 إغلاق الشهر المحاسبي في الرحلات طويلة المدى (LongTermPanel)
+  CalendarClock, // 🆕 رأس قسم «الشهر المحاسبي» (LongTermPanel)
+  DoorOpen,      // 🆕 خروج منتدَب من رحلة طويلة المدى (ExitTravelerModal)
 } from 'lucide-react'

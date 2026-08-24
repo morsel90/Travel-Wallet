@@ -6,7 +6,7 @@
 // ملاحظة نطاق: تأكيد حذف المصروف يبقى ضمن useExpenseActions، وتسجيل دخول المسؤول ضمن
 // useAdminAuth — لأن لكلٍّ منهما حالته الخاصة المرتبطة بنطاقه؛ هذا الـ hook يوحّد بقية المودالات.
 import { useReducer, useCallback } from 'react'
-import type { Traveler } from '../types'
+import type { Traveler, TravelerBalance } from '../types'
 
 export type ModalState =
   | { type: 'none' }
@@ -17,6 +17,11 @@ export type ModalState =
   | { type: 'deposit';         traveler: Traveler }
   | { type: 'depositHistory';  traveler: Traveler }
   | { type: 'userProfile' } // 🆕 بروفايل المستخدم العام (اسم/بنك) — مستقل عن أي رحلة
+  // 🆕 الرحلات طويلة المدى — لا تُفتح إطلاقاً في رحلة قياسية (App.tsx لا يعرض
+  // القسم الذي يفتحهما أصلاً). التسجيل هنا لأن القاعدة ٧ تفرض أن كل مودال عام
+  // يعيش في هذا الاتحاد لا في حالة منفصلة تسمح بمودالين مفتوحين معاً.
+  | { type: 'monthlyRollover' }
+  | { type: 'exitTraveler'; traveler: TravelerBalance }
 
 type ModalAction =
   | { type: 'OPEN_REPORTS' }
@@ -26,6 +31,8 @@ type ModalAction =
   | { type: 'OPEN_DEPOSIT';          traveler: Traveler }
   | { type: 'OPEN_DEPOSIT_HISTORY';  traveler: Traveler }
   | { type: 'OPEN_USER_PROFILE' }
+  | { type: 'OPEN_MONTHLY_ROLLOVER' }
+  | { type: 'OPEN_EXIT_TRAVELER';    traveler: TravelerBalance }
   | { type: 'CLOSE' }
 
 const CLOSED: ModalState = { type: 'none' }
@@ -39,6 +46,8 @@ function modalReducer(state: ModalState, action: ModalAction): ModalState {
     case 'OPEN_DEPOSIT':         return { type: 'deposit', traveler: action.traveler }
     case 'OPEN_DEPOSIT_HISTORY': return { type: 'depositHistory', traveler: action.traveler }
     case 'OPEN_USER_PROFILE':    return { type: 'userProfile' }
+    case 'OPEN_MONTHLY_ROLLOVER': return { type: 'monthlyRollover' }
+    case 'OPEN_EXIT_TRAVELER':   return { type: 'exitTraveler', traveler: action.traveler }
     case 'CLOSE':                return CLOSED
     default:                     return state
   }
@@ -54,6 +63,8 @@ export function useModals() {
   const openDeposit        = useCallback((traveler: Traveler) => dispatch({ type: 'OPEN_DEPOSIT', traveler }), [])
   const openDepositHistory = useCallback((traveler: Traveler) => dispatch({ type: 'OPEN_DEPOSIT_HISTORY', traveler }), [])
   const openUserProfile    = useCallback(() => dispatch({ type: 'OPEN_USER_PROFILE' }), [])
+  const openMonthlyRollover = useCallback(() => dispatch({ type: 'OPEN_MONTHLY_ROLLOVER' }), [])
+  const openExitTraveler   = useCallback((traveler: TravelerBalance) => dispatch({ type: 'OPEN_EXIT_TRAVELER', traveler }), [])
   const closeModal         = useCallback(() => dispatch({ type: 'CLOSE' }), [])
 
   return {
@@ -65,6 +76,8 @@ export function useModals() {
     openDeposit,
     openDepositHistory,
     openUserProfile,
+    openMonthlyRollover,
+    openExitTraveler,
     closeModal,
   }
 }

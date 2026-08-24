@@ -24,12 +24,18 @@ const importDepositModal        = () => import('./modals/DepositModal')
 const importTrashBinModal       = () => import('./modals/TrashBinModal')
 const importDepositHistoryModal = () => import('./modals/DepositHistoryModal')
 const importTripAdminView       = () => import('./admin/TripAdminView')
+// 🆕 الرحلات طويلة المدى — مؤجّلان كغيرهما، ولا يُحمَّلان إطلاقاً في رحلة
+// قياسية لأن ما يفتحهما (LongTermPanel) لا يُعرض فيها أصلاً.
+const importMonthlyRolloverModal = () => import('./modals/MonthlyRolloverModal')
+const importExitTravelerModal    = () => import('./modals/ExitTravelerModal')
 
 const ReportsView         = lazy(importReportsView)
 const DepositModal        = lazy(importDepositModal)
 const TrashBinModal       = lazy(importTrashBinModal)
 const DepositHistoryModal = lazy(importDepositHistoryModal)
 const TripAdminView       = lazy(importTripAdminView)
+const MonthlyRolloverModal = lazy(importMonthlyRolloverModal)
+const ExitTravelerModal    = lazy(importExitTravelerModal)
 
 /**
  * 🆕 أجزاء المودالات للتحميل المسبق الهادئ — تُستهلك من App.tsx.
@@ -47,6 +53,8 @@ export const modalImporters = [
   importTrashBinModal,
   importDepositHistoryModal,
   importTripAdminView,
+  importMonthlyRolloverModal,
+  importExitTravelerModal,
 ]
 
 interface ModalManagerProps {
@@ -66,15 +74,29 @@ interface ModalManagerProps {
     'deletedExpenses' | 'deletedTravelers' | 'onRestoreExpense' | 'onRestoreTraveler'>
   // 🆕 إدارة الرحلات — للمسؤول فقط (onClose يُدار داخلياً)
   tripAdmin: Omit<ComponentProps<typeof TripAdminView>, 'onClose'>
+  /**
+   * 🆕 الرحلات طويلة المدى — **اختياري عمداً**: الرحلة القياسية لا تمرّره
+   * إطلاقاً، فلا يمكن أن يُفتح أي من مودالَي الترحيل/الخروج فيها ولو تسلّلت
+   * حالة مودال بطريقة ما. غيابه هو التعطيل، لا شرطٌ في مكان بعيد.
+   */
+  longTerm?: {
+    period: ComponentProps<typeof MonthlyRolloverModal>['period']
+    movements: ComponentProps<typeof MonthlyRolloverModal>['movements']
+    isClosingMonth: boolean
+    isExitingTraveler: boolean
+    onConfirmRollover: () => void
+    onConfirmExit: (travelerId: number, settle: boolean) => void
+  }
 }
 
 export default function ModalManager({
-  modal, closeModal, confirmDeleteTraveler, reports, deposit, closeDeposit, trash, tripAdmin,
+  modal, closeModal, confirmDeleteTraveler, reports, deposit, closeDeposit, trash, tripAdmin, longTerm,
 }: ModalManagerProps) {
   // اشتقاق الحمولة من الحالة كثوابت محلية — يضمن حفظ التضييق (narrowing) داخل الإغلاقات
   const deleteTarget    = modal.type === 'deleteTraveler'  ? modal.traveler : null
   const depositTraveler = modal.type === 'deposit'         ? modal.traveler : null
   const historyTraveler = modal.type === 'depositHistory'  ? modal.traveler : null
+  const exitTarget      = modal.type === 'exitTraveler'    ? modal.traveler : null
 
   return (
     <>
@@ -130,6 +152,33 @@ export default function ModalManager({
         {modal.type === 'tripAdmin' && (
           <Suspense key="trip-admin" fallback={<ModalFallback />}>
             <TripAdminView {...tripAdmin} onClose={closeModal} />
+          </Suspense>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {longTerm && modal.type === 'monthlyRollover' && (
+          <Suspense key="monthly-rollover" fallback={<ModalFallback />}>
+            <MonthlyRolloverModal
+              period={longTerm.period}
+              movements={longTerm.movements}
+              isSubmitting={longTerm.isClosingMonth}
+              onConfirm={longTerm.onConfirmRollover}
+              onClose={closeModal}
+            />
+          </Suspense>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {longTerm && exitTarget && (
+          <Suspense key="exit-traveler" fallback={<ModalFallback />}>
+            <ExitTravelerModal
+              traveler={exitTarget}
+              isSubmitting={longTerm.isExitingTraveler}
+              onConfirm={(settle) => longTerm.onConfirmExit(exitTarget.id, settle)}
+              onClose={closeModal}
+            />
           </Suspense>
         )}
       </AnimatePresence>

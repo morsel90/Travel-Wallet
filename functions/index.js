@@ -1396,3 +1396,575 @@ exports.advanceTripLifecycle = onSchedule(
 // ليست Cloud Function (لا onCall ولا onSchedule يغلّفها)، فأدوات نشر Firebase
 // تتجاهلها؛ متاحة فقط عبر require('./index.js') المباشر لهذا الملف.
 exports.advanceTripLifecycleLogic = advanceTripLifecycleLogic;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 🆕 الرحلات طويلة المدى — إغلاق الشهر وترحيل الرصيد، وخروج المنتدَبين
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ── لماذا هنا لا في المتصفح؟ ────────────────────────────────────────────────
+// السؤال طُرح صراحةً، وجوابه ليس تفضيلاً معمارياً بل **أن الترحيل من العميل
+// مستحيل التنفيذ أصلاً** بقواعد هذا المشروع القائمة:
+//
+//   ١. `travelers` تقبل `update` بشرط `isAdmin()` وحده (firestore.rules).
+//      منظّم الرحلة — وهو بالضبط من يُغلق الشهر — **لا يستطيع كتابة
+//      `deposited` إطلاقاً**. فالدفعة المجمّعة من متصفحه تُرفض كاملةً.
+//   ٢. `depositLogs` كذلك: `create` بشرط `isAdmin()`. والاتساق المحاسبي
+//      المفروض في utils/deposits.ts يقول إن أي تغيّر في `deposited` يجب أن
+//      يُخلّف سطراً — فلا مسار عميل يرضي القاعدتين معاً.
+//   ٣. إنشاء المصاريف محكوم بـ `withinExpenseRateLimit`: مصروف واحد كل ثانية
+//      لغير المسؤول. ترحيل عشرين عضواً = عشرون مصروفاً في دفعة واحدة، تُرفض.
+//   ٤. وحتى لو سقطت الثلاثة، تبقى الذرّية: «تصفير الشهر» و«افتتاح الشهر
+//      التالي» يجب أن ينجحا معاً أو يفشلا معاً. تبويب متصفح يُغلق في المنتصف
+//      يترك أعضاءً صُفِّروا بلا رصيد افتتاحي — أي **مال اختفى من الدفتر**.
+//
+// Admin SDK يتجاوز القواعد، فتذوب الثلاثة الأولى؛ والمعاملة (transaction)
+// تحسم الرابعة. ولا تُضعَّف أي قاعدة من قواعد العميل لأجل هذه الميزة.
+//
+// ── ما الذي يعنيه «ترحيل الرصيد» في دفتر هذا التطبيق تحديداً؟ ───────────────
+// `remaining = deposited + ما دفعه من جيبه − نصيبه من المصاريف` — دفتر
+// **تراكمي بلا شهور**. فالإغلاق لا يغيّر الرصيد الصافي لأحد، ولا يجوز أن
+// يغيّره: مجموع حركتَي الإغلاق والافتتاح صفر بالضبط على الدفتر الكلّي.
+// ما يفعله فعلاً هو **رسم الخط**: عند تصفية المصاريف بتاريخ الشهر المنتهي
+// يظهر ذلك الشهر مصفَّراً تماماً لكل عضو، ويبدأ الشهر الجديد برصيد مُرحَّل
+// صريح ومؤرَّخ. الحركتان بكلا الاتجاهين تستخدمان الآليتين القائمتين وحدهما
+// (مصروف / حركة إيداع موثّقة) — لا حقل جديد في مخطط المصروف، ولا نوع مستند
+// جديد، ولا تعديل واحد على firestore.rules للمصاريف أو الإيداعات.
+//
+//   له رصيد (credit) → إغلاق: مصروف بقيمة الرصيد بتاريخ آخر يوم في الشهر.
+//                      افتتاح: إيداع بنفس القيمة بتاريخ أول يوم في التالي.
+//   عليه عجز (debt)  → إغلاق: إيداع بقيمة العجز (يُصفّره).
+//                      افتتاح: مصروف بنفس القيمة يُعيد تحميله عليه.
+//
+// ⚠️ المصروف في القواعد `amount >= 0` — لا مبلغ سالب. ولهذا يُقلب الاتجاهان
+// كما أعلاه بدل «مصروف بمبلغ سالب» الذي كان سيُرفض، أو حقل جديد كان سيوسّع
+// مخطط المصروف بلا حاجة.
+
+const PERIOD_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** نظير src/utils/longTerm.ts: ROLLOVER_EPSILON — نفس الهللة، لنفس السبب. */
+const ROLLOVER_EPSILON = 0.01;
+
+/** نظير src/utils/longTerm.ts: ROLLOVER_CATEGORY — يجب أن يتطابق النصّان حرفياً. */
+const ROLLOVER_CATEGORY = 'تسوية شهرية';
+
+/**
+ * حدّ أقصى لعدد المسافرين في ترحيل واحد.
+ *
+ * ⚠️ ليس رقماً اعتباطياً: معاملة Firestore تقبل 500 كتابة كحدّ أقصى، والترحيل
+ * يكتب حتى 3 مستندات لكل مسافر (مصروف + مستند المسافر + سطر تدقيق) زائد مستند
+ * الرحلة. 150 × 3 + 1 = 451، فيبقى هامش. رحلة تتجاوز هذا العدد تُرفض برسالة
+ * صريحة بدل معاملة تفشل بخطأ Firestore خام في منتصف عملية مالية.
+ */
+const MAX_ROLLOVER_TRAVELERS = 150;
+
+function isValidPeriodKeyJs(value) {
+  return typeof value === 'string' && PERIOD_KEY_PATTERN.test(value);
+}
+
+/** نظير currentPeriodKey في src/utils/period.ts — انظر تعليقه عن التوقيت المحلي. */
+function currentPeriodKeyJs(now = new Date()) {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** نظير shiftPeriod/nextPeriod — حساب صحيح على فهرس شهري مطلق، بلا كائن Date. */
+function nextPeriodJs(key) {
+  const year = Number(key.slice(0, 4));
+  const month = Number(key.slice(5, 7));
+  const absolute = year * 12 + (month - 1) + 1;
+  const newYear = Math.floor(absolute / 12);
+  const newMonth = absolute - newYear * 12 + 1;
+  return `${String(newYear).padStart(4, '0')}-${String(newMonth).padStart(2, '0')}`;
+}
+
+function periodStartDateJs(key) {
+  return `${key}-01`;
+}
+
+function periodEndDateJs(key) {
+  const year = Number(key.slice(0, 4));
+  const month = Number(key.slice(5, 7));
+  return `${key}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
+}
+
+const MONTH_NAMES_JS = [
+  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+];
+
+function formatPeriodLabelJs(key) {
+  if (!isValidPeriodKeyJs(key)) return String(key);
+  return `${MONTH_NAMES_JS[Number(key.slice(5, 7)) - 1]} ${key.slice(0, 4)}`;
+}
+
+// ─── نظير حساب الأرصدة (src/utils/calculations.ts) ──────────────────────────
+//
+// ⚠️ **تكرار مقصود وموثّق، على نمط deriveShortNameJs/isValidExpenseJs/
+// tripEndTimeJs أعلاه**: هذا الملف يُنشر كحزمة npm مستقلة إلى Cloud Functions،
+// ولا حزمة بناء مشتركة بينه وبين مصدر العميل المبنيّ بـ Vite. ما يمنع
+// الانحراف هنا هو أن الاختبارات على الجانبين تقيس نفس السلوك على نفس
+// الأمثلة: src/utils/calculations.test.ts + calculations.invariants.test.ts
+// على العميل، وe2e/long-term-rollover.spec.ts على هذا المسار كاملاً.
+//
+// ⚠️ وكل تحصينات القاعدة ١٩ منسوخة كما هي لا مبسَّطة: مبلغ غير منتهٍ يُعامَل
+// صفراً، والوزن غير المنتهي يُعامَل 1. حذفها هنا يعني أن مستند مصروف تالف
+// واحد يُنتج رصيداً `NaN` ثم **حركة مالية بمبلغ NaN** — أخطر بما لا يُقاس من
+// أثره على العميل (عرض مشوّه يُصلحه تحديث الصفحة).
+
+function splitEvenJs(total, n) {
+  if (n <= 0) return [];
+  if (!Number.isFinite(total)) return Array.from({ length: n }, () => 0);
+  const totalHalalas = Math.round(total * 100);
+  const base = Math.floor(totalHalalas / n);
+  const remainder = totalHalalas - base * n;
+  return Array.from({ length: n }, (_, i) => (base + (i < remainder ? 1 : 0)) / 100);
+}
+
+function splitBySharesJs(total, participantIds, shares) {
+  const n = participantIds.length;
+  if (n <= 0) return [];
+  if (!Number.isFinite(total)) return Array.from({ length: n }, () => 0);
+  if (!shares || Object.keys(shares).length === 0) return splitEvenJs(total, n);
+
+  const weights = participantIds.map((id) => {
+    const w = shares[String(id)];
+    return Number.isFinite(w) && w > 0 ? w : 1;
+  });
+  const totalWeight = weights.reduce((s, w) => s + w, 0);
+  if (!Number.isFinite(totalWeight) || totalWeight <= 0) return splitEvenJs(total, n);
+
+  const totalHalalas = Math.round(total * 100);
+  const rawShares = weights.map((w) => (totalHalalas * w) / totalWeight);
+  const floorShares = rawShares.map(Math.floor);
+  const distributed = floorShares.reduce((s, v) => s + v, 0);
+  const remainder = totalHalalas - distributed;
+
+  const order = rawShares
+    .map((v, i) => ({ i, frac: v - floorShares[i] }))
+    .sort((a, b) => b.frac - a.frac);
+
+  const halalas = [...floorShares];
+  for (let k = 0; k < remainder && order.length > 0; k++) {
+    halalas[order[k % order.length].i] += 1;
+  }
+  return halalas.map((h) => h / 100);
+}
+
+/**
+ * نظير calculateBalances — يُرجع خريطة { [travelerId]: remaining }.
+ *
+ * ⚠️ يُبسَّط عن نظيره في شيء واحد فقط: مطابقة المشارك بمعرّفه الرقمي مباشرةً
+ * بدل matchesTraveler (التي تقبل الاسم المختصر أيضاً لمصاريف قديمة جداً).
+ * وهذا مقصود ومحدود الأثر: مصروف قديم يشارك فيه مسافر بالاسم لا بالمعرّف
+ * يُهمَل نصيبه هنا فيظهر رصيد ذلك المسافر **أعلى** مما هو — ونحن نُرحّل رصيداً
+ * أعلى، لا أقل. أي أن أسوأ أثر ممكن هو ترحيل زائد مرئي ومراجَع، لا نقص صامت.
+ */
+function calculateRemainingByTravelerJs(travelers, expenses) {
+  const remaining = new Map();
+  travelers.forEach((t) => {
+    remaining.set(t.id, Number.isFinite(t.deposited) ? t.deposited : 0);
+  });
+
+  expenses.forEach((exp) => {
+    if (typeof exp.paidBy === 'number' && remaining.has(exp.paidBy)) {
+      remaining.set(exp.paidBy, remaining.get(exp.paidBy) + (Number.isFinite(exp.amount) ? exp.amount : 0));
+    }
+
+    const participants = Array.isArray(exp.participants) ? exp.participants : [];
+    if (participants.length === 0) return;
+    const shares = splitBySharesJs(exp.amount, participants, exp.shares);
+    participants.forEach((p, i) => {
+      if (remaining.has(p)) remaining.set(p, remaining.get(p) - shares[i]);
+    });
+  });
+
+  return remaining;
+}
+
+/** نظير settlementDirection في src/utils/longTerm.ts. */
+function settlementDirectionJs(value) {
+  if (!Number.isFinite(value) || Math.abs(value) <= ROLLOVER_EPSILON) return 'settled';
+  return value > 0 ? 'credit' : 'debt';
+}
+
+/**
+ * الحارس المشترك بين closeMonth وexitTraveler: يقرأ الرحلة ويتحقّق أنها رحلة
+ * طويلة المدى نشطة يديرها المتصل. يُعيد بيانات الرحلة ومرجعها.
+ */
+async function requireManagedLongTermTrip(tripId, auth) {
+  if (!(await callerManagesTrip(tripId, auth))) {
+    throw new HttpsError('permission-denied', 'هذه العملية متاحة لمنظّم الرحلة أو المسؤول فقط.');
+  }
+
+  const tripRef = db.collection('trips').doc(tripId);
+  const tripSnap = await tripRef.get();
+  if (!tripSnap.exists) {
+    throw new HttpsError('not-found', `الرحلة "${tripId}" غير موجودة.`);
+  }
+
+  const trip = tripSnap.data();
+  if ((trip.tripType || 'standard') !== 'long_term') {
+    throw new HttpsError(
+      'failed-precondition',
+      'هذه العملية متاحة للرحلات طويلة المدى (الانتدابات) فقط — الرحلة القياسية تُسوّى مرة واحدة عند انتهائها.',
+    );
+  }
+
+  // نفس شرط tripAcceptsExpenses في firestore.rules بالضبط: الترحيل يكتب
+  // مصاريف، ورحلة منتهية أو مؤرشفة لا تقبلها. لا استثناء للمسؤول هناك ولا هنا.
+  if ((trip.status || 'active') !== 'active') {
+    throw new HttpsError(
+      'failed-precondition',
+      'الرحلة ليست نشطة — لا يمكن تسجيل حركات مالية جديدة فيها.',
+    );
+  }
+
+  return { tripRef, trip };
+}
+
+/** مسار بيانات الرحلة — نفس ما تبنيه src/firestore.ts على العميل. */
+function tripDataRoot(tripId) {
+  return db.collection('artifacts').doc(tripId).collection('public').doc('data');
+}
+
+/**
+ * يقرأ المسافرين النشطين ومصاريف الرحلة النشطة، ويُرجع رصيد كل مسافر.
+ * (المحذوفون ليّناً خارج الحساب تماماً — تماماً كما تفعل الواجهة.)
+ */
+async function readLedger(tripId) {
+  const dataRoot = tripDataRoot(tripId);
+  const [travelersSnap, expensesSnap] = await Promise.all([
+    dataRoot.collection('travelers').get(),
+    dataRoot.collection('expenses').get(),
+  ]);
+
+  const travelers = travelersSnap.docs.map((d) => d.data()).filter((t) => !t.deletedAt);
+  const expenses = expensesSnap.docs.map((d) => d.data()).filter((e) => !e.deletedAt);
+
+  return { travelers, expenses, remaining: calculateRemainingByTravelerJs(travelers, expenses) };
+}
+
+/**
+ * يبني حركة «مصروف تسوية» — يُنقص رصيد مسافر واحد بالمبلغ المذكور.
+ *
+ * ⚠️ الحمولة تطابق isValidExpense في firestore.rules حقلاً بحقل رغم أن Admin
+ * SDK يتجاوزها: مستند لا يمرّ بالقواعد اليوم هو مستند لا يستطيع صاحبه تعديله
+ * غداً من الواجهة (`allow update` تُقيّم الشكل الكامل)، فيصير سطراً مالياً
+ * عالقاً لا يُصلَح إلا بسكربت.
+ */
+function buildAdjustmentExpense(traveler, amount, date, description, actorUid) {
+  return {
+    date,
+    description,
+    amount,
+    originalAmount: amount,
+    currency: 'SAR',
+    exchangeRate: 1,
+    participants: [traveler.id],
+    category: ROLLOVER_CATEGORY,
+    paidBy: 'fund',
+    createdAt: Date.now(),
+    // من ضغط الزرّ فعلاً — لا هوية خدمية مخترعة. نفس مبدأ isOwnCreation:
+    // حقل يوثّق «من سجّل هذا» ولا يصدق لا يوثّق شيئاً.
+    createdByUid: actorUid,
+    deletedAt: null,
+  };
+}
+
+/** يبني سطر تدقيق إيداع مطابقاً لـ isValidDepositLog في القواعد. */
+function buildDepositLog(travelerId, previousDeposited, newDeposited, reason, actor) {
+  return {
+    travelerId,
+    previousDeposited,
+    newDeposited,
+    delta: newDeposited - previousDeposited,
+    mode: 'add',
+    reason,
+    changedByEmail: actor.email || '',
+    changedByUid: actor.uid,
+    createdAt: Date.now(),
+  };
+}
+
+/**
+ * 🆕 closeMonth — إغلاق الشهر المحاسبي وترحيل أرصدة كل الأعضاء إلى الشهر التالي.
+ *
+ * متاحة لمنظّم الرحلة أو المسؤول العالمي (نفس شرط manageInvite/exitTraveler).
+ *
+ * ── الحماية من الترحيل المزدوج ─────────────────────────────────────────────
+ * حارسان مستقلان، لأن ترحيلاً يُنفَّذ مرتين يضاعف رصيد كل عضو — وهو أسوأ عطل
+ * ممكن في هذه الميزة:
+ *   ١. `period > lastClosedPeriod` (مقارنة نصية = مقارنة زمنية، انظر
+ *      utils/period.ts) — يمنع إعادة إغلاق شهر مضى مهما كانت قيمة currentPeriod.
+ *   ٢. المعاملة (transaction) تُعيد قراءة مستند الرحلة داخلها وتتحقّق ثانيةً
+ *      قبل الكتابة — يمنع نقرتين متزامنتين من تبويبين مختلفين.
+ * وثالث في firestore.rules: العميل لا يستطيع تعديل lastClosedPeriod إطلاقاً.
+ */
+exports.closeMonth = onCall(
+  { region: 'us-central1', maxInstances: 5, secrets: [SENTRY_DSN] },
+  withSentry('closeMonth', async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+    }
+    if (request.auth.token.firebase?.sign_in_provider === 'anonymous') {
+      throw new HttpsError('failed-precondition', 'هذه العملية تتطلب حساباً حقيقياً.');
+    }
+
+    const tripId = String(request.data?.tripId ?? '').trim();
+    const period = String(request.data?.period ?? '').trim();
+
+    if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
+      throw new HttpsError('invalid-argument', 'معرّف الرحلة غير صالح.');
+    }
+    if (!isValidPeriodKeyJs(period)) {
+      throw new HttpsError('invalid-argument', 'الشهر المطلوب إغلاقه غير صالح — الصيغة YYYY-MM.');
+    }
+
+    const { tripRef, trip } = await requireManagedLongTermTrip(tripId, request.auth);
+
+    const lastClosedPeriod = isValidPeriodKeyJs(trip.lastClosedPeriod) ? trip.lastClosedPeriod : null;
+    const currentPeriod = isValidPeriodKeyJs(trip.currentPeriod) ? trip.currentPeriod : currentPeriodKeyJs();
+
+    if (lastClosedPeriod && period <= lastClosedPeriod) {
+      throw new HttpsError(
+        'failed-precondition',
+        `${formatPeriodLabelJs(period)} مُغلق بالفعل — آخر شهر أُغلق هو ${formatPeriodLabelJs(lastClosedPeriod)}.`,
+      );
+    }
+    if (period !== currentPeriod) {
+      throw new HttpsError(
+        'failed-precondition',
+        `الشهر المفتوح حالياً هو ${formatPeriodLabelJs(currentPeriod)} — لا يمكن إغلاق شهر غيره.`,
+      );
+    }
+
+    const { travelers, remaining } = await readLedger(tripId);
+    if (travelers.length === 0) {
+      throw new HttpsError('failed-precondition', 'لا يوجد أعضاء نشطون في هذه الرحلة لترحيل أرصدتهم.');
+    }
+    if (travelers.length > MAX_ROLLOVER_TRAVELERS) {
+      throw new HttpsError(
+        'failed-precondition',
+        `عدد الأعضاء (${travelers.length}) يتجاوز الحدّ الذي يمكن ترحيله في عملية واحدة (${MAX_ROLLOVER_TRAVELERS}).`,
+      );
+    }
+
+    const openedPeriod = nextPeriodJs(period);
+    const closingDate = periodEndDateJs(period);
+    const openingDate = periodStartDateJs(openedPeriod);
+    const closingLabel = formatPeriodLabelJs(period);
+    const openingLabel = formatPeriodLabelJs(openedPeriod);
+    const actor = { uid: request.auth.uid, email: request.auth.token.email || '' };
+
+    const dataRoot = tripDataRoot(tripId);
+    let movements = [];
+    let expensesWritten = 0;
+    let depositsWritten = 0;
+
+    await db.runTransaction(async (tx) => {
+      // ⚠️ **التصفير في أول المعاملة لا خارجها.** Firestore تُعيد تشغيل دالة
+      // المعاملة كاملةً عند تعارض، وحصيلة التشغيل السابق تبقى في هذه
+      // المتغيّرات — فيُبلَّغ المنظّم بضعف عدد الحركات التي كُتبت فعلاً، وتظهر
+      // كل حركة مرتين في ملخّص الإغلاق. الكتابات نفسها سليمة (المعاملة تُلغي
+      // محاولتها الفاشلة)؛ التقرير وحده هو ما كان سيكذب.
+      movements = [];
+      expensesWritten = 0;
+      depositsWritten = 0;
+
+      // ⚠️ الحارس الثاني — داخل المعاملة لا قبلها: القراءة أعلاه قد تكون سبقت
+      // ترحيلاً نفّذه تبويب آخر قبل ثوانٍ. المعاملة تُعيد المحاولة تلقائياً إن
+      // تغيّر المستند بينهما، فتقع هذه القراءة بعد ذلك الترحيل وترى أثره.
+      const fresh = await tx.get(tripRef);
+      const freshLastClosed = fresh.exists && isValidPeriodKeyJs(fresh.data().lastClosedPeriod)
+        ? fresh.data().lastClosedPeriod
+        : null;
+      if (freshLastClosed && period <= freshLastClosed) {
+        throw new HttpsError('failed-precondition', `${closingLabel} أُغلق للتو من جهاز آخر.`);
+      }
+
+      travelers.forEach((traveler) => {
+        const balance = remaining.get(traveler.id) ?? 0;
+        // هللة — تقريب قبل أي قرار، فلا تُكتب حركة بـ 0.004 ريال ولا تُخزَّن
+        // قيمة بكسور لا تُمثَّل في نظام لا يعرف أدقّ من الهللة.
+        const rounded = Math.round(balance * 100) / 100;
+        const direction = settlementDirectionJs(rounded);
+        movements.push({
+          travelerId: traveler.id,
+          travelerName: traveler.name,
+          remaining: rounded,
+          direction,
+        });
+        if (direction === 'settled') return;
+
+        const amount = Math.abs(rounded);
+        const travelerRef = dataRoot.collection('travelers').doc(String(traveler.id));
+        const previousDeposited = Number.isFinite(traveler.deposited) ? traveler.deposited : 0;
+        const newDeposited = Math.round((previousDeposited + amount) * 100) / 100;
+
+        if (direction === 'credit') {
+          // إغلاق: مصروف يستهلك رصيده المتبقّي فيصير صفراً في الشهر المنتهي.
+          tx.set(
+            dataRoot.collection('expenses').doc(),
+            buildAdjustmentExpense(traveler, amount, closingDate,
+              `ترحيل رصيد ${traveler.name} — إغلاق ${closingLabel}`, actor.uid),
+          );
+          // افتتاح: إيداع بنفس القيمة يفتح به الشهر الجديد، بسطر تدقيق ملازم.
+          tx.update(travelerRef, { deposited: newDeposited });
+          tx.set(
+            travelerRef.collection('depositLogs').doc(),
+            buildDepositLog(traveler.id, previousDeposited, newDeposited,
+              `رصيد افتتاحي مُرحَّل من ${closingLabel} إلى ${openingLabel}`, actor),
+          );
+          expensesWritten += 1;
+          depositsWritten += 1;
+          return;
+        }
+
+        // debt — الاتجاه المعاكس بنفس الآليتين: إيداع يُصفّر العجز في الشهر
+        // المنتهي، ومصروف يُعيد تحميله عليه في الشهر الجديد.
+        tx.update(travelerRef, { deposited: newDeposited });
+        tx.set(
+          travelerRef.collection('depositLogs').doc(),
+          buildDepositLog(traveler.id, previousDeposited, newDeposited,
+            `تسوية إغلاق ${closingLabel} — تصفير عجز مُرحَّل إلى ${openingLabel}`, actor),
+        );
+        tx.set(
+          dataRoot.collection('expenses').doc(),
+          buildAdjustmentExpense(traveler, amount, openingDate,
+            `عجز مُرحَّل من ${closingLabel} — افتتاح ${openingLabel}`, actor.uid),
+        );
+        expensesWritten += 1;
+        depositsWritten += 1;
+      });
+
+      tx.set(tripRef, {
+        currentPeriod: openedPeriod,
+        lastClosedPeriod: period,
+        lastClosedAt: Date.now(),
+      }, { merge: true });
+    });
+
+    console.log(`[closeMonth] ${tripId}: ${period} → ${openedPeriod} (${expensesWritten} مصروف، ${depositsWritten} إيداع)`);
+
+    return {
+      success: true,
+      tripId,
+      closedPeriod: period,
+      openedPeriod,
+      movements,
+      written: { expenses: expensesWritten, deposits: depositsWritten },
+    };
+  }),
+);
+
+/**
+ * 🆕 exitTraveler — خروج منتدَب من رحلة طويلة المدى، بحساب مسوّى إلزاماً.
+ *
+ * ── لماذا لا يكفي فحص في الواجهة؟ ──────────────────────────────────────────
+ * لأن الواجهة **لا تستطيع تنفيذ الخروج أصلاً**: نقل المسافر للسلة يتطلب
+ * `update` على `travelers`، وشرطها `isAdmin()` وحده — فمنظّم الرحلة (وهو من
+ * يدير الانتدابات فعلاً) لا يملك هذا المسار من متصفحه. ولأن التسوية نفسها
+ * تكتب `deposited` وسطر تدقيق، وكلاهما `isAdmin()` كذلك.
+ *
+ * ── العقد ─────────────────────────────────────────────────────────────────
+ *   settle: false → يرفض الخروج إن كان الرصيد غير مسوّى، ويسمّي المبلغ
+ *                   والاتجاه في نص الخطأ. هذا هو «الإرشاد» المطلوب.
+ *   settle: true  → يُنشئ معاملة التسوية التي تُصفّر الرصيد **ثم** يُخرجه، في
+ *                   معاملة واحدة. لا نافذة زمنية يبقى فيها مسافر مُسوّى وغير
+ *                   مُخرَج (أو العكس، وهو الأسوأ: خرج بلا أثر لتسويته).
+ *
+ * ⚠️ الخروج حذف ليّن دائماً (`deletedAt`) — القاعدة ٥. وحجز الاسم يُحرَّر معه
+ * في نفس المعاملة، تماماً كما يفعل confirmDeleteTraveler على العميل (القاعدة ٦).
+ */
+exports.exitTraveler = onCall(
+  { region: 'us-central1', maxInstances: 5, secrets: [SENTRY_DSN] },
+  withSentry('exitTraveler', async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+    }
+
+    const tripId = String(request.data?.tripId ?? '').trim();
+    const travelerId = Number(request.data?.travelerId);
+    const settle = request.data?.settle === true;
+
+    if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
+      throw new HttpsError('invalid-argument', 'معرّف الرحلة غير صالح.');
+    }
+    if (!Number.isInteger(travelerId)) {
+      throw new HttpsError('invalid-argument', 'معرّف المسافر غير صالح.');
+    }
+
+    await requireManagedLongTermTrip(tripId, request.auth);
+
+    const { travelers, remaining } = await readLedger(tripId);
+    const traveler = travelers.find((t) => t.id === travelerId);
+    if (!traveler) {
+      throw new HttpsError('not-found', 'هذا العضو غير موجود في الرحلة (أو أُخرج منها بالفعل).');
+    }
+
+    const balance = Math.round((remaining.get(travelerId) ?? 0) * 100) / 100;
+    const direction = settlementDirectionJs(balance);
+
+    if (direction !== 'settled' && !settle) {
+      // ⚠️ نفس صياغة describeExitBlock في src/utils/longTerm.ts — المنظّم يجب
+      // أن يقرأ الجملة نفسها سواء منعته الواجهة قبل الطلب أو منعه الخادم بعده.
+      const amount = Math.abs(balance).toFixed(2);
+      throw new HttpsError(
+        'failed-precondition',
+        direction === 'credit'
+          ? `لا يمكن إخراج ${traveler.name} قبل تسوية حسابه — له رصيد متبقٍّ ${amount} ريال.`
+          : `لا يمكن إخراج ${traveler.name} قبل تسوية حسابه — عليه ${amount} ريال.`,
+      );
+    }
+
+    const actor = { uid: request.auth.uid, email: request.auth.token.email || '' };
+    const dataRoot = tripDataRoot(tripId);
+    const travelerRef = dataRoot.collection('travelers').doc(String(travelerId));
+    const today = new Date();
+    const todayDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    await db.runTransaction(async (tx) => {
+      // ⚠️ يجب قراءة المستند داخل المعاملة قبل الكتابة عليه — والقراءة هنا
+      // تخدم غرضاً حقيقياً لا شكلياً: تكشف خروجاً نفّذه منظّم آخر قبل ثوانٍ،
+      // فلا تُكتب تسوية لعضو خرج بالفعل.
+      const fresh = await tx.get(travelerRef);
+      if (!fresh.exists || fresh.data().deletedAt) {
+        throw new HttpsError('failed-precondition', 'أُخرج هذا العضو للتو من جهاز آخر.');
+      }
+
+      // ⚠️ **تحديث واحد لمستند المسافر لا اثنان.** الرصيد والخروج يُكتبان معاً
+      // في عملية واحدة: كتابتان منفصلتان على نفس المستند داخل معاملة واحدة
+      // سلوكهما دقيق ويسهل كسره بإعادة ترتيب بريئة لاحقاً، ولا شيء يُكسب منهما.
+      const travelerUpdate = { deletedAt: Date.now() };
+
+      if (direction === 'credit') {
+        // له رصيد: مصروف تسوية يستهلكه (يقابله في الواقع إعادة المبلغ له نقداً).
+        tx.set(
+          dataRoot.collection('expenses').doc(),
+          buildAdjustmentExpense(traveler, Math.abs(balance), todayDate,
+            `تسوية خروج ${traveler.name} — إعادة الرصيد المتبقّي`, actor.uid),
+        );
+      } else if (direction === 'debt') {
+        // عليه عجز: حركة إيداع تُصفّره (يقابلها في الواقع استلام المبلغ منه).
+        const previousDeposited = Number.isFinite(fresh.data().deposited) ? fresh.data().deposited : 0;
+        const newDeposited = Math.round((previousDeposited + Math.abs(balance)) * 100) / 100;
+        travelerUpdate.deposited = newDeposited;
+        tx.set(
+          travelerRef.collection('depositLogs').doc(),
+          buildDepositLog(travelerId, previousDeposited, newDeposited,
+            `تسوية خروج ${traveler.name} — سداد العجز المتبقّي`, actor),
+        );
+      }
+
+      tx.update(travelerRef, travelerUpdate);
+      // تحرير حجز الاسم — نفس سلوك confirmDeleteTraveler بالضبط، وإلا بقي اسم
+      // شخص خرج حاجزاً للاسم إلى الأبد (القاعدة ٦).
+      if (typeof traveler.shortName === 'string' && traveler.shortName) {
+        tx.delete(dataRoot.collection('travelerNames').doc(traveler.shortName));
+      }
+    });
+
+    console.log(`[exitTraveler] ${tripId}: خرج ${travelerId} (رصيد ${balance}، تسوية: ${settle})`);
+
+    return { success: true, tripId, travelerId, settledAmount: direction === 'settled' ? 0 : Math.abs(balance), direction };
+  }),
+);

@@ -5,12 +5,15 @@ import {
   useAuth, useAdminAuth, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
   useTripAdminActions, useAllTrips, useMyTrips, useMyTripRole, useInviteJoin, useUserProfile,
-  useOrganizerBankDetails, useSyncTravelerNameFromProfile,
+  useOrganizerBankDetails, useSyncTravelerNameFromProfile, useLongTermActions,
 } from './index'
 import { useFilteredExpenses } from './useFilteredExpenses'
 import { calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from '../utils/calculations'
 import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from '../utils/tripId'
 import { acceptsExpenses, closedTripNotice } from '../utils/tripStatus'
+import { isLongTerm } from '../utils/tripType'
+import { isInPeriod } from '../utils/period'
+import { planRollover, describeExitBlock } from '../utils/longTerm'
 import { describeWriteError, writeErrorCode } from '../utils/writeErrors'
 import { onIdle, preloadAll } from '../utils/preload'
 import { chartsImporters } from '../components/ChartsPanel'
@@ -64,7 +67,10 @@ export function useAppCoordinator() {
   // تحتاجه هذه الشاشة — organizerUid للبطاقة البنكية، والمسار للويدجت والتقارير.
   // 🆕 tripName يُقرأ هنا أيضاً الآن — منظّم الرحلة (المرحلة ٣) يحتاجه لبناء
   // ملخّص رحلته الوحيدة بلا استعلام قائمة (انظر organizerTripSummary أدناه).
-  const { tripName, organizerUid, itinerary, status: tripStatus, statusChangedAt } = useTripConfig(hasAccess ? user : null)
+  const {
+    tripName, organizerUid, itinerary, status: tripStatus, statusChangedAt,
+    tripType, currentPeriod, lastClosedPeriod,
+  } = useTripConfig(hasAccess ? user : null)
   // 🆕 قراءة حيّة لبيانات بنك منظّم *هذه* الرحلة — المصدر الوحيد المعروض في
   // BankDetailsCard. organizerUid قد يكون undefined (رحلة قديمة بلا منظّم
   // معروف)، وuseOrganizerBankDetails تتعامل مع ذلك بحالة فارغة فوراً بلا اشتراك.
@@ -109,6 +115,43 @@ export function useAppCoordinator() {
     () => (myBalance ? [myBalance, ...balances.filter(b => b !== myBalance)] : balances),
     [balances, myBalance],
   )
+
+  // ─── 🆕 الرحلات طويلة المدى ───────────────────────────────────────────────
+  //
+  // ⚠️ كل ما يلي **مشتق من `balances` القائمة أصلاً** — لا حساب مالي جديد على
+  // العميل، ولا مصدر رقم ثانٍ يمكن أن ينحرف عن الأول. وهذا ممكن لأن الدفتر
+  // تراكمي: الإغلاق يُصفّر الشهر ويعيد فتحه بنفس القيمة، فالرصيد التراكمي *هو*
+  // رصيد الشهر الجاري في رحلة تُغلق شهورها بانتظام (انظر utils/longTerm.ts).
+  const isLongTermTrip = isLongTerm(tripType)
+
+  // منظّم الرحلة أو المسؤول — نفس الحدّ الذي تفرضه callerManagesTrip خادمياً.
+  const canManageLongTerm = isLongTermTrip && (isAdmin || isOrganizer)
+
+  const periodExpenses = useMemo(
+    () => (isLongTermTrip ? activeExpenses.filter(e => isInPeriod(e.date, currentPeriod)) : []),
+    [isLongTermTrip, activeExpenses, currentPeriod],
+  )
+  const periodTotal = useMemo(
+    () => periodExpenses.reduce((sum, e) => sum + (Number.isFinite(e.amount) ? e.amount : 0), 0),
+    [periodExpenses],
+  )
+  const rolloverPlan = useMemo(
+    () => (isLongTermTrip ? planRollover(balances) : []),
+    [isLongTermTrip, balances],
+  )
+
+  /**
+   * 🆕 حارس خروج العضو — يُمرَّر إلى useTravelerActions **فقط في الرحلة
+   * الطويلة**، فمسار الرحلة القياسية لا يستقبل شيئاً ولا يتغيّر بحرف.
+   */
+  const describeExitBlockFor = useMemo(() => {
+    if (!isLongTermTrip) return undefined
+    return (travelerId: number): string | null => {
+      const target = balances.find(b => b.id === travelerId)
+      if (!target) return null
+      return describeExitBlock(tripType, target.name, target.remaining)
+    }
+  }, [isLongTermTrip, balances, tripType])
 
   const settlements    = useMemo(() => calculateSettlements(balances), [balances])
   const categoryTotals = useMemo(() => calculateCategoryTotals(activeExpenses), [activeExpenses])
@@ -162,6 +205,7 @@ export function useAppCoordinator() {
   const traveler = useTravelerActions({
     travelers, activeTravelers, user, setTravelers, showToast, handleFirestoreError, setSyncError,
     closeModal: modals.closeModal,
+    describeExitBlockFor,
   })
 
   const deposit = useDepositActions({
@@ -188,6 +232,22 @@ export function useAppCoordinator() {
   }), [tripName, organizerUid, itinerary, tripStatus, statusChangedAt])
 
   const tripAdmin = useTripAdminActions({ isAdmin, organizerTripId, showToast, handleFirestoreError })
+
+  // 🆕 استدعاءات الرحلة الطويلة (closeMonth/exitTraveler) — لا كتابة Firestore
+  // هنا إطلاقاً؛ انظر تعليق الملف في hooks/useLongTermActions.ts.
+  const longTermActions = useLongTermActions({ showToast, handleFirestoreError })
+
+  const confirmRollover = useCallback(async () => {
+    const result = await longTermActions.closeMonth(TRIP_ID, currentPeriod)
+    // المودال يُغلق عند النجاح وحده: الفشل يترك المنظّم أمام نفس الشاشة مع
+    // رسالة السبب، بدل أن تختفي الشاشة ويبقى هو في حيرة مما جرى.
+    if (result) modals.closeModal()
+  }, [longTermActions, currentPeriod, modals])
+
+  const confirmExitTraveler = useCallback(async (travelerId: number, settle: boolean) => {
+    const ok = await longTermActions.exitTraveler(TRIP_ID, travelerId, settle)
+    if (ok) modals.closeModal()
+  }, [longTermActions, modals])
 
   // ─── شاشة «رحلاتي» ────────────────────────────────────────────────────────
   // 🆕 المسؤول يرى كل الرحلات (استعلام القائمة يرضيه isAdmin وحده)، والعضو
@@ -277,7 +337,26 @@ export function useAppCoordinator() {
       travelersPanelBalances,
     },
     /** إعدادات الرحلة الحالية ودورة حياتها. */
-    trip: { itinerary, canAddExpenses, tripClosedNotice },
+    trip: { itinerary, canAddExpenses, tripClosedNotice, tripType },
+    /**
+     * 🆕 كل ما تحتاجه واجهة الرحلة الطويلة — **null في الرحلة القياسية**.
+     * قيمة واحدة تُفحص في App.tsx (`longTerm && …`) بدل شروط متفرّقة، وهو ما
+     * يجعل «الرحلة القياسية لا تتأثر» حقيقةً بنيوية لا وعداً في تعليق.
+     */
+    longTerm: isLongTermTrip ? {
+      period: currentPeriod,
+      lastClosedPeriod,
+      periodTotal,
+      periodCount: periodExpenses.length,
+      movements: rolloverPlan,
+      canManage: canManageLongTerm,
+      isClosingMonth: longTermActions.isClosingMonth,
+      isExitingTraveler: longTermActions.isExitingTraveler,
+      openRollover: modals.openMonthlyRollover,
+      openExitTraveler: modals.openExitTraveler,
+      onConfirmRollover: confirmRollover,
+      onConfirmExit: confirmExitTraveler,
+    } : null,
     /** 🆕 بيانات بنك منظّم الرحلة الحالية — حيّة من users/{organizerUid}. */
     organizerBank,
     /** أسعار الصرف الحيّة — تُقرأ من DataContext في نموذج المصروف. */

@@ -34,6 +34,17 @@ interface UseTravelerActionsParams {
   setSyncError: Dispatch<SetStateAction<string | null>>
   // لإغلاق مودال تأكيد الحذف (من useModals) بعد تأكيد نقل المسافر للمهملات
   closeModal: () => void
+  /**
+   * 🆕 **اختياري، وغيابه هو سلوك الرحلة القياسية بالضبط.** يُرجع سبب منع إخراج
+   * هذا العضو، أو null إن كان مسموحاً. تمرّره الرحلات طويلة المدى وحدها (انظر
+   * describeExitBlock في utils/longTerm.ts وuseAppCoordinator.ts)، فيبقى مسار
+   * الرحلة القياسية الناضج بلا أي شرط جديد — لا في الكود ولا في الاختبارات.
+   *
+   * ⚠️ وهو **إرشاد لا حماية**: المنع الحقيقي في exitTraveler (functions/index.js)
+   * التي تُعيد حساب الرصيد خادمياً وترفض بنفس الصياغة. الفائدة هنا أن المنظّم
+   * يعرف السبب قبل أن ينتظر رحلة ذهاب وإياب للخادم.
+   */
+  describeExitBlockFor?: (travelerId: number) => string | null
 }
 
 export interface UseTravelerActionsResult {
@@ -51,6 +62,7 @@ export interface UseTravelerActionsResult {
 
 export function useTravelerActions({
   travelers, activeTravelers, user, setTravelers, showToast, handleFirestoreError, setSyncError, closeModal,
+  describeExitBlockFor,
 }: UseTravelerActionsParams): UseTravelerActionsResult {
   const [isAddingTraveler,   setIsAddingTraveler]   = useState(false)
   const [newTravelerName,    setNewTravelerName]    = useState('')
@@ -199,6 +211,16 @@ export function useTravelerActions({
   }, [newTravelerName, newTravelerDeposit, activeTravelers, user, setTravelers, handleFirestoreError, setSyncError])
 
   const confirmDeleteTraveler = useCallback((id: number) => {
+    // 🆕 حارس الرحلات طويلة المدى — لا شيء يتغيّر حين لا يُمرَّر (الرحلة
+    // القياسية): `blockReason` يبقى undefined فيمضي المسار كما كان حرفياً.
+    const blockReason = describeExitBlockFor?.(id) ?? null
+    if (blockReason) {
+      closeModal()
+      haptic.error()
+      showToast({ text: blockReason, type: 'error' }, 7000)
+      return
+    }
+
     closeModal()
     haptic.medium()
     showToast(
@@ -218,7 +240,7 @@ export function useTravelerActions({
     batch.update(travelerDoc(id), { deletedAt: Date.now() })
     if (traveler) batch.delete(travelerNameDoc(traveler.shortName))
     batch.commit().catch(err => handleFirestoreError(err, 'تعذر حذف المسافر.'))
-  }, [user, travelers, setTravelers, handleFirestoreError, showToast, handleRestoreTraveler, closeModal])
+  }, [user, travelers, setTravelers, handleFirestoreError, showToast, handleRestoreTraveler, closeModal, describeExitBlockFor])
 
   return {
     isAddingTraveler,
