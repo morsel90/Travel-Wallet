@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import * as Sentry from '@sentry/react'
-import type { ToastMessage } from '../types'
+import type { ToastMessage, Traveler } from '../types'
 import {
   useAuth, useAdminAuth, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
@@ -244,6 +244,30 @@ export function useAppCoordinator() {
     if (result) modals.closeModal()
   }, [longTermActions, currentPeriod, modals])
 
+  /**
+   * 🆕 نقطة دخول واحدة لإخراج عضو، تتفرّع بحسب نوع الرحلة.
+   *
+   * ⚠️ وُجدت هذه الدالة لأن أول تنفيذ ترك **طريقاً مسدوداً**: بطاقة المسافر
+   * (المكان الذي يقصده المستخدم بالعادة) كانت تفتح تأكيد الحذف المعتاد، فيمنعه
+   * الحارس برسالة «سوِّ حسابه أولاً» تشير إلى زرّ في قسم آخر — رسالة تقول «لا»
+   * ولا تأخذك إلى «نعم». رصده المالك فوراً بسؤاله «أين حذف مسافر أراد المغادرة؟».
+   *
+   * الآن نفس البطاقة تفتح نافذة «تسوية وخروج» مباشرةً في الرحلة الطويلة. وحارس
+   * describeExitBlockFor يبقى في useTravelerActions كشبكة أمان لأي مسار آخر
+   * يستدعي confirmDeleteTraveler — لم يُحذف، لأنه لم يكن خطأً، بل ناقصاً.
+   */
+  const requestDeleteTraveler = useCallback((target: Traveler) => {
+    if (!isLongTermTrip) {
+      modals.openDeleteTraveler(target)
+      return
+    }
+    // الرصيد لازم لنافذة الخروج (تعرض المبلغ والاتجاه). غيابه من balances
+    // يعني مسافراً لم يُحسب بعد — نمرّره برصيد صفر فتتصرّف النافذة كحساب مسوّى،
+    // والخادم يبقى الحكم الفعلي على أي حال.
+    const withBalance = balances.find(b => b.id === target.id)
+    modals.openExitTraveler(withBalance ?? { ...target, totalExpenses: 0, remaining: 0 })
+  }, [isLongTermTrip, balances, modals])
+
   const confirmExitTraveler = useCallback(async (travelerId: number, settle: boolean) => {
     const ok = await longTermActions.exitTraveler(TRIP_ID, travelerId, settle)
     if (ok) modals.closeModal()
@@ -399,6 +423,11 @@ export function useAppCoordinator() {
     },
     filter,
     modals,
+    /**
+     * 🆕 يُمرَّر إلى TripStoreProvider بدل modals.openDeleteTraveler مباشرةً —
+     * انظر تعليق الدالة أعلاه. الرحلة القياسية تصل لنفس المودال السابق حرفياً.
+     */
+    requestDeleteTraveler,
     expense,
     traveler,
     deposit,

@@ -66,6 +66,17 @@ export function LongTermPanel({
           </div>
         </div>
 
+        {/* ⚠️ هذا العنوان ليس تزييناً. بطاقة المسافر في «أرصدة المسافرين» **لا
+            تعرض زرّ حذف إطلاقاً لمن له مصاريف** (تعرض «مربوط بمصاريف») — قاعدة
+            قائمة من الرحلات القياسية ومنطقية فيها. لكن المنتدَب في رحلة طويلة
+            له مصاريف بالضرورة، فذلك الطريق مغلق في وجهه دائماً، وهذا هو المكان
+            الوحيد لإخراجه. رصده المالك بسؤاله «أين حذف مسافر أراد المغادرة؟». */}
+        {canManage && (
+          <p className="px-4 pt-3 pb-1 text-[11px] text-slate-500 leading-relaxed">
+            لإخراج عضو مغادر: سوِّ حسابه وأخرجه بضغطة واحدة من زرّ «تسوية وخروج» بجانب اسمه.
+          </p>
+        )}
+
         <ul className="divide-y divide-slate-100">
           {balances.map(traveler => {
             const direction = settlementDirection(traveler.remaining)
@@ -83,13 +94,16 @@ export function LongTermPanel({
                     {money(traveler.remaining)}
                   </span>
                   {canManage && (
+                    // النص يصف ما سيحدث فعلاً لا اسم العملية المجرّد: من عليه
+                    // رصيد يرى «تسوية وخروج»، ومن حسابه مسوّى يرى «إخراج» فقط.
                     <button
                       type="button"
                       onClick={() => onExitTraveler(traveler)}
                       disabled={isBusy}
-                      className="text-[11px] font-bold text-slate-500 hover:text-rose-600 disabled:opacity-40 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-rose-50 transition-colors"
+                      className="text-xs font-bold text-rose-600 hover:text-white hover:bg-rose-600 disabled:opacity-40 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-rose-200 hover:border-rose-600 transition-colors whitespace-nowrap"
                     >
-                      <DoorOpen className="w-3.5 h-3.5" /> إخراج
+                      <DoorOpen className="w-3.5 h-3.5" />
+                      {direction === 'settled' ? 'إخراج' : 'تسوية وخروج'}
                     </button>
                   )}
                 </div>

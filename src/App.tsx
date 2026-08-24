@@ -47,7 +47,7 @@ const UserProfileModal = lazy(() => import('./components/modals/UserProfileModal
 export default function App() {
   const {
     session, ledger, trip, rates, status, picker, tripAdminPanel, filter, modals, expense, traveler, deposit, admin, invite,
-    profile, isSavingProfile, saveProfile, organizerBank, longTerm,
+    profile, isSavingProfile, saveProfile, organizerBank, longTerm, requestDeleteTraveler,
   } = useAppCoordinator()
 
   // نسخة محلية ليضيّق TypeScript نوعها: الوصول عبر `expense.expenseToDelete`
@@ -127,7 +127,7 @@ export default function App() {
         startEditExpense={expense.startEditExpense}
         requestDeleteExpense={expense.requestDeleteExpense}
         openDeposit={modals.openDeposit}
-        requestDeleteTraveler={modals.openDeleteTraveler}
+        requestDeleteTraveler={requestDeleteTraveler}
         openDepositHistory={modals.openDepositHistory}
         expenseForm={expense.newExpense}
         setExpenseForm={expense.setNewExpense}

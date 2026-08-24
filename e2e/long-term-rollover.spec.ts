@@ -40,6 +40,14 @@ const NEXT_PERIOD_LABEL = 'سبتمبر 2026'
 const SAAD = { id: 101, name: 'سعد', shortName: 'سعد', deposited: 1000 }
 const KHALED = { id: 102, name: 'خالد', shortName: 'خالد', deposited: 0 }
 
+// ⚠️ عضوة برصيد صفر **ولا مشاركة في أي مصروف** — وهذا الشرط المزدوج مقصود:
+// بطاقة المسافر تُخفي زرّ الحذف لمن له مصاريف («مربوط بمصاريف»)، والإغلاق
+// يُنشئ مصروف تسوية لكل من رصيده غير صفر. فمن له رصيد أو مصاريف تختفي بطاقته
+// من هذا المسار بعد أول إغلاق. منى تمثّل منتدَبة انضمّت ولم تُنفق بعد ثم غادرت
+// — وهي الحالة الوحيدة التي يبقى فيها زرّ البطاقة ظاهراً، أي الحالة التي
+// **يجب** أن تُفحص هنا بلا شرط `if` يُفرغ الاختبار من مضمونه.
+const MONA = { id: 103, name: 'منى', shortName: 'منى', deposited: 0 }
+
 // مصروف واحد بـ 400 على الاثنين بالتساوي (200 لكل منهما):
 //   سعد  = 1000 − 200 = +800  (دائن)
 //   خالد =    0 − 200 = −200  (مدين)
@@ -57,7 +65,7 @@ test.beforeAll(async () => {
 
   const dataRoot = db.collection('artifacts').doc(CREDS.tripId).collection('public').doc('data')
 
-  for (const traveler of [SAAD, KHALED]) {
+  for (const traveler of [SAAD, KHALED, MONA]) {
     await dataRoot.collection('travelers').doc(String(traveler.id)).set({ ...traveler, deletedAt: null })
     await dataRoot.collection('travelerNames').doc(traveler.shortName).set({ travelerId: traveler.id })
   }
@@ -117,20 +125,47 @@ test('إغلاق الشهر يُرحّل الأرصدة دون أن يغيّر �
   await expect(panel.getByRole('button', { name: new RegExp(`إغلاق ${NEXT_PERIOD_LABEL}`) })).toBeVisible()
 })
 
+test('بطاقة المسافر في رحلة طويلة تفتح نافذة الخروج لا تأكيد الحذف المعتاد', async ({ page }) => {
+  // ⚠️ هذا الاختبار يحرس **الطريق المسدود** الذي رصده المالك: أول تنفيذ كان
+  // يفتح تأكيد الحذف المعتاد فيمنعه الحارس برسالة تشير لزرّ في قسم آخر.
+  // سعد وحده بلا مصاريف هنا (لم يشارك في أي مصروف بعد إخراج خالد)، فبطاقته
+  // تعرض زرّ الحذف أصلاً — من له مصاريف تعرض بطاقته «مربوط بمصاريف» بلا زرّ،
+  // وهي قاعدة قائمة من الرحلات القياسية لا تخصّ هذه الميزة.
+  await openTripAsAdmin(page, CREDS)
+  await expect(page.locator('#long-term-section')).toBeVisible()
+
+  // صفّ أزرار البطاقة مخفي حتى المرور بالفأرة (group-hover في TravelerSection.tsx)
+  // — نفس ما تفعله editExpenseAmount في flows.ts قبل النقر على أزرار المصروف.
+  const card = page.locator('#travelers-section div.bg-white.rounded-xl').filter({ hasText: MONA.name })
+  await expect(card).toBeVisible()
+  await card.hover()
+  await card.getByRole('button', { name: 'حذف المسافر' }).click()
+
+  // ⚠️ الحارس: نافذة الخروج تُفتح، **ولا** يظهر تأكيد الحذف المعتاد. غياب
+  // «نعم، احذف» هو ما يُثبت أن التوجيه عمل — وجود النافذة وحده لا يميّز بينهما.
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'نعم، احذف' })).toHaveCount(0)
+  await expect(page.getByRole('dialog').getByRole('button', { name: 'إخراج', exact: true })).toBeVisible()
+})
+
 test('خروج منتدَب: يُمنع برصيد غير مسوّى، ويمرّ عبر «تسوية وخروج»', async ({ page }) => {
   await openTripAsAdmin(page, CREDS)
 
   const panel = page.locator('#long-term-section')
   await expect(panel).toBeVisible()
 
+  // ⚠️ النص المتوقَّع «تسوية وخروج» لا «إخراج»: خالد عليه عجز، والزرّ يصف ما
+  // سيحدث فعلاً. رُصد أن الصياغة المجرّدة السابقة («إخراج» للجميع) لم تكن
+  // مفهومة — المالك بحث عن الميزة ولم يجدها رغم أن الزرّ أمامه.
   const khaledRow = panel.locator('li').filter({ hasText: KHALED.name })
-  await khaledRow.getByRole('button', { name: 'إخراج' }).click()
+  await khaledRow.getByRole('button', { name: 'تسوية وخروج' }).click()
 
   // الرسالة تسمّي المبلغ والاتجاه — هذا هو «الإرشاد» المطلوب، لا رفض غامض.
   await expect(page.getByText(/حسابه غير مسوّى/)).toBeVisible()
   await expect(page.getByText(/عليه 200\.00 ريال/)).toBeVisible()
 
-  await page.getByRole('button', { name: 'تسوية وخروج' }).click()
+  // زرّ التأكيد داخل النافذة يحمل نفس النص — نحصر النقر بالنافذة لا بالصف.
+  await page.getByRole('dialog').getByRole('button', { name: 'تسوية وخروج' }).click()
   await expect(page.getByText(/تمت تسوية 200\.00 ريال وإخراج العضو/)).toBeVisible({ timeout: 15_000 })
 
   // خرج فعلاً من القائمة النشطة — حذف ليّن، فسجلّه المالي باقٍ (القاعدة ٥).
