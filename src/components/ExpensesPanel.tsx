@@ -7,7 +7,7 @@ import { ExpenseListItem } from './ExpenseSection'
 import { ExpenseListItemSkeleton } from './Skeleton'
 import { ExpenseListErrorFallback } from './AppErrorFallback'
 import { haptic } from '../utils/haptics'
-import { Receipt, Download, Search, Plus, BarChart3 } from '../icons'
+import { Receipt, Search, Plus, BarChart3 } from '../icons'
 
 interface ExpensesPanelProps {
   isInitialLoading: boolean
@@ -22,12 +22,16 @@ interface ExpensesPanelProps {
   setSortOrder: (value: SortOrder) => void
   onOpenReports: () => void
   onOpenTrashBin: () => void
-  onExport: () => void
   onOpenExpenseForm: () => void
 }
 
 // ─── سجل المصاريف ─────────────────────────────────────────────────────────────
 // شريط الأدوات + البحث + القائمة الافتراضية. ExpenseListItem وحده يقرأ السياق.
+//
+// 🆕 ولا زرّ «تصدير Excel» — كان استدعاءً حرفياً لنفس exportTripToExcel بنفس
+// الوسائط الأربع التي يستدعيها الزرّ داخل ReportsView، أي الزرّ ذاته مرتين لا
+// نقطتَي دخول لميزة واحدة. مكانه الطبيعي داخل التقارير حيث يُنظَر إلى ما
+// يُصدَّر، والتصدير فعل نادر لا يخسر شيئاً بعمق نقرة (انظر docs/DECISIONS.md).
 //
 // 🆕 لا زرّ «إدارة الرحلة/الرحلات» هنا بعد الآن — كان مكرَّراً مع AccountMenu
 // (الهيدر)، الذي وُسِّع ليخدم isOrganizer أيضاً لا isAdmin فقط. نقطة الوصول
@@ -36,7 +40,7 @@ export const ExpensesPanel = ({
   isInitialLoading, isAdmin, canAddExpenses,
   activeExpenses, filteredExpenses,
   searchQuery, setSearchQuery, sortOrder, setSortOrder,
-  onOpenReports, onOpenTrashBin, onExport, onOpenExpenseForm,
+  onOpenReports, onOpenTrashBin, onOpenExpenseForm,
 }: ExpensesPanelProps) => {
   const virtuosoRef = useRef<VirtuosoHandle>(null)
   const isShowingList = !isInitialLoading && activeExpenses.length > 0 && filteredExpenses.length > 0
@@ -81,12 +85,6 @@ export const ExpensesPanel = ({
             سلة المهملات
           </button>
         )}
-        <button
-          onClick={onExport} disabled={!activeExpenses.length}
-          className="flex items-center gap-1.5 text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-40"
-        >
-          <Download className="w-3.5 h-3.5" /> تصدير Excel
-        </button>
       </div>
     </div>
 

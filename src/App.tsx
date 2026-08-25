@@ -1,6 +1,5 @@
 import { lazy, Suspense } from 'react'
 import { AnimatePresence } from 'framer-motion'
-import { exportTripToExcel } from './utils/reports'
 import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from './utils/tripId'
 import { haptic } from './utils/haptics'
 import { useAppCoordinator } from './hooks/useAppCoordinator'
@@ -254,10 +253,6 @@ export default function App() {
                       setSortOrder={filter.setSortOrder}
                       onOpenReports={modals.openReports}
                       onOpenTrashBin={modals.openTrashBin}
-                      onExport={() => exportTripToExcel({
-                        expenses: ledger.activeExpenses, travelers: ledger.activeTravelers,
-                        balances: ledger.balances, settlements: ledger.settlements,
-                      })}
                       onOpenExpenseForm={expense.openExpenseForm}
                     />
                   </div>
