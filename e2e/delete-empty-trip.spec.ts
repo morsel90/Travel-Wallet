@@ -42,9 +42,22 @@ test.beforeAll(async () => {
 async function openTripDetailAsAdmin(page: Page): Promise<void> {
   await openAccountMenu(page)
   await page.getByRole('menuitem', { name: 'لوحة الإدارة' }).click()
-  const tripRow = page.locator('div.bg-white.rounded-2xl.shadow-sm.border.border-slate-200.p-4')
+  await tripRowInAdminList(page).getByRole('button', { name: 'تعديل' }).click()
+}
+
+/**
+ * صفّ رحلتنا في قائمة لوحة الإدارة — بالمعرّف الفريد لا بالاسم المعروض.
+ *
+ * ⚠️ الفارق ليس تجميلاً: هيدر التطبيق صار يعرض **اسم الرحلة المفتوحة** (ورقة
+ * الرحلة)، فأي بحث نصّي عن الاسم يطابق عنصرين — الصفّ في القائمة، والاسم في
+ * الهيدر خلف اللوحة. ولأن الهيدر يُسقِط الاسم إلى المعرّف *بعد* أن يصل حذف
+ * الرحلة إلى مستمع onSnapshot، كان التحقّق من الاختفاء سباقاً زمنياً يعتمد على
+ * أيّهما يُحدَّث أولاً. المعرّف يظهر في القائمة وحدها، فيزول السباق من أصله.
+ */
+function tripRowInAdminList(page: Page) {
+  return page
+    .locator('div.bg-white.rounded-2xl.shadow-sm.border.border-slate-200.p-4')
     .filter({ hasText: TRIP_ID })
-  await tripRow.getByRole('button', { name: 'تعديل' }).click()
 }
 
 test('مسؤول يحذف مصروفاً ونفسه من مسافري رحلة أنشأها، ثم يستطيع حذف الرحلة الفارغة فعلياً', async ({ page }) => {
@@ -105,5 +118,5 @@ test('مسؤول يحذف مصروفاً ونفسه من مسافري رحلة �
   // النجاح يعيد اللوحة لقائمة الرحلات (onDeleted في TripDetailPanel) — رحلتنا
   // اختفت منها فعلاً، لا مجرّد رسالة نجاح بلا أثر حقيقي.
   await expect(page.getByRole('heading', { name: 'إدارة الرحلات' })).toBeVisible()
-  await expect(page.getByText(TRIP_NAME)).not.toBeVisible()
+  await expect(tripRowInAdminList(page)).toHaveCount(0)
 })
