@@ -11,10 +11,6 @@ import type { Traveler, TravelerBalance } from '../types'
 export type ModalState =
   | { type: 'none' }
   | { type: 'reports' }
-  // 🆕 «ورقة الرحلة» — تُفتح من اسم الرحلة في الهيدر. نقطة تعريف بالرحلة
-  // المفتوحة وأفعالها على *مستوى الرحلة* (لا مستوى الحساب ولا مستوى قائمة
-  // المصاريف). انظر TripSheetModal.tsx وdocs/DECISIONS.md.
-  | { type: 'tripSheet' }
   | { type: 'trashBin' }
   | { type: 'tripAdmin' }
   | { type: 'deleteTraveler';  traveler: Traveler }
@@ -29,7 +25,6 @@ export type ModalState =
 
 type ModalAction =
   | { type: 'OPEN_REPORTS' }
-  | { type: 'OPEN_TRIP_SHEET' }
   | { type: 'OPEN_TRASH_BIN' }
   | { type: 'OPEN_TRIP_ADMIN' }
   | { type: 'OPEN_DELETE_TRAVELER';  traveler: Traveler }
@@ -45,7 +40,6 @@ const CLOSED: ModalState = { type: 'none' }
 function modalReducer(state: ModalState, action: ModalAction): ModalState {
   switch (action.type) {
     case 'OPEN_REPORTS':         return { type: 'reports' }
-    case 'OPEN_TRIP_SHEET':      return { type: 'tripSheet' }
     case 'OPEN_TRASH_BIN':       return { type: 'trashBin' }
     case 'OPEN_TRIP_ADMIN':      return { type: 'tripAdmin' }
     case 'OPEN_DELETE_TRAVELER': return { type: 'deleteTraveler', traveler: action.traveler }
@@ -63,7 +57,6 @@ export function useModals() {
   const [modal, dispatch] = useReducer(modalReducer, CLOSED)
 
   const openReports        = useCallback(() => dispatch({ type: 'OPEN_REPORTS' }), [])
-  const openTripSheet      = useCallback(() => dispatch({ type: 'OPEN_TRIP_SHEET' }), [])
   const openTrashBin       = useCallback(() => dispatch({ type: 'OPEN_TRASH_BIN' }), [])
   const openTripAdmin      = useCallback(() => dispatch({ type: 'OPEN_TRIP_ADMIN' }), [])
   const openDeleteTraveler = useCallback((traveler: Traveler) => dispatch({ type: 'OPEN_DELETE_TRAVELER', traveler }), [])
@@ -77,7 +70,6 @@ export function useModals() {
   return {
     modal,
     openReports,
-    openTripSheet,
     openTrashBin,
     openTripAdmin,
     openDeleteTraveler,

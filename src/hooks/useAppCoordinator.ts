@@ -361,10 +361,10 @@ export function useAppCoordinator() {
       travelersPanelBalances,
     },
     /** إعدادات الرحلة الحالية ودورة حياتها. */
-    // 🆕 `name` و`status` مكشوفان هنا الآن — «ورقة الرحلة» (TripSheetModal)
-    // تعرّف بالرحلة المفتوحة، والهيدر يعرض اسمها بدل اسم التطبيق الثابت.
-    // القيمة نفسها المستخدَمة في organizerTripSummary أعلاه، لا مصدر ثانٍ.
-    trip: { name: tripName ?? TRIP_ID, status: tripStatus, itinerary, canAddExpenses, tripClosedNotice, tripType },
+    // 🆕 `name` مكشوف هنا الآن — الهيدر يعرض اسم الرحلة المفتوحة بدل اسم
+    // التطبيق الثابت. القيمة نفسها المستخدَمة في organizerTripSummary أعلاه،
+    // لا مصدر ثانٍ يمكن أن ينحرف عنه.
+    trip: { name: tripName ?? TRIP_ID, itinerary, canAddExpenses, tripClosedNotice, tripType },
     /**
      * 🆕 كل ما تحتاجه واجهة الرحلة الطويلة — **null في الرحلة القياسية**.
      * قيمة واحدة تُفحص في App.tsx (`longTerm && …`) بدل شروط متفرّقة، وهو ما

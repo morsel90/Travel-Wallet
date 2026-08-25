@@ -14,8 +14,7 @@ import '../src/index.css'
 // 🆕 3. الاتجاه على <html> نفسه، لا على المغلّف وحده: النوافذ (Modal.tsx)
 //    تُرسم عبر createPortal إلى document.body فتخرج من مغلّف withRtl أدناه
 //    تماماً، فتُعرض قصصها معكوسة (الأيقونة يساراً والشيفرون يميناً) بينما هي
-//    سليمة في التطبيق — index.html يضع dir="rtl" على <html>. رُصد عند أول قصة
-//    لنافذة (TripSheet.stories.tsx).
+//    سليمة في التطبيق — index.html يضع dir="rtl" على <html>. رُصد عند أول قصة لنافذة.
 if (typeof document !== 'undefined') {
   document.documentElement.setAttribute('dir', 'rtl')
   document.documentElement.setAttribute('lang', 'ar')
