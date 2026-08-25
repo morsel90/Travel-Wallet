@@ -28,8 +28,6 @@ interface TripSheetModalProps {
   canManageTrip: boolean
   onOpenReports: () => void
   onOpenTripAdmin: () => void
-  /** يُمرَّر فقط حين يملك المستخدم أكثر من رحلة — لا معنى لتبديل لمن له رحلة واحدة. */
-  onShowMyTrips?: () => void
   onClose: () => void
 }
 
@@ -47,12 +45,14 @@ export default function TripSheetModal({
   canManageTrip,
   onOpenReports,
   onOpenTripAdmin,
-  onShowMyTrips,
   onClose,
 }: TripSheetModalProps) {
-  // الأفعال التي تفتح مودالاً آخر لا تحتاج إغلاقاً صريحاً: حالة المودال اتحاد
-  // مميّز، ففتح غيرها يستبدلها بنيوياً (انظر useModals.ts). أما ما يغادر طبقة
-  // المودالات كلياً (تبديل الرحلة) فيُغلقها أولاً — يُمرَّر ملفوفاً من App.tsx.
+  // ⚠️ **لا «تبديل الرحلة» هنا، وليس سهواً.** «رحلاتي» مجموعة المستخدم لا
+  // خاصية من خصائص الرحلة المفتوحة — تعمل حتى بلا رحلة مفتوحة إطلاقاً (شاشة
+  // TripPicker)، ومكانها AccountMenu. وقد كان وجودها هنا يظهر في الكود قبل أن
+  // يظهر في الاستخدام: كل فعل آخر في الورقة يستبدله اتحاد ModalState بنيوياً،
+  // وحده كان يحتاج closeModal() ملفوفاً حوله لأنه يغادر طبقة المودالات.
+  // أُزيلت بعد أن أكّد المالك أن قائمة الحساب هي المكان الذي يقصده فعلاً.
   const run = (action: () => void) => () => {
     haptic.light()
     action()
@@ -95,10 +95,6 @@ export default function TripSheetModal({
 
         {canManageTrip && (
           <SheetAction Icon={Settings} label="إدارة الرحلة" onClick={run(onOpenTripAdmin)} />
-        )}
-
-        {onShowMyTrips && (
-          <SheetAction Icon={Luggage} label="تبديل الرحلة" onClick={run(onShowMyTrips)} />
         )}
       </div>
 

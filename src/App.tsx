@@ -289,12 +289,6 @@ export default function App() {
                 canManageTrip: session.isAdmin || session.isOrganizer,
                 onOpenReports: modals.openReports,
                 onOpenTripAdmin: modals.openTripAdmin,
-                // ⚠️ يغلق الورقة أولاً: تبديل الرحلة يغادر طبقة المودالات إلى
-                // شاشة أخرى (TripPicker)، بخلاف بقية الأفعال التي يستبدلها
-                // اتحاد ModalState بنيوياً بمجرد فتحها.
-                onShowMyTrips: picker.trips.length > 1
-                  ? () => { modals.closeModal(); picker.show() }
-                  : undefined,
               }}
               reports={{
                 travelers: ledger.activeTravelers,

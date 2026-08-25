@@ -18,6 +18,8 @@ Decisions that look like oversights but are not. Read this before "fixing" them.
 
 ⚠️ ولهذا فإن وجود «التقارير» في مكانين الآن حالة مقصودة مؤقتة، لا سهو ينتظر التنظيف.
 
+**وأول ما حُسم بهذه الطريقة: «تبديل الرحلة» ليست في الورقة.** «رحلاتي» مجموعة *المستخدم* لا خاصية من خصائص الرحلة المفتوحة — تعمل حتى بلا رحلة مفتوحة إطلاقاً (شاشة `TripPicker` لعضو بلا أي رحلة بعد)، فمكانها `AccountMenu` وحده. وقد كان هذا ظاهراً في الكود قبل أن يظهر في الاستخدام: كل فعل آخر في الورقة يستبدله اتحاد `ModalState` بنيوياً بمجرد فتحه، ووحده «تبديل الرحلة» احتاج `closeModal()` ملفوفاً حوله لأنه يغادر طبقة المودالات إلى شاشة أخرى. النشاز في الكود كان انعكاساً لنشاز في التصنيف: بقية الورقة أفعال *على* هذه الرحلة، وهذا فعل *مغادرة* لها.
+
 ### 🆕 Monthly rollover is a Cloud Function because the client *cannot* do it — not because a server is tidier
 
 The feature was specified as a client-side `writeBatch`. That batch cannot commit under this project's own rules, and three independent reasons each kill it on their own:

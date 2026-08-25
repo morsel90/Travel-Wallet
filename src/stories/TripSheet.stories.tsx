@@ -32,24 +32,23 @@ export const عضو: Story = {
     canManageTrip: false,
     onOpenReports: noop,
     onOpenTripAdmin: noop,
-    onShowMyTrips: undefined,
     onClose: noop,
   },
 }
 
-/** منظّم الرحلة أو المسؤول — يرى «إدارة الرحلة» أيضاً. */
-export const منظّم_بعدة_رحلات: Story = {
+/** منظّم الرحلة أو المسؤول — يرى «إدارة الرحلة» أيضاً.
+ *  ⚠️ ولا يرى «تبديل الرحلة»: مكانها AccountMenu — انظر TripSheetModal.tsx. */
+export const منظّم: Story = {
   args: {
     ...عضو.args,
     canManageTrip: true,
-    onShowMyTrips: noop,
   },
 }
 
 /** رحلة طويلة المدى — يظهر الشهر المحاسبي المفتوح. */
 export const رحلة_طويلة_المدى: Story = {
   args: {
-    ...منظّم_بعدة_رحلات.args,
+    ...منظّم.args,
     tripName: 'انتداب مدرستي',
     tripId: 'Mdrsah',
     period: '2026-08',
@@ -59,7 +58,7 @@ export const رحلة_طويلة_المدى: Story = {
 /** رحلة منتهية — الحالة تُقرأ من الشارة بلا تخمين من غياب الأزرار. */
 export const رحلة_منتهية: Story = {
   args: {
-    ...منظّم_بعدة_رحلات.args,
+    ...منظّم.args,
     status: 'completed',
   },
 }
