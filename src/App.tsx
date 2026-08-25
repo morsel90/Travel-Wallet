@@ -141,6 +141,9 @@ export default function App() {
           <div className="min-h-screen pb-20 md:pb-8">
             <Header
               isSyncing={status.isSyncing} isAdmin={session.isAdmin} isOrganizer={session.isOrganizer}
+              // 🆕 اسم الرحلة يحلّ محلّ «مصاريف السفر»، والضغط عليه يفتح ورقة الرحلة.
+              tripName={trip.name}
+              onOpenTripSheet={modals.openTripSheet}
               displayName={profile.displayName || session.user?.displayName || null}
               email={session.user?.email ?? null}
               stats={ledger.isInitialLoading ? null : {
@@ -273,6 +276,26 @@ export default function App() {
               closeModal={modals.closeModal}
               closeDeposit={deposit.closeDeposit}
               confirmDeleteTraveler={traveler.confirmDeleteTraveler}
+              // 🆕 ورقة الرحلة — أفعال مستوى الرحلة في نقطة واحدة. مرحلة إضافية
+              // محضة: لا زرّ حُذف من مكانه الحالي (شريط سجل المصاريف وقائمة
+              // الحساب كما هما)، انظر TripSheetModal.tsx.
+              tripSheet={{
+                tripId: TRIP_ID,
+                tripName: trip.name,
+                status: trip.status,
+                // الشهر المحاسبي يُعرض في الرحلة الطويلة وحدها — نفس مصدر
+                // LongTermPanel، لا حساب ثانٍ يمكن أن ينحرف عنه.
+                period: longTerm?.period,
+                canManageTrip: session.isAdmin || session.isOrganizer,
+                onOpenReports: modals.openReports,
+                onOpenTripAdmin: modals.openTripAdmin,
+                // ⚠️ يغلق الورقة أولاً: تبديل الرحلة يغادر طبقة المودالات إلى
+                // شاشة أخرى (TripPicker)، بخلاف بقية الأفعال التي يستبدلها
+                // اتحاد ModalState بنيوياً بمجرد فتحها.
+                onShowMyTrips: picker.trips.length > 1
+                  ? () => { modals.closeModal(); picker.show() }
+                  : undefined,
+              }}
               reports={{
                 travelers: ledger.activeTravelers,
                 expenses: ledger.activeExpenses,

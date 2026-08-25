@@ -17,6 +17,12 @@ describe('useModals', () => {
     expect(result.current.modal).toEqual({ type: 'reports' })
   })
 
+  it('يفتح ورقة الرحلة', () => {
+    const { result } = renderHook(() => useModals())
+    act(() => result.current.openTripSheet())
+    expect(result.current.modal).toEqual({ type: 'tripSheet' })
+  })
+
   it('يفتح مودال سلة المهملات', () => {
     const { result } = renderHook(() => useModals())
     act(() => result.current.openTrashBin())

@@ -11,6 +11,16 @@ import type { Preview, Decorator } from '@storybook/react-vite'
 //    الأشرطة، أماكن الأيقونات) ويصبح ما تراه في القصة مختلفاً عمّا يراه المستخدم.
 import '../src/index.css'
 
+// 🆕 3. الاتجاه على <html> نفسه، لا على المغلّف وحده: النوافذ (Modal.tsx)
+//    تُرسم عبر createPortal إلى document.body فتخرج من مغلّف withRtl أدناه
+//    تماماً، فتُعرض قصصها معكوسة (الأيقونة يساراً والشيفرون يميناً) بينما هي
+//    سليمة في التطبيق — index.html يضع dir="rtl" على <html>. رُصد عند أول قصة
+//    لنافذة (TripSheet.stories.tsx).
+if (typeof document !== 'undefined') {
+  document.documentElement.setAttribute('dir', 'rtl')
+  document.documentElement.setAttribute('lang', 'ar')
+}
+
 // الخلفية الافتراضية تطابق خلفية التطبيق (bg-slate-50) — على أبيض ناصع تختفي
 // حدود البطاقات البيضاء وظلالها الخفيفة، فيبدو التصميم مسطّحاً بلا سبب.
 const withRtl: Decorator = Story => (

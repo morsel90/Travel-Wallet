@@ -70,7 +70,13 @@ test('مسؤول يحذف مصروفاً ونفسه من مسافري رحلة �
   await expect(page.getByText(/لأنها تحوي مسافرين أو مصاريف/)).toBeVisible()
 
   // ⚠️ تحقّق سلبي حقيقي (القاعدة ١٨): الرحلة لم تُحذف فعلاً، لا تزال قابلة للإدارة.
-  await expect(page.getByRole('heading', { name: TRIP_NAME })).toBeVisible()
+  //
+  // 🆕 التحديد بهيدر لوحة الإدارة تحديداً: هيدر التطبيق صار يعرض اسم الرحلة
+  // المفتوحة في <h1> أيضاً (ورقة الرحلة)، فاسم الرحلة وحده يطابق عنوانين.
+  // هيدر اللوحة هو الوحيد الذي يعرض *معرّف* الرحلة تحت اسمها.
+  await expect(
+    page.locator('header').filter({ hasText: TRIP_ID }).getByRole('heading', { name: TRIP_NAME }),
+  ).toBeVisible()
   await page.getByRole('button', { name: 'إغلاق إدارة الرحلات' }).click()
 
   // ── يسجّل مصروفاً اختبارياً ثم يحذفه — حذفاً ليّناً كالمعتاد. هذا وحده كان

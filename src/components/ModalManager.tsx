@@ -20,6 +20,7 @@ import type { ModalState } from '../hooks/useModals'
 // التحميل المسبق يجب أن يستورد *نفس* المُعرّف حرفياً وإلا سحب وحدة أخرى وبقي
 // الجزء الحقيقي بلا تحميل (انظر preloadAll في utils/preload.ts).
 const importReportsView         = () => import('./reports/ReportsView')
+const importTripSheetModal      = () => import('./modals/TripSheetModal')
 const importDepositModal        = () => import('./modals/DepositModal')
 const importTrashBinModal       = () => import('./modals/TrashBinModal')
 const importDepositHistoryModal = () => import('./modals/DepositHistoryModal')
@@ -30,6 +31,7 @@ const importMonthlyRolloverModal = () => import('./modals/MonthlyRolloverModal')
 const importExitTravelerModal    = () => import('./modals/ExitTravelerModal')
 
 const ReportsView         = lazy(importReportsView)
+const TripSheetModal      = lazy(importTripSheetModal)
 const DepositModal        = lazy(importDepositModal)
 const TrashBinModal       = lazy(importTrashBinModal)
 const DepositHistoryModal = lazy(importDepositHistoryModal)
@@ -49,6 +51,7 @@ const ExitTravelerModal    = lazy(importExitTravelerModal)
 // eslint-disable-next-line react-refresh/only-export-components
 export const modalImporters = [
   importReportsView,
+  importTripSheetModal,
   importDepositModal,
   importTrashBinModal,
   importDepositHistoryModal,
@@ -72,6 +75,8 @@ interface ModalManagerProps {
   // سلة المهملات
   trash: Pick<ComponentProps<typeof TrashBinModal>,
     'deletedExpenses' | 'deletedTravelers' | 'onRestoreExpense' | 'onRestoreTraveler'>
+  // 🆕 ورقة الرحلة — تعريف بالرحلة المفتوحة وأفعالها (onClose يُدار داخلياً)
+  tripSheet: Omit<ComponentProps<typeof TripSheetModal>, 'onClose'>
   // 🆕 إدارة الرحلات — للمسؤول فقط (onClose يُدار داخلياً)
   tripAdmin: Omit<ComponentProps<typeof TripAdminView>, 'onClose'>
   /**
@@ -90,7 +95,7 @@ interface ModalManagerProps {
 }
 
 export default function ModalManager({
-  modal, closeModal, confirmDeleteTraveler, reports, deposit, closeDeposit, trash, tripAdmin, longTerm,
+  modal, closeModal, confirmDeleteTraveler, reports, tripSheet, deposit, closeDeposit, trash, tripAdmin, longTerm,
 }: ModalManagerProps) {
   // اشتقاق الحمولة من الحالة كثوابت محلية — يضمن حفظ التضييق (narrowing) داخل الإغلاقات
   const deleteTarget    = modal.type === 'deleteTraveler'  ? modal.traveler : null
@@ -104,6 +109,14 @@ export default function ModalManager({
         {modal.type === 'reports' && (
           <Suspense key="reports" fallback={<ModalFallback />}>
             <ReportsView {...reports} onClose={closeModal} />
+          </Suspense>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {modal.type === 'tripSheet' && (
+          <Suspense key="trip-sheet" fallback={<ModalFallback />}>
+            <TripSheetModal {...tripSheet} onClose={closeModal} />
           </Suspense>
         )}
       </AnimatePresence>
