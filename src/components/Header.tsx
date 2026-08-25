@@ -13,6 +13,14 @@ export interface HeaderStats {
 interface HeaderProps {
   isSyncing: boolean
   isAdmin: boolean
+  /**
+   * 🆕 اسم الرحلة المفتوحة — يحلّ محلّ «مصاريف السفر» الثابت في العنوان.
+   *
+   * ⚠️ العنوان يجيب عن «أين أنا؟» لا عن «ما هذا التطبيق؟». اسم التطبيق باقٍ في
+   * index.html (تبويب المتصفح وPWA)، وهو مكانه الصحيح. ومع تعدّد الرحلات صار
+   * تأكيد الرحلة المفتوحة *قبل* تسجيل مصروف فيها معلومةً مالية لا ترفاً بصرياً.
+   */
+  tripName: string
   /** 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يمرَّر إلى AccountMenu ليعرض «إدارة الرحلة». */
   isOrganizer: boolean
   stats: HeaderStats | null
@@ -62,6 +70,7 @@ const SCROLL_ROW =
 const Header = ({
   isSyncing,
   isAdmin,
+  tripName,
   isOrganizer,
   stats,
   onStatClick,
@@ -144,7 +153,7 @@ const Header = ({
             </div>
           ) : (
             <>
-              <h1 className="font-bold tracking-wide truncate text-xl">مصاريف السفر</h1>
+              <h1 className="font-bold tracking-wide truncate text-xl">{tripName}</h1>
               {isSyncing && (
                 <span
                   role="status"

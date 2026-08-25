@@ -7,7 +7,7 @@ import { ExpenseListItem } from './ExpenseSection'
 import { ExpenseListItemSkeleton } from './Skeleton'
 import { ExpenseListErrorFallback } from './AppErrorFallback'
 import { haptic } from '../utils/haptics'
-import { Receipt, Download, Search, Plus, BarChart3 } from '../icons'
+import { Receipt, Search, Plus, BarChart3, Trash2 } from '../icons'
 
 interface ExpensesPanelProps {
   isInitialLoading: boolean
@@ -22,12 +22,16 @@ interface ExpensesPanelProps {
   setSortOrder: (value: SortOrder) => void
   onOpenReports: () => void
   onOpenTrashBin: () => void
-  onExport: () => void
   onOpenExpenseForm: () => void
 }
 
 // ─── سجل المصاريف ─────────────────────────────────────────────────────────────
 // شريط الأدوات + البحث + القائمة الافتراضية. ExpenseListItem وحده يقرأ السياق.
+//
+// 🆕 ولا زرّ «تصدير Excel» — كان استدعاءً حرفياً لنفس exportTripToExcel بنفس
+// الوسائط الأربع التي يستدعيها الزرّ داخل ReportsView، أي الزرّ ذاته مرتين لا
+// نقطتَي دخول لميزة واحدة. مكانه الطبيعي داخل التقارير حيث يُنظَر إلى ما
+// يُصدَّر، والتصدير فعل نادر لا يخسر شيئاً بعمق نقرة (انظر docs/DECISIONS.md).
 //
 // 🆕 لا زرّ «إدارة الرحلة/الرحلات» هنا بعد الآن — كان مكرَّراً مع AccountMenu
 // (الهيدر)، الذي وُسِّع ليخدم isOrganizer أيضاً لا isAdmin فقط. نقطة الوصول
@@ -36,7 +40,7 @@ export const ExpensesPanel = ({
   isInitialLoading, isAdmin, canAddExpenses,
   activeExpenses, filteredExpenses,
   searchQuery, setSearchQuery, sortOrder, setSortOrder,
-  onOpenReports, onOpenTrashBin, onExport, onOpenExpenseForm,
+  onOpenReports, onOpenTrashBin, onOpenExpenseForm,
 }: ExpensesPanelProps) => {
   const virtuosoRef = useRef<VirtuosoHandle>(null)
   const isShowingList = !isInitialLoading && activeExpenses.length > 0 && filteredExpenses.length > 0
@@ -69,23 +73,6 @@ export const ExpensesPanel = ({
           className="flex items-center gap-1.5 text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-sm"
         >
           <BarChart3 className="w-3.5 h-3.5" /> التقارير
-        </button>
-        {isAdmin && (
-          <button
-            onClick={onOpenTrashBin}
-            className="flex items-center gap-1.5 text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm"
-          >
-            <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            سلة المهملات
-          </button>
-        )}
-        <button
-          onClick={onExport} disabled={!activeExpenses.length}
-          className="flex items-center gap-1.5 text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-40"
-        >
-          <Download className="w-3.5 h-3.5" /> تصدير Excel
         </button>
       </div>
     </div>
@@ -155,6 +142,25 @@ export const ExpensesPanel = ({
       <p className="text-xs text-slate-400 mt-2 px-1">
         {filteredExpenses.length} من {activeExpenses.length} مصروف
       </p>
+    )}
+
+    {/* 🆕 سلة المهملات في نهاية السجلّ لا في شريطه العلوي — نمط «المحذوفات آخر
+        القائمة» المتعارف عليه (بريد جوجل، صور iOS). الشريط العلوي مساحة أولى،
+        والسلة أندر ما كان فيه.
+        ⚠️ **وهي شقيقة لكتلة العرض لا داخل أي فرع منها.** وضعها في تذييل
+        Virtuoso (أو داخل فرع القائمة) كان يُخفيها في الحالة التي تُطلب فيها
+        أكثر من غيرها: مسؤول حذف **آخر** مصروف فظهرت شاشة «لا توجد مصاريف بعد»
+        بدل القائمة — أي أن طريق التراجع يختفي في اللحظة التي وقع فيها الخطأ.
+        (القاعدة ١٧: اسأل من يستبعده هذا الشرط قبل شحنه.) */}
+    {isAdmin && !isInitialLoading && (
+      <div className="mt-4 pt-3 border-t border-slate-200/70 flex justify-center">
+        <button
+          onClick={() => { haptic.light(); onOpenTrashBin() }}
+          className="flex items-center gap-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 px-3 py-2 rounded-xl text-xs font-bold transition-colors min-h-[44px]"
+        >
+          <Trash2 className="w-3.5 h-3.5" /> سلة المهملات
+        </button>
+      </div>
     )}
   </section>
   )

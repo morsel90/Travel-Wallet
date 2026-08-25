@@ -1,6 +1,5 @@
 import { lazy, Suspense } from 'react'
 import { AnimatePresence } from 'framer-motion'
-import { exportTripToExcel } from './utils/reports'
 import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from './utils/tripId'
 import { haptic } from './utils/haptics'
 import { useAppCoordinator } from './hooks/useAppCoordinator'
@@ -141,6 +140,8 @@ export default function App() {
           <div className="min-h-screen pb-20 md:pb-8">
             <Header
               isSyncing={status.isSyncing} isAdmin={session.isAdmin} isOrganizer={session.isOrganizer}
+              // 🆕 اسم الرحلة يحلّ محلّ «مصاريف السفر» الثابت في العنوان.
+              tripName={trip.name}
               displayName={profile.displayName || session.user?.displayName || null}
               email={session.user?.email ?? null}
               stats={ledger.isInitialLoading ? null : {
@@ -251,10 +252,6 @@ export default function App() {
                       setSortOrder={filter.setSortOrder}
                       onOpenReports={modals.openReports}
                       onOpenTrashBin={modals.openTrashBin}
-                      onExport={() => exportTripToExcel({
-                        expenses: ledger.activeExpenses, travelers: ledger.activeTravelers,
-                        balances: ledger.balances, settlements: ledger.settlements,
-                      })}
                       onOpenExpenseForm={expense.openExpenseForm}
                     />
                   </div>
