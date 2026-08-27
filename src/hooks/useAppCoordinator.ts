@@ -379,6 +379,7 @@ export function useAppCoordinator() {
       canManage: canManageLongTerm,
       isClosingMonth: longTermActions.isClosingMonth,
       isExitingTraveler: longTermActions.isExitingTraveler,
+      organizerUid,
       openRollover: modals.openMonthlyRollover,
       openExitTraveler: modals.openExitTraveler,
       onConfirmRollover: confirmRollover,

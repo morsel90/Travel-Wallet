@@ -1893,12 +1893,24 @@ exports.exitTraveler = onCall(
       throw new HttpsError('invalid-argument', 'معرّف المسافر غير صالح.');
     }
 
-    await requireManagedLongTermTrip(tripId, request.auth);
+    const { trip } = await requireManagedLongTermTrip(tripId, request.auth);
 
     const { travelers, remaining } = await readLedger(tripId);
     const traveler = travelers.find((t) => t.id === travelerId);
     if (!traveler) {
       throw new HttpsError('not-found', 'هذا العضو غير موجود في الرحلة (أو أُخرج منها بالفعل).');
+    }
+
+    // ⚠️ منفصل عن فحص الرصيد أدناه عمداً: تسوية الرصيد لا تحلّ هذا — البنك
+    // الذي تصل له كل التحويلات (organizerUid، انظر BankDetailsCard) يبقى بنكه
+    // حتى بعد خروجه من دفتر المسافرين. نفس الصياغة بالضبط في
+    // describeOrganizerExitBlock (src/utils/longTerm.ts) — المنظّم يجب أن
+    // يقرأ الجملة نفسها سواء منعته الواجهة قبل الطلب أو منعه الخادم بعده.
+    if (traveler.uid && trip.organizerUid && traveler.uid === trip.organizerUid) {
+      throw new HttpsError(
+        'failed-precondition',
+        `لا يمكن إخراج ${traveler.name} — هو منظّم الرحلة، والتحويلات البنكية تصل لحسابه حالياً. عيّن منظّماً آخر من تبويب «الأعضاء» في إدارة الرحلة أولاً.`,
+      );
     }
 
     const balance = Math.round((remaining.get(travelerId) ?? 0) * 100) / 100;

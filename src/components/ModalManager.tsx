@@ -84,6 +84,8 @@ interface ModalManagerProps {
     movements: ComponentProps<typeof MonthlyRolloverModal>['movements']
     isClosingMonth: boolean
     isExitingTraveler: boolean
+    /** منظّم الرحلة الحالية — يمرَّر لـExitTravelerModal لمنع إخراجه نفسه. */
+    organizerUid?: string | null
     onConfirmRollover: () => void
     onConfirmExit: (travelerId: number, settle: boolean) => void
   }
@@ -176,6 +178,7 @@ export default function ModalManager({
             <ExitTravelerModal
               traveler={exitTarget}
               isSubmitting={longTerm.isExitingTraveler}
+              organizerUid={longTerm.organizerUid}
               onConfirm={(settle) => longTerm.onConfirmExit(exitTarget.id, settle)}
               onClose={closeModal}
             />

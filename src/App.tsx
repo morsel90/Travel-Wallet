@@ -318,6 +318,7 @@ export default function App() {
                 movements: longTerm.movements,
                 isClosingMonth: longTerm.isClosingMonth,
                 isExitingTraveler: longTerm.isExitingTraveler,
+                organizerUid: longTerm.organizerUid,
                 onConfirmRollover: longTerm.onConfirmRollover,
                 onConfirmExit: longTerm.onConfirmExit,
               } : undefined}
