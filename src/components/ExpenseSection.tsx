@@ -595,11 +595,22 @@ export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
 
   const shareData = useMemo(() => {
     const names = toDisplayNames(expense.participants, travelers)
-    const shareAmounts = expense.shares 
+    const shareAmounts = expense.shares
       ? splitByShares(expense.amount, expense.participants, expense.shares)
       : expense.participants.map(() => expense.amount / (expense.participants.length || 1))
     return { names, shareAmounts }
   }, [expense.participants, expense.shares, expense.amount, travelers]);
+
+  // 🆕 الحالة الشائعة (تقسيم بالتساوي على كل مسافر نشط) لا تحتاج كبسولة لكل
+  // اسم — القائمة الطويلة لا تضيف معلومة، فقط ضوضاء. تبقى الكبسولات الكاملة
+  // فقط حين يُستثنى أحدهم أو تُخصَّص الحصص (expense.shares)، لأن ذلك بالضبط
+  // ما يحتاج القارئ يعرف من ضمن ومن لا، وبأي مبلغ.
+  const isEqualSplitAmongAll = useMemo(() => {
+    if (expense.shares && Object.keys(expense.shares).length > 0) return false
+    if (travelers.length === 0 || expense.participants.length !== travelers.length) return false
+    const participantIds = new Set(expense.participants)
+    return travelers.every(t => participantIds.has(t.id))
+  }, [expense.participants, expense.shares, travelers]);
 
   return (
     // 🆕 بطاقة عائمة (rounded-2xl + shadow-sm + mb-3) بدل صفّ مقسَّم بخط سفلي —
@@ -685,25 +696,36 @@ export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
           </div>
 
           {/* كبسولات الحصص */}
-          <div className="flex flex-wrap items-center gap-1.5 bg-slate-50/60 p-2 rounded-xl border border-slate-100">
-            <span className="text-[10px] font-bold text-slate-400 ms-1 shrink-0">توزيع الحصص:</span>
-            <div className="flex flex-wrap gap-1">
-              {shareData.names.map((name: string, i: number) => {
-                const participantId = expense.participants[i];
-                return (
-                  <span 
-                    key={participantId} 
-                    className="inline-flex items-center gap-1 bg-white border border-slate-200/80 rounded-lg px-2 py-0.5 text-[11px] font-bold text-slate-600 shadow-sm"
-                  >
-                    <span className="text-slate-700">{name || 'غير معروف'}</span>
-                    <span className="text-[10px] text-teal-600 font-black tracking-tight tabular-nums bg-teal-50/50 px-1 rounded">
-                      {(shareData.shareAmounts[i] ?? 0).toFixed(0)}﷼
-                    </span>
-                  </span>
-                )
-              })}
+          {isEqualSplitAmongAll ? (
+            <div className="flex items-center gap-2 bg-slate-50/60 px-3 py-2 rounded-xl border border-slate-100">
+              <span className="text-[11px] font-bold text-slate-500">
+                موزّع بالتساوي على الجميع ({travelers.length})
+              </span>
+              <span className="text-[10px] text-teal-600 font-black tracking-tight tabular-nums bg-teal-50/50 px-1.5 py-0.5 rounded">
+                {(shareData.shareAmounts[0] ?? 0).toFixed(0)}﷼ للفرد
+              </span>
             </div>
-          </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-1.5 bg-slate-50/60 p-2 rounded-xl border border-slate-100">
+              <span className="text-[10px] font-bold text-slate-400 ms-1 shrink-0">توزيع الحصص:</span>
+              <div className="flex flex-wrap gap-1">
+                {shareData.names.map((name: string, i: number) => {
+                  const participantId = expense.participants[i];
+                  return (
+                    <span
+                      key={participantId}
+                      className="inline-flex items-center gap-1 bg-white border border-slate-200/80 rounded-lg px-2 py-0.5 text-[11px] font-bold text-slate-600 shadow-sm"
+                    >
+                      <span className="text-slate-700">{name || 'غير معروف'}</span>
+                      <span className="text-[10px] text-teal-600 font-black tracking-tight tabular-nums bg-teal-50/50 px-1 rounded">
+                        {(shareData.shareAmounts[i] ?? 0).toFixed(0)}﷼
+                      </span>
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
         </div>
 
