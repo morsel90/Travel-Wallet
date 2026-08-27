@@ -81,3 +81,20 @@ export function describeExitBlock(
     ? `لا يمكن إخراج ${travelerName} قبل تسوية حسابه — له رصيد متبقٍّ ${amount} ريال. أنشئ معاملة تسوية (إعادة المبلغ له) لتصفير الرصيد أولاً، أو استخدم «تسوية وخروج».`
     : `لا يمكن إخراج ${travelerName} قبل تسوية حسابه — عليه ${amount} ريال. أنشئ معاملة تسوية (استلام المبلغ منه) لتصفير الرصيد أولاً، أو استخدم «تسوية وخروج».`
 }
+
+/**
+ * هل يجوز إخراج هذا العضو إن كان هو منظّم الرحلة؟ — يُرجع نصّ المنع أو null.
+ *
+ * ⚠️ **منفصل عمداً عن describeExitBlock أعلاه.** ذاك يُحلّ بتسوية الرصيد ضمن
+ * نفس عملية الخروج؛ هذا لا تحلّه تسوية أي رصيد — البنك الذي تصل له كل
+ * التحويلات (BankDetailsCard عبر users/{organizerUid}) يبقى بنكه حتى بعد
+ * خروجه من دفتر المسافرين، فلا معنى لإخراجه قبل تعيين منظّم آخر مكانه صراحة.
+ */
+export function describeOrganizerExitBlock(
+  travelerUid: string | null | undefined,
+  organizerUid: string | null | undefined,
+  travelerName: string,
+): string | null {
+  if (!travelerUid || !organizerUid || travelerUid !== organizerUid) return null
+  return `لا يمكن إخراج ${travelerName} — هو منظّم الرحلة، والتحويلات البنكية تصل لحسابه حالياً. عيّن منظّماً آخر من تبويب «الأعضاء» في إدارة الرحلة أولاً.`
+}

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   ROLLOVER_EPSILON, settlementDirection, planRollover, countRolloverMovements, describeExitBlock,
+  describeOrganizerExitBlock,
 } from './longTerm'
 import type { TravelerBalance } from '../types'
 
@@ -77,5 +78,22 @@ describe('describeExitBlock', () => {
   it('يمنع الخروج ويسمّي المبلغ والاتجاه', () => {
     expect(describeExitBlock('long_term', 'سعد', 300)).toContain('له رصيد متبقٍّ 300.00 ريال')
     expect(describeExitBlock('long_term', 'خالد', -120.5)).toContain('عليه 120.50 ريال')
+  })
+})
+
+describe('describeOrganizerExitBlock', () => {
+  it('يمنع منظّم الرحلة من إخراج نفسه', () => {
+    expect(describeOrganizerExitBlock('uid-1', 'uid-1', 'محمد')).toContain('محمد')
+  })
+
+  it('لا يمنع عضواً عادياً مهما كان uid موجوداً', () => {
+    expect(describeOrganizerExitBlock('uid-2', 'uid-1', 'سعد')).toBeNull()
+  })
+
+  it('لا يمنع شيئاً حين يغيب uid المسافر أو organizerUid', () => {
+    expect(describeOrganizerExitBlock(null, 'uid-1', 'سعد')).toBeNull()
+    expect(describeOrganizerExitBlock(undefined, 'uid-1', 'سعد')).toBeNull()
+    expect(describeOrganizerExitBlock('uid-1', undefined, 'سعد')).toBeNull()
+    expect(describeOrganizerExitBlock('uid-1', null, 'سعد')).toBeNull()
   })
 })
