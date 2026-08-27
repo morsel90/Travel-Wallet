@@ -12,7 +12,14 @@ import type { BankDetails, UserProfile } from '../types'
 // الاستهلاك (شاشة بروفايل واحدة فقط)، فلا يبرر فصلاً كالذي تحتاجه إعدادات
 // الرحلة متعددة المستهلكين.
 
-const EMPTY_BANK_DETAILS: BankDetails = { bankName: '', beneficiary: '', iban: '' }
+const EMPTY_BANK_DETAILS: BankDetails = {
+  paymentType: 'bank',
+  bankName: '',
+  beneficiary: '',
+  iban: '',
+  walletName: '',
+  walletPhone: '',
+}
 const FALLBACK_PROFILE: UserProfile = { displayName: '', bankDetails: EMPTY_BANK_DETAILS }
 
 export function useUserProfile(user: User | null) {
@@ -42,9 +49,12 @@ export function useUserProfile(user: User | null) {
         setProfile({
           displayName: typeof data.displayName === 'string' ? data.displayName : '',
           bankDetails: {
+            paymentType: data.bankDetails?.paymentType === 'wallet' ? 'wallet' : 'bank',
             bankName:    data.bankDetails?.bankName    ?? EMPTY_BANK_DETAILS.bankName,
             beneficiary: data.bankDetails?.beneficiary ?? EMPTY_BANK_DETAILS.beneficiary,
             iban:        data.bankDetails?.iban        ?? EMPTY_BANK_DETAILS.iban,
+            walletName:  data.bankDetails?.walletName  ?? EMPTY_BANK_DETAILS.walletName,
+            walletPhone: data.bankDetails?.walletPhone ?? EMPTY_BANK_DETAILS.walletPhone,
           },
           lastTripCreatedAt: typeof data.lastTripCreatedAt === 'number' ? data.lastTripCreatedAt : undefined,
         })

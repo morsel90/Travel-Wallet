@@ -259,10 +259,20 @@ export interface TripInvite {
 
 // 🆕 تفاصيل الحساب البنكي — كانت مُعرَّفة محلياً في useTripConfig.ts وMisc.tsx
 // معاً؛ وُحِّدت هنا لأن واجهة إدارة الرحلة تحتاج نفس النوع للنموذج.
+//
+// 🆕 paymentType يفصل بين حساب بنكي ومحفظة رقمية/رقم جوال (stc pay، برق، بنفت...).
+// غيابه = 'bank'، بنفس مبدأ غياب tripType/status في types أخرى — كل الحسابات
+// القديمة لا تحمل هذا الحقل ولا تحتاج ترحيلاً. bankName/beneficiary/iban تبقى
+// إلزامية شكلياً (تُملأ بسلاسل فارغة افتراضياً في useUserProfile) للحفاظ على
+// التوافق مع كل مستهلكي النوع الحاليين؛ walletName/walletPhone اختياريان لأنهما
+// جديدان ولم تكن أي بيانات قديمة لتحملهما.
 export interface BankDetails {
+  paymentType?: 'bank' | 'wallet'
   bankName: string
   beneficiary: string
   iban: string
+  walletName?: string
+  walletPhone?: string
 }
 
 // ملاحظة: واجهة إعدادات الرحلة الكاملة (TripConfig) معرّفة ومُصدَّرة من

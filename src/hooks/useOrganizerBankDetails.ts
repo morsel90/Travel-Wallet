@@ -44,14 +44,20 @@ export function useOrganizerBankDetails(organizerUid: string | undefined): Organ
         }
 
         const data = snap.data() as { displayName?: unknown; bankDetails?: Partial<BankDetails> }
+        const paymentType = data.bankDetails?.paymentType === 'wallet' ? 'wallet' : 'bank'
         const bankName    = data.bankDetails?.bankName?.trim()    ?? ''
         const beneficiary = data.bankDetails?.beneficiary?.trim() ?? ''
         const iban         = data.bankDetails?.iban?.trim()        ?? ''
-        // بروفايل موجود لكن بلا أي حقل بنك مُعبَّأ فعلياً — نفس معنى "لا بيانات".
-        const hasBankDetails = !!(bankName || beneficiary || iban)
+        const walletName  = data.bankDetails?.walletName?.trim()  ?? ''
+        const walletPhone = data.bankDetails?.walletPhone?.trim() ?? ''
+        // بروفايل موجود لكن بلا أي حقل من نوع الدفع المختار مُعبَّأ فعلياً —
+        // نفس معنى "لا بيانات"، حتى لو حمل حقول النوع الآخر من تبديل سابق.
+        const hasPaymentDetails = paymentType === 'wallet'
+          ? !!(walletName || walletPhone)
+          : !!(bankName || beneficiary || iban)
 
         setResult({
-          bankDetails: hasBankDetails ? { bankName, beneficiary, iban } : null,
+          bankDetails: hasPaymentDetails ? { paymentType, bankName, beneficiary, iban, walletName, walletPhone } : null,
           displayName: typeof data.displayName === 'string' && data.displayName.trim() ? data.displayName.trim() : null,
           loading: false,
         })

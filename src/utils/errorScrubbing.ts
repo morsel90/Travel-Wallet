@@ -14,7 +14,7 @@ import type { ErrorEvent, Breadcrumb } from '@sentry/react'
 // متداخلاً، عمداً: أبسط من تتبع كل مسار محتمل، وأكثر أماناً حين يُضاف حقل
 // جديد بنفس الاسم في مكان لم يُتوقَّع.
 const SENSITIVE_KEYS = new Set([
-  'iban', 'bankName', 'beneficiary', 'bankDetails',
+  'iban', 'bankName', 'beneficiary', 'bankDetails', 'walletName', 'walletPhone',
   'email', 'displayName', 'changedByEmail',
   'description', 'name', 'shortName',
 ])
