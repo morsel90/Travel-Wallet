@@ -916,6 +916,40 @@ describe('بروفايل المستخدم العام — users/{uid}', () => {
     await assertFails(setDoc(userProfileDoc(strangerDb('user-1'), 'user-1'), { organizesTripIds: 'not-a-list' }))
   })
 
+  // 🆕 محفظة رقمية/رقم جوال كبديل للحساب البنكي — انظر src/types.ts BankDetails
+  // وfirestore.rules isValidBankDetails. paymentType/walletName/walletPhone
+  // اختيارية شكلياً بنفس منطق bankName/beneficiary/iban.
+  describe('bankDetails — نوع الدفع محفظة رقمية', () => {
+    it('المالك يكتب bankDetails بنوع محفظة صالح', async () => {
+      await assertSucceeds(setDoc(
+        userProfileDoc(strangerDb('user-1'), 'user-1'),
+        { bankDetails: { paymentType: 'wallet', walletName: 'stc pay', walletPhone: '0512345678' } },
+        { merge: true },
+      ))
+    })
+
+    it('paymentType بقيمة غير bank/wallet يُرفض', async () => {
+      await assertFails(setDoc(
+        userProfileDoc(strangerDb('user-1'), 'user-1'),
+        { bankDetails: { paymentType: 'crypto', walletName: 'x', walletPhone: '0512345678' } },
+      ))
+    })
+
+    it('walletPhone أطول من 20 محرفاً يُرفض', async () => {
+      await assertFails(setDoc(
+        userProfileDoc(strangerDb('user-1'), 'user-1'),
+        { bankDetails: { paymentType: 'wallet', walletPhone: '0'.repeat(21) } },
+      ))
+    })
+
+    it('walletName أطول من 100 محرف يُرفض', async () => {
+      await assertFails(setDoc(
+        userProfileDoc(strangerDb('user-1'), 'user-1'),
+        { bankDetails: { paymentType: 'wallet', walletName: 'a'.repeat(101) } },
+      ))
+    })
+  })
+
   // ⚠️ الحالة الموثّقة في تعليق isValidUserProfile: كتابة merge:true من العميل
   // تُقيَّم بمستند الدمج **الكامل** الناتج، فلو رُفض lastTripCreatedAt من
   // hasOnly لانكسرت كل كتابة بروفايل لاحقة لمن أنشأ رحلة من قبل. هذا الاختبار

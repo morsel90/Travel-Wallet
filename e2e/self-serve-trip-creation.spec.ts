@@ -51,7 +51,7 @@ test('عضو بلا أي رحلة سابقة يملأ بروفايله، يُن�
   await page.getByLabel('اسم البنك').fill('بنك الاختبار')
   await page.getByLabel('اسم المستفيد').fill('منشئ الرحلة')
   await page.getByLabel('رقم الآيبان (IBAN)').fill('SA0000000000000000000000')
-  await page.getByRole('button', { name: 'حفظ' }).click()
+  await page.getByRole('button', { name: 'حفظ', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'بروفايلي' })).not.toBeVisible()
 
   // ── ينشئ رحلة — لا حقول بنك في هذا النموذج بعد اليوم ─────────────────────
@@ -104,7 +104,7 @@ test('عضو بلا أي رحلة سابقة يملأ بروفايله، يُن�
   await page.getByRole('menuitem', { name: 'بروفايلي' }).click()
   await page.getByLabel('اسمك').fill(UPDATED_PROFILE_NAME)
   await page.getByLabel('اسم البنك').fill('بنك جديد بعد التعديل')
-  await page.getByRole('button', { name: 'حفظ' }).click()
+  await page.getByRole('button', { name: 'حفظ', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'بروفايلي' })).not.toBeVisible()
 
   await expect(page.getByText('بنك جديد بعد التعديل')).toBeVisible()

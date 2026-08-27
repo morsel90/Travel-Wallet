@@ -295,12 +295,19 @@ service cloud.firestore {
       return tripStatus(appId) != 'archived';
     }
 
+    // 🆕 paymentType/walletName/walletPhone — دعم المحفظة الرقمية/رقم الجوال
+    // كبديل عن الحساب البنكي (انظر src/types.ts BankDetails). غياب paymentType
+    // = 'bank' في الواجهة، لكن القاعدة لا تفرض ذلك شكلياً — كلا النوعين اختياري
+    // هنا بنفس منطق bankName/beneficiary/iban، فالقيد الوحيد هو الشكل لا الاكتمال.
     function isValidBankDetails(b) {
       return b is map
-        && b.keys().hasOnly(['bankName', 'beneficiary', 'iban'])
+        && b.keys().hasOnly(['paymentType', 'bankName', 'beneficiary', 'iban', 'walletName', 'walletPhone'])
+        && (!('paymentType' in b) || b.paymentType in ['bank', 'wallet'])
         && (!('bankName' in b)    || (b.bankName is string    && b.bankName.size() <= 100))
         && (!('beneficiary' in b) || (b.beneficiary is string && b.beneficiary.size() <= 100))
-        && (!('iban' in b)        || (b.iban is string        && b.iban.size() <= 40));
+        && (!('iban' in b)        || (b.iban is string        && b.iban.size() <= 40))
+        && (!('walletName' in b)  || (b.walletName is string  && b.walletName.size() <= 100))
+        && (!('walletPhone' in b) || (b.walletPhone is string && b.walletPhone.size() <= 20));
     }
 
     // 🆕 بروفايل المستخدم العام users/{uid} — انظر src/types.ts UserProfile.
