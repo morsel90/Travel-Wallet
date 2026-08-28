@@ -4,9 +4,20 @@ import type { Traveler, TravelerBalance } from '../types'
 import { useTripData, useTripActions } from '../store/tripStore'
 import { matchesTraveler } from '../utils/participants'
 // تأكد من مسار استيراد النافذة الجديدة بناءً على مكان حفظك لها
-import TravelerProfileModal from './modals/TravelerProfileModal' 
+import TravelerProfileModal from './modals/TravelerProfileModal'
+
+/** 🆕 حاضرة فقط في الرحلة الطويلة (انظر App.tsx) — غيابها يعني رحلة قياسية.
+ *  البطاقة لا تعرض زرّ خروج بعد الآن: مُمرَّرة إلى TravelerProfileModal التي
+ *  تعرضه أسفل «الخلاصة والتسويات» — راجع فتحه (منظّم مصروفاته ثم يقرر)
+ *  وموقعه الطبيعي لخروج ذاتي مستقبلاً حين يُربط حساب المنتدَب بمصادقة حقيقية. */
+interface LongTermExitProps {
+  canManage: boolean
+  isBusy: boolean
+}
+
 interface TravelerCardProps {
   traveler: TravelerBalance
+  longTermExit?: LongTermExitProps
 }
 
 // دالة تحويل الأرقام الهندية/الشرقية (١٢٣) إلى أرقام غربية (123) لمنع خطأ الـ NaN
@@ -16,7 +27,7 @@ const convertArabicNumerals = (str: string): string => {
 };
 
 // مكوّن عرض بطاقة رصيد المسافر المنفرد (Traveler Card)
-export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
+export const TravelerCard = memo(({ traveler, longTermExit }: TravelerCardProps) => {
   // جلبنا settlements و travelers لدعم بيانات النافذة المنبثقة
   const { isAdmin, expenses, travelers, user } = useTripData()
   // 🆕 نموذج الهوية الهجين: تمييز بطاقة المستخدم نفسه بين بطاقات بقية المسافرين
@@ -138,17 +149,17 @@ export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
             </button>
             
             {hasExpenses ? (
-              <span 
-                onClick={(e) => e.stopPropagation()} 
+              <span
+                onClick={(e) => e.stopPropagation()}
                 className="text-[10px] text-slate-400 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100 flex items-center"
               >
                 مربوط بمصاريف
               </span>
             ) : (
-               <button 
+               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); requestDeleteTraveler(traveler); }} 
-                title="حذف المسافر" 
+                onClick={(e) => { e.stopPropagation(); requestDeleteTraveler(traveler); }}
+                title="حذف المسافر"
                 className="p-1.5 bg-slate-50 hover:bg-rose-50 text-slate-500 hover:text-rose-600 rounded-lg transition-colors"
               >
                 <Trash2 className="w-4 h-4" />
@@ -169,6 +180,14 @@ export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
           isAdmin={isAdmin}
           initialTab={profileInitialTab}
           onClose={() => setShowProfile(false)}
+          longTermExit={longTermExit ? {
+            canManage: longTermExit.canManage,
+            isBusy: longTermExit.isBusy,
+            // 🆕 يُغلق ملف المسافر أولاً بدل ترك نافذة التأكيد فوق نافذة أخرى —
+            // فرصده هنا سواء أنجح الخروج أو أُلغي، بلا حاجة لانتظار تحديث
+            // القائمة (onSnapshot) ليختفي الملف من تلقاء نفسه.
+            onExit: () => { setShowProfile(false); requestDeleteTraveler(traveler) },
+          } : undefined}
         />
       )}
     </>

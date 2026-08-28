@@ -195,6 +195,10 @@ export default function App() {
                     deposit: traveler.newTravelerDeposit, setDeposit: traveler.setNewTravelerDeposit,
                     onSubmit: traveler.handleAddTraveler, onCancel: traveler.cancelAddTraveler,
                   }}
+                  longTermExit={longTerm ? {
+                    canManage: longTerm.canManage,
+                    isBusy: longTerm.isClosingMonth || longTerm.isExitingTraveler,
+                  } : undefined}
                 />
   
                 <ChartsPanel
@@ -213,13 +217,12 @@ export default function App() {
                   <LongTermPanel
                     period={longTerm.period}
                     lastClosedPeriod={longTerm.lastClosedPeriod}
-                    balances={ledger.travelersPanelBalances}
                     periodTotal={longTerm.periodTotal}
                     periodCount={longTerm.periodCount}
                     canManage={longTerm.canManage}
                     isBusy={longTerm.isClosingMonth || longTerm.isExitingTraveler}
+                    hasActiveTravelers={ledger.activeTravelers.length > 0}
                     onCloseMonth={longTerm.openRollover}
-                    onExitTraveler={longTerm.openExitTraveler}
                   />
                 )}
 
