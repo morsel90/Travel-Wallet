@@ -1,12 +1,22 @@
 import { memo, useCallback, useState } from 'react'
-import { Pencil, Trash2, Plus, X, History, Loader2, UserCheck, FileText } from '../icons'
+import { Pencil, Trash2, Plus, X, History, Loader2, UserCheck, FileText, DoorOpen } from '../icons'
 import type { Traveler, TravelerBalance } from '../types'
 import { useTripData, useTripActions } from '../store/tripStore'
 import { matchesTraveler } from '../utils/participants'
+import { settlementDirection } from '../utils/longTerm'
 // تأكد من مسار استيراد النافذة الجديدة بناءً على مكان حفظك لها
-import TravelerProfileModal from './modals/TravelerProfileModal' 
+import TravelerProfileModal from './modals/TravelerProfileModal'
+
+/** 🆕 حاضرة فقط في الرحلة الطويلة (انظر App.tsx) — غيابها يعني رحلة قياسية،
+ *  فلا يُقيَّم زرّ الخروج ولا يُستبدَل منطق الحذف القياسي بحرف. */
+interface LongTermExitProps {
+  canManage: boolean
+  isBusy: boolean
+}
+
 interface TravelerCardProps {
   traveler: TravelerBalance
+  longTermExit?: LongTermExitProps
 }
 
 // دالة تحويل الأرقام الهندية/الشرقية (١٢٣) إلى أرقام غربية (123) لمنع خطأ الـ NaN
@@ -16,7 +26,7 @@ const convertArabicNumerals = (str: string): string => {
 };
 
 // مكوّن عرض بطاقة رصيد المسافر المنفرد (Traveler Card)
-export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
+export const TravelerCard = memo(({ traveler, longTermExit }: TravelerCardProps) => {
   // جلبنا settlements و travelers لدعم بيانات النافذة المنبثقة
   const { isAdmin, expenses, travelers, user } = useTripData()
   // 🆕 نموذج الهوية الهجين: تمييز بطاقة المستخدم نفسه بين بطاقات بقية المسافرين
@@ -137,24 +147,45 @@ export const TravelerCard = memo(({ traveler }: TravelerCardProps) => {
               <History className="w-4 h-4" />
             </button>
             
-            {hasExpenses ? (
-              <span 
-                onClick={(e) => e.stopPropagation()} 
-                className="text-[10px] text-slate-400 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100 flex items-center"
-              >
-                مربوط بمصاريف
-              </span>
-            ) : (
-               <button 
-                type="button"
-                onClick={(e) => { e.stopPropagation(); requestDeleteTraveler(traveler); }} 
-                title="حذف المسافر" 
-                className="p-1.5 bg-slate-50 hover:bg-rose-50 text-slate-500 hover:text-rose-600 rounded-lg transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+            {/* 🆕 في الرحلة الطويلة يحلّ زرّ الخروج أدناه محلّ هذا الفرع كلياً —
+                لا حذف قياسي هناك، وuseAppCoordinator.requestDeleteTraveler
+                يوجّه تلقائياً إلى نافذة الخروج بمجرد وجود longTermExit. */}
+            {!longTermExit && (
+              hasExpenses ? (
+                <span
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-[10px] text-slate-400 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100 flex items-center"
+                >
+                  مربوط بمصاريف
+                </span>
+              ) : (
+                 <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); requestDeleteTraveler(traveler); }}
+                  title="حذف المسافر"
+                  className="p-1.5 bg-slate-50 hover:bg-rose-50 text-slate-500 hover:text-rose-600 rounded-lg transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )
             )}
           </div>
+        )}
+
+        {/* 🆕 زرّ خروج المنتدَب — مستقل عن صفّ أزرار isAdmin أعلاه عمداً: منظّم
+            الرحلة الطويلة يراه دون أن يكون مسؤولاً عالمياً (canManage يشمل
+            isOrganizer)، ودائم الظهور بلا تحويم لأنه إجراء رئيسي لا ثانوي —
+            نفس المنطق الذي يُبقي زرّ «كشف حسابي» ظاهراً أعلاه. */}
+        {longTermExit?.canManage && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); requestDeleteTraveler(traveler); }}
+            disabled={longTermExit.isBusy}
+            className="w-full flex items-center justify-center gap-1.5 bg-rose-50 hover:bg-rose-600 disabled:opacity-40 text-rose-700 hover:text-white font-bold text-xs py-2 rounded-lg transition-colors mt-1"
+          >
+            <DoorOpen className="w-3.5 h-3.5" />
+            {settlementDirection(traveler.remaining) === 'settled' ? 'إخراج' : 'تسوية وخروج'}
+          </button>
         )}
       </div>
 

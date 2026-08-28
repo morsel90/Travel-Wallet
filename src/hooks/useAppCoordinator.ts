@@ -381,7 +381,6 @@ export function useAppCoordinator() {
       isExitingTraveler: longTermActions.isExitingTraveler,
       organizerUid,
       openRollover: modals.openMonthlyRollover,
-      openExitTraveler: modals.openExitTraveler,
       onConfirmRollover: confirmRollover,
       onConfirmExit: confirmExitTraveler,
     } : null,

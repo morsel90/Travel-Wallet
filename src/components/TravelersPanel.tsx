@@ -15,6 +15,13 @@ export interface TravelerFormProps {
   onCancel: () => void
 }
 
+/** 🆕 مصدرها useAppCoordinator.longTerm — undefined في الرحلة القياسية، فلا
+ *  تُمرَّر شيئاً إلى TravelerCard ولا يظهر زرّ الخروج بحرف. */
+interface LongTermExitProps {
+  canManage: boolean
+  isBusy: boolean
+}
+
 interface TravelersPanelProps {
   isInitialLoading: boolean
   isAdmin: boolean
@@ -23,6 +30,7 @@ interface TravelersPanelProps {
   isAddingTraveler: boolean
   onStartAddTraveler: () => void
   travelerForm: TravelerFormProps
+  longTermExit?: LongTermExitProps
 }
 
 // ─── قسم أرصدة المسافرين ──────────────────────────────────────────────────────
@@ -30,7 +38,7 @@ interface TravelersPanelProps {
 // من DataContext/UIActionsContext كما كان — لم يتغيّر شيء في استهلاكه للسياق.
 export const TravelersPanel = ({
   isInitialLoading, isAdmin, activeTravelers, balances,
-  isAddingTraveler, onStartAddTraveler, travelerForm,
+  isAddingTraveler, onStartAddTraveler, travelerForm, longTermExit,
 }: TravelersPanelProps) => (
   <section id="travelers-section" className="scroll-mt-24">
     <div className="flex justify-between items-center mb-4 px-1">
@@ -58,7 +66,7 @@ export const TravelersPanel = ({
         {isInitialLoading
           ? Array.from({ length: 4 }, (_, i) => <TravelerCardSkeleton key={i} />)
           : balances.map(traveler => (
-              <TravelerCard key={traveler.id} traveler={traveler} />
+              <TravelerCard key={traveler.id} traveler={traveler} longTermExit={longTermExit} />
             ))
         }
 

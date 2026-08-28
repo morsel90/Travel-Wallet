@@ -9,32 +9,36 @@
 // عرضي بالكامل: لا Firestore، لا سياق، لا حساب. كل ما يعرضه محسوب في
 // useAppCoordinator من الدوال النقية القائمة أصلاً (calculateBalances) — لا
 // رياضيات مالية جديدة على العميل إطلاقاً.
-import type { TravelerBalance, PeriodKey } from '../../types'
+//
+// 🆕 لا يعرض قائمة مسافرين بعد الآن — كانت هذه القائمة تكرّر حرفياً ما تعرضه
+// «أرصدة المسافرين» فوقها (نفس travelersPanelBalances)، فبدت الشاشة مزدوجة.
+// زرّ الخروج انتقل إلى TravelerCard نفسه (longTermExit prop في
+// TravelerSection.tsx)، وbقي هنا فقط ما لا يُعرض في مكان آخر: إحصائيات الشهر
+// وزرّ إغلاقه.
+import type { PeriodKey } from '../../types'
 import { formatPeriodLabel } from '../../utils/period'
-import { settlementDirection } from '../../utils/longTerm'
-import { CalendarClock, CalendarCheck, DoorOpen, Loader2, Receipt } from '../../icons'
+import { CalendarClock, CalendarCheck, Loader2, Receipt } from '../../icons'
 
 interface LongTermPanelProps {
   /** الشهر المفتوح حالياً — مصدره مستند الرحلة لا تقويم الجهاز. */
   period: PeriodKey
   lastClosedPeriod?: PeriodKey
-  /** أرصدة الأعضاء النشطين — نفس المصفوفة التي تستهلكها بقية الشاشات. */
-  balances: TravelerBalance[]
   /** إجمالي مصاريف هذا الشهر وعددها — محسوبان في المنسّق بتصفية بالتاريخ. */
   periodTotal: number
   periodCount: number
-  /** منظّم الرحلة أو المسؤول — الوحيدان اللذان يريان أزرار الإغلاق والإخراج. */
+  /** منظّم الرحلة أو المسؤول — الوحيد الذي يرى زرّ الإغلاق. */
   canManage: boolean
   isBusy: boolean
+  /** لا معنى لإغلاق شهر بلا أعضاء نشطين — نفس الشرط الذي كان `balances.length === 0`. */
+  hasActiveTravelers: boolean
   onCloseMonth: () => void
-  onExitTraveler: (traveler: TravelerBalance) => void
 }
 
 const money = (value: number) => `${value.toFixed(2)} ريال`
 
 export function LongTermPanel({
-  period, lastClosedPeriod, balances, periodTotal, periodCount,
-  canManage, isBusy, onCloseMonth, onExitTraveler,
+  period, lastClosedPeriod, periodTotal, periodCount,
+  canManage, isBusy, hasActiveTravelers, onCloseMonth,
 }: LongTermPanelProps) {
   return (
     <section id="long-term-section" className="scroll-mt-24">
@@ -67,57 +71,22 @@ export function LongTermPanel({
         </div>
 
         {/* ⚠️ هذا العنوان ليس تزييناً. بطاقة المسافر في «أرصدة المسافرين» **لا
-            تعرض زرّ حذف إطلاقاً لمن له مصاريف** (تعرض «مربوط بمصاريف») — قاعدة
-            قائمة من الرحلات القياسية ومنطقية فيها. لكن المنتدَب في رحلة طويلة
-            له مصاريف بالضرورة، فذلك الطريق مغلق في وجهه دائماً، وهذا هو المكان
-            الوحيد لإخراجه. رصده المالك بسؤاله «أين حذف مسافر أراد المغادرة؟». */}
+            تعرض زرّ حذف إطلاقاً لمن له مصاريف** (تعرض «مربوط بمصاريف») في
+            الرحلة القياسية — قاعدة قائمة ومنطقية فيها. في الرحلة الطويلة تحلّ
+            محلّها بطاقة خروج دائمة الظهور (longTermExit)، فذلك الطريق المسدود
+            لا وجود له هنا. */}
         {canManage && (
-          <p className="px-4 pt-3 pb-1 text-[11px] text-slate-500 leading-relaxed">
-            لإخراج عضو مغادر: سوِّ حسابه وأخرجه بضغطة واحدة من زرّ «تسوية وخروج» بجانب اسمه.
+          <p className="px-4 pt-3 pb-2 text-[11px] text-slate-500 leading-relaxed">
+            لإخراج عضو مغادر: سوِّ حسابه وأخرجه بضغطة واحدة من زرّ «تسوية وخروج» في بطاقته أعلاه ضمن «أرصدة المسافرين».
           </p>
         )}
-
-        <ul className="divide-y divide-slate-100">
-          {balances.map(traveler => {
-            const direction = settlementDirection(traveler.remaining)
-            return (
-              <li key={traveler.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                <span className="font-bold text-sm text-slate-700 truncate">{traveler.name}</span>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span
-                    className={`text-sm font-bold tabular-nums ${
-                      direction === 'credit' ? 'text-teal-700'
-                        : direction === 'debt' ? 'text-rose-600'
-                        : 'text-slate-400'
-                    }`}
-                  >
-                    {money(traveler.remaining)}
-                  </span>
-                  {canManage && (
-                    // النص يصف ما سيحدث فعلاً لا اسم العملية المجرّد: من عليه
-                    // رصيد يرى «تسوية وخروج»، ومن حسابه مسوّى يرى «إخراج» فقط.
-                    <button
-                      type="button"
-                      onClick={() => onExitTraveler(traveler)}
-                      disabled={isBusy}
-                      className="text-xs font-bold text-rose-600 hover:text-white hover:bg-rose-600 disabled:opacity-40 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-rose-200 hover:border-rose-600 transition-colors whitespace-nowrap"
-                    >
-                      <DoorOpen className="w-3.5 h-3.5" />
-                      {direction === 'settled' ? 'إخراج' : 'تسوية وخروج'}
-                    </button>
-                  )}
-                </div>
-              </li>
-            )
-          })}
-        </ul>
 
         {canManage && (
           <div className="p-4 border-t border-slate-100 bg-slate-50/50">
             <button
               type="button"
               onClick={onCloseMonth}
-              disabled={isBusy || balances.length === 0}
+              disabled={isBusy || !hasActiveTravelers}
               className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors"
             >
               {isBusy
