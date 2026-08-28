@@ -2,12 +2,24 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { X, Wallet, Receipt, Scale, Loader2, Download, Printer, HandCoins } from '../../icons'
+import { X, Wallet, Receipt, Scale, Loader2, Download, Printer, HandCoins, DoorOpen } from '../../icons'
 import type { Expense, Traveler, TravelerBalance, Settlement } from '../../types'
 import { buildTravelerReport, buildAccountStatement } from '../../utils/reportData'
 import { useDepositLogs } from '../../hooks/useDepositLogs'
 import { exportTravelerToExcel } from '../../utils/reports'
+import { settlementDirection } from '../../utils/longTerm'
 import { PrintableStatement } from '../reports/PrintDocs' // تأكد من صحة مسار استيراد مستند الطباعة
+
+/** 🆕 حاضرة فقط في الرحلة الطويلة (مصدرها useAppCoordinator.longTerm عبر
+ *  TravelerCard) — غيابها يعني رحلة قياسية، فلا يظهر قسم الخروج بحرف. مقصودة
+ *  في «الخلاصة والتسويات» تحديداً: هنا يراجع من يديرها حصص العضو وتسوياته قبل
+ *  أن يقرر، وهو نفس المكان الذي سيدخله العضو نفسه لاحقاً حين يُربط حسابه
+ *  ويصير قادراً على خروج ذاتي — راجع نقاش docs/DECISIONS.md. */
+interface LongTermExitProps {
+  canManage: boolean
+  isBusy: boolean
+  onExit: () => void
+}
 
 interface TravelerProfileModalProps {
   traveler: Traveler
@@ -19,6 +31,7 @@ interface TravelerProfileModalProps {
   onClose: () => void
   /** 🆕 التبويب الذي تُفتح عليه النافذة — 'statement' لزر "كشف حسابي" على بطاقة المستخدم نفسه (TravelerSection.tsx)، افتراضياً 'summary' لبقية نقاط الفتح. */
   initialTab?: TabType
+  longTermExit?: LongTermExitProps
 }
 
 type TabType = 'summary' | 'statement'
@@ -35,6 +48,7 @@ export default function TravelerProfileModal({
   isAdmin,
   onClose,
   initialTab = 'summary',
+  longTermExit,
 }: TravelerProfileModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab)
 
@@ -175,6 +189,27 @@ export default function TravelerProfileModal({
                 </div>
               )}
             </section>
+
+            {/* 🆕 خروج المنتدَب — أسفل الخلاصة والتسويات عمداً: بعد أن يراجع من
+                يديرها حصصه فقط، لا زرّ عابر على بطاقة مضغوطة. نفس المكان الذي
+                سيفتحه العضو نفسه مستقبلاً حين يُربط حسابه ويصير قادراً على
+                مراجعة مصروفاته ثم تسوية حسابه والخروج ذاتياً. */}
+            {longTermExit?.canManage && (
+              <section className="bg-white rounded-2xl shadow-sm border border-rose-200 p-4">
+                <button
+                  type="button"
+                  onClick={longTermExit.onExit}
+                  disabled={longTermExit.isBusy}
+                  className="w-full flex items-center justify-center gap-2 bg-rose-50 hover:bg-rose-600 disabled:opacity-40 text-rose-700 hover:text-white font-bold text-sm py-3 rounded-xl transition-colors"
+                >
+                  <DoorOpen className="w-4 h-4" />
+                  {settlementDirection(balance.remaining) === 'settled' ? 'إخراج من الرحلة' : 'تسوية وخروج من الرحلة'}
+                </button>
+                <p className="text-[11px] text-slate-500 mt-2 text-center leading-relaxed">
+                  يُسوَّى حسابه فوراً ويخرج من قائمة الأعضاء النشطين — سجلّه المالي يبقى محفوظاً.
+                </p>
+              </section>
+            )}
           </div>
         )}
 
