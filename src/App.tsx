@@ -311,6 +311,7 @@ export default function App() {
                 onSaveTripName: tripEdit.onSaveTripName,
                 onSaveItinerary: tripEdit.onSaveItinerary,
                 onSaveTripStatus: tripEdit.onSaveTripStatus,
+                onSaveTripType: tripEdit.onSaveTripType,
                 onDeleteTrip: tripEdit.onDeleteTrip,
                 onRemoveMember: tripEdit.onRemoveMember,
                 onSetMemberRole: tripEdit.onSetMemberRole,

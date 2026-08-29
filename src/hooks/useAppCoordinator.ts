@@ -9,6 +9,7 @@ import {
 } from './index'
 import { useFilteredExpenses } from './useFilteredExpenses'
 import { calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from '../utils/calculations'
+import { tripRouteSummary } from '../utils/itinerary'
 import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from '../utils/tripId'
 import { acceptsExpenses, closedTripNotice } from '../utils/tripStatus'
 import { isLongTerm } from '../utils/tripType'
@@ -230,7 +231,8 @@ export function useAppCoordinator() {
     itinerary: itinerary ?? [],
     status: tripStatus,
     statusChangedAt,
-  }), [tripName, organizerUid, itinerary, tripStatus, statusChangedAt])
+    tripType,
+  }), [tripName, organizerUid, itinerary, tripStatus, statusChangedAt, tripType])
 
   const tripAdmin = useTripAdminActions({ isAdmin, organizerTripId, showToast, handleFirestoreError })
 
@@ -288,7 +290,9 @@ export function useAppCoordinator() {
   // ⚠️ للتنقّل المحض فقط (فتح/إنشاء/استعادة) — لا تعديل من هنا. تعديل أي رحلة
   // يمرّ عبر اسمها في الهيدر بعد فتحها (انظر tripEdit أدناه).
   const pickerAllTrips = useMemo(
-    () => (isAdmin ? trips.map(t => ({ id: t.id, name: t.name, status: t.status })) : myTrips),
+    () => (isAdmin
+      ? trips.map(t => ({ id: t.id, name: t.name, status: t.status, routeSummary: tripRouteSummary(t.itinerary) }))
+      : myTrips),
     [isAdmin, trips, myTrips],
   )
   const pickerTrips = useMemo(
@@ -440,6 +444,7 @@ export function useAppCoordinator() {
       onSaveTripName: tripAdmin.saveTripName,
       onSaveItinerary: tripAdmin.saveItinerary,
       onSaveTripStatus: tripAdmin.saveTripStatus,
+      onSaveTripType: tripAdmin.saveTripType,
       onDeleteTrip: tripAdmin.deleteTrip,
       onRemoveMember: tripAdmin.removeMember,
       onSetMemberRole: tripAdmin.setMemberRole,

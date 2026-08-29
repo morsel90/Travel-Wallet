@@ -10,14 +10,14 @@ import {
   Settings, Route, Save, Plane, Car, Train, Bus,
   Pencil, Trash2, Plus, ArrowUp, ArrowDown, Loader2, AlertTriangle, Lock,
   UserMinus, Check, Download, ShieldCheck, Share2, Ban,
-  UserCheck, Link2, User,
+  UserCheck, Link2, User, CalendarClock,
 } from '../../icons'
 import { useTripMembers } from '../../hooks/useTripMembers'
 import { useTripTravelers } from '../../hooks/useTripTravelers'
 import SegmentForm from './SegmentForm'
 import EmptyState from '../EmptyState'
 import {
-  TRANSPORT_LABEL, MAX_SEGMENTS,
+  TRANSPORT_LABEL, MAX_SEGMENTS, LONG_TERM_THRESHOLD_DAYS,
   emptySegmentDraft, segmentToDraft, draftToSegment, validateDraft,
 } from '../../utils/itinerary'
 import type { SegmentDraft } from '../../utils/itinerary'
@@ -38,9 +38,11 @@ interface TripDetailPanelProps {
   viewerRole: 'admin' | 'organizer'
   isSaving: boolean
   onSaveTripName: (tripId: string, name: string) => Promise<boolean>
-  onSaveItinerary: (tripId: string, itinerary: TripSummary['itinerary']) => Promise<boolean>
+  onSaveItinerary: (tripId: string, itinerary: TripSummary['itinerary'], currentType: TripSummary['tripType']) => Promise<boolean>
   /** 🆕 تغيير حالة دورة حياة الرحلة (active / completed / archived). */
   onSaveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
+  /** 🆕 تخفيض يدوي من طويلة المدى إلى قياسية — الترقية بالاتجاه المعاكس تلقائية بالكامل (انظر onSaveItinerary). */
+  onSaveTripType: (tripId: string, type: TripSummary['tripType']) => Promise<boolean>
   /** حذف نهائي — الخادم يرفضه إن كانت الرحلة تحوي أي بيانات. */
   onDeleteTrip: (tripId: string) => Promise<boolean>
   /** 🆕 إزالة عضو — تمسح عضوية هذه الرحلة وحدها من claims المستهدَف. */
@@ -87,7 +89,9 @@ const MODE_ICON: Record<TransportMode, typeof Plane> = {
 }
 
 const DT_LOCALE = 'ar-SA-u-ca-gregory-nu-latn'
-const fmtDateTime = (iso: string): string => {
+/** 🆕 undefined ممكن الآن (وقت وصول مقطع جديد لا حقل له في النموذج) — يُعرض «—». */
+const fmtDateTime = (iso: string | undefined): string => {
+  if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
   return `${d.toLocaleDateString(DT_LOCALE, { day: 'numeric', month: 'short' })} · ${
@@ -116,10 +120,13 @@ function daysSince(timestamp: number): string {
 
 export default function TripDetailPanel({
   trip, viewerRole, isSaving, onSaveTripName, onSaveItinerary,
-  onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onLinkTravelerAccount, onExportBackup,
-  onCreateInvite, onRevokeInvite, showToast, onDeleted,
+  onSaveTripStatus, onSaveTripType, onDeleteTrip, onRemoveMember, onSetMemberRole, onLinkTravelerAccount,
+  onExportBackup, onCreateInvite, onRevokeInvite, showToast, onDeleted,
 }: TripDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>('details')
+  // 🆕 تأكيد بخطوتين قبل التخفيض إلى standard — نفس نمط تأكيد الإزالة
+  // (removingUid) أعلاه، إذ لا رجوع فعلياً عن إخفاء واجهة الشهر المحاسبي.
+  const [confirmingTypeDowngrade, setConfirmingTypeDowngrade] = useState(false)
 
   // 🆕 لا نقرأ السجلّين إلا والتبويب المدمج مفتوح: القراءة مقصورة على
   // المسؤول/المنظّم، والقائمتان لا تتغيّران إلا بفعله هو في هذه الشاشة نفسها —
@@ -165,6 +172,7 @@ export default function TripDetailPanel({
     setInviteMsgCopied(false)
     setLinkingTravelerId(null)
     setLinkTargetUid('')
+    setConfirmingTypeDowngrade(false)
   }, [trip.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const nameDirty = nameForm !== trip.name
@@ -285,7 +293,14 @@ export default function TripDetailPanel({
     }
   }
 
-  const startAdd = () => { setEditingId(null); setDraftError(null); setDraft(emptySegmentDraft()) }
+  // 🆕 "من" تُملأ تلقائياً بوجهة وصول آخر مقطع في المسار الحالي (بترتيب
+  // المصفوفة اليدوي، لا الزمني) — غالباً المقطع التالي يبدأ من حيث انتهى سابقه.
+  const startAdd = () => {
+    setEditingId(null)
+    setDraftError(null)
+    const lastSegment = workingItinerary[workingItinerary.length - 1]
+    setDraft(emptySegmentDraft(lastSegment?.arrival.location))
+  }
   const startEdit = (id: string) => {
     const segment = workingItinerary.find(s => s.id === id)
     if (!segment) return
@@ -428,6 +443,60 @@ export default function TripDetailPanel({
           </div>
 
           <hr className="border-slate-100" />
+
+          {/* 🆕 نوع الرحلة — الترقية إلى طويلة المدى تلقائية بالكامل (تُشتَقّ من
+              مدّة مسار الرحلة عند حفظه، انظر deriveTripType)، فلا زرّ لها هنا.
+              التخفيض وحده يدوي — الاتجاه الوحيد الذي لا يجوز أن يحدث بالخطأ. */}
+          {trip.tripType === 'long_term' && (
+            <>
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-1">
+                <CalendarClock className="w-4 h-4 text-teal-600" /> نوع الرحلة
+              </h3>
+              <p className="text-xs text-slate-500 mb-3">
+                طويلة المدى — تظهر لها واجهة "الشهر المحاسبي" لإغلاق الأرصدة شهرياً. رُقّيت
+                تلقائياً لتجاوز مسارها {LONG_TERM_THRESHOLD_DAYS} يوماً، أو حُوِّلت يدوياً سابقاً.
+              </p>
+
+              {!confirmingTypeDowngrade ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingTypeDowngrade(true)}
+                  disabled={isSaving}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors disabled:opacity-40"
+                >
+                  تحويل إلى رحلة قياسية
+                </button>
+              ) : (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5">
+                  <p className="text-xs text-amber-900 leading-relaxed">
+                    يُخفي هذا واجهة "الشهر المحاسبي" فقط — لا يُلغي أثر أي شهر أُغلق فعلياً على
+                    هذه الرحلة، وحركاته المالية المُرحَّلة تبقى كما هي في دفتر الرحلة.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { void onSaveTripType(trip.id, 'standard'); setConfirmingTypeDowngrade(false) }}
+                      disabled={isSaving}
+                      className="flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-40"
+                    >
+                      {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                      تأكيد التحويل
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingTypeDowngrade(false)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+                    >
+                      إلغاء
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            <hr className="border-slate-100" />
+            </>
+          )}
 
           <div className="flex items-center gap-2 pt-1">
             <button
@@ -574,7 +643,7 @@ export default function TripDetailPanel({
                 <span className="text-xs font-bold text-amber-800 flex-1">تعديلات غير محفوظة على المسار.</span>
                 <button
                   type="button"
-                  onClick={() => void onSaveItinerary(trip.id, workingItinerary)}
+                  onClick={() => void onSaveItinerary(trip.id, workingItinerary, trip.tripType)}
                   disabled={isSaving}
                   className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-40"
                 >
@@ -618,6 +687,9 @@ export default function TripDetailPanel({
             <div className="space-y-3">
               {workingItinerary.map((segment, index) => {
                 const ModeIcon = MODE_ICON[segment.mode]
+                // 🆕 identifier اختياري الآن — العنوان الغامق يسقط لـnotes ثم
+                // لاسم وسيلة التنقل بدل عرض "undefined" أو ترك سطر فارغ.
+                const title = segment.identifier || segment.notes || TRANSPORT_LABEL[segment.mode]
                 return (
                   <div key={segment.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
                     <div className="flex items-start justify-between gap-3">
@@ -630,7 +702,7 @@ export default function TripDetailPanel({
                             {TRANSPORT_LABEL[segment.mode]}
                             {segment.reference && <span dir="ltr"> · {segment.reference}</span>}
                           </p>
-                          <p className="text-sm font-bold text-slate-800 truncate">{segment.identifier}</p>
+                          <p className="text-sm font-bold text-slate-800 truncate">{title}</p>
                         </div>
                       </div>
 
@@ -652,7 +724,7 @@ export default function TripDetailPanel({
                         </button>
                         <button
                           type="button" onClick={() => startEdit(segment.id)}
-                          aria-label={`تعديل ${segment.identifier}`}
+                          aria-label={`تعديل ${title}`}
                           className="p-1.5 rounded-lg bg-slate-50 hover:bg-teal-50 text-slate-500 hover:text-teal-600 transition-colors"
                         >
                           <Pencil className="w-4 h-4" />
@@ -660,7 +732,7 @@ export default function TripDetailPanel({
                         <button
                           type="button"
                           onClick={() => setWorkingItinerary(prev => prev.filter(s => s.id !== segment.id))}
-                          aria-label={`حذف ${segment.identifier}`}
+                          aria-label={`حذف ${title}`}
                           className="p-1.5 rounded-lg bg-slate-50 hover:bg-rose-50 text-slate-500 hover:text-rose-600 transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -680,6 +752,14 @@ export default function TripDetailPanel({
                         <p className="text-[11px] text-slate-500 mt-1">{fmtDateTime(segment.arrival.time)}</p>
                       </div>
                     </div>
+
+                    {/* 🆕 identifier أصبح عنوان البطاقة أعلاه إن وُجد — الملاحظات
+                        تُعرض هنا فقط حين لا تتطابق مع ما ظهر عنواناً بالفعل. */}
+                    {segment.notes && segment.notes !== title && (
+                      <p className="text-[11px] text-slate-500 mt-2.5 bg-slate-50 border border-slate-100 rounded-lg p-2 leading-relaxed">
+                        {segment.notes}
+                      </p>
+                    )}
                   </div>
                 )
               })}

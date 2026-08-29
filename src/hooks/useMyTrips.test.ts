@@ -14,7 +14,10 @@ vi.mock('../firestore', () => ({
 const fakeUser = { uid: 'user-1' } as User
 
 /** لقطة مستند موجودة بالاسم المعطى (undefined = مستند بلا حقل اسم). */
-const docSnap = (name?: string) => ({ exists: () => true, data: () => (name === undefined ? {} : { name }) })
+const docSnap = (name?: string, itinerary?: unknown) => ({
+  exists: () => true,
+  data: () => ({ ...(name === undefined ? {} : { name }), ...(itinerary === undefined ? {} : { itinerary }) }),
+})
 const missingSnap = { exists: () => false, data: () => undefined }
 
 beforeEach(() => {
@@ -67,7 +70,21 @@ describe('useMyTrips', () => {
     const { result } = renderHook(() => useMyTrips(['trip-xyz'], fakeUser))
     await waitFor(() => expect(result.current.loading).toBe(false))
     // status: 'active' لأن غياب الحقل يعني «نشطة» — انظر normalizeTripStatus
-    expect(result.current.trips).toEqual([{ id: 'trip-xyz', name: 'trip-xyz', status: 'active' }])
+    expect(result.current.trips).toEqual([{ id: 'trip-xyz', name: 'trip-xyz', status: 'active', routeSummary: null }])
+  })
+
+  it('يبني ملخّص المسار من حقل itinerary — أول انطلاق وآخر وصول', async () => {
+    const itinerary = [{
+      id: 'seg1', mode: 'flight', identifier: 'QR 1',
+      departure: { location: 'الرياض', time: '2026-07-21T22:30:00' },
+      arrival: { location: 'دبي', time: '2026-07-22T00:30:00' },
+    }]
+    mocks.getDoc.mockResolvedValueOnce(docSnap('رحلة دبي', itinerary))
+    const { result } = renderHook(() => useMyTrips(['t1'], fakeUser))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.trips[0].routeSummary).toEqual({
+      start: '2026-07-21T22:30:00', end: '2026-07-22T00:30:00', fromLocation: 'الرياض', toLocation: 'دبي',
+    })
   })
 
   it('يُسقط رحلة مذكورة في claims لكن مستندها غير موجود، ويُبقي البقية', async () => {
@@ -77,7 +94,7 @@ describe('useMyTrips', () => {
     const { result } = renderHook(() => useMyTrips(['t1', 'deleted-trip'], fakeUser))
     await waitFor(() => expect(result.current.loading).toBe(false))
 
-    expect(result.current.trips).toEqual([{ id: 't1', name: 'رحلة قائمة', status: 'active' }])
+    expect(result.current.trips).toEqual([{ id: 't1', name: 'رحلة قائمة', status: 'active', routeSummary: null }])
     expect(result.current.error).toBeNull() // نجاح جزئي ليس خطأً
   })
 
@@ -88,7 +105,7 @@ describe('useMyTrips', () => {
     const { result } = renderHook(() => useMyTrips(['t1', 't2'], fakeUser))
     await waitFor(() => expect(result.current.loading).toBe(false))
 
-    expect(result.current.trips).toEqual([{ id: 't1', name: 'رحلة ناجحة', status: 'active' }])
+    expect(result.current.trips).toEqual([{ id: 't1', name: 'رحلة ناجحة', status: 'active', routeSummary: null }])
     expect(result.current.error).toBeNull()
   })
 

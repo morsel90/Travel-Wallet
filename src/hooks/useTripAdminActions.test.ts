@@ -6,6 +6,7 @@ import { useTripAdminActions } from './useTripAdminActions'
 
 const mocks = vi.hoisted(() => ({
   setDoc: vi.fn(),
+  getDoc: vi.fn(),
   getDocs: vi.fn(),
   httpsCallable: vi.fn(),
   callable: vi.fn(),
@@ -14,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   downloadTripBackup: vi.fn(),
 }))
 
-vi.mock('firebase/firestore', () => ({ setDoc: mocks.setDoc, getDocs: mocks.getDocs }))
+vi.mock('firebase/firestore', () => ({ setDoc: mocks.setDoc, getDoc: mocks.getDoc, getDocs: mocks.getDocs }))
 vi.mock('firebase/functions', () => ({ httpsCallable: mocks.httpsCallable }))
 vi.mock('../firebase', () => ({
   functions: {},
@@ -50,6 +51,8 @@ beforeEach(() => {
   mocks.getIdToken.mockResolvedValue('tok')
   mocks.httpsCallable.mockReturnValue(mocks.callable)
   mocks.callable.mockResolvedValue({ data: { success: true, claimRemoved: true, stillHasAccess: false } })
+  mocks.setDoc.mockResolvedValue(undefined)
+  mocks.getDoc.mockResolvedValue({ exists: () => false, data: () => ({}) })
   mocks.getDocs.mockImplementation((ref: { _tag?: string }) => {
     if (ref._tag === 'travelers') {
       return Promise.resolve({ docs: [{ id: '1', data: () => ({ id: 1, name: 'أحمد', shortName: 'أحمد', deposited: 0 }) }] })
@@ -71,7 +74,7 @@ beforeEach(() => {
 
 const tripSummary = {
   id: 'trip-1', name: 'رحلة تركيا',
-  itinerary: [], status: 'active' as const,
+  itinerary: [], status: 'active' as const, tripType: 'standard' as const,
 }
 
 describe('removeMember — الصلاحية والعقد', () => {
@@ -263,6 +266,94 @@ describe('exportBackup', () => {
     expect(handleFirestoreError).toHaveBeenCalled()
     expect(result.current.isSaving).toBe(false)
     expect(mocks.downloadTripBackup).not.toHaveBeenCalled()
+  })
+})
+
+// 🆕 الترقية التلقائية لـ tripType (standard → long_term) عند تجاوز مدّة
+// المسار 14 يوماً — انظر deriveTripType في utils/itinerary.ts. منطق العتبة
+// نفسه مُختبَر هناك؛ هنا نتحقق من الوسيط: الحمولة المكتوبة وقراءة currentPeriod
+// الشرطية.
+describe('saveItinerary — الترقية التلقائية لنوع الرحلة', () => {
+  const segment = (dep: string, arr: string) => ({
+    id: 's1', mode: 'flight' as const, identifier: 'QR 1',
+    departure: { location: 'أ', time: dep }, arrival: { location: 'ب', time: arr },
+  })
+
+  it('مسار أقصر من 14 يوماً لا يغيّر tripType ولا يقرأ currentPeriod', async () => {
+    const shortItinerary = [segment('2026-07-01T10:00:00', '2026-07-10T10:00:00')]
+    const { result } = setup()
+    let ok
+    await act(async () => { ok = await result.current.saveItinerary('trip-1', shortItinerary, 'standard') })
+
+    expect(ok).toBe(true)
+    expect(mocks.getDoc).not.toHaveBeenCalled()
+    expect(mocks.setDoc).toHaveBeenCalledWith({}, { itinerary: shortItinerary }, { merge: true })
+  })
+
+  it('مسار أطول من 14 يوماً يُرقّي إلى long_term ويضبط currentPeriod الشهر الجاري إن لم يكن مضبوطاً', async () => {
+    const longItinerary = [segment('2026-07-01T10:00:00', '2026-07-20T10:00:00')]
+    mocks.getDoc.mockResolvedValue({ exists: () => false, data: () => ({}) })
+    const { result } = setup()
+    let ok
+    await act(async () => { ok = await result.current.saveItinerary('trip-1', longItinerary, 'standard') })
+
+    expect(ok).toBe(true)
+    const payload = mocks.setDoc.mock.calls[0][1]
+    expect(payload.tripType).toBe('long_term')
+    expect(payload.currentPeriod).toMatch(/^\d{4}-\d{2}$/)
+  })
+
+  it('لا يلمس currentPeriod إن كان مضبوطاً أصلاً على المستند', async () => {
+    const longItinerary = [segment('2026-07-01T10:00:00', '2026-07-20T10:00:00')]
+    mocks.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ currentPeriod: '2025-01' }) })
+    const { result } = setup()
+    await act(async () => { await result.current.saveItinerary('trip-1', longItinerary, 'standard') })
+
+    const payload = mocks.setDoc.mock.calls[0][1]
+    expect(payload.tripType).toBe('long_term')
+    expect(payload).not.toHaveProperty('currentPeriod')
+  })
+
+  it('رحلة long_term أصلاً تبقى كذلك ولا تُخفَّض حتى لو قصُر مسارها', async () => {
+    const shortItinerary = [segment('2026-07-01T10:00:00', '2026-07-02T10:00:00')]
+    const { result } = setup()
+    await act(async () => { await result.current.saveItinerary('trip-1', shortItinerary, 'long_term') })
+
+    expect(mocks.getDoc).not.toHaveBeenCalled()
+    const payload = mocks.setDoc.mock.calls[0][1]
+    expect(payload).toEqual({ itinerary: shortItinerary })
+  })
+
+  it('يرفض مساراً يتجاوز الحدّ الأقصى بلا كتابة ولا قراءة', async () => {
+    const tooMany = Array.from({ length: 51 }, (_, i) => segment(`2026-01-0${(i % 9) + 1}T10:00:00`, `2026-01-0${(i % 9) + 1}T12:00:00`))
+    const { result } = setup()
+    let ok
+    await act(async () => { ok = await result.current.saveItinerary('trip-1', tooMany, 'standard') })
+
+    expect(ok).toBe(false)
+    expect(mocks.getDoc).not.toHaveBeenCalled()
+    expect(mocks.setDoc).not.toHaveBeenCalled()
+  })
+})
+
+describe('saveTripType — التخفيض اليدوي وحده', () => {
+  it('يكتب tripType فقط، بلا لمس currentPeriod أو lastClosedPeriod', async () => {
+    const { result } = setup()
+    let ok
+    await act(async () => { ok = await result.current.saveTripType('trip-1', 'standard') })
+
+    expect(ok).toBe(true)
+    expect(mocks.getDoc).not.toHaveBeenCalled()
+    expect(mocks.setDoc).toHaveBeenCalledWith({}, { tripType: 'standard' }, { merge: true })
+  })
+
+  it('منظّم رحلة أخرى لا يستطيع تعديلها', async () => {
+    const { result } = setup(false, 'trip-2')
+    let ok
+    await act(async () => { ok = await result.current.saveTripType('trip-1', 'standard') })
+
+    expect(ok).toBe(false)
+    expect(mocks.setDoc).not.toHaveBeenCalled()
   })
 })
 
