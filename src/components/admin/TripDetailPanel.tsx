@@ -23,7 +23,7 @@ import {
 import type { SegmentDraft } from '../../utils/itinerary'
 import type { TripSummary } from '../../hooks/useAllTrips'
 import { TRIP_STATUS_LABEL } from '../../types'
-import type { ToastMessage, TransportMode, TripStatus } from '../../types'
+import type { ToastMessage, TransportMode, TripMember, TripStatus } from '../../types'
 import { isEligibleForAgePurge } from '../../utils/tripStatus'
 
 interface TripDetailPanelProps {
@@ -60,15 +60,18 @@ interface TripDetailPanelProps {
   onDeleted: () => void
 }
 
-type DetailTab = 'details' | 'itinerary' | 'members' | 'travelers' | 'backup' | 'danger'
+type DetailTab = 'details' | 'itinerary' | 'members' | 'backup' | 'danger'
 
+// 🆕 «الأعضاء» و«المسافرون» كانا تبويبين منفصلين يعرضان وجهين لنفس الأشخاص —
+// من انضمّ بحساب مقابل من له سطر في دفتر الرحلة — وربط الاثنين (نموذج الهوية
+// الهجين) كان يتطلّب القفز بينهما لمطابقة سطر بعينه يدوياً. دُمجا في تبويب
+// واحد بنفس منطق دمج «رحلاتي» مع «إدارة الرحلات»: سطر واحد لكل شخص بدل شاشتين.
 const ALL_TABS: Array<{ key: DetailTab; label: string; Icon: typeof Building2 }> = [
-  { key: 'details',      label: 'اسم الرحلة', Icon: Building2 },
-  { key: 'itinerary', label: 'مسار الرحلة',   Icon: Route },
-  { key: 'members',   label: 'الأعضاء',       Icon: Users },
-  { key: 'travelers', label: 'المسافرون',     Icon: UserCheck },
-  { key: 'backup',    label: 'نسخة احتياطية', Icon: Download },
-  { key: 'danger',    label: 'حذف الرحلة',    Icon: Trash2 },
+  { key: 'details',      label: 'اسم الرحلة',      Icon: Building2 },
+  { key: 'itinerary', label: 'مسار الرحلة',        Icon: Route },
+  { key: 'members',   label: 'الأعضاء والمسافرون', Icon: Users },
+  { key: 'backup',    label: 'نسخة احتياطية',      Icon: Download },
+  { key: 'danger',    label: 'حذف الرحلة',         Icon: Trash2 },
 ]
 
 // 🆕 منظّم الرحلة لا يرى ما ليس من صلاحياته أصلاً — لا مجرّد أزرار معطّلة.
@@ -118,14 +121,14 @@ export default function TripDetailPanel({
   )
   const [activeTab, setActiveTab] = useState<DetailTab>('details')
 
-  // 🆕 لا نقرأ السجلّ إلا والتبويب مفتوح: القراءة مقصورة على المسؤول/المنظّم،
-  // والقائمة لا تتغيّر إلا بفعله هو في هذه الشاشة نفسها — فلا داعي لجلبها مع كل
-  // رحلة يفتحها. تبويب "المسافرون" يحتاج القائمتين معاً (انظر useTripTravelers)
-  // لبناء قائمة الأعضاء غير المربوطين بعد.
+  // 🆕 لا نقرأ السجلّين إلا والتبويب المدمج مفتوح: القراءة مقصورة على
+  // المسؤول/المنظّم، والقائمتان لا تتغيّران إلا بفعله هو في هذه الشاشة نفسها —
+  // فلا داعي لجلبهما مع كل رحلة يفتحها. كلتاهما تُجلبان معاً دائماً الآن لأن
+  // العرض المدمج يحتاجهما معاً لمطابقة كل مسافر بعضويته (انظر useTripTravelers).
   const { members, error: membersError, refresh: refreshMembers } =
-    useTripMembers(trip.id, activeTab === 'members' || activeTab === 'travelers')
+    useTripMembers(trip.id, activeTab === 'members')
   const { travelers, error: travelersError, refresh: refreshTravelers } =
-    useTripTravelers(trip.id, activeTab === 'travelers')
+    useTripTravelers(trip.id, activeTab === 'members')
   const [removingUid, setRemovingUid] = useState<string | null>(null)
   // 🆕 نموذج الهوية الهجين — id المسافر الذي فُتحت له قائمة "ربط بحساب"، والعضو
   // المختار فيها. سطر واحد يُفتح في كل مرة (نفس فكرة removingUid أعلاه).
@@ -244,6 +247,16 @@ export default function TripDetailPanel({
     () => (members ?? []).filter(m => !(travelers ?? []).some(t => t.uid === m.uid)),
     [members, travelers],
   )
+
+  // 🆕 مطابقة كل مسافر بعضويته — قلب العرض المدمج. غياب السطر رغم t.uid موجود
+  // معناه عضو أُزيل بالفعل (manageMember لا يمسّ Traveler.uid، انظر تعليقه):
+  // الشارة "منضم" تبقى صادقة تاريخياً، لكن لا أزرار عضوية تُعرض له لأن لا شيء
+  // لإزالته أو تعديل دوره.
+  const memberByUid = useMemo(() => {
+    const map = new Map<string, TripMember>()
+    for (const m of members ?? []) map.set(m.uid, m)
+    return map
+  }, [members])
 
   const startLinkTraveler = (travelerId: number) => {
     setLinkingTravelerId(travelerId)
@@ -616,11 +629,22 @@ export default function TripDetailPanel({
             ) : null}
           </div>
 
+          {/* 🆕 قائمة موحّدة: كل مسافر في الدفتر مع حالة ربطه بعضويته إن
+              وُجدت، بدل تبويبين منفصلين يتطلّبان القفز بينهما لمطابقة سطر
+              بعينه. الأعضاء الذين لا ملف مسافر لهم بعد (حالة نادرة — فشل
+              التزويد التلقائي، انظر تعليق joinViaInvite في functions/index.js)
+              يظهرون في قسم إضافي أسفل القائمة بدل أن يختفوا. */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
-          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <Users className="w-4 h-4 text-teal-600" /> أعضاء الرحلة
-            {members && <span className="text-xs font-normal text-slate-400">({members.length})</span>}
-          </h3>
+          <div>
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <Users className="w-4 h-4 text-teal-600" /> الأعضاء والمسافرون
+              {travelers && <span className="text-xs font-normal text-slate-400">({travelers.length})</span>}
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              كل مسافر في دفتر هذه الرحلة، وحالة ربطه بحساب انضمّ فعلاً — "مسجل يدوياً" يعني ملفاً
+              أنشأه المنظّم لشخص لم ينضمّ بعد (أو لا يملك حساباً)، ويمكن ربطه لاحقاً بحسابه الحقيقي.
+            </p>
+          </div>
 
           {/* ⚠️ التأخير يُقال هنا لا يُخفى: العضوية تُقرأ من التوكن وهو صالح ٦٠
               دقيقة، فالإزالة لا تُغلق الباب فوراً. مسؤول يظنّها فورية قد يعتمد
@@ -633,62 +657,88 @@ export default function TripDetailPanel({
             </p>
           </div>
 
-          {membersError && (
+          {(membersError || travelersError) && (
             <p role="alert" className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-2.5">
-              تعذّر جلب قائمة الأعضاء. القراءة متاحة للمسؤول أو منظّم الرحلة — جرّب تسجيل الخروج والدخول لتحديث صلاحيتك.
+              تعذّر جلب قائمة الأعضاء أو المسافرين. القراءة متاحة للمسؤول أو منظّم الرحلة — جرّب تسجيل الخروج والدخول لتحديث صلاحيتك.
             </p>
           )}
 
-          {!members && !membersError && (
+          {(!members || !travelers) && !membersError && !travelersError && (
             <div className="flex items-center justify-center gap-2 text-slate-500 py-8">
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-sm font-bold">جارٍ جلب الأعضاء...</span>
+              <span className="text-sm font-bold">جارٍ الجلب...</span>
             </div>
           )}
 
-          {members?.length === 0 && (
+          {members && travelers && travelers.length === 0 && unlinkedMembers.length === 0 && (
             <EmptyState
-              Icon={Users}
+              Icon={UserCheck}
               title="لا أحد في السجلّ بعد"
-              description="يُسجَّل العضو تلقائياً عند استهلاكه رابط دعوة. ومن انضمّ قبل إضافة السجلّ يظهر بعد تشغيل سكربت الترحيل."
+              description="يُضاف المسافرون من صفحة الرحلة الرئيسية، أو تلقائياً عند الانضمام برابط دعوة."
             />
           )}
 
-          {members && members.length > 0 && (
+          {members && travelers && (travelers.length > 0 || unlinkedMembers.length > 0) && (
             <div className="space-y-2">
-              {members.map(m => {
-                const isConfirming = removingUid === m.uid
+              {travelers.map(t => {
+                const m = t.uid ? memberByUid.get(t.uid) : undefined
+                const isLinking = linkingTravelerId === t.id
+                const isConfirming = !!m && removingUid === m.uid
                 return (
-                  <div
-                    key={m.uid}
-                    className={`rounded-xl border p-3 transition-colors ${
-                      isConfirming ? 'border-rose-300 bg-rose-50' : 'border-slate-200 bg-slate-50/60'
-                    }`}
-                  >
+                  <div key={t.id} className={`rounded-xl border p-3 transition-colors ${
+                    isConfirming ? 'border-rose-300 bg-rose-50'
+                      : isLinking ? 'border-teal-300 bg-teal-50/60'
+                      : 'border-slate-200 bg-slate-50/60'
+                  }`}>
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-bold text-slate-800 truncate flex items-center gap-1.5">
-                          {m.displayName || m.email || 'عضو بجلسة مجهولة'}
+                          {t.name}
+                          {t.uid ? (
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shrink-0">
+                              <UserCheck className="w-3 h-3" /> منضم
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full shrink-0">
+                              مسجل يدوياً
+                            </span>
+                          )}
                           {/* 🆕 المرحلة ٣ — شارة الدور تظهر للجميع (منظّم يقرأ السجلّ أيضاً)،
                               لكن زرّ تغييره أدناه للمسؤول العالمي وحده. */}
-                          {m.role === 'organizer' && (
+                          {m?.role === 'organizer' && (
                             <span className="flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shrink-0">
                               <ShieldCheck className="w-3 h-3" /> منظّم
                             </span>
                           )}
                         </p>
-                        <p className="text-[11px] text-slate-500 mt-0.5" dir="ltr">{m.uid}</p>
-                        <p className="text-[11px] text-slate-500 mt-1">
-                          {/* غياب joinedAt يُعرض «غير معروف» لا 1970: السطور
-                              المُرحَّلة لا تعرف التاريخ، ولا مكان يحفظه. */}
-                          {m.joinedAt
-                            ? `انضمّ: ${new Date(m.joinedAt).toLocaleDateString(DT_LOCALE, { day: 'numeric', month: 'short', year: 'numeric' })}`
-                            : 'تاريخ الانضمام غير معروف (سطر مُرحَّل)'}
-                          {m.mergedFrom && ' · نُقلت عضويته من جلسة سابقة'}
-                        </p>
+                        {t.uid && <p className="text-[11px] text-slate-500 mt-0.5" dir="ltr">{t.uid}</p>}
+                        {m && (
+                          <p className="text-[11px] text-slate-500 mt-1">
+                            {/* غياب joinedAt يُعرض «غير معروف» لا 1970: السطور
+                                المُرحَّلة لا تعرف التاريخ، ولا مكان يحفظه. */}
+                            {m.joinedAt
+                              ? `انضمّ: ${new Date(m.joinedAt).toLocaleDateString(DT_LOCALE, { day: 'numeric', month: 'short', year: 'numeric' })}`
+                              : 'تاريخ الانضمام غير معروف (سطر مُرحَّل)'}
+                            {m.mergedFrom && ' · نُقلت عضويته من جلسة سابقة'}
+                          </p>
+                        )}
                       </div>
 
-                      {!isConfirming && (
+                      {!t.uid && !isLinking && (
+                        <button
+                          type="button"
+                          onClick={() => startLinkTraveler(t.id)}
+                          disabled={isSaving}
+                          className="flex items-center gap-1.5 text-teal-700 hover:bg-teal-100 border border-teal-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-40 shrink-0"
+                        >
+                          <Link2 className="w-3.5 h-3.5" /> ربط بحساب مسافر
+                        </button>
+                      )}
+
+                      {/* 🆕 أزرار العضوية تحتاج سطر عضو مطابق فعلياً — قد يغيب
+                          رغم t.uid موجود إن كان قد أُزيل بالفعل (انظر تعليق
+                          memberByUid أعلاه). */}
+                      {m && !isConfirming && (
                         <div className="flex items-center gap-2 shrink-0">
                           {/* 🆕 تعيين/إلغاء المنظّم — المسؤول العالمي حصراً (viewerRole).
                               functions/index.js يرفض أي استدعاء آخر خادمياً بغضّ النظر. */}
@@ -715,7 +765,52 @@ export default function TripDetailPanel({
                       )}
                     </div>
 
-                    {isConfirming && (
+                    {isLinking && (
+                      <div className="mt-3 pt-3 border-t border-teal-200 space-y-2.5">
+                        {unlinkedMembers.length === 0 ? (
+                          <p className="text-xs text-slate-500">
+                            لا يوجد عضو غير مربوط بعد — كل من انضمّ للرحلة مربوط بمسافر آخر بالفعل.
+                          </p>
+                        ) : (
+                          <>
+                            <label className={labelClass} htmlFor="link-target-uid">اختر الحساب</label>
+                            <select
+                              id="link-target-uid"
+                              value={linkTargetUid}
+                              onChange={e => setLinkTargetUid(e.target.value)}
+                              className={inputClass}
+                            >
+                              <option value="">— اختر عضواً —</option>
+                              {unlinkedMembers.map(um => (
+                                <option key={um.uid} value={um.uid}>
+                                  {um.displayName || um.email || `عضو بجلسة مجهولة (${um.uid})`}
+                                </option>
+                              ))}
+                            </select>
+                          </>
+                        )}
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void submitLinkTraveler()}
+                            disabled={isSaving || !linkTargetUid}
+                            className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-40"
+                          >
+                            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+                            تأكيد الربط
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelLinkTraveler}
+                            className="px-3 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+                          >
+                            إلغاء
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {isConfirming && m && (
                       <div className="mt-3 pt-3 border-t border-rose-200 space-y-2.5">
                         <p className="text-xs text-rose-900">
                           <span className="font-bold">تُزال عضويته من هذه الرحلة وحدها.</span>{' '}
@@ -745,120 +840,85 @@ export default function TripDetailPanel({
                   </div>
                 )
               })}
-            </div>
-          )}
-          </div>
-        </>
-      )}
 
-      {activeTab === 'travelers' && (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <UserCheck className="w-4 h-4 text-teal-600" /> المسافرون
-              {travelers && <span className="text-xs font-normal text-slate-400">({travelers.length})</span>}
-            </h3>
-            <p className="text-xs text-slate-500 mt-1">
-              كل مسافر في دفتر هذه الرحلة، وحالة ربطه بحساب انضمّ فعلاً — "مسجل يدوياً" يعني ملفاً
-              أنشأه المنظّم لشخص لم ينضمّ بعد (أو لا يملك حساباً)، ويمكن ربطه لاحقاً بحسابه الحقيقي.
-            </p>
-          </div>
-
-          {travelersError && (
-            <p role="alert" className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-2.5">
-              تعذّر جلب قائمة المسافرين.
-            </p>
-          )}
-
-          {!travelers && !travelersError && (
-            <div className="flex items-center justify-center gap-2 text-slate-500 py-8">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-sm font-bold">جارٍ جلب المسافرين...</span>
-            </div>
-          )}
-
-          {travelers?.length === 0 && (
-            <EmptyState
-              Icon={UserCheck}
-              title="لا يوجد مسافرون بعد"
-              description="يُضاف المسافرون من صفحة الرحلة الرئيسية، أو تلقائياً عند الانضمام برابط دعوة."
-            />
-          )}
-
-          {travelers && travelers.length > 0 && (
-            <div className="space-y-2">
-              {travelers.map(t => {
-                const isLinking = linkingTravelerId === t.id
+              {/* 🆕 أعضاء بلا ملف مسافر — حالة نادرة (فشل التزويد التلقائي عند
+                  الانضمام). لا زرّ ربط هنا: الربط يتم من جهة المسافر "الشبح"
+                  أعلاه، لا العكس. */}
+              {unlinkedMembers.map(m => {
+                const isConfirming = removingUid === m.uid
                 return (
-                  <div key={t.id} className={`rounded-xl border p-3 transition-colors ${
-                    isLinking ? 'border-teal-300 bg-teal-50/60' : 'border-slate-200 bg-slate-50/60'
-                  }`}>
+                  <div
+                    key={m.uid}
+                    className={`rounded-xl border p-3 transition-colors ${
+                      isConfirming ? 'border-rose-300 bg-rose-50' : 'border-amber-200 bg-amber-50/60'
+                    }`}
+                  >
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-bold text-slate-800 truncate flex items-center gap-1.5">
-                          {t.name}
-                          {t.uid ? (
+                          {m.displayName || m.email || 'عضو بجلسة مجهولة'}
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full shrink-0">
+                            بلا ملف مسافر
+                          </span>
+                          {m.role === 'organizer' && (
                             <span className="flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shrink-0">
-                              <UserCheck className="w-3 h-3" /> منضم
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full shrink-0">
-                              مسجل يدوياً
+                              <ShieldCheck className="w-3 h-3" /> منظّم
                             </span>
                           )}
                         </p>
-                        {t.uid && <p className="text-[11px] text-slate-500 mt-0.5" dir="ltr">{t.uid}</p>}
+                        <p className="text-[11px] text-slate-500 mt-0.5" dir="ltr">{m.uid}</p>
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          {m.joinedAt
+                            ? `انضمّ: ${new Date(m.joinedAt).toLocaleDateString(DT_LOCALE, { day: 'numeric', month: 'short', year: 'numeric' })}`
+                            : 'تاريخ الانضمام غير معروف (سطر مُرحَّل)'}
+                          {m.mergedFrom && ' · نُقلت عضويته من جلسة سابقة'}
+                        </p>
                       </div>
 
-                      {!t.uid && !isLinking && (
-                        <button
-                          type="button"
-                          onClick={() => startLinkTraveler(t.id)}
-                          disabled={isSaving}
-                          className="flex items-center gap-1.5 text-teal-700 hover:bg-teal-100 border border-teal-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-40 shrink-0"
-                        >
-                          <Link2 className="w-3.5 h-3.5" /> ربط بحساب مسافر
-                        </button>
+                      {!isConfirming && (
+                        <div className="flex items-center gap-2 shrink-0">
+                          {viewerRole === 'admin' && (
+                            <button
+                              type="button"
+                              onClick={() => void submitSetRole(m.uid, m.role === 'organizer' ? 'member' : 'organizer')}
+                              disabled={isSaving}
+                              className="flex items-center gap-1.5 text-teal-700 hover:bg-teal-100 border border-teal-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-40"
+                            >
+                              <ShieldCheck className="w-3.5 h-3.5" />
+                              {m.role === 'organizer' ? 'إلغاء التنظيم' : 'تعيين منظّماً'}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setRemovingUid(m.uid)}
+                            disabled={isSaving}
+                            className="flex items-center gap-1.5 text-rose-700 hover:bg-rose-100 border border-rose-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-40"
+                          >
+                            <UserMinus className="w-3.5 h-3.5" /> إزالة
+                          </button>
+                        </div>
                       )}
                     </div>
 
-                    {isLinking && (
-                      <div className="mt-3 pt-3 border-t border-teal-200 space-y-2.5">
-                        {unlinkedMembers.length === 0 ? (
-                          <p className="text-xs text-slate-500">
-                            لا يوجد عضو غير مربوط بعد — كل من انضمّ للرحلة مربوط بمسافر آخر بالفعل.
-                          </p>
-                        ) : (
-                          <>
-                            <label className={labelClass} htmlFor="link-target-uid">اختر الحساب</label>
-                            <select
-                              id="link-target-uid"
-                              value={linkTargetUid}
-                              onChange={e => setLinkTargetUid(e.target.value)}
-                              className={inputClass}
-                            >
-                              <option value="">— اختر عضواً —</option>
-                              {unlinkedMembers.map(m => (
-                                <option key={m.uid} value={m.uid}>
-                                  {m.displayName || m.email || `عضو بجلسة مجهولة (${m.uid})`}
-                                </option>
-                              ))}
-                            </select>
-                          </>
-                        )}
+                    {isConfirming && (
+                      <div className="mt-3 pt-3 border-t border-rose-200 space-y-2.5">
+                        <p className="text-xs text-rose-900">
+                          <span className="font-bold">تُزال عضويته من هذه الرحلة وحدها.</span>{' '}
+                          رحلاته الأخرى لا تتأثر — لا ملف مسافر له هنا أصلاً ليتأثر.
+                        </p>
                         <div className="flex gap-2">
                           <button
                             type="button"
-                            onClick={() => void submitLinkTraveler()}
-                            disabled={isSaving || !linkTargetUid}
-                            className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-40"
+                            onClick={() => void submitRemoveMember(m.uid)}
+                            disabled={isSaving}
+                            className="flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-40"
                           >
-                            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
-                            تأكيد الربط
+                            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserMinus className="w-3.5 h-3.5" />}
+                            تأكيد الإزالة
                           </button>
                           <button
                             type="button"
-                            onClick={cancelLinkTraveler}
+                            onClick={() => setRemovingUid(null)}
                             className="px-3 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
                           >
                             إلغاء
@@ -871,7 +931,8 @@ export default function TripDetailPanel({
               })}
             </div>
           )}
-        </div>
+          </div>
+        </>
       )}
 
       {activeTab === 'backup' && (
