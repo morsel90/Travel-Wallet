@@ -730,6 +730,13 @@ export default function TripDetailPanel({
                             </span>
                           )}
                         </p>
+                        {/* 🆕 هوية الحساب المرتبط — قد تختلف عن اسم المسافر في الدفتر
+                            (لقب اختاره هو بنفسه)، وهي ما يعرف به المسؤول العضو فعلياً. */}
+                        {m && (
+                          <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                            {m.displayName || m.email || 'عضو بجلسة مجهولة'}
+                          </p>
+                        )}
                         {m && (
                           <p className="text-[11px] text-slate-500 mt-1">
                             {/* غياب joinedAt يُعرض «غير معروف» لا 1970: السطور
