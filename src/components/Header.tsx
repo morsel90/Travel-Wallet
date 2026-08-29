@@ -22,12 +22,13 @@ interface HeaderProps {
    */
   tripName: string
   /**
-   * 🆕 زرّ تعديل الرحلة (أيقونة قلم مستقلة، لا اسم الرحلة نفسه) يظهر لمن يملك
-   * صلاحية تعديلها (مسؤول أو منظّم هذه الرحلة تحديداً) — يفتح مودال تعديل
-   * الرحلة (EditTripModal). ثابت بصرف النظر عن تقلّص الهيدر عمداً: اسم الرحلة
-   * يختفي عند التمرير لأسفل (يستبدله ملخّص الإحصاءات)، فربط التعديل به وحده
-   * كان يفقد القدرة على التعديل أثناء تصفّح سجلّ طويل. لتعديل رحلة أخرى: تُفتح
-   * أولاً من «رحلاتي» ثم تُعدَّل من هنا بعد أن تصبح هي المفتوحة.
+   * 🆕 شعار التطبيق (أيقونة الرسم الدائري) يصبح زرّ تعديل الرحلة لمن يملك
+   * صلاحيتها (مسؤول أو منظّم هذه الرحلة تحديداً) — يفتح مودال تعديل الرحلة
+   * (EditTripModal)، بشارة قلم صغيرة عليه بدل زرّ إضافي يزحم الهيدر. الشعار
+   * ثابت بصرف النظر عن تقلّص الهيدر عمداً (بخلاف اسم الرحلة الذي يختفي عند
+   * التمرير لأسفل ويستبدله ملخّص الإحصاءات)، فربط التعديل به وحده كان يفقد
+   * القدرة على التعديل أثناء تصفّح سجلّ طويل. لتعديل رحلة أخرى: تُفتح أولاً من
+   * «رحلاتي» ثم تُعدَّل من هنا بعد أن تصبح هي المفتوحة.
    */
   canEditTrip: boolean
   onEditTrip: () => void
@@ -142,18 +143,43 @@ const Header = ({
         }`}
       >
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          {/* 5. حاوية للأيقونة مع النقطة الحمراء (Offline UX) */}
-          <div className="relative flex items-center">
-            <PieChart
-              className={`text-teal-100 shrink-0 transition-all duration-200 ${isCollapsed ? 'w-5 h-5' : 'w-7 h-7'}`}
-            />
-            {!isOnline && (
-              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5" title="غير متصل بالإنترنت">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-              </span>
-            )}
-          </div>
+          {/* 5. حاوية للأيقونة مع النقطة الحمراء (Offline UX) — 🆕 وشارة القلم
+              حين يملك المستخدم صلاحية تعديل الرحلة. الشعار نفسه هو الزرّ، بدل
+              زرّ منفصل يزحم الهيدر: ثابت بصرف النظر عن تقلّص الهيدر، بخلاف اسم
+              الرحلة الذي يختفي عند التمرير لأسفل. */}
+          {(() => {
+            const logo = (
+              <>
+                <PieChart
+                  className={`text-teal-100 transition-all duration-200 ${isCollapsed ? 'w-5 h-5' : 'w-7 h-7'}`}
+                />
+                {canEditTrip && (
+                  <span className="absolute -bottom-1 -left-1 flex items-center justify-center w-4 h-4 rounded-full bg-teal-800 ring-2 ring-teal-700">
+                    <Pencil className="w-2.5 h-2.5 text-teal-100" />
+                  </span>
+                )}
+                {!isOnline && (
+                  <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5" title="غير متصل بالإنترنت">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                  </span>
+                )}
+              </>
+            )
+            return canEditTrip ? (
+              <button
+                type="button"
+                onClick={onEditTrip}
+                aria-label="تعديل الرحلة"
+                title="تعديل الرحلة"
+                className="relative flex items-center shrink-0"
+              >
+                {logo}
+              </button>
+            ) : (
+              <div className="relative flex items-center shrink-0">{logo}</div>
+            )
+          })()}
 
           {isCollapsed ? (
             <div
@@ -178,21 +204,6 @@ const Header = ({
             </>
           )}
         </div>
-
-        {/* 🆕 زرّ تعديل الرحلة — أيقونة ثابتة بصرف النظر عن تقلّص الهيدر (لا
-            يظهر داخل اسم الرحلة نفسه، الذي يختفي عند التمرير لأسفل)، حتى لا
-            تُفقَد القدرة على التعديل أثناء تصفّح سجلّ مصاريف طويل. */}
-        {canEditTrip && (
-          <button
-            type="button"
-            onClick={onEditTrip}
-            aria-label="تعديل الرحلة"
-            title="تعديل الرحلة"
-            className="flex items-center justify-center bg-teal-800/60 hover:bg-teal-800 text-teal-50 p-2 rounded-xl transition-colors shrink-0"
-          >
-            <Pencil className="w-4 h-4" />
-          </button>
-        )}
 
         <AccountMenu
           displayName={displayName}
