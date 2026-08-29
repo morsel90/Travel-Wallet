@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   toStoredTime, toInputTime, validateDraft, draftToSegment, segmentToDraft,
   isRenderableSegment, normalizeItinerary, findNextSegment, newSegmentId,
-  emptySegmentDraft, tripEndTime,
+  emptySegmentDraft, tripEndTime, tripRouteSummary,
 } from './itinerary'
 import type { SegmentDraft } from './itinerary'
 import type { ItinerarySegment } from '../types'
@@ -245,6 +245,44 @@ describe('tripEndTime', () => {
   it('يُرجع null لمدخل غير مصفوفة (undefined، نص، إلخ)', () => {
     expect(tripEndTime(undefined)).toBeNull()
     expect(tripEndTime('not-an-array')).toBeNull()
+  })
+})
+
+describe('tripRouteSummary', () => {
+  const seg = (id: string, depTime: string, arrTime: string, from: string, to: string): ItinerarySegment => ({
+    id,
+    mode: 'flight',
+    identifier: `QR ${id}`,
+    departure: { location: from, time: depTime },
+    arrival: { location: to, time: arrTime },
+  })
+
+  it('يُرجع null لمسار فارغ أو مدخل غير مصفوفة', () => {
+    expect(tripRouteSummary([])).toBeNull()
+    expect(tripRouteSummary(undefined)).toBeNull()
+  })
+
+  it('يبني الملخّص من أول انطلاق وآخر وصول (بترتيب الانطلاق لا ترتيب المصفوفة)', () => {
+    const unsorted = [
+      seg('later', '2026-09-01T10:00:00', '2026-09-01T14:00:00', 'دبي', 'طوكيو'),
+      seg('first', '2026-07-01T10:00:00', '2026-07-01T14:00:00', 'الرياض', 'دبي'),
+    ]
+    expect(tripRouteSummary(unsorted)).toEqual({
+      start: '2026-07-01T10:00:00',
+      end: '2026-09-01T14:00:00',
+      fromLocation: 'الرياض',
+      toLocation: 'طوكيو',
+    })
+  })
+
+  it('يتجاهل مقاطع تالفة عبر normalizeItinerary', () => {
+    const withGarbage = [
+      seg('valid', '2026-07-01T10:00:00', '2026-07-01T14:00:00', 'أ', 'ب'),
+      { id: 'broken' } as unknown as ItinerarySegment,
+    ]
+    expect(tripRouteSummary(withGarbage)).toEqual({
+      start: '2026-07-01T10:00:00', end: '2026-07-01T14:00:00', fromLocation: 'أ', toLocation: 'ب',
+    })
   })
 })
 

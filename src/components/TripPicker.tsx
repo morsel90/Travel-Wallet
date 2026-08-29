@@ -21,6 +21,19 @@ const RestoreTripForm = lazy(importRestoreTripForm)
 // eslint-disable-next-line react-refresh/only-export-components
 export const tripPickerImporters = [importRestoreTripForm]
 
+// 🆕 نفس تنسيق ItinerarySection.tsx (تقويم ميلادي + أرقام لاتينية) — عرض
+// مختصر لتاريخ المسار وحده هنا، بلا وقت (البطاقة صف واحد لا مساحة لتفصيل الساعة).
+const DT_LOCALE = 'ar-SA-u-ca-gregory-nu-latn'
+const fmtDay = (iso: string): string =>
+  new Date(iso).toLocaleDateString(DT_LOCALE, { day: 'numeric', month: 'short' })
+
+/** ملخّص سطر واحد: "الرياض ← دبي · ١٢ يوليو – ١٨ يوليو"، أو التاريخ وحده لمقطع واحد. */
+const formatRouteSummary = (r: { start: string; end: string; fromLocation: string; toLocation: string }): string => {
+  const dateRange = fmtDay(r.start) === fmtDay(r.end) ? fmtDay(r.start) : `${fmtDay(r.start)} – ${fmtDay(r.end)}`
+  const route = r.fromLocation === r.toLocation ? r.fromLocation : `${r.fromLocation} ← ${r.toLocation}`
+  return `${route} · ${dateRange}`
+}
+
 const LazyFallback = () => (
   <div className="flex items-center justify-center py-16 gap-2 text-slate-400">
     <Loader2 className="w-5 h-5 animate-spin text-teal-500" />
@@ -132,6 +145,11 @@ const TripPicker = ({
                 له أصلاً بالاسم وحده. */}
             {isAdmin && (
               <span className="block text-[11px] text-slate-400 truncate" dir="ltr">{trip.id}</span>
+            )}
+            {trip.routeSummary && (
+              <span className="block text-[11px] text-slate-400 truncate mt-0.5">
+                {formatRouteSummary(trip.routeSummary)}
+              </span>
             )}
             <span className="flex items-center gap-1.5 mt-0.5">
               {isCurrent && (

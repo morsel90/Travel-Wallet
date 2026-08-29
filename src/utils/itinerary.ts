@@ -183,3 +183,31 @@ export function tripEndTime(itinerary: unknown): number | null {
   if (normalized.length === 0) return null
   return new Date(normalized[normalized.length - 1].arrival.time).getTime()
 }
+
+export interface TripRouteSummary {
+  /** وقت انطلاق أول مقطع (ISO) — تُستخدم كـ"بداية الرحلة" في القوائم. */
+  start: string
+  /** وقت وصول آخر مقطع (ISO) — نفس منطق tripEndTime أعلاه. */
+  end: string
+  fromLocation: string
+  toLocation: string
+}
+
+/**
+ * 🆕 ملخّص المسار (أول انطلاق ← آخر وصول) لعرضه في قوائم الرحلات (TripPicker)
+ * دون تكرار محرّر المسار الكامل هناك. `itinerary` يُمرَّر خاماً كما في
+ * tripEndTime أعلاه — يمرّ أولاً عبر normalizeItinerary. مسار فارغ أو بلا
+ * مقاطع صالحة يُعيد null: لا مسار لعرضه.
+ */
+export function tripRouteSummary(itinerary: unknown): TripRouteSummary | null {
+  const normalized = normalizeItinerary(itinerary)
+  if (normalized.length === 0) return null
+  const first = normalized[0]
+  const last = normalized[normalized.length - 1]
+  return {
+    start: first.departure.time,
+    end: last.arrival.time,
+    fromLocation: first.departure.location,
+    toLocation: last.arrival.location,
+  }
+}
