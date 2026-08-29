@@ -41,11 +41,13 @@ test('منظّم الرحلة: يُعيَّن من المسؤول، يرى لو�
   // 🆕 التعديل يُفتح بالضغط على اسم الرحلة في الهيدر (EditTripModal) — openTripAsAdmin
   // فتح رابط CREDS.tripId تحديداً، فهي المفتوحة حالياً بالفعل.
   await openTripDetailFromHeader(adminPage)
-  await adminPage.getByRole('button', { name: 'الأعضاء' }).click()
+  // 🆕 تبويبا «الأعضاء»/«المسافرون» دُمجا في تبويب واحد اسمه «المسافرون».
+  await adminPage.getByRole('button', { name: 'المسافرون' }).click()
 
   // سطر واحد فقط هنا — العضو الحقيقي (المسؤول لا يُنشئ سطر عضوية أصلاً، لأن
-  // isAdmin() يتجاوز isMember() في firestore.rules). نحدّده ببريده مباشرة.
-  // كل سطر عضو مغلَّف بـ div.rounded-xl.border.p-3 (TripDetailPanel.tsx) —
+  // isAdmin() يتجاوز isMember() في firestore.rules). نحدّده ببريده مباشرة —
+  // يظهر تحت اسم المسافر في العرض المدمج (هوية الحساب المرتبط).
+  // كل سطر مسافر مغلَّف بـ div.rounded-xl.border.p-3 (TripDetailPanel.tsx) —
   // نحصر البحث بهذا الغلاف كي لا نلتقط عناصر متداخلة أخرى تحوي نفس النص.
   const memberRow = adminPage.locator('div.rounded-xl.border.p-3').filter({ hasText: CREDS.memberEmail })
   await memberRow.getByRole('button', { name: 'تعيين منظّماً' }).click()
@@ -56,9 +58,11 @@ test('منظّم الرحلة: يُعيَّن من المسؤول، يرى لو�
   await memberPage.reload()
   await openTripDetailFromHeader(memberPage)
 
-  // ⚠️ الحالة السالبة: تبويبات المسؤول العالمي غائبة تماماً، لا مجرّد معطّلة.
-  await expect(memberPage.getByRole('button', { name: 'حذف الرحلة' })).not.toBeVisible()
-  await expect(memberPage.getByRole('button', { name: 'نسخة احتياطية' })).not.toBeVisible()
+  // ⚠️ الحالة السالبة: قسما «نسخة احتياطية» و«حذف الرحلة» غائبان تماماً من
+  // تبويب «إعدادات الرحلة» (المفتوح افتراضياً)، لا مجرّد معطَّلين — دُمجا في
+  // هذا التبويب من تبويبين مستقلّين، والإخفاء صار على مستوى القسم لا التبويب.
+  await expect(memberPage.getByRole('button', { name: 'تنزيل نسخة احتياطية (JSON)' })).not.toBeVisible()
+  await expect(memberPage.getByRole('button', { name: 'حذف الرحلة نهائياً' })).not.toBeVisible()
 
   // ── يعدّل اسم الرحلة فعلياً — هذا ما تسمح به rules الآن (isOrganizer) ─────
   const nameInput = memberPage.getByLabel('اسم الرحلة')

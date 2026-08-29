@@ -79,10 +79,11 @@ test('عضو بلا أي رحلة سابقة يملأ بروفايله، يُن�
   // مسؤول — الهيدر نفسه لا يُعرَض إلا بعد الانضمام لرحلة، وهذا أول ظهور له.
   await openTripDetailFromHeader(page)
 
-  // ⚠️ تحقّق سلبي حقيقي (القاعدة ١٨): تبويبات المسؤول العالمي غائبة تماماً من
-  // الـ DOM، لا مجرّد معطّلة أو غير ظاهرة بالخطأ.
-  await expect(page.getByRole('button', { name: 'حذف الرحلة' })).not.toBeVisible()
-  await expect(page.getByRole('button', { name: 'نسخة احتياطية' })).not.toBeVisible()
+  // ⚠️ تحقّق سلبي حقيقي (القاعدة ١٨): قسما المسؤول العالمي («نسخة احتياطية»
+  // و«حذف الرحلة»، مدموجان داخل تبويب «إعدادات الرحلة» المفتوح افتراضياً)
+  // غائبان تماماً من الـ DOM، لا مجرّد معطّلين أو غير ظاهرين بالخطأ.
+  await expect(page.getByRole('button', { name: 'تنزيل نسخة احتياطية (JSON)' })).not.toBeVisible()
+  await expect(page.getByRole('button', { name: 'حذف الرحلة نهائياً' })).not.toBeVisible()
   // ولا حقول بنك على الإطلاق داخل لوحة تفاصيل الرحلة — حُذفت من هذا التبويب.
   await expect(page.getByLabel('اسم البنك')).not.toBeVisible()
 
