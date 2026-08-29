@@ -705,7 +705,14 @@ export default function TripDetailPanel({
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-bold text-slate-800 truncate flex items-center gap-1.5">
                           {t.name}
-                          {t.uid ? (
+                          {/* 🆕 شارة "منظّم" تكفي وحدها — منظّم الرحلة منضمّ إليها بداهةً،
+                              فشارة "منضم" بجانبها معلومة صفرية. تظهر شارة الدور للجميع
+                              (منظّم يقرأ السجلّ أيضاً)، وزرّ تغييرها أدناه للمسؤول العالمي وحده. */}
+                          {m?.role === 'organizer' ? (
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shrink-0">
+                              <ShieldCheck className="w-3 h-3" /> منظّم
+                            </span>
+                          ) : t.uid ? (
                             <span className="flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shrink-0">
                               <UserCheck className="w-3 h-3" /> منضم
                             </span>
@@ -714,15 +721,7 @@ export default function TripDetailPanel({
                               مسجل يدوياً
                             </span>
                           )}
-                          {/* 🆕 المرحلة ٣ — شارة الدور تظهر للجميع (منظّم يقرأ السجلّ أيضاً)،
-                              لكن زرّ تغييره أدناه للمسؤول العالمي وحده. */}
-                          {m?.role === 'organizer' && (
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shrink-0">
-                              <ShieldCheck className="w-3 h-3" /> منظّم
-                            </span>
-                          )}
                         </p>
-                        {t.uid && <p className="text-[11px] text-slate-500 mt-0.5" dir="ltr">{t.uid}</p>}
                         {m && (
                           <p className="text-[11px] text-slate-500 mt-1">
                             {/* غياب joinedAt يُعرض «غير معروف» لا 1970: السطور
@@ -877,7 +876,6 @@ export default function TripDetailPanel({
                             </span>
                           )}
                         </p>
-                        <p className="text-[11px] text-slate-500 mt-0.5" dir="ltr">{m.uid}</p>
                         <p className="text-[11px] text-slate-500 mt-1">
                           {m.joinedAt
                             ? `انضمّ: ${new Date(m.joinedAt).toLocaleDateString(DT_LOCALE, { day: 'numeric', month: 'short', year: 'numeric' })}`
