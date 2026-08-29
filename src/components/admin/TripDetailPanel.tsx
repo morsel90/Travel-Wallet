@@ -705,12 +705,14 @@ export default function TripDetailPanel({
                       : isLinking ? 'border-teal-300 bg-teal-50/60'
                       : 'border-slate-200 bg-slate-50/60'
                   }`}>
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                    {/* ⚠️ flex-col أساساً، صفّ واحد من sm فصاعداً — تقاسم سطر واحد بين
+                        الاسم والشارة وزرّ "ربط بحساب مسافر" (أو زرّي المنظّم/الإزالة)
+                        كان يترك الاسم حرفين أو ثلاثة قبل القصّ على الموبايل، لأن الثلاثة
+                        تتنازع نفس العرض الضيق (رُصد فعلياً). الاسم يأخذ سطراً كاملاً له
+                        وحده الآن، والأزرار تنزل سطراً مستقلاً تحته — نمط قوائم
+                        المحادثات/الأعضاء المعتاد (واتساب مثلاً) لا صفّاً واحداً مزدحماً. */}
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        {/* ⚠️ min-w-0 على الحاوية + truncate على الاسم وحده لا الحاوية —
-                            truncate على flex container لا يُقلِّص عنصراً بعينه، فتتقاسم
-                            الشارات ثابتة العرض (shrink-0) نفس القصّ مع الاسم وتُبتَر
-                            بصرياً بدل أن تبقى كاملة (رُصد فعلياً في معاينة الموبايل). */}
                         <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5 min-w-0">
                           <span className="truncate">{t.name}</span>
                           {/* 🆕 شارة "منظّم" تكفي وحدها — منظّم الرحلة منضمّ إليها بداهةً،
@@ -878,7 +880,7 @@ export default function TripDetailPanel({
                       isConfirming ? 'border-rose-300 bg-rose-50' : 'border-amber-200 bg-amber-50/60'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5 min-w-0">
                           <span className="truncate">{m.displayName || m.email || 'عضو بجلسة مجهولة'}</span>
