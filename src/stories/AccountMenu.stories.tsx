@@ -35,7 +35,6 @@ export const عضو_برحلة_واحدة: Story = {
     isOrganizer: false,
     onShowMyTrips: undefined,
     onShowProfile: noop,
-    onOpenAdminPanel: noop,
     onAdminSignIn: noop,
     onSignOut: noop,
   },
@@ -55,7 +54,7 @@ export const مسؤول: Story = {
   },
 }
 
-/** منظّم رحلة غير مسؤول عالمي — يرى «إدارة الرحلة» بدل «تسجيل الدخول كمسؤول». */
+/** منظّم رحلة غير مسؤول عالمي — لا يرى «تسجيل الدخول كمسؤول» (يدير رحلته من «رحلاتي»). */
 export const منظّم_رحلة: Story = {
   args: {
     ...عضو_برحلة_واحدة.args,

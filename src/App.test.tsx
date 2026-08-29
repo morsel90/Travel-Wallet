@@ -99,7 +99,7 @@ vi.mock('./hooks', () => ({
   useMyTripRole: () => h.isOrganizer,
   useBalances: () => ({ balances: [], totalSpent: 0, totalDeposited: 0, totalRemaining: 0 }),
   useModals: () => ({
-    modal: { type: 'none' }, openReports: noop, openTrashBin: noop, openTripAdmin: noop,
+    modal: { type: 'none' }, openReports: noop, openTrashBin: noop,
     openDeleteTraveler: noop, openDeposit: noop, openDepositHistory: noop, openUserProfile: noop, closeModal: noop,
     openMonthlyRollover: noop, openExitTraveler: noop,
   }),
@@ -136,6 +136,8 @@ vi.mock('./hooks', () => ({
   useTripAdminActions: () => ({
     isSaving: false, saveItinerary: noop, saveTripName: noop,
     saveTripStatus: noop, createTrip: noop, deleteTrip: noop,
+    removeMember: noop, setMemberRole: noop, linkTravelerAccount: noop,
+    exportBackup: noop, restoreTrip: noop, createInvite: noop, revokeInvite: noop,
   }),
   // 🆕 رابط دعوة بنقرة واحدة — status: 'done' دائماً هنا (لا رابط دعوة في بيئة
   // الاختبار: ./utils/tripId مُحاكى أعلاه بلا INVITE_TOKEN)، فلا تُعرض شاشة
@@ -298,10 +300,11 @@ describe('App — الحالات الفارغة', () => {
     render(<App />)
     expect(await screen.findByText('إضافة أول مسافر')).toBeInTheDocument()
     expect(screen.getByText('سلة المهملات')).toBeInTheDocument()
-    // 🆕 «إدارة الرحلات» انتقلت من ExpensesPanel إلى AccountMenu (الهيدر) —
-    // لا تظهر إلا بعد فتح القائمة. انظر AccountMenu.tsx وdocs/DECISIONS.md.
+    // 🆕 «إدارة الرحلات» دُمجت في «رحلاتي» (AccountMenu، الهيدر) — لا زرّ
+    // لوحة إدارة منفصل بعد الآن. انظر AccountMenu.tsx وdocs/DECISIONS.md.
     fireEvent.click(screen.getByRole('button', { name: 'حسابي' }))
-    expect(screen.getByText('لوحة الإدارة')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'رحلاتي' })).toBeInTheDocument()
+    expect(screen.queryByText('لوحة الإدارة')).not.toBeInTheDocument()
   })
 
   it('غير المسؤول لا يرى أزرار الإدارة', async () => {

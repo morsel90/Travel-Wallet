@@ -21,7 +21,19 @@ interface HeaderProps {
    * تأكيد الرحلة المفتوحة *قبل* تسجيل مصروف فيها معلومةً مالية لا ترفاً بصرياً.
    */
   tripName: string
-  /** 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يمرَّر إلى AccountMenu ليعرض «إدارة الرحلة». */
+  /**
+   * 🆕 شعار التطبيق (أيقونة الرسم الدائري) — واسم الرحلة معه حين لا يكون
+   * الهيدر متقلّصاً — يصبحان زرّ تعديل الرحلة لمن يملك صلاحيتها (مسؤول أو
+   * منظّم هذه الرحلة تحديداً)، بلا أي شارة أو أيقونة إضافية تزحم الهيدر. الشعار
+   * وحده هو الزرّ في وضع التقلّص (اسم الرحلة يختفي عندها ويستبدله ملخّص
+   * الإحصاءات)، فربط التعديل بالاسم وحده كان يفقد القدرة على التعديل أثناء
+   * تصفّح سجلّ طويل. لتعديل رحلة أخرى: تُفتح أولاً من «رحلاتي» ثم تُعدَّل من
+   * هنا بعد أن تصبح هي المفتوحة.
+   */
+  canEditTrip: boolean
+  onEditTrip: () => void
+  /** 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يمرَّر إلى AccountMenu لإخفاء
+   * زرّ «تسجيل الدخول كمسؤول» عمّن لا يحتاجه أصلاً. */
   isOrganizer: boolean
   stats: HeaderStats | null
   onStatClick?: (stat: 'deposited' | 'spent' | 'remaining') => void
@@ -30,10 +42,10 @@ interface HeaderProps {
   // انظر AccountMenu.tsx وdocs/DECISIONS.md.
   displayName: string | null
   email: string | null
-  /** 🆕 يُمرَّر فقط حين يكون المستخدم عضواً في أكثر من رحلة — لا معنى لعنصر تبديل لمن يملك رحلة واحدة. */
+  /** 🆕 يُمرَّر حين يكون المستخدم عضواً في أكثر من رحلة، أو مسؤولاً/منظّماً —
+   * «رحلاتي» نقطة الدخول الوحيدة الآن لإدارة أي رحلة (انظر App.tsx). */
   onShowMyTrips?: () => void
   onShowProfile: () => void
-  onOpenAdminPanel: () => void
   onAdminSignIn: () => void
   onSignOut: () => void
 }
@@ -71,6 +83,8 @@ const Header = ({
   isSyncing,
   isAdmin,
   tripName,
+  canEditTrip,
+  onEditTrip,
   isOrganizer,
   stats,
   onStatClick,
@@ -79,7 +93,6 @@ const Header = ({
   email,
   onShowMyTrips,
   onShowProfile,
-  onOpenAdminPanel,
   onAdminSignIn,
   onSignOut,
 }: HeaderProps) => {
@@ -116,6 +129,20 @@ const Header = ({
       />
     ))
 
+  // 🆕 الشعار + نقطة "غير متصل" — بلا أي شارة تعديل: الشعار نفسه (ووسم الرحلة
+  // معه حين لا يكون الهيدر متقلّصاً) هو ما يُضغَط، بلا مؤشّر بصري إضافي.
+  const renderLogo = () => (
+    <span className="relative flex items-center shrink-0">
+      <PieChart className={`text-teal-100 transition-all duration-200 ${isCollapsed ? 'w-5 h-5' : 'w-7 h-7'}`} />
+      {!isOnline && (
+        <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5" title="غير متصل بالإنترنت">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+        </span>
+      )}
+    </span>
+  )
+
   return (
     // 🆕 pt-[env(safe-area-inset-top)] على <header> نفسه لا على الـ div الداخلي:
     // الخلفية التيل تمتد فتغطي منطقة الشقّ (notch)/شريط الحالة بلون متجانس (مظهر
@@ -130,30 +157,50 @@ const Header = ({
         }`}
       >
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          {/* 5. حاوية للأيقونة مع النقطة الحمراء (Offline UX) */}
-          <div className="relative flex items-center">
-            <PieChart
-              className={`text-teal-100 shrink-0 transition-all duration-200 ${isCollapsed ? 'w-5 h-5' : 'w-7 h-7'}`}
-            />
-            {!isOnline && (
-              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5" title="غير متصل بالإنترنت">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-              </span>
-            )}
-          </div>
-
+          {/* 🆕 لا شارة/زرّ إضافي — الشعار (دائماً ظاهر)، واسم الرحلة (حين لا
+              يكون الهيدر متقلّصاً) كلاهما يفتح تعديل الرحلة مباشرة لمن يملك
+              صلاحيتها. عنصر واحد قابل للضغط في كل حالة (لا اثنان بنفس التسمية
+              معاً): الشعار وحده في وضع التقلّص، والشعار+الاسم معاً حين لا. */}
           {isCollapsed ? (
-            <div
-              className={`flex items-center gap-2 min-w-0 ${SCROLL_ROW}`}
-              aria-live="polite"
-              aria-atomic="true"
-            >
-              {stats ? renderPills(true) : renderPillSkeleton(3, true)}
-            </div>
+            <>
+              {canEditTrip ? (
+                <button
+                  type="button"
+                  onClick={onEditTrip}
+                  aria-label="تعديل الرحلة"
+                  title="تعديل الرحلة"
+                  className="shrink-0"
+                >
+                  {renderLogo()}
+                </button>
+              ) : renderLogo()}
+              <div
+                className={`flex items-center gap-2 min-w-0 ${SCROLL_ROW}`}
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                {stats ? renderPills(true) : renderPillSkeleton(3, true)}
+              </div>
+            </>
           ) : (
             <>
-              <h1 className="font-bold tracking-wide truncate text-xl">{tripName}</h1>
+              {canEditTrip ? (
+                <button
+                  type="button"
+                  onClick={onEditTrip}
+                  aria-label="تعديل الرحلة"
+                  title="تعديل الرحلة"
+                  className="flex items-center gap-2.5 min-w-0 flex-1 text-right"
+                >
+                  {renderLogo()}
+                  <h1 className="font-bold tracking-wide truncate text-xl">{tripName}</h1>
+                </button>
+              ) : (
+                <>
+                  {renderLogo()}
+                  <h1 className="font-bold tracking-wide truncate text-xl">{tripName}</h1>
+                </>
+              )}
               {isSyncing && (
                 <span
                   role="status"
@@ -174,7 +221,6 @@ const Header = ({
           isOrganizer={isOrganizer}
           onShowMyTrips={onShowMyTrips}
           onShowProfile={onShowProfile}
-          onOpenAdminPanel={onOpenAdminPanel}
           onAdminSignIn={onAdminSignIn}
           onSignOut={onSignOut}
         />

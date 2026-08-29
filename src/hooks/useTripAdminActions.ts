@@ -84,9 +84,10 @@ interface RestoreTripResponse {
 interface UseTripAdminActionsParams {
   isAdmin: boolean
   /**
-   * 🆕 المرحلة ٣: معرّف الرحلة التي يملك فيها المستخدم الحالي دور «منظّم»، أو
-   * null. القيمة الحقيقية الوحيدة الممكنة عملياً هي TRIP_ID الحالي — منظّم لا
-   * يرى رحلة أخرى في الواجهة أصلاً ليكتب لها (انظر useAppCoordinator.ts).
+   * معرّف الرحلة التي يملك فيها المستخدم الحالي دور «منظّم»، أو null. التعديل
+   * كله (لغير المسؤول) يمرّ الآن عبر اسم الرحلة في الهيدر — أي عبر الرحلة
+   * المفتوحة حالياً حصراً، فلا حاجة لأكثر من معرّف واحد (انظر useAppCoordinator.ts
+   * وcomponents/modals/EditTripModal.tsx).
    *
    * ⚠️ هذا **تحسين تجربة استخدام لا حماية**: الحارس الحقيقي في firestore.rules
    * (isOrganizer) وfunctions/index.js (manageMember). قيمة خاطئة هنا تعني في
@@ -128,9 +129,9 @@ export function useTripAdminActions({
 }: UseTripAdminActionsParams): UseTripAdminActionsResult {
   const [isSaving, setIsSaving] = useState(false)
 
-  // 🆕 المرحلة ٣: المسؤول يتصرّف على أي رحلة، والمنظّم على رحلته وحدها —
-  // بالضبط نفس الحدّ الذي تفرضه firestore.rules (isAdmin() || isOrganizer(tripId)).
-  // هذا فحص واجهة فقط (انظر تعليق organizerTripId في الأعلى)، وليس مصدر الحماية.
+  // المسؤول يتصرّف على أي رحلة، والمنظّم على رحلته وحدها — بالضبط نفس الحدّ
+  // الذي تفرضه firestore.rules (isAdmin() || isOrganizer(tripId)). هذا فحص
+  // واجهة فقط (انظر تعليق organizerTripId في الأعلى)، وليس مصدر الحماية.
   const canAct = useCallback(
     (tripId: string) => isAdmin || tripId === organizerTripId,
     [isAdmin, organizerTripId],

@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { AnimatePresence } from 'framer-motion'
-import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from './utils/tripId'
+import { TRIP_ID, HAS_EXPLICIT_TRIP_ID, appHomeUrl } from './utils/tripId'
 import { haptic } from './utils/haptics'
 import { useAppCoordinator } from './hooks/useAppCoordinator'
 
@@ -45,7 +45,7 @@ const UserProfileModal = lazy(() => import('./components/modals/UserProfileModal
 // store/TripStoreProvider.tsx، والتخطيط إلى أقسام components/*Panel.tsx.
 export default function App() {
   const {
-    session, ledger, trip, rates, status, picker, tripAdminPanel, filter, modals, expense, traveler, deposit, admin, invite,
+    session, ledger, trip, rates, status, picker, tripEdit, filter, modals, expense, traveler, deposit, admin, invite,
     profile, isSavingProfile, saveProfile, organizerBank, longTerm, requestDeleteTraveler,
   } = useAppCoordinator()
 
@@ -94,15 +94,16 @@ export default function App() {
     screen = (
       <TripPicker
         trips={picker.trips}
+        archivedTrips={picker.archivedTrips}
         loading={picker.loading}
         error={picker.error}
         currentTripId={HAS_EXPLICIT_TRIP_ID && session.hasAccess ? TRIP_ID : undefined}
-        // الرجوع متاح فقط حين فُتحت الشاشة اختيارياً من داخل التطبيق — أما حين
-        // كانت شاشة البداية (لا رحلة مقصودة) فلا يوجد ما يُرجع إليه أصلاً.
-        onBack={picker.wasOpenedManually ? picker.hide : undefined}
         onCreateTrip={picker.onCreateTrip}
-        isCreatingTrip={tripAdminPanel.isSaving}
+        isCreatingTrip={picker.isSaving}
         onShowProfile={modals.openUserProfile}
+        isAdmin={picker.isAdmin}
+        isSaving={picker.isSaving}
+        onRestoreTrip={picker.onRestoreTrip}
       />
     )
   } else if (!session.isAdmin && !session.joinedTripIds.includes(TRIP_ID)) {
@@ -142,6 +143,10 @@ export default function App() {
               isSyncing={status.isSyncing} isAdmin={session.isAdmin} isOrganizer={session.isOrganizer}
               // 🆕 اسم الرحلة يحلّ محلّ «مصاريف السفر» الثابت في العنوان.
               tripName={trip.name}
+              // 🆕 اسم الرحلة قابل للضغط لمن يملك صلاحية تعديلها — يفتح
+              // EditTripModal (انظر tripEdit في useAppCoordinator.ts).
+              canEditTrip={tripEdit.canEdit}
+              onEditTrip={modals.openEditTrip}
               displayName={profile.displayName || session.user?.displayName || null}
               email={session.user?.email ?? null}
               stats={ledger.isInitialLoading ? null : {
@@ -150,10 +155,14 @@ export default function App() {
                 totalRemaining: ledger.totalRemaining,
               }}
               isOnline={session.isOnline}
-              // زر التبديل يظهر متى وُجدت رحلة أخرى غير المفتوحة حالياً
-              onShowMyTrips={picker.trips.length > 1 ? picker.show : undefined}
+              // زر التبديل يظهر متى وُجدت رحلة أخرى غير المفتوحة حالياً (نشطة
+              // أو مؤرشفة)، أو للمسؤول دائماً (يتصفّح كل الرحلات ويُنشئ/يستعيد
+              // من «رحلاتي»).
+              onShowMyTrips={
+                picker.trips.length > 1 || picker.archivedTrips.length > 0 || session.isAdmin
+                  ? picker.show : undefined
+              }
               onShowProfile={modals.openUserProfile}
-              onOpenAdminPanel={modals.openTripAdmin}
               onAdminSignIn={admin.openAdminSignIn}
               onSignOut={admin.handleAdminSignOut}
               onStatClick={(stat) => {
@@ -293,27 +302,27 @@ export default function App() {
                 onRestoreExpense: expense.handleRestoreExpense,
                 onRestoreTraveler: traveler.handleRestoreTraveler,
               }}
-              tripAdmin={{
-                currentTripId: TRIP_ID,
-                viewerRole: tripAdminPanel.viewerRole,
-                trips: tripAdminPanel.trips,
-                loading: tripAdminPanel.loading,
-                error: tripAdminPanel.error,
-                isSaving: tripAdminPanel.isSaving,
-                onSaveTripName: tripAdminPanel.saveTripName,
-                onSaveItinerary: tripAdminPanel.saveItinerary,
-                onCreateTrip: tripAdminPanel.createTrip,
-                onSaveTripStatus: tripAdminPanel.saveTripStatus,
-                onDeleteTrip: tripAdminPanel.deleteTrip,
-                onRemoveMember: tripAdminPanel.removeMember,
-                onSetMemberRole: tripAdminPanel.setMemberRole,
-                onLinkTravelerAccount: tripAdminPanel.linkTravelerAccount,
-                onExportBackup: tripAdminPanel.exportBackup,
-                onRestoreTrip: tripAdminPanel.restoreTrip,
-                onCreateInvite: tripAdminPanel.createInvite,
-                onRevokeInvite: tripAdminPanel.revokeInvite,
+              // 🆕 undefined لمن لا يملك صلاحية التعديل أصلاً — لا مسؤول ولا
+              // منظّم لهذه الرحلة (تطابق الحارس نفسه في Header/AccountMenu).
+              editTrip={tripEdit.canEdit ? {
+                trip: tripEdit.trip,
+                viewerRole: tripEdit.viewerRole,
+                isSaving: tripEdit.isSaving,
+                onSaveTripName: tripEdit.onSaveTripName,
+                onSaveItinerary: tripEdit.onSaveItinerary,
+                onSaveTripStatus: tripEdit.onSaveTripStatus,
+                onDeleteTrip: tripEdit.onDeleteTrip,
+                onRemoveMember: tripEdit.onRemoveMember,
+                onSetMemberRole: tripEdit.onSetMemberRole,
+                onLinkTravelerAccount: tripEdit.onLinkTravelerAccount,
+                onExportBackup: tripEdit.onExportBackup,
+                onCreateInvite: tripEdit.onCreateInvite,
+                onRevokeInvite: tripEdit.onRevokeInvite,
                 showToast: status.showToast,
-              }}
+                // الرحلة المفتوحة حذفت نفسها — إعادة توجيه كاملة بلا `?trip=`
+                // بدل إبقاء المستخدم على شاشة تشير لمستند لم يعد موجوداً.
+                onDeleted: () => { window.location.href = appHomeUrl() },
+              } : undefined}
               // 🆕 غير مُمرَّرة إطلاقاً في الرحلة القياسية — وهو ما يجعل
               // مودالَي الترحيل/الخروج غير قابلين للعرض فيها بنيوياً، لا بشرط.
               longTerm={longTerm ? {

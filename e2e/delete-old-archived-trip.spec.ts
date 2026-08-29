@@ -6,9 +6,9 @@
 // تلقائي هنا — لكن artifacts/{tripId} يُحذف فعلياً هذه المرة (لا يُترَك
 // يتيماً كما في المسار العادي) لأن الغاية إزالة بيانات حقيقية، لا مجرّد
 // إخفاء الرحلة. انظر functions/index.js: isEligibleForAgePurgeJs.
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { seedBareAdmin, adminFirestore } from './utils/seed'
-import { signInWithEmail, openAccountMenu } from './utils/flows'
+import { signInWithEmail, openTripDetailFromHeader } from './utils/flows'
 
 const CREDS = {
   email: 'e2e-purge-old-archived-admin@test.local',
@@ -35,19 +35,6 @@ async function seedArchivedTripWithRealData(tripId: string, name: string, archiv
     .set({ id: 1, name: 'مسافر حقيقي', shortName: 'مسافر', deposited: 500, deletedAt: null })
 }
 
-/**
- * لوحة إدارة المسؤول تفتح دائماً على قائمة كل الرحلات — انظر delete-empty-trip.spec.ts
- * لنفس الشرح. 🆕 نقطة الدخول الآن AccountMenu (الهيدر) وحدها — انظر
- * docs/DECISIONS.md لسبب إزالة الزرّ المكرَّر من ExpensesPanel.
- */
-async function openTripDetailAsAdmin(page: Page, tripId: string): Promise<void> {
-  await openAccountMenu(page)
-  await page.getByRole('menuitem', { name: 'لوحة الإدارة' }).click()
-  const tripRow = page.locator('div.bg-white.rounded-2xl.shadow-sm.border.border-slate-200.p-4')
-    .filter({ hasText: tripId })
-  await tripRow.getByRole('button', { name: 'تعديل' }).click()
-}
-
 test.beforeAll(async () => {
   await seedBareAdmin(CREDS.email, CREDS.password)
 })
@@ -58,16 +45,22 @@ test('مسؤول يحذف رحلة مؤرشفة منذ أكثر من 90 يوما
   await page.goto(`/?trip=${OLD_TRIP_ID}`)
   await signInWithEmail(page, CREDS.email, CREDS.password)
 
-  await openTripDetailAsAdmin(page, OLD_TRIP_ID)
+  await openTripDetailFromHeader(page)
   await page.getByRole('button', { name: 'حذف الرحلة' }).click()
 
   // الرسالة الاستثنائية تظهر — الاستثناء واضح للمسؤول قبل أن يضغط، لا مفاجأة بعد الحذف.
   await expect(page.getByText(/مؤرشفة منذ أكثر من 90 يوماً/)).toBeVisible()
 
   await page.getByLabel(/للتأكيد، اكتب معرّف الرحلة/).fill(OLD_TRIP_ID)
-  await page.getByRole('button', { name: 'حذف الرحلة نهائياً' }).click()
 
-  await expect(page.getByText(`تم حذف الرحلة "${OLD_TRIP_ID}"`)).toBeVisible()
+  // 🆕 حذف الرحلة *المفتوحة حالياً* يُعقبه توجيه كامل بلا `?trip=` (EditTripModal
+  // onDeleted في App.tsx) — ننتظر التوجيه والضغط معاً بدل توست عابر قد يفوته
+  // سباق التنقّل.
+  await Promise.all([
+    page.waitForURL(url => !url.searchParams.has('trip')),
+    page.getByRole('button', { name: 'حذف الرحلة نهائياً' }).click(),
+  ])
+  await expect(page.getByRole('heading', { name: 'رحلاتي' })).toBeVisible()
 
   // ⚠️ تحقّق سلبي حقيقي (القاعدة ١٨): artifacts/{tripId} حُذف فعلياً — المسافر
   // النشِط ببيانات مالية حقيقية لم يُترَك يتيماً في Firestore.
@@ -83,7 +76,7 @@ test('رحلة مؤرشفة حديثاً (أقل من 90 يوماً) ببيان�
   await page.goto(`/?trip=${RECENT_TRIP_ID}`)
   await signInWithEmail(page, CREDS.email, CREDS.password)
 
-  await openTripDetailAsAdmin(page, RECENT_TRIP_ID)
+  await openTripDetailFromHeader(page)
   await page.getByRole('button', { name: 'حذف الرحلة' }).click()
 
   // لا استثناء لرحلة لم تبلغ مدة السماح بعد.

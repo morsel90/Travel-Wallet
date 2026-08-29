@@ -34,13 +34,13 @@ test('وضع المسؤول يصمد عبر إعادة التحميل والتب
   // ── إعادة تحميل بسيطة لنفس الرحلة ────────────────────────────────────────
   await page.reload()
   await openAccountMenu(page)
-  await expect(page.getByRole('menuitem', { name: 'لوحة الإدارة' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'رحلاتي' })).toBeVisible()
   await page.keyboard.press('Escape')
 
   // ── التبديل لرحلة أخرى (إعادة تحميل كاملة عبر ?trip=) ───────────────────
   await page.goto(`/?trip=${SECOND_TRIP_ID}`)
   await openAccountMenu(page)
-  await expect(page.getByRole('menuitem', { name: 'لوحة الإدارة' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'رحلاتي' })).toBeVisible()
   await page.keyboard.press('Escape')
   // ولا يُطالَب بتسجيل دخول جديد إطلاقاً — الجلسة القائمة تكفي
   await expect(page.getByRole('button', { name: /متابعة عبر Google/ })).not.toBeVisible()
@@ -48,7 +48,7 @@ test('وضع المسؤول يصمد عبر إعادة التحميل والتب
   // ── العودة للرحلة الأولى ─────────────────────────────────────────────────
   await page.goto(`/?trip=${CREDS.tripId}`)
   await openAccountMenu(page)
-  await expect(page.getByRole('menuitem', { name: 'لوحة الإدارة' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'رحلاتي' })).toBeVisible()
 })
 
 test('الخروج من وضع المسؤول يُسجّل خروجاً كاملاً ويعيد بوابة تسجيل الدخول', async ({ page }) => {

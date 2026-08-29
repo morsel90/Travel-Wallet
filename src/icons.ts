@@ -36,8 +36,8 @@ export {
   Share2, // 🆕 زر مشاركة تفاصيل الحساب البنكي (BankDetailsCard)
   Printer, // 🆕 زر طباعة/حفظ PDF في صفحة التقارير (ReportsView)
   Route,   // 🆕 أيقونة رأس قسم مسار الرحلة (ItinerarySection في التقارير)
-  Settings,  // 🆕 زر/رأس واجهة إدارة الرحلة (TripAdminView)
-  Save,      // 🆕 أزرار الحفظ في واجهة إدارة الرحلة
+  Settings,  // 🆕 زر/رأس لوحة تفاصيل الرحلة (TripDetailPanel، ضمن TripPicker)
+  Save,      // 🆕 أزرار الحفظ في لوحة تفاصيل الرحلة
   ArrowUp,   // 🆕 إعادة ترتيب مقاطع المسار يدوياً
   ArrowDown, // 🆕 إعادة ترتيب مقاطع المسار يدوياً
   ArrowRight,   // 🆕 رجوع من تفاصيل الرحلة لقائمة الرحلات (RTL: يشير للخلف)
@@ -64,4 +64,5 @@ export {
   CalendarClock, // 🆕 رأس قسم «الشهر المحاسبي» (LongTermPanel)
   DoorOpen,      // 🆕 خروج منتدَب من رحلة طويلة المدى (ExitTravelerModal)
   Smartphone,    // 🆕 محفظة رقمية/رقم جوال كبديل للحساب البنكي (UserProfileModal + BankDetailsCard)
+  Archive,       // 🆕 صفّ «الرحلات المؤرشفة» القابل للطي في «رحلاتي» (نمط واتساب)
 } from 'lucide-react'
