@@ -58,10 +58,12 @@ interface TripPickerProps {
   trips: TripSummary[]
   loading: boolean
   error: string | null
-  /** الرحلة المفتوحة حالياً إن وُجدت — تُبرز في القائمة ولا تُعاد الملاحة إليها. */
+  /**
+   * الرحلة المفتوحة حالياً إن وُجدت — تُبرز في القائمة. إن فُتحت هذه الشاشة من
+   * داخل رحلة (لا كشاشة بداية)، الضغط على بطاقتها هو طريقة الرجوع الوحيدة —
+   * لا زرّ «رجوع» منفصل، فطريقة واحدة تكفي.
+   */
   currentTripId?: string
-  /** يُمرَّر فقط حين فُتحت الشاشة اختيارياً من داخل رحلة — لا حين كانت شاشة البداية. */
-  onBack?: () => void
   /** 🆕 إنشاء ذاتي — متاح لأي مستخدم مسجّل دخوله، لا المسؤول فقط. */
   onCreateTrip: (tripId: string, name: string) => Promise<boolean>
   isCreatingTrip: boolean
@@ -94,7 +96,7 @@ interface TripPickerProps {
 }
 
 const TripPicker = ({
-  trips, loading, error, currentTripId, onBack,
+  trips, loading, error, currentTripId,
   onCreateTrip, isCreatingTrip, onShowProfile,
   isAdmin, currentUserUid, viewerRole, isSaving,
   onSaveTripName, onSaveItinerary, onSaveTripStatus, onDeleteTrip,
@@ -138,8 +140,7 @@ const TripPicker = ({
         <div className="max-w-md mx-auto px-5 py-4 flex items-center gap-2.5">
           {selected ? (
             <>
-              {/* 🆕 رجوع لقائمة الرحلات — يظهر دائماً في وضع التعديل، بخلاف
-                  «رجوع» (onBack) أدناه الذي يعود للرحلة المفتوحة في التطبيق. */}
+              {/* 🆕 رجوع لقائمة الرحلات — يظهر دائماً في وضع التعديل. */}
               <button
                 type="button"
                 onClick={() => setSelectedId(null)}
@@ -175,16 +176,6 @@ const TripPicker = ({
                   className="flex items-center gap-1.5 bg-teal-800/60 hover:bg-teal-800 text-teal-50 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors shrink-0"
                 >
                   <Plus className="w-3.5 h-3.5" /> رحلة جديدة
-                </button>
-              )}
-              {onBack && !isBusy && (
-                <button
-                  type="button"
-                  onClick={onBack}
-                  aria-label="العودة للرحلة"
-                  className="flex items-center gap-1.5 bg-teal-800/60 hover:bg-teal-800 text-teal-50 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors shrink-0"
-                >
-                  <ArrowRight className="w-3.5 h-3.5" /> رجوع
                 </button>
               )}
             </>

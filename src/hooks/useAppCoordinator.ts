@@ -412,9 +412,8 @@ export function useAppCoordinator() {
      */
     picker: {
       trips: pickerTrips, loading: pickerLoading, error: pickerError,
-      isVisible: isPickerVisible, wasOpenedManually: showTripPicker,
+      isVisible: isPickerVisible,
       show: () => setShowTripPicker(true),
-      hide: () => setShowTripPicker(false),
       // 🆕 الإنشاء الذاتي (نموذج واتساب) — أي مستخدم مسجّل دخوله، لا المسؤول
       // فقط. نفس دالة tripAdmin.createTrip المستخدمة في التعديل؛ الحدّ
       // الحقيقي (جلسة حقيقية، حدّ زمني) خادمي بالكامل في manageTrip.

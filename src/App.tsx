@@ -97,9 +97,6 @@ export default function App() {
         loading={picker.loading}
         error={picker.error}
         currentTripId={HAS_EXPLICIT_TRIP_ID && session.hasAccess ? TRIP_ID : undefined}
-        // الرجوع متاح فقط حين فُتحت الشاشة اختيارياً من داخل التطبيق — أما حين
-        // كانت شاشة البداية (لا رحلة مقصودة) فلا يوجد ما يُرجع إليه أصلاً.
-        onBack={picker.wasOpenedManually ? picker.hide : undefined}
         onCreateTrip={picker.onCreateTrip}
         isCreatingTrip={picker.isSaving}
         onShowProfile={modals.openUserProfile}
