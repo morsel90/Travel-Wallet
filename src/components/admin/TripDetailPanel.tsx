@@ -23,7 +23,7 @@ import {
 import type { SegmentDraft } from '../../utils/itinerary'
 import type { TripSummary } from '../../hooks/useAllTrips'
 import { TRIP_STATUS_LABEL } from '../../types'
-import type { ToastMessage, TransportMode, TripMember, TripStatus } from '../../types'
+import type { ToastMessage, Traveler, TransportMode, TripMember, TripStatus } from '../../types'
 import { isEligibleForAgePurge } from '../../utils/tripStatus'
 
 interface TripDetailPanelProps {
@@ -257,6 +257,17 @@ export default function TripDetailPanel({
     for (const m of members ?? []) map.set(m.uid, m)
     return map
   }, [members])
+
+  // 🆕 ترتيب العرض: المنظّم أولاً، فمن ربط حسابه (مهما كان ترتيب إنشائه في
+  // الدفتر)، ثم المسجَّلون يدوياً آخراً — لا ترتيب زمني عشوائي كما كان.
+  const sortedTravelers = useMemo(() => {
+    const rank = (t: Traveler) => {
+      if (t.uid && memberByUid.get(t.uid)?.role === 'organizer') return 0
+      if (t.uid) return 1
+      return 2
+    }
+    return travelers ? [...travelers].sort((a, b) => rank(a) - rank(b)) : null
+  }, [travelers, memberByUid])
 
   const startLinkTraveler = (travelerId: number) => {
     setLinkingTravelerId(travelerId)
@@ -678,9 +689,9 @@ export default function TripDetailPanel({
             />
           )}
 
-          {members && travelers && (travelers.length > 0 || unlinkedMembers.length > 0) && (
+          {members && sortedTravelers && (sortedTravelers.length > 0 || unlinkedMembers.length > 0) && (
             <div className="space-y-2">
-              {travelers.map(t => {
+              {sortedTravelers.map(t => {
                 const m = t.uid ? memberByUid.get(t.uid) : undefined
                 const isLinking = linkingTravelerId === t.id
                 const isConfirming = !!m && removingUid === m.uid
