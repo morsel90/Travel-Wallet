@@ -37,7 +37,11 @@ export const ItinerarySection = ({ itinerary }: ItinerarySectionProps) => {
       </h2>
 
       <div className="space-y-3">
-        {itinerary.map(segment => (
+        {itinerary.map(segment => {
+          // 🆕 identifier اختياري الآن (النموذج المبسّط لا يجمعه لمقطع جديد) —
+          // العنوان يسقط لـnotes ثم لاسم وسيلة التنقل بدل عرض سطر فارغ.
+          const title = segment.identifier || segment.notes || TRANSPORT_LABEL[segment.mode]
+          return (
           <div key={segment.id} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
             <div className="flex items-center justify-between gap-2 mb-3">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -46,7 +50,7 @@ export const ItinerarySection = ({ itinerary }: ItinerarySectionProps) => {
                 </span>
                 <div className="min-w-0">
                   <p className="text-[11px] font-bold text-slate-400">{TRANSPORT_LABEL[segment.mode]}</p>
-                  <p className="text-sm font-bold text-slate-800 truncate">{segment.identifier}</p>
+                  <p className="text-sm font-bold text-slate-800 truncate">{title}</p>
                 </div>
               </div>
               {segment.reference && (
@@ -71,14 +75,24 @@ export const ItinerarySection = ({ itinerary }: ItinerarySectionProps) => {
               <div className="bg-white rounded-lg border border-slate-100 p-2.5 min-w-0">
                 <p className="text-[11px] font-bold text-slate-400 mb-0.5">الوصول إلى</p>
                 <p className="text-sm font-bold text-slate-700 truncate">{segment.arrival.location}</p>
-                <div className="mt-1.5 flex items-center justify-between gap-2">
-                  <span className="text-[11px] text-slate-500">{fmtDate(segment.arrival.time)}</span>
-                  <span dir="ltr" className="text-sm font-black text-slate-800 tabular-nums">{fmtTime(segment.arrival.time)}</span>
-                </div>
+                {/* 🆕 وقت الوصول اختياري الآن — لا يُعرض سطر الوقت إطلاقاً حين يغيب بدل "Invalid Date". */}
+                {segment.arrival.time && (
+                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-slate-500">{fmtDate(segment.arrival.time)}</span>
+                    <span dir="ltr" className="text-sm font-black text-slate-800 tabular-nums">{fmtTime(segment.arrival.time)}</span>
+                  </div>
+                )}
               </div>
             </div>
+
+            {segment.notes && segment.notes !== title && (
+              <p className="text-[11px] text-slate-500 mt-2.5 bg-white border border-slate-100 rounded-lg p-2 leading-relaxed">
+                {segment.notes}
+              </p>
+            )}
           </div>
-        ))}
+          )
+        })}
       </div>
     </section>
   )

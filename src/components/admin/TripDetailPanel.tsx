@@ -89,7 +89,9 @@ const MODE_ICON: Record<TransportMode, typeof Plane> = {
 }
 
 const DT_LOCALE = 'ar-SA-u-ca-gregory-nu-latn'
-const fmtDateTime = (iso: string): string => {
+/** 🆕 undefined ممكن الآن (وقت وصول مقطع جديد لا حقل له في النموذج) — يُعرض «—». */
+const fmtDateTime = (iso: string | undefined): string => {
+  if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
   return `${d.toLocaleDateString(DT_LOCALE, { day: 'numeric', month: 'short' })} · ${
@@ -291,7 +293,14 @@ export default function TripDetailPanel({
     }
   }
 
-  const startAdd = () => { setEditingId(null); setDraftError(null); setDraft(emptySegmentDraft()) }
+  // 🆕 "من" تُملأ تلقائياً بوجهة وصول آخر مقطع في المسار الحالي (بترتيب
+  // المصفوفة اليدوي، لا الزمني) — غالباً المقطع التالي يبدأ من حيث انتهى سابقه.
+  const startAdd = () => {
+    setEditingId(null)
+    setDraftError(null)
+    const lastSegment = workingItinerary[workingItinerary.length - 1]
+    setDraft(emptySegmentDraft(lastSegment?.arrival.location))
+  }
   const startEdit = (id: string) => {
     const segment = workingItinerary.find(s => s.id === id)
     if (!segment) return
@@ -678,6 +687,9 @@ export default function TripDetailPanel({
             <div className="space-y-3">
               {workingItinerary.map((segment, index) => {
                 const ModeIcon = MODE_ICON[segment.mode]
+                // 🆕 identifier اختياري الآن — العنوان الغامق يسقط لـnotes ثم
+                // لاسم وسيلة التنقل بدل عرض "undefined" أو ترك سطر فارغ.
+                const title = segment.identifier || segment.notes || TRANSPORT_LABEL[segment.mode]
                 return (
                   <div key={segment.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
                     <div className="flex items-start justify-between gap-3">
@@ -690,7 +702,7 @@ export default function TripDetailPanel({
                             {TRANSPORT_LABEL[segment.mode]}
                             {segment.reference && <span dir="ltr"> · {segment.reference}</span>}
                           </p>
-                          <p className="text-sm font-bold text-slate-800 truncate">{segment.identifier}</p>
+                          <p className="text-sm font-bold text-slate-800 truncate">{title}</p>
                         </div>
                       </div>
 
@@ -712,7 +724,7 @@ export default function TripDetailPanel({
                         </button>
                         <button
                           type="button" onClick={() => startEdit(segment.id)}
-                          aria-label={`تعديل ${segment.identifier}`}
+                          aria-label={`تعديل ${title}`}
                           className="p-1.5 rounded-lg bg-slate-50 hover:bg-teal-50 text-slate-500 hover:text-teal-600 transition-colors"
                         >
                           <Pencil className="w-4 h-4" />
@@ -720,7 +732,7 @@ export default function TripDetailPanel({
                         <button
                           type="button"
                           onClick={() => setWorkingItinerary(prev => prev.filter(s => s.id !== segment.id))}
-                          aria-label={`حذف ${segment.identifier}`}
+                          aria-label={`حذف ${title}`}
                           className="p-1.5 rounded-lg bg-slate-50 hover:bg-rose-50 text-slate-500 hover:text-rose-600 transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -740,6 +752,14 @@ export default function TripDetailPanel({
                         <p className="text-[11px] text-slate-500 mt-1">{fmtDateTime(segment.arrival.time)}</p>
                       </div>
                     </div>
+
+                    {/* 🆕 identifier أصبح عنوان البطاقة أعلاه إن وُجد — الملاحظات
+                        تُعرض هنا فقط حين لا تتطابق مع ما ظهر عنواناً بالفعل. */}
+                    {segment.notes && segment.notes !== title && (
+                      <p className="text-[11px] text-slate-500 mt-2.5 bg-slate-50 border border-slate-100 rounded-lg p-2 leading-relaxed">
+                        {segment.notes}
+                      </p>
+                    )}
                   </div>
                 )
               })}

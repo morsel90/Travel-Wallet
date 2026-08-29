@@ -757,17 +757,22 @@ function isValidNameKeyJs(shortName) {
  * لماذا لا حزمة مشتركة بين هذا الملف وواجهة العميل. تُصفّي المقاطع التالفة
  * وترتّب الباقي تصاعدياً حسب وقت الانطلاق، ثم تُعيد وقت وصول آخرها كـ epoch
  * ms — أو null لمسار فارغ أو بلا مقاطع صالحة إطلاقاً.
+ *
+ * 🆕 وقت الوصول اختياري الآن (النموذج المبسّط في SegmentForm.tsx لا يجمعه) —
+ * مقطع بلا arrival.time لا يُستبعَد، بل يسقط لوقت الانطلاق كأفضل تقدير معروف،
+ * تماماً كما يفعل tripEndTime في itinerary.ts.
  */
 function tripEndTimeJs(itinerary) {
   if (!Array.isArray(itinerary)) return null;
   const valid = itinerary.filter(s =>
     isPlainObject(s)
     && isPlainObject(s.departure) && typeof s.departure.time === 'string'
-    && isPlainObject(s.arrival) && typeof s.arrival.time === 'string'
+    && isPlainObject(s.arrival) && (s.arrival.time === undefined || typeof s.arrival.time === 'string')
   );
   if (valid.length === 0) return null;
   valid.sort((a, b) => new Date(a.departure.time).getTime() - new Date(b.departure.time).getTime());
-  return new Date(valid[valid.length - 1].arrival.time).getTime();
+  const last = valid[valid.length - 1];
+  return new Date(last.arrival.time || last.departure.time).getTime();
 }
 
 // 🆕 المرحلة ٢ من دورة حياة الرحلة التلقائية (docs/DECISIONS.md) — نسخة خادمية

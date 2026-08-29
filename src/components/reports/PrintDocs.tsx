@@ -10,11 +10,14 @@ const fmt = (n: number): string => n.toFixed(2)
 // 🆕 تسميات وسائل النقل + منسّق تاريخ/وقت واضح للمسافر: تقويم ميلادي + أرقام لاتينية
 // + وقت 24 ساعة (بلا ص/م المربكة) مع اسم اليوم — موحّد مع العرض على الشاشة.
 const TRANSPORT_LABELS: Record<string, string> = { flight: 'رحلة جوية', car: 'سيارة', train: 'قطار', bus: 'حافلة' }
-const fmtDateTime = (iso: string): string =>
-  new Date(iso).toLocaleString('ar-SA-u-ca-gregory-nu-latn', {
+/** 🆕 undefined ممكن الآن لوقت وصول مقطع (النموذج المبسّط لا يجمعه) — يُعرض «—». */
+const fmtDateTime = (iso: string | undefined): string => {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('ar-SA-u-ca-gregory-nu-latn', {
     weekday: 'short', day: 'numeric', month: 'short',
     hour: '2-digit', minute: '2-digit', hour12: false,
   })
+}
 
 interface DocFrameProps {
   title: string
@@ -94,7 +97,7 @@ export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses
             <thead>
               <tr>
                 <th className={th}>النقل</th>
-                <th className={th}>المعرّف</th>
+                <th className={th}>المعرّف / ملاحظات</th>
                 <th className={th}>المرجع</th>
                 <th className={th}>الانطلاق</th>
                 <th className={th}>الوصول</th>
@@ -104,7 +107,7 @@ export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses
               {itinerary.map(seg => (
                 <tr key={seg.id}>
                   <td className={td}>{TRANSPORT_LABELS[seg.mode] ?? seg.mode}</td>
-                  <td className={td}>{seg.identifier}</td>
+                  <td className={td}>{seg.identifier ?? seg.notes ?? '—'}</td>
                   <td className={td} dir="ltr">{seg.reference ?? '—'}</td>
                   <td className={td}>{seg.departure.location} — <span dir="ltr">{fmtDateTime(seg.departure.time)}</span></td>
                   <td className={td}>{seg.arrival.location} — <span dir="ltr">{fmtDateTime(seg.arrival.time)}</span></td>

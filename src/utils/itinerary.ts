@@ -19,11 +19,19 @@ export const MAX_SEGMENTS = 50
 // ─── مسوّدة النموذج ─────────────────────────────────────────────────────────
 // النموذج يتعامل مع نصوص فقط (قيم <input>)، والتحويل لـ ItinerarySegment يحدث
 // عند الحفظ بعد التحقق — نفس نمط ExpenseFormData مقابل Expense.
+//
+// 🆕 identifier/reference/arrivalTime لم يعد لها حقل في SegmentForm.tsx
+// المبسّط، لكنها تبقى هنا لسبب واحد: مقطع قديم فيه قيمة لأحدها يُحرَّر عبر
+// segmentToDraft ثم draftToSegment بلا لمس، فتُحفَظ كما هي بدل أن يمحوها
+// النموذج المبسّط بصمت. مقطع جديد (emptySegmentDraft) يبدأ بها فارغة، فتُحذف
+// عند البناء (انظر draftToSegment) بدل أن تُكتب كنصوص فارغة.
 export interface SegmentDraft {
   id: string
   mode: TransportMode
   identifier: string
   reference: string
+  /** 🆕 حقل نصي حرّ اختياري — بديل الحقول المحذوفة لأي تفصيل إضافي. */
+  notes: string
   departureLocation: string
   departureTime: string // قيمة <input type="datetime-local"> — "YYYY-MM-DDTHH:mm"
   arrivalLocation: string
@@ -40,13 +48,19 @@ export function newSegmentId(): string {
   return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
 }
 
-export function emptySegmentDraft(): SegmentDraft {
+/**
+ * @param prefilledDepartureLocation 🆕 وجهة وصول آخر مقطع مسجَّل في المسار، إن
+ * وُجدت — تُملأ بها "من" تلقائياً بدل تركها فارغة، على افتراض أن المقطع
+ * التالي غالباً يبدأ من حيث انتهى السابق.
+ */
+export function emptySegmentDraft(prefilledDepartureLocation = ''): SegmentDraft {
   return {
     id: newSegmentId(),
     mode: 'flight',
     identifier: '',
     reference: '',
-    departureLocation: '',
+    notes: '',
+    departureLocation: prefilledDepartureLocation,
     departureTime: '',
     arrivalLocation: '',
     arrivalTime: '',
@@ -75,53 +89,61 @@ export function segmentToDraft(segment: ItinerarySegment): SegmentDraft {
   return {
     id: segment.id,
     mode: segment.mode,
-    identifier: segment.identifier,
+    identifier: segment.identifier ?? '',
     reference: segment.reference ?? '',
+    notes: segment.notes ?? '',
     departureLocation: segment.departure.location,
     departureTime: toInputTime(segment.departure.time),
     arrivalLocation: segment.arrival.location,
-    arrivalTime: toInputTime(segment.arrival.time),
+    arrivalTime: segment.arrival.time ? toInputTime(segment.arrival.time) : '',
   }
 }
 
 /**
  * يتحقق من مسوّدة مقطع ويُرجع أول رسالة خطأ بالعربية، أو null إن كانت صالحة.
  * يُستدعى قبل الحفظ وقبل بناء ItinerarySegment.
+ *
+ * 🆕 لا يتحقق من identifier/reference/arrivalTime — لا حقل لها في النموذج
+ * المبسّط ليُخطئ فيه المستخدم أصلاً. قيمها (إن وُجدت من تعديل مقطع قديم) تمرّ
+ * كما هي بلا فحص، لأنها كانت صالحة أصلاً حين حُفظت أول مرة ولم يلمسها أحد هنا.
  */
 export function validateDraft(draft: SegmentDraft): string | null {
   if (!TRANSPORT_MODES.includes(draft.mode)) return 'اختر وسيلة تنقل صحيحة.'
-  if (!draft.identifier.trim()) return 'أدخل رقم الرحلة أو وصف المركبة.'
-  if (draft.identifier.trim().length > 80) return 'رقم الرحلة أو الوصف طويل جداً (80 حرفاً كحد أقصى).'
-  if (draft.reference.trim().length > 40) return 'رقم الحجز طويل جداً (40 حرفاً كحد أقصى).'
+  if (draft.notes.trim().length > 200) return 'الملاحظات طويلة جداً (200 حرف كحد أقصى).'
   if (!draft.departureLocation.trim()) return 'أدخل مكان الانطلاق.'
   if (!draft.arrivalLocation.trim()) return 'أدخل مكان الوصول.'
   if (!draft.departureTime) return 'أدخل وقت الانطلاق.'
-  if (!draft.arrivalTime) return 'أدخل وقت الوصول.'
 
   const dep = new Date(toStoredTime(draft.departureTime)).getTime()
-  const arr = new Date(toStoredTime(draft.arrivalTime)).getTime()
   if (Number.isNaN(dep)) return 'وقت الانطلاق غير صالح.'
-  if (Number.isNaN(arr)) return 'وقت الوصول غير صالح.'
-  if (arr < dep) return 'وقت الوصول قبل وقت الانطلاق — تحقّق من التاريخين.'
 
   return null
 }
 
-/** يبني مقطعاً مخزَّناً من مسوّدة صالحة. لا يكتب reference إن كان فارغاً. */
+/**
+ * يبني مقطعاً مخزَّناً من مسوّدة صالحة. لا يكتب identifier/reference/notes/
+ * وقت الوصول إن كانت فارغة — 🆕 هذا ما يجعل مقطعاً جديداً (بلا هذه القيم أصلاً
+ * في المسوّدة) يُحفظ بلا الحقول المحذوفة تماماً، بينما مقطع قديم يُحرَّر بقيمة
+ * موجودة لأحدها (مررت بلا تغيير من segmentToDraft) يحتفظ بها كما هي.
+ */
 export function draftToSegment(draft: SegmentDraft): ItinerarySegment {
+  const identifier = draft.identifier.trim()
   const reference = draft.reference.trim()
+  const notes = draft.notes.trim()
+  const arrivalTime = toStoredTime(draft.arrivalTime)
   return {
     id: draft.id,
     mode: draft.mode,
-    identifier: draft.identifier.trim(),
+    ...(identifier ? { identifier } : {}),
     ...(reference ? { reference } : {}),
+    ...(notes ? { notes } : {}),
     departure: {
       location: draft.departureLocation.trim(),
       time: toStoredTime(draft.departureTime),
     },
     arrival: {
       location: draft.arrivalLocation.trim(),
-      time: toStoredTime(draft.arrivalTime),
+      ...(arrivalTime ? { time: arrivalTime } : {}),
     },
   }
 }
@@ -139,11 +161,14 @@ export function isRenderableSegment(value: unknown): value is ItinerarySegment {
     typeof s.id === 'string' &&
     typeof s.mode === 'string' &&
     TRANSPORT_MODES.includes(s.mode as TransportMode) &&
-    typeof s.identifier === 'string' &&
+    // 🆕 identifier اختياري الآن (النموذج المبسّط لا يجمعه لمقطع جديد) — لا
+    // يُرفض غيابه، فقط نوعه إن وُجد.
+    (s.identifier === undefined || typeof s.identifier === 'string') &&
     typeof s.departure?.location === 'string' &&
     typeof s.departure?.time === 'string' &&
     typeof s.arrival?.location === 'string' &&
-    typeof s.arrival?.time === 'string'
+    // 🆕 نفس الشيء لوقت الوصول — اختياري، فلا يُرفض المقطع لغيابه.
+    (s.arrival?.time === undefined || typeof s.arrival.time === 'string')
   )
 }
 
@@ -181,7 +206,11 @@ export function findNextSegment(
 export function tripEndTime(itinerary: unknown): number | null {
   const normalized = normalizeItinerary(itinerary)
   if (normalized.length === 0) return null
-  return new Date(normalized[normalized.length - 1].arrival.time).getTime()
+  const last = normalized[normalized.length - 1]
+  // 🆕 وقت الوصول اختياري الآن (النموذج المبسّط لا يجمعه) — نسقط لوقت
+  // الانطلاق كأفضل تقدير معروف بدل NaN. نفس المنطق في tripEndTimeJs
+  // (functions/index.js) يجب أن يبقى مطابقاً — انظر تعليقها هناك.
+  return new Date(last.arrival.time ?? last.departure.time).getTime()
 }
 
 export interface TripRouteSummary {
@@ -206,7 +235,8 @@ export function tripRouteSummary(itinerary: unknown): TripRouteSummary | null {
   const last = normalized[normalized.length - 1]
   return {
     start: first.departure.time,
-    end: last.arrival.time,
+    // 🆕 نفس سقوط tripEndTime أعلاه لوقت الانطلاق حين يغيب وقت الوصول.
+    end: last.arrival.time ?? last.departure.time,
     fromLocation: first.departure.location,
     toLocation: last.arrival.location,
   }
