@@ -7,7 +7,7 @@
 // متلاحقة على نفس المستند وفرصة أكبر لضياع تعديل عند التحرير من جهازين معاً.
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Building2, Route, Save, Plane, Car, Train, Bus,
+  Settings, Route, Save, Plane, Car, Train, Bus,
   Pencil, Trash2, Plus, ArrowUp, ArrowDown, Loader2, AlertTriangle, Lock,
   UserMinus, Check, Download, ShieldCheck, Share2, Ban,
   UserCheck, Link2, User,
@@ -29,10 +29,11 @@ import { isEligibleForAgePurge } from '../../utils/tripStatus'
 interface TripDetailPanelProps {
   trip: TripSummary
   /**
-   * 🆕 المرحلة ٣: 'organizer' يخفي التبويبات الإدارية الحساسة (نسخة احتياطية،
-   * حذف الرحلة) ولا يرى زرّ تعيين/إلغاء منظّم في تبويب الأعضاء — تلك صلاحية
-   * للمسؤول العالمي حصراً (انظر functions/index.js: manageMember mode=setRole).
-   * الحماية الحقيقية خادمية بالكامل؛ هذا إخفاء واجهة فقط.
+   * 🆕 المرحلة ٣: 'organizer' يخفي قسمي «نسخة احتياطية» و«حذف الرحلة» داخل
+   * تبويب «إعدادات الرحلة» (لم يعودا تبويبين مستقلّين بعد الدمج)، ولا يرى زرّ
+   * تعيين/إلغاء منظّم في تبويب المسافرين — تلك صلاحية للمسؤول العالمي حصراً
+   * (انظر functions/index.js: manageMember mode=setRole). الحماية الحقيقية
+   * خادمية بالكامل؛ هذا إخفاء واجهة فقط.
    */
   viewerRole: 'admin' | 'organizer'
   isSaving: boolean
@@ -60,7 +61,7 @@ interface TripDetailPanelProps {
   onDeleted: () => void
 }
 
-type DetailTab = 'details' | 'itinerary' | 'members' | 'backup' | 'danger'
+type DetailTab = 'details' | 'itinerary' | 'members'
 
 // 🆕 «الأعضاء» و«المسافرون» كانا تبويبين منفصلين يعرضان وجهين لنفس الأشخاص —
 // من انضمّ بحساب مقابل من له سطر في دفتر الرحلة — وربط الاثنين (نموذج الهوية
@@ -70,17 +71,16 @@ type DetailTab = 'details' | 'itinerary' | 'members' | 'backup' | 'danger'
 // أصلاً (نفس المصطلح المستخدم في بقية التطبيق)، والعضوية شارة على السطر لا
 // هوية التبويب. تسمية مركّبة كانت لتضلّل أكثر مما تُوضّح: "الأعضاء" وحدها لا
 // تصدق على مسافر "شبح" لم ينضمّ بعد.
-const ALL_TABS: Array<{ key: DetailTab; label: string; Icon: typeof Building2 }> = [
-  { key: 'details',      label: 'اسم الرحلة',   Icon: Building2 },
+// 🆕 «نسخة احتياطية» و«حذف الرحلة» دُمجا بدورهما داخل «اسم الرحلة» — أُعيدت
+// تسميته «إعدادات الرحلة» ليصدق على الأربعة معاً (الاسم، الحالة، النسخة
+// الاحتياطية، الحذف): كلها خصائص عامة للرحلة نفسها لا لأشخاصها أو مسارها،
+// ولا مبرّر لتبويب مستقل بزرّ واحد لكلٍّ منهما. الإخفاء عن المنظّم صار على
+// مستوى القسمين داخل التبويب (viewerRole === 'admin') بدل التبويب كله.
+const ALL_TABS: Array<{ key: DetailTab; label: string; Icon: typeof Settings }> = [
+  { key: 'details',   label: 'إعدادات الرحلة', Icon: Settings },
   { key: 'itinerary', label: 'مسار الرحلة',     Icon: Route },
   { key: 'members',   label: 'المسافرون',       Icon: UserCheck },
-  { key: 'backup',    label: 'نسخة احتياطية',   Icon: Download },
-  { key: 'danger',    label: 'حذف الرحلة',      Icon: Trash2 },
 ]
-
-// 🆕 منظّم الرحلة لا يرى ما ليس من صلاحياته أصلاً — لا مجرّد أزرار معطّلة.
-// النسخة الاحتياطية والحذف تبقيان للمسؤول العالمي وحده (الخطة، المرحلة ٣).
-const ORGANIZER_HIDDEN_TABS: ReadonlySet<DetailTab> = new Set(['backup', 'danger'])
 
 const MODE_ICON: Record<TransportMode, typeof Plane> = {
   flight: Plane, car: Car, train: Train, bus: Bus,
@@ -119,10 +119,6 @@ export default function TripDetailPanel({
   onSaveTripStatus, onDeleteTrip, onRemoveMember, onSetMemberRole, onLinkTravelerAccount, onExportBackup,
   onCreateInvite, onRevokeInvite, showToast, onDeleted,
 }: TripDetailPanelProps) {
-  const TABS = useMemo(
-    () => viewerRole === 'admin' ? ALL_TABS : ALL_TABS.filter(t => !ORGANIZER_HIDDEN_TABS.has(t.key)),
-    [viewerRole],
-  )
   const [activeTab, setActiveTab] = useState<DetailTab>('details')
 
   // 🆕 لا نقرأ السجلّين إلا والتبويب المدمج مفتوح: القراءة مقصورة على
@@ -341,7 +337,7 @@ export default function TripDetailPanel({
   return (
     <div className="space-y-5">
       <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {TABS.map(({ key, label, Icon }) => (
+        {ALL_TABS.map(({ key, label, Icon }) => (
           <button
             key={key}
             type="button"
@@ -358,6 +354,7 @@ export default function TripDetailPanel({
       </div>
 
       {activeTab === 'details' && (
+        <>
         <form
           onSubmit={e => { e.preventDefault(); void saveName() }}
           className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4"
@@ -452,6 +449,99 @@ export default function TripDetailPanel({
             )}
           </div>
         </form>
+
+        {/* 🆕 نسخة احتياطية وحذف الرحلة — قسمان للمسؤول العالمي حصراً، لا
+            المنظّم (كانا تبويبين مستقلّين قبل الدمج؛ انظر تعليق ALL_TABS أعلاه).
+            الحماية الحقيقية خادمية بالكامل (manageTrip mode:'delete' وقراءة
+            بيانات النسخة الاحتياطية تشترطان isAdmin())؛ هذا إخفاء واجهة فقط. */}
+        {viewerRole === 'admin' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <Download className="w-4 h-4 text-teal-600" /> تنزيل نسخة احتياطية
+            </h3>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              ملف JSON يحتوي كل بيانات هذه الرحلة القابلة لإعادة الاستيراد لاحقاً — المسافرون
+              والمصاريف وسجلّات الإيداع ومسار الرحلة. بخلاف تصدير Excel، هذا الملف يحتفظ بالمعرّفات
+              الداخلية وسجلّ الحذف اللين، وهو <span className="font-bold">الشيء الوحيد الذي ينجو من فقدان
+              الوصول لحساب Google/Firebase نفسه</span> — نسخ Firestore التلقائي يعيش داخل نفس المشروع.
+            </p>
+
+            <p className="text-[11px] text-slate-400">
+              لا يعيد وصول الأعضاء عند استعادته لاحقاً — العضوية تعيش في حساب كل عضو لا في هذا الملف.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => void onExportBackup(trip)}
+              disabled={isSaving}
+              className="flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm disabled:opacity-40"
+            >
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              تنزيل نسخة احتياطية (JSON)
+            </button>
+          </div>
+        )}
+
+        {viewerRole === 'admin' && (
+          <form
+            onSubmit={e => { e.preventDefault(); void submitDelete() }}
+            className="bg-white rounded-2xl shadow-sm border border-rose-200 p-5 space-y-4"
+          >
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <Trash2 className="w-4 h-4 text-rose-600" /> حذف الرحلة نهائياً
+            </h3>
+
+            <div className="text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-1.5">
+              <p className="font-bold">لا يمكن التراجع عن هذا الإجراء.</p>
+              <p>
+                يُحذف مستند الرحلة نهائياً. الحذف متاح <span className="font-bold">للرحلات الفارغة فقط</span> —
+                أي التي لا تحوي أي مسافر أو مصروف — حمايةً للسجلات المالية وسجلات الإيداع
+                التي لا يمكن استرجاعها.
+              </p>
+              <p>بعد الحذف يصبح المعرّف <span dir="ltr" className="font-mono">{trip.id}</span> متاحاً لإنشاء رحلة جديدة به.</p>
+            </div>
+
+            {agePurgeEligible && (
+              <p className="text-xs font-bold text-rose-900 bg-rose-100 border border-rose-300 rounded-xl p-2.5 leading-relaxed">
+                استثناء: هذه الرحلة مؤرشفة منذ أكثر من 90 يوماً، فالحذف متاح لها
+                حتى لو كانت تحوي مسافرين أو مصاريف أو سجلات إيداع فعلية — وستُحذف
+                كل هذه البيانات نهائياً معها، لا تُترَك يتيمة.
+              </p>
+            )}
+
+            {hasItinerary && (
+              <p className="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-2.5">
+                تنبيه: هذه الرحلة تحوي {trip.itinerary.length} مقطعاً في مسارها، وستُحذف معها.
+              </p>
+            )}
+
+            <div>
+              <label className={labelClass} htmlFor="delete-confirm">
+                للتأكيد، اكتب معرّف الرحلة: <span dir="ltr" className="font-mono text-slate-700">{trip.id}</span>
+              </label>
+              <input
+                id="delete-confirm"
+                type="text"
+                autoComplete="off"
+                value={deleteConfirm}
+                onChange={e => setDeleteConfirm(e.target.value)}
+                dir="ltr"
+                className={`${inputClass} text-right`}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSaving || deleteConfirm.trim() !== trip.id}
+              className="flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm disabled:opacity-40"
+            >
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              حذف الرحلة نهائياً
+            </button>
+          </form>
+        )}
+        </>
       )}
 
       {activeTab === 'itinerary' && (
@@ -959,94 +1049,6 @@ export default function TripDetailPanel({
           )}
           </div>
         </>
-      )}
-
-      {activeTab === 'backup' && (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
-          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <Download className="w-4 h-4 text-teal-600" /> تنزيل نسخة احتياطية
-          </h3>
-
-          <p className="text-xs text-slate-600 leading-relaxed">
-            ملف JSON يحتوي كل بيانات هذه الرحلة القابلة لإعادة الاستيراد لاحقاً — المسافرون
-            والمصاريف وسجلّات الإيداع ومسار الرحلة. بخلاف تصدير Excel، هذا الملف يحتفظ بالمعرّفات
-            الداخلية وسجلّ الحذف اللين، وهو <span className="font-bold">الشيء الوحيد الذي ينجو من فقدان
-            الوصول لحساب Google/Firebase نفسه</span> — نسخ Firestore التلقائي يعيش داخل نفس المشروع.
-          </p>
-
-          <p className="text-[11px] text-slate-400">
-            لا يعيد وصول الأعضاء عند استعادته لاحقاً — العضوية تعيش في حساب كل عضو لا في هذا الملف.
-          </p>
-
-          <button
-            type="button"
-            onClick={() => void onExportBackup(trip)}
-            disabled={isSaving}
-            className="flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm disabled:opacity-40"
-          >
-            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            تنزيل نسخة احتياطية (JSON)
-          </button>
-        </div>
-      )}
-
-      {activeTab === 'danger' && (
-        <form
-          onSubmit={e => { e.preventDefault(); void submitDelete() }}
-          className="bg-white rounded-2xl shadow-sm border border-rose-200 p-5 space-y-4"
-        >
-          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <Trash2 className="w-4 h-4 text-rose-600" /> حذف الرحلة نهائياً
-          </h3>
-
-          <div className="text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-1.5">
-            <p className="font-bold">لا يمكن التراجع عن هذا الإجراء.</p>
-            <p>
-              يُحذف مستند الرحلة نهائياً. الحذف متاح <span className="font-bold">للرحلات الفارغة فقط</span> —
-              أي التي لا تحوي أي مسافر أو مصروف — حمايةً للسجلات المالية وسجلات الإيداع
-              التي لا يمكن استرجاعها.
-            </p>
-            <p>بعد الحذف يصبح المعرّف <span dir="ltr" className="font-mono">{trip.id}</span> متاحاً لإنشاء رحلة جديدة به.</p>
-          </div>
-
-          {agePurgeEligible && (
-            <p className="text-xs font-bold text-rose-900 bg-rose-100 border border-rose-300 rounded-xl p-2.5 leading-relaxed">
-              استثناء: هذه الرحلة مؤرشفة منذ أكثر من 90 يوماً، فالحذف متاح لها
-              حتى لو كانت تحوي مسافرين أو مصاريف أو سجلات إيداع فعلية — وستُحذف
-              كل هذه البيانات نهائياً معها، لا تُترَك يتيمة.
-            </p>
-          )}
-
-          {hasItinerary && (
-            <p className="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-2.5">
-              تنبيه: هذه الرحلة تحوي {trip.itinerary.length} مقطعاً في مسارها، وستُحذف معها.
-            </p>
-          )}
-
-          <div>
-            <label className={labelClass} htmlFor="delete-confirm">
-              للتأكيد، اكتب معرّف الرحلة: <span dir="ltr" className="font-mono text-slate-700">{trip.id}</span>
-            </label>
-            <input
-              id="delete-confirm"
-              type="text"
-              autoComplete="off"
-              value={deleteConfirm}
-              onChange={e => setDeleteConfirm(e.target.value)}
-              dir="ltr"
-              className={`${inputClass} text-right`}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={isSaving || deleteConfirm.trim() !== trip.id}
-            className="flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm disabled:opacity-40"
-          >
-            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-            حذف الرحلة نهائياً
-          </button>
-        </form>
       )}
     </div>
   )

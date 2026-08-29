@@ -52,7 +52,7 @@ The reasoning behind `completed` keeping deposits writable: "the spending has en
 Requires deploying rules: `npx firebase deploy --only firestore:rules`.
 
 ### Delete a trip (🆕)
-Admin panel → select the trip → **حذف الرحلة** tab. You must type the trip id to confirm, because the action is irreversible and trip names in a list look alike.
+Admin panel → select the trip → **إعدادات الرحلة** tab (scroll to the "حذف الرحلة نهائياً" section — 🆕 merged into this tab from a separate one, alongside the backup download). You must type the trip id to confirm, because the action is irreversible and trip names in a list look alike.
 
 **Only empty trips can be deleted** — the server refuses if a single traveler or expense exists, and returns a message saying so. That restriction is the whole safety model: see `mode: 'delete'` under *API Reference*. A trip that holds data is never deleted; 🆕 **archive it instead** (see above) — that is what the lifecycle states are for.
 

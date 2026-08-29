@@ -58,9 +58,11 @@ test('منظّم الرحلة: يُعيَّن من المسؤول، يرى لو�
   await memberPage.reload()
   await openTripDetailFromHeader(memberPage)
 
-  // ⚠️ الحالة السالبة: تبويبات المسؤول العالمي غائبة تماماً، لا مجرّد معطّلة.
-  await expect(memberPage.getByRole('button', { name: 'حذف الرحلة' })).not.toBeVisible()
-  await expect(memberPage.getByRole('button', { name: 'نسخة احتياطية' })).not.toBeVisible()
+  // ⚠️ الحالة السالبة: قسما «نسخة احتياطية» و«حذف الرحلة» غائبان تماماً من
+  // تبويب «إعدادات الرحلة» (المفتوح افتراضياً)، لا مجرّد معطَّلين — دُمجا في
+  // هذا التبويب من تبويبين مستقلّين، والإخفاء صار على مستوى القسم لا التبويب.
+  await expect(memberPage.getByRole('button', { name: 'تنزيل نسخة احتياطية (JSON)' })).not.toBeVisible()
+  await expect(memberPage.getByRole('button', { name: 'حذف الرحلة نهائياً' })).not.toBeVisible()
 
   // ── يعدّل اسم الرحلة فعلياً — هذا ما تسمح به rules الآن (isOrganizer) ─────
   const nameInput = memberPage.getByLabel('اسم الرحلة')

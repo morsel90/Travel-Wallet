@@ -46,7 +46,6 @@ test('مسؤول يحذف رحلة مؤرشفة منذ أكثر من 90 يوما
   await signInWithEmail(page, CREDS.email, CREDS.password)
 
   await openTripDetailFromHeader(page)
-  await page.getByRole('button', { name: 'حذف الرحلة' }).click()
 
   // الرسالة الاستثنائية تظهر — الاستثناء واضح للمسؤول قبل أن يضغط، لا مفاجأة بعد الحذف.
   await expect(page.getByText(/مؤرشفة منذ أكثر من 90 يوماً/)).toBeVisible()
@@ -77,7 +76,6 @@ test('رحلة مؤرشفة حديثاً (أقل من 90 يوماً) ببيان�
   await signInWithEmail(page, CREDS.email, CREDS.password)
 
   await openTripDetailFromHeader(page)
-  await page.getByRole('button', { name: 'حذف الرحلة' }).click()
 
   // لا استثناء لرحلة لم تبلغ مدة السماح بعد.
   await expect(page.getByText(/مؤرشفة منذ أكثر من 90 يوماً/)).not.toBeVisible()
