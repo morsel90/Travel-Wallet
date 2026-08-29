@@ -19,6 +19,7 @@ import { onIdle, preloadAll } from '../utils/preload'
 import { chartsImporters } from '../components/ChartsPanel'
 import { modalImporters } from '../components/ModalManager'
 import { authImporters } from '../components/AuthFlow'
+import { tripPickerImporters } from '../components/TripPicker'
 
 // ─── منسّق التطبيق ────────────────────────────────────────────────────────────
 //
@@ -36,7 +37,7 @@ import { authImporters } from '../components/AuthFlow'
 
 // 🆕 كل الأجزاء المؤجّلة في التطبيق، للتحميل المسبق الهادئ بعد أول عرض.
 // كل مالك جزء مؤجّل يُصدّر مستورداته بنفسه، فمن يضيف جزءاً يضيفه في ملفه.
-const LAZY_IMPORTERS = [...chartsImporters, ...modalImporters, ...authImporters]
+const LAZY_IMPORTERS = [...chartsImporters, ...modalImporters, ...authImporters, ...tripPickerImporters]
 
 export function useAppCoordinator() {
   const [isSyncing, setIsSyncing] = useState(false)
@@ -63,10 +64,9 @@ export function useAppCoordinator() {
   const { ratesUpdatedAt, CURRENCIES } = useExchangeRates()
   const { expenses,  setExpenses,  expensesLoaded,  refreshExpenses }  = useExpenses(hasAccess ? user : null, { setIsSyncing, setSyncError })
   const { travelers, setTravelers, travelersLoaded, refreshTravelers } = useTravelers(hasAccess ? user : null, setIsSyncing)
-  // اسم الرحلة يُحرَّر من واجهة إدارة الرحلات (التي تقرأه من useAllTrips)، فلا
-  // تحتاجه هذه الشاشة — organizerUid للبطاقة البنكية، والمسار للويدجت والتقارير.
-  // 🆕 tripName يُقرأ هنا أيضاً الآن — منظّم الرحلة (المرحلة ٣) يحتاجه لبناء
-  // ملخّص رحلته الوحيدة بلا استعلام قائمة (انظر organizerTripSummary أدناه).
+  // organizerUid للبطاقة البنكية، والمسار للويدجت والتقارير. 🆕 tripName وبقية
+  // الحقول تُستهلك أيضاً في pickerTrips أدناه — صفّ الرحلة المفتوحة حالياً في
+  // «رحلاتي» يعرض هذه النسخة الحيّة بدل لقطة myTrips الثابتة.
   const {
     tripName, organizerUid, itinerary, status: tripStatus, statusChangedAt,
     tripType, currentPeriod, lastClosedPeriod,
@@ -217,21 +217,19 @@ export function useAppCoordinator() {
   // trips/ يرضيه isAdmin() وحده، فطلبه لعضو عادي مجرّد خطأ صلاحيات في الكونسول.
   const { trips, loading: tripsLoading, error: tripsError } = useAllTrips(isAdmin)
 
-  // 🆕 المرحلة ٣: منظّم لا يستطيع استعلام trips/ (isAdmin() وحده يرضيه)، فبدل
-  // ذلك نبني ملخّص رحلته الوحيدة من useTripConfig — وهو أصلاً حيّ (onSnapshot)
-  // ومسموح له بقراءته (isMember). هذا ما يضمن ألا يرى منظّم رحلة أخرى إطلاقاً:
-  // القائمة التي تفتحها TripAdminView تحوي عنصراً واحداً بنيوياً، لا بفلترة.
-  const organizerTripId = isOrganizer ? TRIP_ID : null
-  const organizerTripSummary = useMemo(() => ({
-    id: TRIP_ID,
-    name: tripName ?? TRIP_ID,
-    organizerUid,
-    itinerary: itinerary ?? [],
-    status: tripStatus,
-    statusChangedAt,
-  }), [tripName, organizerUid, itinerary, tripStatus, statusChangedAt])
+  // 🆕 كل معرّفات الرحلات التي يملك المستخدم فيها دور «منظّم» — بعد دمج
+  // «رحلاتي» و«إدارة الرحلات» (انظر docs/DECISIONS.md) قد يعدّل من نفس الشاشة
+  // أكثر من رحلة ينظّمها، لا رحلته المفتوحة حالياً وحدها. الرحلة المفتوحة
+  // مصدرها isOrganizer الحيّ (useMyTripRole)، وبقية رحلاته مصدرها organizerUid
+  // في myTrips (لقطة عند تحميل القائمة — كافٍ لهذا الغرض، انظر useMyTrips.ts).
+  const organizerTripIds = useMemo(() => {
+    const ids = new Set(myTrips.filter(t => user && t.organizerUid === user.uid).map(t => t.id))
+    if (isOrganizer) ids.add(TRIP_ID)
+    else ids.delete(TRIP_ID)
+    return Array.from(ids)
+  }, [myTrips, user, isOrganizer])
 
-  const tripAdmin = useTripAdminActions({ isAdmin, organizerTripId, showToast, handleFirestoreError })
+  const tripAdmin = useTripAdminActions({ isAdmin, organizerTripIds, showToast, handleFirestoreError })
 
   // 🆕 استدعاءات الرحلة الطويلة (closeMonth/exitTraveler) — لا كتابة Firestore
   // هنا إطلاقاً؛ انظر تعليق الملف في hooks/useLongTermActions.ts.
@@ -273,17 +271,26 @@ export function useAppCoordinator() {
     if (ok) modals.closeModal()
   }, [longTermActions, modals])
 
-  // ─── شاشة «رحلاتي» ────────────────────────────────────────────────────────
+  // ─── شاشة «رحلاتي» (ودمج «إدارة الرحلات» فيها) ────────────────────────────
   // 🆕 المسؤول يرى كل الرحلات (استعلام القائمة يرضيه isAdmin وحده)، والعضو
   // العادي يرى ما انضم له فقط. بدون هذا التفريق كانت الشاشة تختفي عن المسؤول
   // تماماً: هو يتجاوز رمز الرحلة أصلاً فقد لا يملك خريطة trips في توكنه إطلاقاً.
   // 🆕 المؤرشفة تُخفى من القائمة — هذا هو الفرق العملي الوحيد بينها وبين
   // المنتهية. تبقى الرحلة المفتوحة حالياً ظاهرة دائماً ولو كانت مؤرشفة، وإلا
   // اختفت من تحت المستخدم بينما هو داخلها.
+  //
+  // 🆕 صفّ الرحلة المفتوحة حالياً (لغير المسؤول) يُستبدل ببيانات useTripConfig
+  // الحيّة (onSnapshot) بدل لقطة myTrips الثابتة: هذا الاشتراك يعمل أصلاً بصرف
+  // النظر عن هذه الشاشة (Header/BankDetailsCard يعتمدان عليه)، فتعديل استُهلك
+  // للتو من جهاز آخر (اسم/مسار) يظهر هنا فوراً لا بعد إعادة تحميل القائمة.
   const pickerTrips = useMemo(() => {
-    const source = isAdmin ? trips.map(t => ({ id: t.id, name: t.name, status: t.status })) : myTrips
+    const source = isAdmin ? trips : myTrips.map(t =>
+      t.id === TRIP_ID && HAS_EXPLICIT_TRIP_ID && hasAccess
+        ? { id: TRIP_ID, name: tripName ?? TRIP_ID, organizerUid, itinerary: itinerary ?? [], status: tripStatus, statusChangedAt }
+        : t
+    )
     return source.filter(t => t.status !== 'archived' || t.id === TRIP_ID)
-  }, [isAdmin, trips, myTrips])
+  }, [isAdmin, trips, myTrips, hasAccess, tripName, organizerUid, itinerary, tripStatus, statusChangedAt])
   const pickerLoading = isAdmin ? tripsLoading : myTripsLoading
   const pickerError   = isAdmin ? tripsError   : myTripsError
 
@@ -344,9 +351,9 @@ export function useAppCoordinator() {
       authLoading, joinedTripIds,
       // 🆕 لا PIN بعد الآن — تسجيل الدخول (AuthGate) هو الحارس الوحيد المتبقي.
       signInError, isSigningIn, signInWithGoogle, signInWithEmail,
-      // 🆕 المرحلة ٣: منظّم الرحلة الحالية (لا رحلة أخرى — انظر organizerTripId
-      // أعلاه). يُستهلك لإظهار «إدارة الرحلة» في AccountMenu (الهيدر) لمن ليس
-      // مسؤولاً عالمياً لكنه منظّم.
+      // 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يُستهلك في canManageLongTerm
+      // أدناه، وفي AccountMenu لإخفاء زرّ «تسجيل الدخول كمسؤول» عمّن لا يحتاجه
+      // أصلاً (منظّم يدير رحلته من «رحلاتي» مباشرة، لا من حساب مسؤول منفصل).
       isOrganizer,
     },
     /** الأرقام المشتقّة — مدخلات كل ما يُعرض ويُصدَّر. */
@@ -362,8 +369,8 @@ export function useAppCoordinator() {
     },
     /** إعدادات الرحلة الحالية ودورة حياتها. */
     // 🆕 `name` مكشوف هنا الآن — الهيدر يعرض اسم الرحلة المفتوحة بدل اسم
-    // التطبيق الثابت. القيمة نفسها المستخدَمة في organizerTripSummary أعلاه،
-    // لا مصدر ثانٍ يمكن أن ينحرف عنه.
+    // التطبيق الثابت. القيمة نفسها المستخدَمة في صفّ الرحلة المفتوحة داخل
+    // pickerTrips أعلاه، لا مصدر ثانٍ يمكن أن ينحرف عنه.
     trip: { name: tripName ?? TRIP_ID, itinerary, canAddExpenses, tripClosedNotice, tripType },
     /**
      * 🆕 كل ما تحتاجه واجهة الرحلة الطويلة — **null في الرحلة القياسية**.
@@ -396,34 +403,43 @@ export function useAppCoordinator() {
       // حين لا يدعم الجهاز Web Share API — انظر TripDetailPanel.tsx).
       showToast,
     },
-    /** شاشة «رحلاتي». */
+    /**
+     * 🆕 شاشة «رحلاتي» — تضم الآن أيضاً ما كان يُسمّى «إدارة الرحلات»
+     * (TripAdminView، حُذفت): تعديل رحلة (اسم/مسار/حالة/أعضاء/حذف) متاح من
+     * نفس القائمة، بزرّ «تعديل» يظهر فقط لمن يملك صلاحيته — المسؤول على أي
+     * رحلة، والمنظّم على رحلاته وحدها (canEdit في TripPicker.tsx يقرّر ذلك من
+     * isAdmin/currentUserUid أدناه). انظر docs/DECISIONS.md.
+     */
     picker: {
       trips: pickerTrips, loading: pickerLoading, error: pickerError,
       isVisible: isPickerVisible, wasOpenedManually: showTripPicker,
       show: () => setShowTripPicker(true),
       hide: () => setShowTripPicker(false),
       // 🆕 الإنشاء الذاتي (نموذج واتساب) — أي مستخدم مسجّل دخوله، لا المسؤول
-      // فقط. نفس دالة tripAdmin.createTrip المستخدمة في لوحة الإدارة؛ الحدّ
+      // فقط. نفس دالة tripAdmin.createTrip المستخدمة في التعديل؛ الحدّ
       // الحقيقي (جلسة حقيقية، حدّ زمني) خادمي بالكامل في manageTrip.
       onCreateTrip: tripAdmin.createTrip,
+      isAdmin,
+      currentUserUid: user?.uid ?? null,
+      viewerRole: isAdmin ? 'admin' as const : 'organizer' as const,
+      isSaving: tripAdmin.isSaving,
+      onSaveTripName: tripAdmin.saveTripName,
+      onSaveItinerary: tripAdmin.saveItinerary,
+      onSaveTripStatus: tripAdmin.saveTripStatus,
+      onDeleteTrip: tripAdmin.deleteTrip,
+      onRemoveMember: tripAdmin.removeMember,
+      onSetMemberRole: tripAdmin.setMemberRole,
+      onLinkTravelerAccount: tripAdmin.linkTravelerAccount,
+      onExportBackup: tripAdmin.exportBackup,
+      onRestoreTrip: tripAdmin.restoreTrip,
+      onCreateInvite: tripAdmin.createInvite,
+      onRevokeInvite: tripAdmin.revokeInvite,
     },
     /** 🆕 بروفايل المستخدم العام — لشاشة البروفايل، وهو مصدر بيانات البنك
      * الوحيد لأي رحلة ينظّمها هذا المستخدم (انظر organizerBank أعلاه). */
     profile: profile.profile,
     isSavingProfile: profile.isSaving,
     saveProfile: profile.saveProfile,
-    /**
-     * 🆕 قائمة الرحلات القابلة للإدارة + كتاباتها. للمسؤول: كل الرحلات
-     * (useAllTrips، استعلام قائمة). لمنظّم: رحلته الوحيدة بنيوياً — لا فلترة
-     * على قائمة أكبر، فلا سبيل له لرؤية رحلة أخرى من هنا أصلاً.
-     */
-    tripAdminPanel: {
-      trips: isAdmin ? trips : (isOrganizer ? [organizerTripSummary] : []),
-      loading: isAdmin ? tripsLoading : false,
-      error: isAdmin ? tripsError : null,
-      viewerRole: isAdmin ? 'admin' as const : 'organizer' as const,
-      ...tripAdmin,
-    },
     filter,
     modals,
     /**

@@ -84,15 +84,15 @@ interface RestoreTripResponse {
 interface UseTripAdminActionsParams {
   isAdmin: boolean
   /**
-   * 🆕 المرحلة ٣: معرّف الرحلة التي يملك فيها المستخدم الحالي دور «منظّم»، أو
-   * null. القيمة الحقيقية الوحيدة الممكنة عملياً هي TRIP_ID الحالي — منظّم لا
-   * يرى رحلة أخرى في الواجهة أصلاً ليكتب لها (انظر useAppCoordinator.ts).
+   * 🆕 معرّفات كل الرحلات التي يملك فيها المستخدم الحالي دور «منظّم» — بعد دمج
+   * «رحلاتي» و«إدارة الرحلات» صار المستخدم قد يعدّل أكثر من رحلة ينظّمها من
+   * نفس الشاشة، لا رحلته المفتوحة حالياً وحدها (انظر useAppCoordinator.ts).
    *
    * ⚠️ هذا **تحسين تجربة استخدام لا حماية**: الحارس الحقيقي في firestore.rules
    * (isOrganizer) وfunctions/index.js (manageMember). قيمة خاطئة هنا تعني في
    * أسوأ الأحوال محاولة كتابة تُرفض من الخادم برسالة صلاحيات — لا ثغرة.
    */
-  organizerTripId: string | null
+  organizerTripIds: string[]
   showToast: (msg: ToastMessage, durationMs?: number) => void
   handleFirestoreError: (err: unknown, fallback: string) => void
 }
@@ -124,16 +124,16 @@ export interface UseTripAdminActionsResult {
 }
 
 export function useTripAdminActions({
-  isAdmin, organizerTripId, showToast, handleFirestoreError,
+  isAdmin, organizerTripIds, showToast, handleFirestoreError,
 }: UseTripAdminActionsParams): UseTripAdminActionsResult {
   const [isSaving, setIsSaving] = useState(false)
 
-  // 🆕 المرحلة ٣: المسؤول يتصرّف على أي رحلة، والمنظّم على رحلته وحدها —
-  // بالضبط نفس الحدّ الذي تفرضه firestore.rules (isAdmin() || isOrganizer(tripId)).
-  // هذا فحص واجهة فقط (انظر تعليق organizerTripId في الأعلى)، وليس مصدر الحماية.
+  // 🆕 المسؤول يتصرّف على أي رحلة، والمنظّم على كل رحلة ينظّمها — بالضبط نفس
+  // الحدّ الذي تفرضه firestore.rules (isAdmin() || isOrganizer(tripId)).
+  // هذا فحص واجهة فقط (انظر تعليق organizerTripIds في الأعلى)، وليس مصدر الحماية.
   const canAct = useCallback(
-    (tripId: string) => isAdmin || tripId === organizerTripId,
-    [isAdmin, organizerTripId],
+    (tripId: string) => isAdmin || organizerTripIds.includes(tripId),
+    [isAdmin, organizerTripIds],
   )
 
   // كل مسارات الكتابة المباشرة تمرّ من هنا: فحص الصلاحية، علم الحفظ، رسالة

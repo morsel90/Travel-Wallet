@@ -23,12 +23,6 @@ describe('useModals', () => {
     expect(result.current.modal).toEqual({ type: 'trashBin' })
   })
 
-  it('يفتح مودال إدارة الرحلة', () => {
-    const { result } = renderHook(() => useModals())
-    act(() => result.current.openTripAdmin())
-    expect(result.current.modal).toEqual({ type: 'tripAdmin' })
-  })
-
   it('يفتح مودال حذف مسافر مع بيانات المسافر', () => {
     const { result } = renderHook(() => useModals())
     act(() => result.current.openDeleteTraveler(traveler))

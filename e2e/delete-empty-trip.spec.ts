@@ -15,9 +15,9 @@
 // حذف رحلة مسؤول-فقط (manageTrip mode:'delete' يرفض غير المسؤول) — لذا هذا
 // الاختبار يبدأ من حساب مسؤول عالمي بلا رحلة سابقة (seedBareAdmin)، لا عضواً
 // عادياً كبقية سيناريوهات الإنشاء الذاتي.
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { seedBareAdmin } from './utils/seed'
-import { signInWithEmail, addExpense, expenseCard, openAccountMenu } from './utils/flows'
+import { signInWithEmail, addExpense, expenseCard, openTripDetailAsAdmin, tripRowInPicker } from './utils/flows'
 
 const CREDS = {
   email: 'e2e-delete-empty-trip-admin@test.local',
@@ -29,36 +29,6 @@ const TRIP_NAME = 'رحلة للحذف'
 test.beforeAll(async () => {
   await seedBareAdmin(CREDS.email, CREDS.password)
 })
-
-/**
- * لوحة إدارة المسؤول تفتح دائماً على قائمة كل الرحلات (لا رحلته وحدها كما
- * للمنظّم) — والقائمة تضمّ رحلات كل ملفات الاختبار الأخرى المشتركة في نفس
- * محاكي Firestore. نحدّد صفّ رحلتنا بالضبط عبر معرّفها الفريد قبل الضغط على
- * "تعديل" لفتح تفاصيلها.
- *
- * 🆕 نقطة الدخول الآن AccountMenu (الهيدر) وحدها — انظر docs/DECISIONS.md
- * لسبب إزالة الزرّ المكرَّر من ExpensesPanel.
- */
-async function openTripDetailAsAdmin(page: Page): Promise<void> {
-  await openAccountMenu(page)
-  await page.getByRole('menuitem', { name: 'لوحة الإدارة' }).click()
-  await tripRowInAdminList(page).getByRole('button', { name: 'تعديل' }).click()
-}
-
-/**
- * صفّ رحلتنا في قائمة لوحة الإدارة — بالمعرّف الفريد لا بالاسم المعروض.
- *
- * ⚠️ الفارق ليس تجميلاً: هيدر التطبيق صار يعرض **اسم الرحلة المفتوحة**
- * بدل اسم التطبيق الثابت، فأي بحث نصّي عن الاسم يطابق عنصرين — الصفّ في القائمة، والاسم في
- * الهيدر خلف اللوحة. ولأن الهيدر يُسقِط الاسم إلى المعرّف *بعد* أن يصل حذف
- * الرحلة إلى مستمع onSnapshot، كان التحقّق من الاختفاء سباقاً زمنياً يعتمد على
- * أيّهما يُحدَّث أولاً. المعرّف يظهر في القائمة وحدها، فيزول السباق من أصله.
- */
-function tripRowInAdminList(page: Page) {
-  return page
-    .locator('div.bg-white.rounded-2xl.shadow-sm.border.border-slate-200.p-4')
-    .filter({ hasText: TRIP_ID })
-}
 
 test('مسؤول يحذف مصروفاً ونفسه من مسافري رحلة أنشأها، ثم يستطيع حذف الرحلة الفارغة فعلياً', async ({ page }) => {
   await page.goto('/')
@@ -76,7 +46,7 @@ test('مسؤول يحذف مصروفاً ونفسه من مسافري رحلة �
   // ── محاولة حذف مبكرة: المسافر المُزوَّد تلقائياً للمنظّم (المسؤول نفسه) لا
   // يزال نشِطاً، فيُرفض الحذف — هذا السلوك يجب أن يبقى كما هو (حماية بيانات
   // حقيقية). ─────────────────────────────────────────────────────────────
-  await openTripDetailAsAdmin(page)
+  await openTripDetailAsAdmin(page, TRIP_ID)
   await page.getByRole('button', { name: 'حذف الرحلة' }).click()
   await page.getByLabel(/للتأكيد، اكتب معرّف الرحلة/).fill(TRIP_ID)
   await page.getByRole('button', { name: 'حذف الرحلة نهائياً' }).click()
@@ -84,13 +54,16 @@ test('مسؤول يحذف مصروفاً ونفسه من مسافري رحلة �
 
   // ⚠️ تحقّق سلبي حقيقي (القاعدة ١٨): الرحلة لم تُحذف فعلاً، لا تزال قابلة للإدارة.
   //
-  // 🆕 التحديد بهيدر لوحة الإدارة تحديداً: هيدر التطبيق صار يعرض اسم الرحلة
+  // 🆕 التحديد بهيدر لوحة التفاصيل تحديداً: هيدر التطبيق صار يعرض اسم الرحلة
   // المفتوحة في <h1> أيضاً (ورقة الرحلة)، فاسم الرحلة وحده يطابق عنوانين.
   // هيدر اللوحة هو الوحيد الذي يعرض *معرّف* الرحلة تحت اسمها.
   await expect(
     page.locator('header').filter({ hasText: TRIP_ID }).getByRole('heading', { name: TRIP_NAME }),
   ).toBeVisible()
-  await page.getByRole('button', { name: 'إغلاق إدارة الرحلات' }).click()
+  // 🆕 لا زرّ إغلاق منفصل بعد الآن — «رحلاتي» شاشة كاملة لا مودال. الرجوع
+  // خطوتان: من التفاصيل إلى القائمة، ثم من القائمة إلى الرحلة المفتوحة.
+  await page.getByRole('button', { name: 'رجوع لقائمة الرحلات' }).click()
+  await page.getByRole('button', { name: 'العودة للرحلة' }).click()
 
   // ── يسجّل مصروفاً اختبارياً ثم يحذفه — حذفاً ليّناً كالمعتاد. هذا وحده كان
   // كافياً (المرحلة ٢ من الانحدار) لإبقاء حذف الرحلة مرفوضاً حتى بعد تفريغ
@@ -109,14 +82,14 @@ test('مسؤول يحذف مصروفاً ونفسه من مسافري رحلة �
 
   // ── إعادة المحاولة: لا مسافر نشِط ولا مصروف نشِط ولا سجلّ إيداع بعد الآن —
   // يجب أن تنجح، رغم بقاء المصروف والمسافر كمستندين في سلة المهملات. ────────
-  await openTripDetailAsAdmin(page)
+  await openTripDetailAsAdmin(page, TRIP_ID)
   await page.getByRole('button', { name: 'حذف الرحلة' }).click()
   await page.getByLabel(/للتأكيد، اكتب معرّف الرحلة/).fill(TRIP_ID)
   await page.getByRole('button', { name: 'حذف الرحلة نهائياً' }).click()
 
   await expect(page.getByText(`تم حذف الرحلة "${TRIP_ID}"`)).toBeVisible()
-  // النجاح يعيد اللوحة لقائمة الرحلات (onDeleted في TripDetailPanel) — رحلتنا
+  // النجاح يعيد اللوحة لقائمة «رحلاتي» (onDeleted في TripDetailPanel) — رحلتنا
   // اختفت منها فعلاً، لا مجرّد رسالة نجاح بلا أثر حقيقي.
-  await expect(page.getByRole('heading', { name: 'إدارة الرحلات' })).toBeVisible()
-  await expect(tripRowInAdminList(page)).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'رحلاتي' })).toBeVisible()
+  await expect(tripRowInPicker(page, TRIP_ID)).toHaveCount(0)
 })

@@ -21,7 +21,8 @@ interface HeaderProps {
    * تأكيد الرحلة المفتوحة *قبل* تسجيل مصروف فيها معلومةً مالية لا ترفاً بصرياً.
    */
   tripName: string
-  /** 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يمرَّر إلى AccountMenu ليعرض «إدارة الرحلة». */
+  /** 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يمرَّر إلى AccountMenu لإخفاء
+   * زرّ «تسجيل الدخول كمسؤول» عمّن لا يحتاجه أصلاً. */
   isOrganizer: boolean
   stats: HeaderStats | null
   onStatClick?: (stat: 'deposited' | 'spent' | 'remaining') => void
@@ -30,10 +31,10 @@ interface HeaderProps {
   // انظر AccountMenu.tsx وdocs/DECISIONS.md.
   displayName: string | null
   email: string | null
-  /** 🆕 يُمرَّر فقط حين يكون المستخدم عضواً في أكثر من رحلة — لا معنى لعنصر تبديل لمن يملك رحلة واحدة. */
+  /** 🆕 يُمرَّر حين يكون المستخدم عضواً في أكثر من رحلة، أو مسؤولاً/منظّماً —
+   * «رحلاتي» نقطة الدخول الوحيدة الآن لإدارة أي رحلة (انظر App.tsx). */
   onShowMyTrips?: () => void
   onShowProfile: () => void
-  onOpenAdminPanel: () => void
   onAdminSignIn: () => void
   onSignOut: () => void
 }
@@ -79,7 +80,6 @@ const Header = ({
   email,
   onShowMyTrips,
   onShowProfile,
-  onOpenAdminPanel,
   onAdminSignIn,
   onSignOut,
 }: HeaderProps) => {
@@ -174,7 +174,6 @@ const Header = ({
           isOrganizer={isOrganizer}
           onShowMyTrips={onShowMyTrips}
           onShowProfile={onShowProfile}
-          onOpenAdminPanel={onOpenAdminPanel}
           onAdminSignIn={onAdminSignIn}
           onSignOut={onSignOut}
         />

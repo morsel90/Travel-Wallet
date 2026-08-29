@@ -17,6 +17,9 @@ const fakeUser = { uid: 'user-1' } as User
 const docSnap = (name?: string) => ({ exists: () => true, data: () => (name === undefined ? {} : { name }) })
 const missingSnap = { exists: () => false, data: () => undefined }
 
+/** الشكل الكامل المتوقَّع لصفّ — organizerUid/statusChangedAt غائبان افتراضياً (undefined). */
+const trip = (id: string, name: string) => ({ id, name, status: 'active', itinerary: [] })
+
 beforeEach(() => {
   vi.clearAllMocks()
 })
@@ -67,7 +70,7 @@ describe('useMyTrips', () => {
     const { result } = renderHook(() => useMyTrips(['trip-xyz'], fakeUser))
     await waitFor(() => expect(result.current.loading).toBe(false))
     // status: 'active' لأن غياب الحقل يعني «نشطة» — انظر normalizeTripStatus
-    expect(result.current.trips).toEqual([{ id: 'trip-xyz', name: 'trip-xyz', status: 'active' }])
+    expect(result.current.trips).toEqual([trip('trip-xyz', 'trip-xyz')])
   })
 
   it('يُسقط رحلة مذكورة في claims لكن مستندها غير موجود، ويُبقي البقية', async () => {
@@ -77,7 +80,7 @@ describe('useMyTrips', () => {
     const { result } = renderHook(() => useMyTrips(['t1', 'deleted-trip'], fakeUser))
     await waitFor(() => expect(result.current.loading).toBe(false))
 
-    expect(result.current.trips).toEqual([{ id: 't1', name: 'رحلة قائمة', status: 'active' }])
+    expect(result.current.trips).toEqual([trip('t1', 'رحلة قائمة')])
     expect(result.current.error).toBeNull() // نجاح جزئي ليس خطأً
   })
 
@@ -88,7 +91,7 @@ describe('useMyTrips', () => {
     const { result } = renderHook(() => useMyTrips(['t1', 't2'], fakeUser))
     await waitFor(() => expect(result.current.loading).toBe(false))
 
-    expect(result.current.trips).toEqual([{ id: 't1', name: 'رحلة ناجحة', status: 'active' }])
+    expect(result.current.trips).toEqual([trip('t1', 'رحلة ناجحة')])
     expect(result.current.error).toBeNull()
   })
 

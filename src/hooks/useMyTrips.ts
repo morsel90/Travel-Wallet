@@ -13,20 +13,20 @@
 //
 // عدد الرحلات لكل مستخدم صغير عملياً (رحلات شخص واحد)، فتوازي getDoc عبر
 // Promise.all كافٍ تماماً ولا يستدعي أي تعقيد إضافي.
+//
+// 🆕 الشكل مطابق حرفياً لـ TripSummary (useAllTrips): بعد دمج «رحلاتي» و«إدارة
+// الرحلات» في شاشة واحدة، يحتاج كل صفّ هنا نفس الحقول التي تحتاجها لوحة تفاصيل
+// الرحلة (TripDetailPanel) لتعديل رحلة ينظّمها هذا المستخدم — المستند مقروء
+// بالكامل هنا أصلاً، فلا كلفة إضافية لكشف itinerary/organizerUid أيضاً.
 import { useState, useEffect, useCallback } from 'react'
 import type { User } from 'firebase/auth'
 import { getDoc } from 'firebase/firestore'
 import { tripDocById } from '../firestore'
+import { normalizeItinerary } from '../utils/itinerary'
 import { normalizeTripStatus } from '../utils/tripStatus'
-import type { TripStatus } from '../types'
+import type { TripSummary } from './useAllTrips'
 
-export interface MyTrip {
-  id: string
-  /** اسم الرحلة المعروض — يسقط للمعرّف نفسه إن كان المستند بلا اسم صالح. */
-  name: string
-  /** 🆕 حالة دورة الحياة — تُستخدم لإخفاء المؤرشفة ولتمييز المنتهية في القائمة. */
-  status: TripStatus
-}
+export type MyTrip = TripSummary
 
 export interface UseMyTripsResult {
   trips: MyTrip[]
@@ -66,11 +66,17 @@ export function useMyTrips(tripIds: string[], user: User | null): UseMyTripsResu
           // قاعدة البيانات بعد انضمامه (الحذف ممنوع من الواجهة لكنه ممكن
           // بـ Admin SDK). نُسقطها بصمت بدل عرض صف مكسور لا يفتح شيئاً.
           if (!snap.exists()) return null
-          const data = snap.data() as { name?: unknown; status?: unknown }
+          const data = snap.data() as {
+            name?: unknown; organizerUid?: unknown; itinerary?: unknown; status?: unknown
+            statusChangedAt?: unknown
+          }
           return {
             id,
             name: typeof data.name === 'string' && data.name ? data.name : id,
+            organizerUid: typeof data.organizerUid === 'string' ? data.organizerUid : undefined,
+            itinerary: normalizeItinerary(data.itinerary),
             status: normalizeTripStatus(data.status),
+            statusChangedAt: typeof data.statusChangedAt === 'number' ? data.statusChangedAt : undefined,
           }
         } catch {
           // فشل قراءة رحلة واحدة (صلاحية سُحبت، أو انقطاع لحظي) يجب ألا

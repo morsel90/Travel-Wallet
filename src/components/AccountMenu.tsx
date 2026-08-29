@@ -2,22 +2,21 @@
 // بروفايلي، تبديل وضع المسؤول) في نقطة دخول واحدة بنمط تطبيقات جوجل: صورة/حرف
 // أول للمستخدم، وقائمة منسدلة عند الضغط. انظر docs/DECISIONS.md للسياق.
 import { useEffect, useRef, useState } from 'react'
-import { Luggage, Settings, Lock, LogOut, ChevronDown, ChevronLeft } from '../icons'
+import { Luggage, Lock, LogOut, ChevronDown, ChevronLeft } from '../icons'
 import { haptic } from '../utils/haptics'
 
 interface AccountMenuProps {
   displayName: string | null
   email: string | null
   isAdmin: boolean
-  /** 🆕 منظّم هذه الرحلة تحديداً (لا مسؤول عالمي) — يرى «إدارة الرحلة» أيضاً. نقطة الوصول
-   * الوحيدة الآن للوحة الإدارة، بعد إزالة زرّها المكرَّر من ExpensesPanel. */
+  /** 🆕 منظّم هذه الرحلة تحديداً (لا مسؤول عالمي) — يُستهلك فقط لإخفاء زرّ
+   * «تسجيل الدخول كمسؤول» عمّن لا يحتاجه (يدير رحلته من «رحلاتي» مباشرة). */
   isOrganizer: boolean
-  /** 🆕 يُمرَّر فقط حين يكون المستخدم عضواً في أكثر من رحلة — لا معنى لعنصر تبديل لمن يملك رحلة واحدة. */
+  /** 🆕 يُمرَّر حين يكون المستخدم عضواً في أكثر من رحلة، أو مسؤولاً/منظّماً —
+   * «رحلاتي» نقطة الدخول الوحيدة الآن لإدارة أي رحلة (بعد دمج «إدارة الرحلات»
+   * فيها، انظر docs/DECISIONS.md)، فلم يعد لهما زرّ منفصل هنا. */
   onShowMyTrips?: () => void
   onShowProfile: () => void
-  /** 🆕 فتح لوحة الإدارة — يظهر لمن يملك صلاحية admin (بتسمية «لوحة الإدارة») أو منظّم
-   * هذه الرحلة (بتسمية «إدارة الرحلة»). كلاهما نفس الدالة (modals.openTripAdmin). */
-  onOpenAdminPanel: () => void
   /** 🆕 تسجيل الدخول بحساب مسؤول منفصل — يظهر فقط لمن لا يملك admin ولا isOrganizer. */
   onAdminSignIn: () => void
   onSignOut: () => void
@@ -25,7 +24,7 @@ interface AccountMenuProps {
 
 export default function AccountMenu({
   displayName, email, isAdmin, isOrganizer,
-  onShowMyTrips, onShowProfile, onOpenAdminPanel, onAdminSignIn, onSignOut,
+  onShowMyTrips, onShowProfile, onAdminSignIn, onSignOut,
 }: AccountMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -110,23 +109,10 @@ export default function AccountMenu({
               </button>
             )}
 
-            {isAdmin ? (
-              <button
-                type="button" role="menuitem"
-                onClick={() => runAndClose(onOpenAdminPanel)}
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-              >
-                <Settings className="w-4 h-4 text-slate-500" /> لوحة الإدارة
-              </button>
-            ) : isOrganizer ? (
-              <button
-                type="button" role="menuitem"
-                onClick={() => runAndClose(onOpenAdminPanel)}
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-              >
-                <Settings className="w-4 h-4 text-slate-500" /> إدارة الرحلة
-              </button>
-            ) : (
+            {/* 🆕 لا زرّ «لوحة الإدارة»/«إدارة الرحلة» بعد الآن — دُمجت إدارة
+                الرحلات في «رحلاتي» أعلاه (زرّ «تعديل» على كل رحلة يملك المستخدم
+                صلاحيتها). من ليس مسؤولاً ولا منظّماً وحده يرى تسجيل الدخول هنا. */}
+            {!isAdmin && !isOrganizer && (
               <button
                 type="button" role="menuitem"
                 onClick={() => runAndClose(onAdminSignIn)}

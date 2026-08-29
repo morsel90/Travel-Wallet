@@ -42,7 +42,9 @@ const showToast = vi.fn()
 const handleFirestoreError = vi.fn()
 
 const setup = (isAdmin = true, organizerTripId: string | null = null) =>
-  renderHook(() => useTripAdminActions({ isAdmin, organizerTripId, showToast, handleFirestoreError }))
+  renderHook(() => useTripAdminActions({
+    isAdmin, organizerTripIds: organizerTripId ? [organizerTripId] : [], showToast, handleFirestoreError,
+  }))
 
 beforeEach(() => {
   vi.clearAllMocks()

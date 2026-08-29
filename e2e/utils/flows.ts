@@ -29,8 +29,9 @@ export async function signInWithEmail(page: Page, email: string, password: strin
 
 /**
  * 🆕 يفتح قائمة الحساب الموحّدة في الهيدر (AccountMenu.tsx) — نقطة الدخول
- * الوحيدة الآن لـ«رحلاتي»/«بروفايلي»/«لوحة الإدارة»/«تسجيل الخروج»، بعد أن
- * كانت أزراراً منفصلة في الهيدر مباشرة.
+ * الوحيدة الآن لـ«رحلاتي»/«بروفايلي»/«تسجيل الخروج»، بعد أن كانت أزراراً
+ * منفصلة في الهيدر مباشرة. 🆕 لا «لوحة الإدارة» بعد الآن — دُمجت إدارة
+ * الرحلات في «رحلاتي» نفسها (TripPicker.tsx، انظر docs/DECISIONS.md).
  */
 export async function openAccountMenu(page: Page): Promise<void> {
   // exact: true — يتجنّب تطابقاً جزئياً مع زر "كشف حسابي" (نموذج الهوية الهجين).
@@ -55,10 +56,11 @@ export async function openAccountMenu(page: Page): Promise<void> {
 export async function openTripAsAdmin(page: Page, creds: TripCreds): Promise<void> {
   await page.goto(`/?trip=${creds.tripId}`)
   await signInWithEmail(page, creds.adminEmail, creds.adminPassword)
-  // 🆕 «لوحة الإدارة» لا تظهر في القائمة إلا لحساب يحمل admin claim فعلاً —
-  // نفس الدور الذي كان زر "إغلاق المسؤول" الظاهر مباشرة يؤكّده سابقاً.
+  // 🆕 «رحلاتي» تظهر دائماً لحساب يحمل admin claim فعلاً (نقطة الدخول الوحيدة
+  // الآن لإدارة الرحلات، بعد دمج «لوحة الإدارة» فيها) — نفس الدور الذي كان زر
+  // "إغلاق المسؤول" الظاهر مباشرة يؤكّده سابقاً.
   await openAccountMenu(page)
-  await expect(page.getByRole('menuitem', { name: 'لوحة الإدارة' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'رحلاتي' })).toBeVisible()
   await page.keyboard.press('Escape')
 }
 
@@ -66,6 +68,27 @@ export async function openTripAsAdmin(page: Page, creds: TripCreds): Promise<voi
 export async function openTripAsMember(page: Page, creds: TripCreds): Promise<void> {
   await page.goto(`/?trip=${creds.tripId}`)
   await signInWithEmail(page, creds.memberEmail, creds.memberPassword)
+}
+
+/**
+ * صفّ رحلة بعينها في شاشة «رحلاتي» — بمعرّفها الفريد لا اسمها المعروض (قد
+ * يتكرر بين رحلات ملفات اختبار مختلفة تشترك في نفس محاكي Firestore). المعرّف
+ * ظاهر في الصفّ للمسؤول فقط (TripPicker.tsx) — استخدم هذه الدالة من جلسة
+ * مسؤول تحديداً.
+ */
+export function tripRowInPicker(page: Page, tripId: string) {
+  return page.getByRole('listitem').filter({ hasText: tripId })
+}
+
+/**
+ * يفتح لوحة تفاصيل رحلة بعينها من «رحلاتي» — نقطة الدخول الوحيدة الآن لتعديل
+ * أي رحلة (بعد دمج «لوحة الإدارة» فيها، انظر docs/DECISIONS.md). لوحة إدارة
+ * المسؤول تعرض دائماً كل رحلات النظام لا رحلته وحده، فنحدّد الصفّ بمعرّفه.
+ */
+export async function openTripDetailAsAdmin(page: Page, tripId: string): Promise<void> {
+  await openAccountMenu(page)
+  await page.getByRole('menuitem', { name: 'رحلاتي' }).click()
+  await tripRowInPicker(page, tripId).getByRole('button', { name: 'تعديل' }).click()
 }
 
 /** يضيف مسافراً عبر النموذج — يتطلب وضع المسؤول مفعّلاً مسبقاً (openTripAsAdmin). */

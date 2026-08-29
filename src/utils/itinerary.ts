@@ -1,5 +1,5 @@
 // 🆕 أدوات مسار الرحلة — دوال بحتة (بلا React ولا Firestore) تدعم محرّر المسار
-// في واجهة الإدارة (components/admin/TripAdminView.tsx). قابلة للاختبار بالكامل
+// في لوحة تفاصيل الرحلة (components/admin/TripDetailPanel.tsx). قابلة للاختبار بالكامل
 // عبر Vitest — انظر itinerary.test.ts.
 
 import type { ItinerarySegment, TransportMode } from '../types'
