@@ -10,10 +10,11 @@ import { haptic } from '../utils/haptics'
 import NewTripForm from './admin/NewTripForm'
 
 // 🆕 لوحة تفاصيل الرحلة (تعديل/أعضاء/نسخة احتياطية/حذف) واستعادة نسخة احتياطية
-// — كلتاهما لا تلمسهما الغالبية العظمى من الزيارات (عضو عادي يفتح رحلاته
-// فقط)، بخلاف NewTripForm أعلاه (خفيفة، ومتاحة للجميع منذ أول شاشة فارغة).
-// كسولتان هنا تماماً كما كانتا كسولتين في TripAdminView.tsx القديمة (حُذفت) —
-// دمجهما في هذه الشاشة يجب ألا يُدخلهما الحزمة الرئيسية لكل مستخدم.
+// (تبويب داخل شاشة الإنشاء، للمسؤول وحده) — كلتاهما لا تلمسهما الغالبية العظمى
+// من الزيارات (عضو عادي يفتح رحلاته فقط)، بخلاف NewTripForm أعلاه (خفيفة،
+// ومتاحة للجميع منذ أول شاشة فارغة). كسولتان هنا تماماً كما كانتا كسولتين في
+// TripAdminView.tsx القديمة (حُذفت) — دمجهما في هذه الشاشة يجب ألا يُدخلهما
+// الحزمة الرئيسية لكل مستخدم.
 // ⚠️ دالتا الاستيراد مُسمّاتان ومُصدَّرتان في tripPickerImporters أدناه بدل
 // تكرارهما في useAppCoordinator.ts — نفس نمط modalImporters في ModalManager.tsx.
 const importTripDetailPanel = () => import('./admin/TripDetailPanel')
@@ -101,7 +102,11 @@ const TripPicker = ({
   onRestoreTrip, onCreateInvite, onRevokeInvite, showToast,
 }: TripPickerProps) => {
   const [isCreating, setIsCreating] = useState(false)
-  const [isRestoring, setIsRestoring] = useState(false)
+  // 🆕 الإنشاء والاستعادة تبويبان لنفس الشاشة لا زرّان منفصلان في الهيدر —
+  // كلاهما ينتج رحلة جديدة بمعرّف، والفرق فقط مصدر بياناتها. تبويب الاستعادة
+  // يظهر للمسؤول وحده (isAdmin أدناه)، فعضو عادي لا يرى تبديلاً أصلاً.
+  const [createMode, setCreateMode] = useState<'new' | 'restore'>('new')
+  const openCreate = () => { haptic.light(); setCreateMode('new'); setIsCreating(true) }
   // 🆕 رحلة مفتوحة للتعديل — بطاقة تعديلها ظاهرة فقط لمن يملك صلاحيته
   // (canEdit أدناه)، فلا حاجة لفحص الصلاحية هنا مرة أخرى عند الفتح.
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -125,7 +130,7 @@ const TripPicker = ({
     return ok
   }
 
-  const isBusy = isCreating || isRestoring || selected !== null
+  const isBusy = isCreating || selected !== null
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -163,21 +168,10 @@ const TripPicker = ({
                   <User className="w-4 h-4" />
                 </button>
               )}
-              {!isBusy && isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => { haptic.light(); setIsRestoring(true) }}
-                  title="استعادة من نسخة احتياطية"
-                  aria-label="استعادة من نسخة احتياطية"
-                  className="flex items-center justify-center bg-teal-800/60 hover:bg-teal-800 text-teal-50 p-2 rounded-xl transition-colors shrink-0"
-                >
-                  <Upload className="w-4 h-4" />
-                </button>
-              )}
               {!isBusy && (
                 <button
                   type="button"
-                  onClick={() => { haptic.light(); setIsCreating(true) }}
+                  onClick={openCreate}
                   className="flex items-center gap-1.5 bg-teal-800/60 hover:bg-teal-800 text-teal-50 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors shrink-0"
                 >
                   <Plus className="w-3.5 h-3.5" /> رحلة جديدة
@@ -221,20 +215,55 @@ const TripPicker = ({
             />
           </Suspense>
         ) : isCreating ? (
-          <NewTripForm
-            existingIds={trips.map(t => t.id)}
-            isSaving={isCreatingTrip}
-            onCreate={handleCreate}
-            onCancel={() => setIsCreating(false)}
-          />
-        ) : isRestoring ? (
-          <Suspense fallback={<LazyFallback />}>
-            <RestoreTripForm
-              isSaving={isSaving}
-              onRestore={onRestoreTrip}
-              onCancel={() => setIsRestoring(false)}
-            />
-          </Suspense>
+          <div className="space-y-3">
+            {/* 🆕 تبويب الاستعادة للمسؤول فقط — نفس الحدّ الذي يفرضه
+                useTripAdminActions خادمياً (restoreTrip: isAdmin فقط). */}
+            {isAdmin && (
+              <div className="flex gap-1.5" role="group" aria-label="طريقة إنشاء الرحلة">
+                <button
+                  type="button"
+                  onClick={() => { haptic.light(); setCreateMode('new') }}
+                  aria-pressed={createMode === 'new'}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border ${
+                    createMode === 'new'
+                      ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <Plus className="w-3.5 h-3.5" /> رحلة جديدة
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { haptic.light(); setCreateMode('restore') }}
+                  aria-pressed={createMode === 'restore'}
+                  className={`flex-1 flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border ${
+                    createMode === 'restore'
+                      ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <Upload className="w-3.5 h-3.5" /> استعادة من نسخة احتياطية
+                </button>
+              </div>
+            )}
+
+            {createMode === 'new' || !isAdmin ? (
+              <NewTripForm
+                existingIds={trips.map(t => t.id)}
+                isSaving={isCreatingTrip}
+                onCreate={handleCreate}
+                onCancel={() => setIsCreating(false)}
+              />
+            ) : (
+              <Suspense fallback={<LazyFallback />}>
+                <RestoreTripForm
+                  isSaving={isSaving}
+                  onRestore={onRestoreTrip}
+                  onCancel={() => setIsCreating(false)}
+                />
+              </Suspense>
+            )}
+          </div>
         ) : loading ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
             <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
@@ -257,7 +286,7 @@ const TripPicker = ({
             </p>
             <button
               type="button"
-              onClick={() => { haptic.light(); setIsCreating(true) }}
+              onClick={openCreate}
               className="mt-4 inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm"
             >
               <Plus className="w-4 h-4" /> إنشاء رحلة جديدة
