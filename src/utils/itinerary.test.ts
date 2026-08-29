@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   toStoredTime, toInputTime, validateDraft, draftToSegment, segmentToDraft,
   isRenderableSegment, normalizeItinerary, findNextSegment, newSegmentId,
-  emptySegmentDraft, tripEndTime, tripRouteSummary,
+  emptySegmentDraft, tripEndTime, tripRouteSummary, deriveTripType,
 } from './itinerary'
 import type { SegmentDraft } from './itinerary'
 import type { ItinerarySegment } from '../types'
@@ -283,6 +283,34 @@ describe('tripRouteSummary', () => {
     expect(tripRouteSummary(withGarbage)).toEqual({
       start: '2026-07-01T10:00:00', end: '2026-07-01T14:00:00', fromLocation: 'أ', toLocation: 'ب',
     })
+  })
+})
+
+describe('deriveTripType', () => {
+  const seg = (dep: string, arr: string): ItinerarySegment => ({
+    id: 's', mode: 'flight', identifier: 'QR 1',
+    departure: { location: 'أ', time: dep }, arrival: { location: 'ب', time: arr },
+  })
+
+  it('يبقي standard إن كان المسار 14 يوماً أو أقل', () => {
+    const exactly14 = [seg('2026-07-01T10:00:00', '2026-07-15T10:00:00')]
+    expect(deriveTripType('standard', exactly14)).toBe('standard')
+  })
+
+  it('يرقّي إلى long_term إن تجاوز المسار 14 يوماً', () => {
+    const over14 = [seg('2026-07-01T10:00:00', '2026-07-15T10:00:01')]
+    expect(deriveTripType('standard', over14)).toBe('long_term')
+  })
+
+  it('يبقي standard بلا مسار على الإطلاق', () => {
+    expect(deriveTripType('standard', [])).toBe('standard')
+    expect(deriveTripType('standard', undefined)).toBe('standard')
+  })
+
+  it('لا يُخفِّض رحلة long_term أبداً حتى لو قصُر مسارها لاحقاً', () => {
+    const oneDay = [seg('2026-07-01T10:00:00', '2026-07-02T10:00:00')]
+    expect(deriveTripType('long_term', oneDay)).toBe('long_term')
+    expect(deriveTripType('long_term', [])).toBe('long_term')
   })
 })
 

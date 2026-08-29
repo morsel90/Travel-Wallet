@@ -20,17 +20,18 @@
 // (users/{organizerUid})، تُقرأ حيّة عبر useOrganizerBankDetails، لا تُكتب على
 // مستند الرحلة إطلاقاً. انظر docs/DECISIONS.md.
 import { useState, useCallback } from 'react'
-import { setDoc, getDocs } from 'firebase/firestore'
+import { setDoc, getDoc, getDocs } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, functions } from '../firebase'
 import {
   tripDocById, expensesColByTrip, travelersColByTrip, travelerNamesColByTrip, depositLogsColByTrip,
 } from '../firestore'
 import { haptic } from '../utils/haptics'
-import { MAX_SEGMENTS } from '../utils/itinerary'
+import { MAX_SEGMENTS, deriveTripType } from '../utils/itinerary'
+import { currentPeriodKey } from '../utils/period'
 import { buildTripBackup, downloadTripBackup } from '../utils/backup'
 import { TRIP_STATUS_LABEL } from '../types'
-import type { DepositLogEntry, Expense, ItinerarySegment, ToastMessage, Traveler, TripStatus } from '../types'
+import type { DepositLogEntry, Expense, ItinerarySegment, ToastMessage, Traveler, TripStatus, TripType } from '../types'
 import type { TripSummary } from './useAllTrips'
 
 // عقد استدعاء manageTrip — يطابق ما تقرأه الدالة في functions/index.js
@@ -100,10 +101,17 @@ interface UseTripAdminActionsParams {
 
 export interface UseTripAdminActionsResult {
   isSaving: boolean
-  saveItinerary: (tripId: string, itinerary: ItinerarySegment[]) => Promise<boolean>
+  saveItinerary: (tripId: string, itinerary: ItinerarySegment[], currentType: TripType) => Promise<boolean>
   saveTripName: (tripId: string, name: string) => Promise<boolean>
   /** 🆕 تغيير حالة دورة حياة الرحلة — القواعد تفرض أثرها، هذا يكتب الحقل فقط. */
   saveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
+  /**
+   * 🆕 تخفيض يدوي صريح من long_term إلى standard — الاتجاه الوحيد الذي
+   * تبقّى بعد أن صار الترقّي تلقائياً في saveItinerary (انظر deriveTripType).
+   * لا يلمس currentPeriod/lastClosedPeriod: التخفيض يُخفي واجهة «الشهر
+   * المحاسبي» فقط، ولا يُلغي أثر أي شهر أُغلق فعلياً — انظر docs/DECISIONS.md.
+   */
+  saveTripType: (tripId: string, type: TripType) => Promise<boolean>
   /** 🆕 متاحة لأي حساب حقيقي مسجّل دخوله، لا المسؤول فقط — من ينشئ يصبح منظّم رحلته. */
   createTrip: (tripId: string, name: string) => Promise<boolean>
   /** حذف نهائي — للرحلات الفارغة فقط، والخادم هو من يفرض ذلك (انظر functions/index.js). */
@@ -165,14 +173,43 @@ export function useTripAdminActions({
     }
   }, [canAct, showToast, handleFirestoreError])
 
-  const saveItinerary = useCallback((tripId: string, itinerary: ItinerarySegment[]) => {
+  // 🆕 تحويل الرحلة إلى طويلة المدى لم يعد يحتاج سكربت set-trip-type.mjs
+  // يدوياً — يُشتَقّ تلقائياً من مدّة المسار نفسه عند حفظه (انظر deriveTripType
+  // في utils/itinerary.ts). اتجاه واحد فقط (standard→long_term)، فلا حاجة
+  // لأي تأكيد إضافي من المستخدم.
+  const saveItinerary = useCallback(async (
+    tripId: string, itinerary: ItinerarySegment[], currentType: TripType,
+  ): Promise<boolean> => {
     // نفس الحدّ المفروض في firestore.rules — نكشفه برسالة مفهومة بدل ترك
     // القواعد ترفض الكتابة بخطأ صلاحيات غامض.
     if (itinerary.length > MAX_SEGMENTS) {
       showToast({ text: `الحد الأقصى ${MAX_SEGMENTS} مقطعاً في المسار.`, type: 'error' }, 3000)
-      return Promise.resolve(false)
+      return false
     }
-    return write(tripId, { itinerary }, 'تم حفظ مسار الرحلة', 'تعذّر حفظ مسار الرحلة.')
+
+    const nextType = deriveTripType(currentType, itinerary)
+    const payload: Record<string, unknown> = { itinerary }
+
+    if (nextType !== currentType) {
+      payload.tripType = nextType
+      // 🆕 نفس منطق set-trip-type.mjs بالضبط: لا نلمس currentPeriod إن كان
+      // مضبوطاً أصلاً (رحلة أُعيدت إلى standard يدوياً بعد إغلاق شهور فعلياً،
+      // ثم رقّاها المسار تلقائياً مجدداً) — قراءة إضافية هنا فقط عند الترقية
+      // الفعلية (نادرة)، لا عند كل حفظ مسار.
+      const snap = await getDoc(tripDocById(tripId))
+      if (!(snap.exists() && typeof snap.data().currentPeriod === 'string')) {
+        payload.currentPeriod = currentPeriodKey()
+      }
+    }
+
+    return write(
+      tripId,
+      payload,
+      nextType !== currentType
+        ? 'تم حفظ مسار الرحلة — وتحويلها تلقائياً إلى «طويلة المدى» لتجاوز مدّتها 14 يوماً'
+        : 'تم حفظ مسار الرحلة',
+      'تعذّر حفظ مسار الرحلة.',
+    )
   }, [write, showToast])
 
   const saveTripName = useCallback((tripId: string, name: string) => write(
@@ -191,6 +228,13 @@ export function useTripAdminActions({
     { status, statusChangedAt: Date.now() },
     `تم تغيير حالة الرحلة إلى «${TRIP_STATUS_LABEL[status]}»`,
     'تعذّر تغيير حالة الرحلة.',
+  ), [write])
+
+  const saveTripType = useCallback((tripId: string, type: TripType) => write(
+    tripId,
+    { tripType: type },
+    type === 'standard' ? 'تم تحويل الرحلة إلى قياسية' : 'تم تحويل الرحلة إلى طويلة المدى',
+    'تعذّر تغيير نوع الرحلة.',
   ), [write])
 
   // ── المسار الخادمي (manageTrip) ─────────────────────────────────────────
@@ -580,7 +624,7 @@ export function useTripAdminActions({
   }, [isAdmin, showToast, handleFirestoreError])
 
   return {
-    isSaving, saveItinerary, saveTripName, saveTripStatus, createTrip,
+    isSaving, saveItinerary, saveTripName, saveTripStatus, saveTripType, createTrip,
     deleteTrip, removeMember, setMemberRole, exportBackup, restoreTrip: restoreTripFn,
     createInvite, revokeInvite, linkTravelerAccount,
   }

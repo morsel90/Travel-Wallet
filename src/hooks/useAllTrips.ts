@@ -10,7 +10,8 @@ import { onSnapshot } from 'firebase/firestore'
 import { tripsCol } from '../firestore'
 import { normalizeItinerary } from '../utils/itinerary'
 import { normalizeTripStatus } from '../utils/tripStatus'
-import type { ItinerarySegment, TripStatus } from '../types'
+import { normalizeTripType } from '../utils/tripType'
+import type { ItinerarySegment, TripStatus, TripType } from '../types'
 
 export interface TripSummary {
   id: string
@@ -22,6 +23,8 @@ export interface TripSummary {
   status: TripStatus
   /** 🆕 متى تغيّرت status آخر مرة — غيابها يعني "غير معروف" (انظر useTripConfig.ts). */
   statusChangedAt?: number
+  /** 🆕 نمط الرحلة — غيابه يعني standard (انظر utils/tripType.ts). تحتاجه TripDetailPanel لاشتقاق الترقية التلقائية عند حفظ المسار. */
+  tripType: TripType
 }
 
 export interface UseAllTripsResult {
@@ -50,7 +53,7 @@ export function useAllTrips(enabled: boolean): UseAllTripsResult {
         const list: TripSummary[] = snap.docs.map(d => {
           const data = d.data() as {
             name?: unknown; organizerUid?: unknown; itinerary?: unknown; status?: unknown
-            statusChangedAt?: unknown
+            statusChangedAt?: unknown; tripType?: unknown
           }
           return {
             id: d.id,
@@ -59,6 +62,7 @@ export function useAllTrips(enabled: boolean): UseAllTripsResult {
             status: normalizeTripStatus(data.status),
             statusChangedAt: typeof data.statusChangedAt === 'number' ? data.statusChangedAt : undefined,
             itinerary: normalizeItinerary(data.itinerary),
+            tripType: normalizeTripType(data.tripType),
           }
         })
         list.sort((a, b) => a.name.localeCompare(b.name, 'ar'))

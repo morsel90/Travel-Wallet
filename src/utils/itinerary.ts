@@ -2,7 +2,7 @@
 // في لوحة تفاصيل الرحلة (components/admin/TripDetailPanel.tsx). قابلة للاختبار بالكامل
 // عبر Vitest — انظر itinerary.test.ts.
 
-import type { ItinerarySegment, TransportMode } from '../types'
+import type { ItinerarySegment, TransportMode, TripType } from '../types'
 
 export const TRANSPORT_MODES: TransportMode[] = ['flight', 'car', 'train', 'bus']
 
@@ -210,4 +210,26 @@ export function tripRouteSummary(itinerary: unknown): TripRouteSummary | null {
     fromLocation: first.departure.location,
     toLocation: last.arrival.location,
   }
+}
+
+/** تجاوز هذا العدد من الأيام (أول انطلاق ← آخر وصول) يرقّي الرحلة تلقائياً لطويلة المدى عند حفظ مسارها. */
+export const LONG_TERM_THRESHOLD_DAYS = 14
+
+/**
+ * 🆕 يقترح نوع الرحلة بعد حفظ مسار جديد — بديل الاختيار اليدوي (والسكربت
+ * الإداري القديم) لتحديد long_term: يُشتَق تلقائياً من مدّة المسار نفسه بدل
+ * إزعاج من ينشئ الرحلة بخيار تقني إضافي.
+ *
+ * ⚠️ اتجاه واحد فقط — يُرقّي standard← long_term عند تجاوز الحدّ، ولا يُخفِّض
+ * رحلة long_term قائمة إلى standard أبداً حتى لو قصُر مسارها لاحقاً (حُذف
+ * مقطع، أو عُدِّل بالخطأ). التخفيض يبقى قراراً بشرياً صريحاً وحده
+ * (scripts/set-trip-type.mjs) لأن الرجوع لا يُلغي أثر أي شهر أُغلق فعلياً على
+ * الرحلة — انظر docs/DECISIONS.md.
+ */
+export function deriveTripType(currentType: TripType, itinerary: unknown): TripType {
+  if (currentType === 'long_term') return 'long_term'
+  const summary = tripRouteSummary(itinerary)
+  if (!summary) return currentType
+  const days = (new Date(summary.end).getTime() - new Date(summary.start).getTime()) / 86_400_000
+  return days > LONG_TERM_THRESHOLD_DAYS ? 'long_term' : currentType
 }

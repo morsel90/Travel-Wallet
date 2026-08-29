@@ -231,7 +231,8 @@ export function useAppCoordinator() {
     itinerary: itinerary ?? [],
     status: tripStatus,
     statusChangedAt,
-  }), [tripName, organizerUid, itinerary, tripStatus, statusChangedAt])
+    tripType,
+  }), [tripName, organizerUid, itinerary, tripStatus, statusChangedAt, tripType])
 
   const tripAdmin = useTripAdminActions({ isAdmin, organizerTripId, showToast, handleFirestoreError })
 
@@ -443,6 +444,7 @@ export function useAppCoordinator() {
       onSaveTripName: tripAdmin.saveTripName,
       onSaveItinerary: tripAdmin.saveItinerary,
       onSaveTripStatus: tripAdmin.saveTripStatus,
+      onSaveTripType: tripAdmin.saveTripType,
       onDeleteTrip: tripAdmin.deleteTrip,
       onRemoveMember: tripAdmin.removeMember,
       onSetMemberRole: tripAdmin.setMemberRole,
