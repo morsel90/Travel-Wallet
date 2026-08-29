@@ -8,7 +8,7 @@
 // إخفاء الرحلة. انظر functions/index.js: isEligibleForAgePurgeJs.
 import { test, expect } from '@playwright/test'
 import { seedBareAdmin, adminFirestore } from './utils/seed'
-import { signInWithEmail, openTripDetailAsAdmin } from './utils/flows'
+import { signInWithEmail, openTripDetailFromHeader } from './utils/flows'
 
 const CREDS = {
   email: 'e2e-purge-old-archived-admin@test.local',
@@ -45,16 +45,22 @@ test('مسؤول يحذف رحلة مؤرشفة منذ أكثر من 90 يوما
   await page.goto(`/?trip=${OLD_TRIP_ID}`)
   await signInWithEmail(page, CREDS.email, CREDS.password)
 
-  await openTripDetailAsAdmin(page, OLD_TRIP_ID)
+  await openTripDetailFromHeader(page)
   await page.getByRole('button', { name: 'حذف الرحلة' }).click()
 
   // الرسالة الاستثنائية تظهر — الاستثناء واضح للمسؤول قبل أن يضغط، لا مفاجأة بعد الحذف.
   await expect(page.getByText(/مؤرشفة منذ أكثر من 90 يوماً/)).toBeVisible()
 
   await page.getByLabel(/للتأكيد، اكتب معرّف الرحلة/).fill(OLD_TRIP_ID)
-  await page.getByRole('button', { name: 'حذف الرحلة نهائياً' }).click()
 
-  await expect(page.getByText(`تم حذف الرحلة "${OLD_TRIP_ID}"`)).toBeVisible()
+  // 🆕 حذف الرحلة *المفتوحة حالياً* يُعقبه توجيه كامل بلا `?trip=` (EditTripModal
+  // onDeleted في App.tsx) — ننتظر التوجيه والضغط معاً بدل توست عابر قد يفوته
+  // سباق التنقّل.
+  await Promise.all([
+    page.waitForURL(url => !url.searchParams.has('trip')),
+    page.getByRole('button', { name: 'حذف الرحلة نهائياً' }).click(),
+  ])
+  await expect(page.getByRole('heading', { name: 'رحلاتي' })).toBeVisible()
 
   // ⚠️ تحقّق سلبي حقيقي (القاعدة ١٨): artifacts/{tripId} حُذف فعلياً — المسافر
   // النشِط ببيانات مالية حقيقية لم يُترَك يتيماً في Firestore.
@@ -70,7 +76,7 @@ test('رحلة مؤرشفة حديثاً (أقل من 90 يوماً) ببيان�
   await page.goto(`/?trip=${RECENT_TRIP_ID}`)
   await signInWithEmail(page, CREDS.email, CREDS.password)
 
-  await openTripDetailAsAdmin(page, RECENT_TRIP_ID)
+  await openTripDetailFromHeader(page)
   await page.getByRole('button', { name: 'حذف الرحلة' }).click()
 
   // لا استثناء لرحلة لم تبلغ مدة السماح بعد.

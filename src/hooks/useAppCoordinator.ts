@@ -217,19 +217,22 @@ export function useAppCoordinator() {
   // trips/ يرضيه isAdmin() وحده، فطلبه لعضو عادي مجرّد خطأ صلاحيات في الكونسول.
   const { trips, loading: tripsLoading, error: tripsError } = useAllTrips(isAdmin)
 
-  // 🆕 كل معرّفات الرحلات التي يملك المستخدم فيها دور «منظّم» — بعد دمج
-  // «رحلاتي» و«إدارة الرحلات» (انظر docs/DECISIONS.md) قد يعدّل من نفس الشاشة
-  // أكثر من رحلة ينظّمها، لا رحلته المفتوحة حالياً وحدها. الرحلة المفتوحة
-  // مصدرها isOrganizer الحيّ (useMyTripRole)، وبقية رحلاته مصدرها organizerUid
-  // في myTrips (لقطة عند تحميل القائمة — كافٍ لهذا الغرض، انظر useMyTrips.ts).
-  const organizerTripIds = useMemo(() => {
-    const ids = new Set(myTrips.filter(t => user && t.organizerUid === user.uid).map(t => t.id))
-    if (isOrganizer) ids.add(TRIP_ID)
-    else ids.delete(TRIP_ID)
-    return Array.from(ids)
-  }, [myTrips, user, isOrganizer])
+  // منظّم لا يستطيع استعلام trips/ (isAdmin() وحده يرضيه)، فبدل ذلك نبني
+  // ملخّص رحلته الوحيدة من useTripConfig — وهو أصلاً حيّ (onSnapshot) ومسموح
+  // له بقراءته (isMember). 🆕 يُستهلك الآن من قِبل المسؤول أيضاً — كلاهما يعدّل
+  // فقط عبر اسم الرحلة في الهيدر (Header.tsx)، أي الرحلة المفتوحة حالياً حصراً
+  // (انظر tripEdit أدناه وcomponents/modals/EditTripModal.tsx).
+  const organizerTripId = isOrganizer ? TRIP_ID : null
+  const currentTripSummary = useMemo(() => ({
+    id: TRIP_ID,
+    name: tripName ?? TRIP_ID,
+    organizerUid,
+    itinerary: itinerary ?? [],
+    status: tripStatus,
+    statusChangedAt,
+  }), [tripName, organizerUid, itinerary, tripStatus, statusChangedAt])
 
-  const tripAdmin = useTripAdminActions({ isAdmin, organizerTripIds, showToast, handleFirestoreError })
+  const tripAdmin = useTripAdminActions({ isAdmin, organizerTripId, showToast, handleFirestoreError })
 
   // 🆕 استدعاءات الرحلة الطويلة (closeMonth/exitTraveler) — لا كتابة Firestore
   // هنا إطلاقاً؛ انظر تعليق الملف في hooks/useLongTermActions.ts.
@@ -271,7 +274,7 @@ export function useAppCoordinator() {
     if (ok) modals.closeModal()
   }, [longTermActions, modals])
 
-  // ─── شاشة «رحلاتي» (ودمج «إدارة الرحلات» فيها) ────────────────────────────
+  // ─── شاشة «رحلاتي» ────────────────────────────────────────────────────────
   // 🆕 المسؤول يرى كل الرحلات (استعلام القائمة يرضيه isAdmin وحده)، والعضو
   // العادي يرى ما انضم له فقط. بدون هذا التفريق كانت الشاشة تختفي عن المسؤول
   // تماماً: هو يتجاوز رمز الرحلة أصلاً فقد لا يملك خريطة trips في توكنه إطلاقاً.
@@ -279,18 +282,12 @@ export function useAppCoordinator() {
   // المنتهية. تبقى الرحلة المفتوحة حالياً ظاهرة دائماً ولو كانت مؤرشفة، وإلا
   // اختفت من تحت المستخدم بينما هو داخلها.
   //
-  // 🆕 صفّ الرحلة المفتوحة حالياً (لغير المسؤول) يُستبدل ببيانات useTripConfig
-  // الحيّة (onSnapshot) بدل لقطة myTrips الثابتة: هذا الاشتراك يعمل أصلاً بصرف
-  // النظر عن هذه الشاشة (Header/BankDetailsCard يعتمدان عليه)، فتعديل استُهلك
-  // للتو من جهاز آخر (اسم/مسار) يظهر هنا فوراً لا بعد إعادة تحميل القائمة.
+  // ⚠️ للتنقّل المحض فقط (فتح/إنشاء/استعادة) — لا تعديل من هنا. تعديل أي رحلة
+  // يمرّ عبر اسمها في الهيدر بعد فتحها (انظر tripEdit أدناه).
   const pickerTrips = useMemo(() => {
-    const source = isAdmin ? trips : myTrips.map(t =>
-      t.id === TRIP_ID && HAS_EXPLICIT_TRIP_ID && hasAccess
-        ? { id: TRIP_ID, name: tripName ?? TRIP_ID, organizerUid, itinerary: itinerary ?? [], status: tripStatus, statusChangedAt }
-        : t
-    )
+    const source = isAdmin ? trips.map(t => ({ id: t.id, name: t.name, status: t.status })) : myTrips
     return source.filter(t => t.status !== 'archived' || t.id === TRIP_ID)
-  }, [isAdmin, trips, myTrips, hasAccess, tripName, organizerUid, itinerary, tripStatus, statusChangedAt])
+  }, [isAdmin, trips, myTrips])
   const pickerLoading = isAdmin ? tripsLoading : myTripsLoading
   const pickerError   = isAdmin ? tripsError   : myTripsError
 
@@ -403,23 +400,30 @@ export function useAppCoordinator() {
       // حين لا يدعم الجهاز Web Share API — انظر TripDetailPanel.tsx).
       showToast,
     },
-    /**
-     * 🆕 شاشة «رحلاتي» — تضم الآن أيضاً ما كان يُسمّى «إدارة الرحلات»
-     * (TripAdminView، حُذفت): تعديل رحلة (اسم/مسار/حالة/أعضاء/حذف) متاح من
-     * نفس القائمة، بزرّ «تعديل» يظهر فقط لمن يملك صلاحيته — المسؤول على أي
-     * رحلة، والمنظّم على رحلاته وحدها (canEdit في TripPicker.tsx يقرّر ذلك من
-     * isAdmin/currentUserUid أدناه). انظر docs/DECISIONS.md.
-     */
+    /** شاشة «رحلاتي» — تنقّل بحت (فتح/إنشاء/استعادة)، بلا تعديل من القائمة. */
     picker: {
       trips: pickerTrips, loading: pickerLoading, error: pickerError,
       isVisible: isPickerVisible,
       show: () => setShowTripPicker(true),
       // 🆕 الإنشاء الذاتي (نموذج واتساب) — أي مستخدم مسجّل دخوله، لا المسؤول
-      // فقط. نفس دالة tripAdmin.createTrip المستخدمة في التعديل؛ الحدّ
+      // فقط. نفس دالة tripAdmin.createTrip المستخدمة في تعديل الرحلة؛ الحدّ
       // الحقيقي (جلسة حقيقية، حدّ زمني) خادمي بالكامل في manageTrip.
       onCreateTrip: tripAdmin.createTrip,
+      // 🆕 يظهر معرّف كل رحلة تحت اسمها (المسؤول يتصفّح رحلات لا يعرفها
+      // بالاسم فقط)، ويتيح تبويب «استعادة من نسخة احتياطية» عند الإنشاء.
       isAdmin,
-      currentUserUid: user?.uid ?? null,
+      isSaving: tripAdmin.isSaving,
+      onRestoreTrip: tripAdmin.restoreTrip,
+    },
+    /**
+     * 🆕 تعديل الرحلة *المفتوحة حالياً* — يُفتح بالضغط على اسمها في الهيدر
+     * (Header.tsx)، لا من قائمة «رحلاتي». لتعديل رحلة أخرى يفتحها المستخدم
+     * أولاً من «رحلاتي» (المسؤول يرى كل الرحلات هناك ويمكنه الدخول لأيّ منها)
+     * ثم يعدّلها من هنا بعد أن تصبح هي المفتوحة. انظر docs/DECISIONS.md.
+     */
+    tripEdit: {
+      canEdit: isAdmin || isOrganizer,
+      trip: currentTripSummary,
       viewerRole: isAdmin ? 'admin' as const : 'organizer' as const,
       isSaving: tripAdmin.isSaving,
       onSaveTripName: tripAdmin.saveTripName,
@@ -430,7 +434,6 @@ export function useAppCoordinator() {
       onSetMemberRole: tripAdmin.setMemberRole,
       onLinkTravelerAccount: tripAdmin.linkTravelerAccount,
       onExportBackup: tripAdmin.exportBackup,
-      onRestoreTrip: tripAdmin.restoreTrip,
       onCreateInvite: tripAdmin.createInvite,
       onRevokeInvite: tripAdmin.revokeInvite,
     },

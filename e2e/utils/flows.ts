@@ -30,8 +30,8 @@ export async function signInWithEmail(page: Page, email: string, password: strin
 /**
  * 🆕 يفتح قائمة الحساب الموحّدة في الهيدر (AccountMenu.tsx) — نقطة الدخول
  * الوحيدة الآن لـ«رحلاتي»/«بروفايلي»/«تسجيل الخروج»، بعد أن كانت أزراراً
- * منفصلة في الهيدر مباشرة. 🆕 لا «لوحة الإدارة» بعد الآن — دُمجت إدارة
- * الرحلات في «رحلاتي» نفسها (TripPicker.tsx، انظر docs/DECISIONS.md).
+ * منفصلة في الهيدر مباشرة. 🆕 لا «لوحة الإدارة» بعد الآن — تعديل أي رحلة يمرّ
+ * عبر اسمها في الهيدر (openTripDetailFromHeader)، لا عبر هذه القائمة.
  */
 export async function openAccountMenu(page: Page): Promise<void> {
   // exact: true — يتجنّب تطابقاً جزئياً مع زر "كشف حسابي" (نموذج الهوية الهجين).
@@ -56,9 +56,9 @@ export async function openAccountMenu(page: Page): Promise<void> {
 export async function openTripAsAdmin(page: Page, creds: TripCreds): Promise<void> {
   await page.goto(`/?trip=${creds.tripId}`)
   await signInWithEmail(page, creds.adminEmail, creds.adminPassword)
-  // 🆕 «رحلاتي» تظهر دائماً لحساب يحمل admin claim فعلاً (نقطة الدخول الوحيدة
-  // الآن لإدارة الرحلات، بعد دمج «لوحة الإدارة» فيها) — نفس الدور الذي كان زر
-  // "إغلاق المسؤول" الظاهر مباشرة يؤكّده سابقاً.
+  // 🆕 «رحلاتي» تظهر دائماً لحساب يحمل admin claim فعلاً — نفس الدور الذي كان
+  // زر "إغلاق المسؤول" الظاهر مباشرة يؤكّده سابقاً. تعديل هذه الرحلة تحديداً
+  // من هنا يمرّ عبر اسمها في الهيدر (openTripDetailFromHeader)، لا «رحلاتي».
   await openAccountMenu(page)
   await expect(page.getByRole('menuitem', { name: 'رحلاتي' })).toBeVisible()
   await page.keyboard.press('Escape')
@@ -81,14 +81,13 @@ export function tripRowInPicker(page: Page, tripId: string) {
 }
 
 /**
- * يفتح لوحة تفاصيل رحلة بعينها من «رحلاتي» — نقطة الدخول الوحيدة الآن لتعديل
- * أي رحلة (بعد دمج «لوحة الإدارة» فيها، انظر docs/DECISIONS.md). لوحة إدارة
- * المسؤول تعرض دائماً كل رحلات النظام لا رحلته وحده، فنحدّد الصفّ بمعرّفه.
+ * 🆕 يفتح لوحة تفاصيل الرحلة *المفتوحة حالياً* — بالضغط على اسمها في الهيدر
+ * (EditTripModal). نقطة الدخول الوحيدة الآن لتعديل رحلة؛ لا يعمل إلا لمن
+ * يملك صلاحيته (مسؤول، أو منظّم هذه الرحلة تحديداً) وبعد فتح تلك الرحلة فعلاً
+ * — لتعديل رحلة أخرى افتحها أولاً من «رحلاتي». انظر docs/DECISIONS.md.
  */
-export async function openTripDetailAsAdmin(page: Page, tripId: string): Promise<void> {
-  await openAccountMenu(page)
-  await page.getByRole('menuitem', { name: 'رحلاتي' }).click()
-  await tripRowInPicker(page, tripId).getByRole('button', { name: 'تعديل' }).click()
+export async function openTripDetailFromHeader(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'تعديل الرحلة' }).click()
 }
 
 /** يضيف مسافراً عبر النموذج — يتطلب وضع المسؤول مفعّلاً مسبقاً (openTripAsAdmin). */

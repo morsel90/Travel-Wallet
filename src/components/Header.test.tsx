@@ -18,11 +18,12 @@ const baseProps = {
   isAdmin: false,
   isOrganizer: false,
   tripName: 'رحلة بولندا 2026',
+  canEditTrip: false,
+  onEditTrip: noop,
   stats: { totalDeposited: 1000, totalSpent: 400, totalRemaining: 600 },
   displayName: 'أحمد الغامدي',
   email: 'ahmad@example.com',
   onShowProfile: noop,
-  onOpenAdminPanel: noop,
   onAdminSignIn: noop,
   onSignOut: noop,
 }

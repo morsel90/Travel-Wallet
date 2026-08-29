@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { AnimatePresence } from 'framer-motion'
-import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from './utils/tripId'
+import { TRIP_ID, HAS_EXPLICIT_TRIP_ID, appHomeUrl } from './utils/tripId'
 import { haptic } from './utils/haptics'
 import { useAppCoordinator } from './hooks/useAppCoordinator'
 
@@ -45,7 +45,7 @@ const UserProfileModal = lazy(() => import('./components/modals/UserProfileModal
 // store/TripStoreProvider.tsx، والتخطيط إلى أقسام components/*Panel.tsx.
 export default function App() {
   const {
-    session, ledger, trip, rates, status, picker, filter, modals, expense, traveler, deposit, admin, invite,
+    session, ledger, trip, rates, status, picker, tripEdit, filter, modals, expense, traveler, deposit, admin, invite,
     profile, isSavingProfile, saveProfile, organizerBank, longTerm, requestDeleteTraveler,
   } = useAppCoordinator()
 
@@ -100,23 +100,9 @@ export default function App() {
         onCreateTrip={picker.onCreateTrip}
         isCreatingTrip={picker.isSaving}
         onShowProfile={modals.openUserProfile}
-        // 🆕 دمج «إدارة الرحلات» — انظر تعليق picker في useAppCoordinator.ts.
         isAdmin={picker.isAdmin}
-        currentUserUid={picker.currentUserUid}
-        viewerRole={picker.viewerRole}
         isSaving={picker.isSaving}
-        onSaveTripName={picker.onSaveTripName}
-        onSaveItinerary={picker.onSaveItinerary}
-        onSaveTripStatus={picker.onSaveTripStatus}
-        onDeleteTrip={picker.onDeleteTrip}
-        onRemoveMember={picker.onRemoveMember}
-        onSetMemberRole={picker.onSetMemberRole}
-        onLinkTravelerAccount={picker.onLinkTravelerAccount}
-        onExportBackup={picker.onExportBackup}
         onRestoreTrip={picker.onRestoreTrip}
-        onCreateInvite={picker.onCreateInvite}
-        onRevokeInvite={picker.onRevokeInvite}
-        showToast={status.showToast}
       />
     )
   } else if (!session.isAdmin && !session.joinedTripIds.includes(TRIP_ID)) {
@@ -156,6 +142,10 @@ export default function App() {
               isSyncing={status.isSyncing} isAdmin={session.isAdmin} isOrganizer={session.isOrganizer}
               // 🆕 اسم الرحلة يحلّ محلّ «مصاريف السفر» الثابت في العنوان.
               tripName={trip.name}
+              // 🆕 اسم الرحلة قابل للضغط لمن يملك صلاحية تعديلها — يفتح
+              // EditTripModal (انظر tripEdit في useAppCoordinator.ts).
+              canEditTrip={tripEdit.canEdit}
+              onEditTrip={modals.openEditTrip}
               displayName={profile.displayName || session.user?.displayName || null}
               email={session.user?.email ?? null}
               stats={ledger.isInitialLoading ? null : {
@@ -164,12 +154,9 @@ export default function App() {
                 totalRemaining: ledger.totalRemaining,
               }}
               isOnline={session.isOnline}
-              // 🆕 زر التبديل يظهر متى وُجدت رحلة أخرى غير المفتوحة حالياً، أو
-              // متى احتاج المستخدم «رحلاتي» كنقطة دخول للإدارة (مسؤول/منظّم) —
-              // بعد دمج «إدارة الرحلات» فيها، هذان لم يعودا يريان لوحة منفصلة.
-              onShowMyTrips={
-                picker.trips.length > 1 || session.isAdmin || session.isOrganizer ? picker.show : undefined
-              }
+              // زر التبديل يظهر متى وُجدت رحلة أخرى غير المفتوحة حالياً، أو
+              // للمسؤول دائماً (يتصفّح كل الرحلات ويُنشئ/يستعيد من «رحلاتي»).
+              onShowMyTrips={picker.trips.length > 1 || session.isAdmin ? picker.show : undefined}
               onShowProfile={modals.openUserProfile}
               onAdminSignIn={admin.openAdminSignIn}
               onSignOut={admin.handleAdminSignOut}
@@ -310,6 +297,27 @@ export default function App() {
                 onRestoreExpense: expense.handleRestoreExpense,
                 onRestoreTraveler: traveler.handleRestoreTraveler,
               }}
+              // 🆕 undefined لمن لا يملك صلاحية التعديل أصلاً — لا مسؤول ولا
+              // منظّم لهذه الرحلة (تطابق الحارس نفسه في Header/AccountMenu).
+              editTrip={tripEdit.canEdit ? {
+                trip: tripEdit.trip,
+                viewerRole: tripEdit.viewerRole,
+                isSaving: tripEdit.isSaving,
+                onSaveTripName: tripEdit.onSaveTripName,
+                onSaveItinerary: tripEdit.onSaveItinerary,
+                onSaveTripStatus: tripEdit.onSaveTripStatus,
+                onDeleteTrip: tripEdit.onDeleteTrip,
+                onRemoveMember: tripEdit.onRemoveMember,
+                onSetMemberRole: tripEdit.onSetMemberRole,
+                onLinkTravelerAccount: tripEdit.onLinkTravelerAccount,
+                onExportBackup: tripEdit.onExportBackup,
+                onCreateInvite: tripEdit.onCreateInvite,
+                onRevokeInvite: tripEdit.onRevokeInvite,
+                showToast: status.showToast,
+                // الرحلة المفتوحة حذفت نفسها — إعادة توجيه كاملة بلا `?trip=`
+                // بدل إبقاء المستخدم على شاشة تشير لمستند لم يعد موجوداً.
+                onDeleted: () => { window.location.href = appHomeUrl() },
+              } : undefined}
               // 🆕 غير مُمرَّرة إطلاقاً في الرحلة القياسية — وهو ما يجعل
               // مودالَي الترحيل/الخروج غير قابلين للعرض فيها بنيوياً، لا بشرط.
               longTerm={longTerm ? {

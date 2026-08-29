@@ -31,6 +31,15 @@ export function tripUrl(tripId: string): string {
   return `${window.location.origin}${window.location.pathname}?trip=${encodeURIComponent(tripId)}`
 }
 
+/**
+ * 🆕 رابط التطبيق بلا `?trip=` — لإعادة التوجيه بعد حذف الرحلة المفتوحة
+ * حالياً من داخل نفسها (EditTripModal): معرّفها لم يعد صالحاً، فلا معنى
+ * لإعادة تحميل نفس الرابط. الهبوط الطبيعي بلا رحلة مقصودة هو شاشة «رحلاتي».
+ */
+export function appHomeUrl(): string {
+  return `${window.location.origin}${window.location.pathname}`
+}
+
 function readTripIdFromLocation(): string {
   const fromQuery = readExplicitTripId()
   return fromQuery ?? DEFAULT_TRIP_ID

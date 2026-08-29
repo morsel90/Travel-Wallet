@@ -17,7 +17,7 @@
 // عادياً كبقية سيناريوهات الإنشاء الذاتي.
 import { test, expect } from '@playwright/test'
 import { seedBareAdmin } from './utils/seed'
-import { signInWithEmail, addExpense, expenseCard, openTripDetailAsAdmin, tripRowInPicker } from './utils/flows'
+import { signInWithEmail, addExpense, expenseCard, openTripDetailFromHeader, tripRowInPicker } from './utils/flows'
 
 const CREDS = {
   email: 'e2e-delete-empty-trip-admin@test.local',
@@ -45,8 +45,9 @@ test('مسؤول يحذف مصروفاً ونفسه من مسافري رحلة �
 
   // ── محاولة حذف مبكرة: المسافر المُزوَّد تلقائياً للمنظّم (المسؤول نفسه) لا
   // يزال نشِطاً، فيُرفض الحذف — هذا السلوك يجب أن يبقى كما هو (حماية بيانات
-  // حقيقية). ─────────────────────────────────────────────────────────────
-  await openTripDetailAsAdmin(page, TRIP_ID)
+  // حقيقية). 🆕 التعديل يُفتح الآن بالضغط على اسم الرحلة في الهيدر (EditTripModal)
+  // لا من «رحلاتي» — انظر docs/DECISIONS.md. ─────────────────────────────────
+  await openTripDetailFromHeader(page)
   await page.getByRole('button', { name: 'حذف الرحلة' }).click()
   await page.getByLabel(/للتأكيد، اكتب معرّف الرحلة/).fill(TRIP_ID)
   await page.getByRole('button', { name: 'حذف الرحلة نهائياً' }).click()
@@ -54,18 +55,14 @@ test('مسؤول يحذف مصروفاً ونفسه من مسافري رحلة �
 
   // ⚠️ تحقّق سلبي حقيقي (القاعدة ١٨): الرحلة لم تُحذف فعلاً، لا تزال قابلة للإدارة.
   //
-  // 🆕 التحديد بهيدر لوحة التفاصيل تحديداً: هيدر التطبيق صار يعرض اسم الرحلة
-  // المفتوحة في <h1> أيضاً (ورقة الرحلة)، فاسم الرحلة وحده يطابق عنوانين.
-  // هيدر اللوحة هو الوحيد الذي يعرض *معرّف* الرحلة تحت اسمها.
+  // 🆕 التحديد بهيدر المودال تحديداً: هيدر التطبيق صار يعرض اسم الرحلة المفتوحة
+  // في <h1> أيضاً (ورقة الرحلة)، فاسم الرحلة وحده يطابق عنوانين. هيدر المودال
+  // هو الوحيد الذي يعرض *معرّف* الرحلة تحت اسمها.
   await expect(
     page.locator('header').filter({ hasText: TRIP_ID }).getByRole('heading', { name: TRIP_NAME }),
   ).toBeVisible()
-  // 🆕 لا زرّ إغلاق منفصل، ولا زرّ «رجوع» عام بعد الآن — طريقة واحدة تكفي
-  // للعودة: من التفاصيل إلى القائمة، ثم الضغط على بطاقة الرحلة المفتوحة
-  // حالياً نفسها (تحمل شارة «الرحلة المفتوحة حالياً» فتُميَّز عن بطاقة «تعديل»
-  // المجاورة لها في نفس الصفّ).
-  await page.getByRole('button', { name: 'رجوع لقائمة الرحلات' }).click()
-  await tripRowInPicker(page, TRIP_ID).getByRole('button', { name: /الرحلة المفتوحة حالياً/ }).click()
+  // 🆕 إغلاق المودال بلا حذف — يعيد لنفس شاشة الرحلة (لا تنقّل، مجرّد إغلاق).
+  await page.getByRole('button', { name: 'إغلاق تعديل الرحلة' }).click()
 
   // ── يسجّل مصروفاً اختبارياً ثم يحذفه — حذفاً ليّناً كالمعتاد. هذا وحده كان
   // كافياً (المرحلة ٢ من الانحدار) لإبقاء حذف الرحلة مرفوضاً حتى بعد تفريغ
@@ -84,14 +81,21 @@ test('مسؤول يحذف مصروفاً ونفسه من مسافري رحلة �
 
   // ── إعادة المحاولة: لا مسافر نشِط ولا مصروف نشِط ولا سجلّ إيداع بعد الآن —
   // يجب أن تنجح، رغم بقاء المصروف والمسافر كمستندين في سلة المهملات. ────────
-  await openTripDetailAsAdmin(page, TRIP_ID)
+  await openTripDetailFromHeader(page)
   await page.getByRole('button', { name: 'حذف الرحلة' }).click()
   await page.getByLabel(/للتأكيد، اكتب معرّف الرحلة/).fill(TRIP_ID)
-  await page.getByRole('button', { name: 'حذف الرحلة نهائياً' }).click()
 
-  await expect(page.getByText(`تم حذف الرحلة "${TRIP_ID}"`)).toBeVisible()
-  // النجاح يعيد اللوحة لقائمة «رحلاتي» (onDeleted في TripDetailPanel) — رحلتنا
-  // اختفت منها فعلاً، لا مجرّد رسالة نجاح بلا أثر حقيقي.
+  // 🆕 حذف الرحلة *المفتوحة حالياً* يُعقبه توجيه كامل بلا `?trip=` (EditTripModal
+  // onDeleted في App.tsx — معرّفها لم يعد صالحاً). ننتظر التوجيه والضغط معاً
+  // بدل التحقّق من توست عابر قد يفوته سباق التنقّل (نمط Playwright الموصى به
+  // لأي نقرة تُطلق تنقّلاً).
+  await Promise.all([
+    page.waitForURL(url => !url.searchParams.has('trip')),
+    page.getByRole('button', { name: 'حذف الرحلة نهائياً' }).click(),
+  ])
+
+  // ⚠️ تحقّق سلبي حقيقي (القاعدة ١٨): رحلتنا اختفت فعلاً من «رحلاتي» — لا
+  // مجرّد توجيه ناجح بلا أثر حقيقي.
   await expect(page.getByRole('heading', { name: 'رحلاتي' })).toBeVisible()
   await expect(tripRowInPicker(page, TRIP_ID)).toHaveCount(0)
 })

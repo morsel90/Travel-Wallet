@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { PieChart, Loader2, Wallet, Receipt, Scale } from '../icons'
+import { PieChart, Loader2, Wallet, Receipt, Scale, Pencil } from '../icons'
 import { useHeaderCollapse } from '../hooks/useHeaderCollapse'
 import AccountMenu from './AccountMenu'
 
@@ -21,6 +21,13 @@ interface HeaderProps {
    * تأكيد الرحلة المفتوحة *قبل* تسجيل مصروف فيها معلومةً مالية لا ترفاً بصرياً.
    */
   tripName: string
+  /**
+   * 🆕 اسم الرحلة قابل للضغط لمن يملك صلاحية تعديلها (مسؤول أو منظّم هذه
+   * الرحلة تحديداً) — يفتح مودال تعديل الرحلة (EditTripModal). لتعديل رحلة
+   * أخرى: تُفتح أولاً من «رحلاتي» ثم تُعدَّل من هنا بعد أن تصبح هي المفتوحة.
+   */
+  canEditTrip: boolean
+  onEditTrip: () => void
   /** 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يمرَّر إلى AccountMenu لإخفاء
    * زرّ «تسجيل الدخول كمسؤول» عمّن لا يحتاجه أصلاً. */
   isOrganizer: boolean
@@ -72,6 +79,8 @@ const Header = ({
   isSyncing,
   isAdmin,
   tripName,
+  canEditTrip,
+  onEditTrip,
   isOrganizer,
   stats,
   onStatClick,
@@ -153,7 +162,19 @@ const Header = ({
             </div>
           ) : (
             <>
-              <h1 className="font-bold tracking-wide truncate text-xl">{tripName}</h1>
+              {canEditTrip ? (
+                <button
+                  type="button"
+                  onClick={onEditTrip}
+                  aria-label="تعديل الرحلة"
+                  className="flex items-center gap-1.5 min-w-0 group text-right"
+                >
+                  <h1 className="font-bold tracking-wide truncate text-xl group-hover:underline">{tripName}</h1>
+                  <Pencil className="w-3.5 h-3.5 text-teal-200 shrink-0" />
+                </button>
+              ) : (
+                <h1 className="font-bold tracking-wide truncate text-xl">{tripName}</h1>
+              )}
               {isSyncing && (
                 <span
                   role="status"
