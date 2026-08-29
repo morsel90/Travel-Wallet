@@ -707,8 +707,12 @@ export default function TripDetailPanel({
                   }`}>
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-bold text-slate-800 truncate flex items-center gap-1.5">
-                          {t.name}
+                        {/* ⚠️ min-w-0 على الحاوية + truncate على الاسم وحده لا الحاوية —
+                            truncate على flex container لا يُقلِّص عنصراً بعينه، فتتقاسم
+                            الشارات ثابتة العرض (shrink-0) نفس القصّ مع الاسم وتُبتَر
+                            بصرياً بدل أن تبقى كاملة (رُصد فعلياً في معاينة الموبايل). */}
+                        <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5 min-w-0">
+                          <span className="truncate">{t.name}</span>
                           {/* 🆕 شارة "منظّم" تكفي وحدها — منظّم الرحلة منضمّ إليها بداهةً،
                               فشارة "منضم" بجانبها معلومة صفرية. تظهر شارة الدور للجميع
                               (منظّم يقرأ السجلّ أيضاً)، وزرّ تغييرها أدناه للمسؤول العالمي وحده. */}
@@ -869,8 +873,8 @@ export default function TripDetailPanel({
                   >
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-bold text-slate-800 truncate flex items-center gap-1.5">
-                          {m.displayName || m.email || 'عضو بجلسة مجهولة'}
+                        <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5 min-w-0">
+                          <span className="truncate">{m.displayName || m.email || 'عضو بجلسة مجهولة'}</span>
                           <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full shrink-0">
                             بلا ملف مسافر
                           </span>
