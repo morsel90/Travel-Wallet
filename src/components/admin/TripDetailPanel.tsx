@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Building2, Route, Save, Plane, Car, Train, Bus,
   Pencil, Trash2, Plus, ArrowUp, ArrowDown, Loader2, AlertTriangle, Lock,
-  Users, UserMinus, Check, Download, ShieldCheck, Share2, Ban,
+  UserMinus, Check, Download, ShieldCheck, Share2, Ban,
   UserCheck, Link2, User,
 } from '../../icons'
 import { useTripMembers } from '../../hooks/useTripMembers'
@@ -66,12 +66,16 @@ type DetailTab = 'details' | 'itinerary' | 'members' | 'backup' | 'danger'
 // من انضمّ بحساب مقابل من له سطر في دفتر الرحلة — وربط الاثنين (نموذج الهوية
 // الهجين) كان يتطلّب القفز بينهما لمطابقة سطر بعينه يدوياً. دُمجا في تبويب
 // واحد بنفس منطق دمج «رحلاتي» مع «إدارة الرحلات»: سطر واحد لكل شخص بدل شاشتين.
+// 🆕 التبويب سُمّي «المسافرون» لا «الأعضاء والمسافرون» — كل سطر فيه مسافر
+// أصلاً (نفس المصطلح المستخدم في بقية التطبيق)، والعضوية شارة على السطر لا
+// هوية التبويب. تسمية مركّبة كانت لتضلّل أكثر مما تُوضّح: "الأعضاء" وحدها لا
+// تصدق على مسافر "شبح" لم ينضمّ بعد.
 const ALL_TABS: Array<{ key: DetailTab; label: string; Icon: typeof Building2 }> = [
-  { key: 'details',      label: 'اسم الرحلة',      Icon: Building2 },
-  { key: 'itinerary', label: 'مسار الرحلة',        Icon: Route },
-  { key: 'members',   label: 'الأعضاء والمسافرون', Icon: Users },
-  { key: 'backup',    label: 'نسخة احتياطية',      Icon: Download },
-  { key: 'danger',    label: 'حذف الرحلة',         Icon: Trash2 },
+  { key: 'details',      label: 'اسم الرحلة',   Icon: Building2 },
+  { key: 'itinerary', label: 'مسار الرحلة',     Icon: Route },
+  { key: 'members',   label: 'المسافرون',       Icon: UserCheck },
+  { key: 'backup',    label: 'نسخة احتياطية',   Icon: Download },
+  { key: 'danger',    label: 'حذف الرحلة',      Icon: Trash2 },
 ]
 
 // 🆕 منظّم الرحلة لا يرى ما ليس من صلاحياته أصلاً — لا مجرّد أزرار معطّلة.
@@ -648,7 +652,7 @@ export default function TripDetailPanel({
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
           <div>
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <Users className="w-4 h-4 text-teal-600" /> الأعضاء والمسافرون
+              <UserCheck className="w-4 h-4 text-teal-600" /> المسافرون
               {travelers && <span className="text-xs font-normal text-slate-400">({travelers.length})</span>}
             </h3>
             <p className="text-xs text-slate-500 mt-1">
