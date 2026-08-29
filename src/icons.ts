@@ -64,4 +64,5 @@ export {
   CalendarClock, // 🆕 رأس قسم «الشهر المحاسبي» (LongTermPanel)
   DoorOpen,      // 🆕 خروج منتدَب من رحلة طويلة المدى (ExitTravelerModal)
   Smartphone,    // 🆕 محفظة رقمية/رقم جوال كبديل للحساب البنكي (UserProfileModal + BankDetailsCard)
+  Archive,       // 🆕 صفّ «الرحلات المؤرشفة» القابل للطي في «رحلاتي» (نمط واتساب)
 } from 'lucide-react'

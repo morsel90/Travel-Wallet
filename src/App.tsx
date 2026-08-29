@@ -94,6 +94,7 @@ export default function App() {
     screen = (
       <TripPicker
         trips={picker.trips}
+        archivedTrips={picker.archivedTrips}
         loading={picker.loading}
         error={picker.error}
         currentTripId={HAS_EXPLICIT_TRIP_ID && session.hasAccess ? TRIP_ID : undefined}
@@ -154,9 +155,13 @@ export default function App() {
                 totalRemaining: ledger.totalRemaining,
               }}
               isOnline={session.isOnline}
-              // زر التبديل يظهر متى وُجدت رحلة أخرى غير المفتوحة حالياً، أو
-              // للمسؤول دائماً (يتصفّح كل الرحلات ويُنشئ/يستعيد من «رحلاتي»).
-              onShowMyTrips={picker.trips.length > 1 || session.isAdmin ? picker.show : undefined}
+              // زر التبديل يظهر متى وُجدت رحلة أخرى غير المفتوحة حالياً (نشطة
+              // أو مؤرشفة)، أو للمسؤول دائماً (يتصفّح كل الرحلات ويُنشئ/يستعيد
+              // من «رحلاتي»).
+              onShowMyTrips={
+                picker.trips.length > 1 || picker.archivedTrips.length > 0 || session.isAdmin
+                  ? picker.show : undefined
+              }
               onShowProfile={modals.openUserProfile}
               onAdminSignIn={admin.openAdminSignIn}
               onSignOut={admin.handleAdminSignOut}

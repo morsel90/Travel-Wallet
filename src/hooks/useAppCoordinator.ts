@@ -278,16 +278,27 @@ export function useAppCoordinator() {
   // 🆕 المسؤول يرى كل الرحلات (استعلام القائمة يرضيه isAdmin وحده)، والعضو
   // العادي يرى ما انضم له فقط. بدون هذا التفريق كانت الشاشة تختفي عن المسؤول
   // تماماً: هو يتجاوز رمز الرحلة أصلاً فقد لا يملك خريطة trips في توكنه إطلاقاً.
-  // 🆕 المؤرشفة تُخفى من القائمة — هذا هو الفرق العملي الوحيد بينها وبين
-  // المنتهية. تبقى الرحلة المفتوحة حالياً ظاهرة دائماً ولو كانت مؤرشفة، وإلا
-  // اختفت من تحت المستخدم بينما هو داخلها.
+  //
+  // 🆕 المؤرشفة تُطوى في قسم منفصل قابل للفتح — نمط «الدردشات المؤرشفة» في
+  // واتساب: لا تختفي نهائياً (كانت كذلك سابقاً، فلا سبيل للوصول لرحلة مؤرشفة
+  // لا تملك رابطها المباشر) ولا تزدحم مع القائمة النشطة يومياً. تبقى الرحلة
+  // المفتوحة حالياً في القائمة الرئيسية دائماً ولو كانت مؤرشفة، وإلا اختفت من
+  // تحت المستخدم بينما هو داخلها.
   //
   // ⚠️ للتنقّل المحض فقط (فتح/إنشاء/استعادة) — لا تعديل من هنا. تعديل أي رحلة
   // يمرّ عبر اسمها في الهيدر بعد فتحها (انظر tripEdit أدناه).
-  const pickerTrips = useMemo(() => {
-    const source = isAdmin ? trips.map(t => ({ id: t.id, name: t.name, status: t.status })) : myTrips
-    return source.filter(t => t.status !== 'archived' || t.id === TRIP_ID)
-  }, [isAdmin, trips, myTrips])
+  const pickerAllTrips = useMemo(
+    () => (isAdmin ? trips.map(t => ({ id: t.id, name: t.name, status: t.status })) : myTrips),
+    [isAdmin, trips, myTrips],
+  )
+  const pickerTrips = useMemo(
+    () => pickerAllTrips.filter(t => t.status !== 'archived' || t.id === TRIP_ID),
+    [pickerAllTrips],
+  )
+  const archivedTrips = useMemo(
+    () => pickerAllTrips.filter(t => t.status === 'archived' && t.id !== TRIP_ID),
+    [pickerAllTrips],
+  )
   const pickerLoading = isAdmin ? tripsLoading : myTripsLoading
   const pickerError   = isAdmin ? tripsError   : myTripsError
 
@@ -402,7 +413,7 @@ export function useAppCoordinator() {
     },
     /** شاشة «رحلاتي» — تنقّل بحت (فتح/إنشاء/استعادة)، بلا تعديل من القائمة. */
     picker: {
-      trips: pickerTrips, loading: pickerLoading, error: pickerError,
+      trips: pickerTrips, archivedTrips, loading: pickerLoading, error: pickerError,
       isVisible: isPickerVisible,
       show: () => setShowTripPicker(true),
       // 🆕 الإنشاء الذاتي (نموذج واتساب) — أي مستخدم مسجّل دخوله، لا المسؤول

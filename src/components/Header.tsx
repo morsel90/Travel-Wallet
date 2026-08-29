@@ -22,9 +22,12 @@ interface HeaderProps {
    */
   tripName: string
   /**
-   * 🆕 اسم الرحلة قابل للضغط لمن يملك صلاحية تعديلها (مسؤول أو منظّم هذه
-   * الرحلة تحديداً) — يفتح مودال تعديل الرحلة (EditTripModal). لتعديل رحلة
-   * أخرى: تُفتح أولاً من «رحلاتي» ثم تُعدَّل من هنا بعد أن تصبح هي المفتوحة.
+   * 🆕 زرّ تعديل الرحلة (أيقونة قلم مستقلة، لا اسم الرحلة نفسه) يظهر لمن يملك
+   * صلاحية تعديلها (مسؤول أو منظّم هذه الرحلة تحديداً) — يفتح مودال تعديل
+   * الرحلة (EditTripModal). ثابت بصرف النظر عن تقلّص الهيدر عمداً: اسم الرحلة
+   * يختفي عند التمرير لأسفل (يستبدله ملخّص الإحصاءات)، فربط التعديل به وحده
+   * كان يفقد القدرة على التعديل أثناء تصفّح سجلّ طويل. لتعديل رحلة أخرى: تُفتح
+   * أولاً من «رحلاتي» ثم تُعدَّل من هنا بعد أن تصبح هي المفتوحة.
    */
   canEditTrip: boolean
   onEditTrip: () => void
@@ -162,19 +165,7 @@ const Header = ({
             </div>
           ) : (
             <>
-              {canEditTrip ? (
-                <button
-                  type="button"
-                  onClick={onEditTrip}
-                  aria-label="تعديل الرحلة"
-                  className="flex items-center gap-1.5 min-w-0 group text-right"
-                >
-                  <h1 className="font-bold tracking-wide truncate text-xl group-hover:underline">{tripName}</h1>
-                  <Pencil className="w-3.5 h-3.5 text-teal-200 shrink-0" />
-                </button>
-              ) : (
-                <h1 className="font-bold tracking-wide truncate text-xl">{tripName}</h1>
-              )}
+              <h1 className="font-bold tracking-wide truncate text-xl">{tripName}</h1>
               {isSyncing && (
                 <span
                   role="status"
@@ -187,6 +178,21 @@ const Header = ({
             </>
           )}
         </div>
+
+        {/* 🆕 زرّ تعديل الرحلة — أيقونة ثابتة بصرف النظر عن تقلّص الهيدر (لا
+            يظهر داخل اسم الرحلة نفسه، الذي يختفي عند التمرير لأسفل)، حتى لا
+            تُفقَد القدرة على التعديل أثناء تصفّح سجلّ مصاريف طويل. */}
+        {canEditTrip && (
+          <button
+            type="button"
+            onClick={onEditTrip}
+            aria-label="تعديل الرحلة"
+            title="تعديل الرحلة"
+            className="flex items-center justify-center bg-teal-800/60 hover:bg-teal-800 text-teal-50 p-2 rounded-xl transition-colors shrink-0"
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
+        )}
 
         <AccountMenu
           displayName={displayName}

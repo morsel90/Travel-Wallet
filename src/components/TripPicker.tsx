@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState } from 'react'
 import {
-  Luggage, ChevronLeft, Loader2, AlertTriangle, PieChart, Plus, User, Upload,
+  Luggage, ChevronLeft, ChevronDown, Loader2, AlertTriangle, PieChart, Plus, User, Upload, Archive,
 } from '../icons'
 import type { MyTrip } from '../hooks/useMyTrips'
 import { TRIP_STATUS_LABEL } from '../types'
@@ -47,6 +47,12 @@ const LazyFallback = () => (
 
 interface TripPickerProps {
   trips: MyTrip[]
+  /**
+   * 🆕 مؤرشفة، بلا الرحلة المفتوحة حالياً (تلك تبقى في `trips` دائماً) — تُطوى
+   * خلف صفّ "الرحلات المؤرشفة" القابل للفتح، نمط «الدردشات المؤرشفة» في
+   * واتساب: لا تختفي نهائياً، لكنها لا تزدحم مع القائمة النشطة.
+   */
+  archivedTrips: MyTrip[]
   loading: boolean
   error: string | null
   /**
@@ -73,11 +79,12 @@ interface TripPickerProps {
 }
 
 const TripPicker = ({
-  trips, loading, error, currentTripId,
+  trips, archivedTrips, loading, error, currentTripId,
   onCreateTrip, isCreatingTrip, onShowProfile,
   isAdmin, isSaving, onRestoreTrip,
 }: TripPickerProps) => {
   const [isCreating, setIsCreating] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
   // 🆕 الإنشاء والاستعادة تبويبان لنفس الشاشة لا زرّان منفصلان في الهيدر —
   // كلاهما ينتج رحلة جديدة بمعرّف، والفرق فقط مصدر بياناتها. تبويب الاستعادة
   // يظهر للمسؤول وحده (isAdmin أدناه)، فعضو عادي لا يرى تبديلاً أصلاً.
@@ -97,6 +104,52 @@ const TripPicker = ({
     const ok = await onCreateTrip(tripId, name)
     if (ok) openTrip(tripId)
     return ok
+  }
+
+  // 🆕 صفّ رحلة واحد — دالة مشتركة بين القائمة النشطة والمؤرشفة (نفس الشكل
+  // بالضبط)، بدل تكرار الـJSX في مكانين.
+  const renderTripRow = (trip: MyTrip) => {
+    const isCurrent = trip.id === currentTripId
+    return (
+      <li key={trip.id}>
+        <button
+          type="button"
+          onClick={() => openTrip(trip.id)}
+          className={`w-full bg-white rounded-2xl border p-4 flex items-center gap-3.5 text-right transition-all shadow-sm hover:shadow-md active:scale-[0.99] ${
+            isCurrent ? 'border-teal-300 ring-1 ring-teal-100' : 'border-slate-200 hover:border-teal-300'
+          }`}
+        >
+          <span className="w-11 h-11 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+            {trip.name.trim()[0] ?? '؟'}
+          </span>
+
+          <span className="min-w-0 flex-1">
+            <span className="block font-bold text-slate-800 truncate leading-tight">
+              {trip.name}
+            </span>
+            {/* 🆕 المعرّف يظهر للمسؤول فقط — يتصفّح كل رحلات النظام وقد
+                تتشابه أسماؤها، بخلاف عضو عادي يرى رحلاته القليلة المعروفة
+                له أصلاً بالاسم وحده. */}
+            {isAdmin && (
+              <span className="block text-[11px] text-slate-400 truncate" dir="ltr">{trip.id}</span>
+            )}
+            <span className="flex items-center gap-1.5 mt-0.5">
+              {isCurrent && (
+                <span className="text-[11px] font-bold text-teal-600">الرحلة المفتوحة حالياً</span>
+              )}
+              {/* الحالة تُعرض فقط حين تكون غير نشطة — لا فائدة من وسم كل رحلة عادية */}
+              {trip.status !== 'active' && (
+                <span className="text-[11px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-md">
+                  {TRIP_STATUS_LABEL[trip.status]}
+                </span>
+              )}
+            </span>
+          </span>
+
+          <ChevronLeft className="w-5 h-5 text-slate-300 shrink-0" />
+        </button>
+      </li>
+    )
   }
 
   return (
@@ -189,7 +242,7 @@ const TripPicker = ({
             <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
             {error}
           </div>
-        ) : trips.length === 0 ? (
+        ) : trips.length === 0 && archivedTrips.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center">
             <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
               <Luggage className="w-7 h-7 text-slate-400" />
@@ -208,51 +261,42 @@ const TripPicker = ({
             </button>
           </div>
         ) : (
-          <ul className="space-y-2.5">
-            {trips.map(trip => {
-              const isCurrent = trip.id === currentTripId
-              return (
-                <li key={trip.id}>
-                  <button
-                    type="button"
-                    onClick={() => openTrip(trip.id)}
-                    className={`w-full bg-white rounded-2xl border p-4 flex items-center gap-3.5 text-right transition-all shadow-sm hover:shadow-md active:scale-[0.99] ${
-                      isCurrent ? 'border-teal-300 ring-1 ring-teal-100' : 'border-slate-200 hover:border-teal-300'
-                    }`}
-                  >
-                    <span className="w-11 h-11 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
-                      {trip.name.trim()[0] ?? '؟'}
-                    </span>
+          <>
+            {trips.length > 0 && (
+              <ul className="space-y-2.5">
+                {trips.map(renderTripRow)}
+              </ul>
+            )}
 
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-bold text-slate-800 truncate leading-tight">
-                        {trip.name}
-                      </span>
-                      {/* 🆕 المعرّف يظهر للمسؤول فقط — يتصفّح كل رحلات النظام
-                          وقد تتشابه أسماؤها، بخلاف عضو عادي يرى رحلاته القليلة
-                          المعروفة له أصلاً بالاسم وحده. */}
-                      {isAdmin && (
-                        <span className="block text-[11px] text-slate-400 truncate" dir="ltr">{trip.id}</span>
-                      )}
-                      <span className="flex items-center gap-1.5 mt-0.5">
-                        {isCurrent && (
-                          <span className="text-[11px] font-bold text-teal-600">الرحلة المفتوحة حالياً</span>
-                        )}
-                        {/* الحالة تُعرض فقط حين تكون غير نشطة — لا فائدة من وسم كل رحلة عادية */}
-                        {trip.status !== 'active' && (
-                          <span className="text-[11px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-md">
-                            {TRIP_STATUS_LABEL[trip.status]}
-                          </span>
-                        )}
-                      </span>
-                    </span>
+            {/* 🆕 صفّ «الرحلات المؤرشفة» القابل للطي — نمط واتساب: صفّ واحد
+                يحمل العدد، والضغط عليه يفتح القائمة نفسها أسفله بدل شاشة
+                منفصلة (قائمتنا أصلاً قصيرة، فلا تستحق تنقّلاً كاملاً). */}
+            {archivedTrips.length > 0 && (
+              <div className={trips.length > 0 ? 'mt-2.5' : ''}>
+                <button
+                  type="button"
+                  onClick={() => { haptic.light(); setShowArchived(v => !v) }}
+                  aria-expanded={showArchived}
+                  className="w-full bg-white rounded-2xl border border-slate-200 p-4 flex items-center gap-3.5 text-right transition-colors hover:border-teal-300"
+                >
+                  <span className="w-11 h-11 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
+                    <Archive className="w-5 h-5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-bold text-slate-800">الرحلات المؤرشفة</span>
+                    <span className="block text-[11px] text-slate-400 mt-0.5">{archivedTrips.length}</span>
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${showArchived ? 'rotate-180' : ''}`} />
+                </button>
 
-                    <ChevronLeft className="w-5 h-5 text-slate-300 shrink-0" />
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
+                {showArchived && (
+                  <ul className="space-y-2.5 mt-2.5">
+                    {archivedTrips.map(renderTripRow)}
+                  </ul>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {!isCreating && !loading && !error && trips.length > 0 && (
