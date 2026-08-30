@@ -46,6 +46,7 @@ function mkUser(claims: Record<string, unknown>) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  window.localStorage.clear()
   // 🆕 لا محاولة إعادة توجيه معلَّقة في الحالة الافتراضية لكل اختبار.
   mocks.getRedirectResult.mockResolvedValue(null)
   // onAuthStateChanged الحقيقية تُعيد دالة إلغاء اشتراك دائماً — الـ hook يستدعيها
@@ -62,8 +63,8 @@ afterEach(() => {
  * يستخرج دالة الاستماع المُسجَّلة عبر onAuthStateChanged ويستدعيها بمستخدم
  * معيّن ضمن act، وينتظر اكتمال كل ما بداخل الـ hook من await.
  */
-async function fireAuthChange(user: unknown) {
-  const callback = mocks.onAuthStateChanged.mock.calls[0][1]
+async function fireAuthChange(user: unknown, callIndex = 0) {
+  const callback = mocks.onAuthStateChanged.mock.calls[callIndex][1]
   await act(async () => {
     await callback(user)
   })
@@ -127,6 +128,38 @@ describe('useAuth', () => {
 
       expect(result.current.authLoading).toBe(false)
       expect(result.current.user).toBe(user)
+    })
+
+    // 🐛 هذا بالضبط ما كان يُظهر شاشة «رحلاتي» بحالة "لم تنضم لأي رحلة بعد"
+    // خطأً لمستخدم منضمّ فعلاً: فشل تحديث التوكن بلا كاش محلي كان يترك
+    // joinedTripIds على افتراضيها الفارغ بصمت.
+    it('فشل تحديث التوكن بلا أي كاش محلي سابق يبقي isAdmin/joinedTripIds على الافتراضي الفارغ', async () => {
+      const { result } = renderHook(() => useAuth())
+      const user = mkUser({})
+      user.getIdTokenResult.mockRejectedValue(authError('auth/network-request-failed'))
+
+      await fireAuthChange(user)
+
+      expect(result.current.isAdmin).toBe(false)
+      expect(result.current.joinedTripIds).toEqual([])
+    })
+
+    it('فشل تحديث التوكن مع وجود كاش محلي من مزامنة سابقة ناجحة يستعيد آخر isAdmin/joinedTripIds بدل الفارغ', async () => {
+      // جلسة أولى ناجحة (متصلة) تكتب الكاش المحلي لهذا المستخدم
+      const { unmount: unmount1 } = renderHook(() => useAuth())
+      const onlineUser = mkUser({ admin: true, trips: { [TRIP_ID]: true } })
+      await fireAuthChange(onlineUser, 0)
+      unmount1()
+
+      // جلسة ثانية لاحقة (مثلاً بعد إغلاق التطبيق) لنفس المستخدم، لكن بلا اتصال
+      const { result: result2 } = renderHook(() => useAuth())
+      const offlineUser = mkUser({})
+      offlineUser.uid = onlineUser.uid
+      offlineUser.getIdTokenResult.mockRejectedValue(authError('auth/network-request-failed'))
+      await fireAuthChange(offlineUser, 1)
+
+      expect(result2.current.isAdmin).toBe(true)
+      expect(result2.current.joinedTripIds).toEqual([TRIP_ID])
     })
 
     it('عودة الاتصال (حدث online) تُعيد محاولة المزامنة تلقائياً دون إعادة تحميل الصفحة', async () => {

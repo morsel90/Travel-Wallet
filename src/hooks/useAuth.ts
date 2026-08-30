@@ -21,6 +21,42 @@ function readTripsClaim(claims: Record<string, unknown>): Record<string, boolean
   return trips as Record<string, boolean>
 }
 
+// 🆕 آخر isAdmin/joinedTripIds معروفة لكل مستخدم — تُقرأ فقط حين يفشل تحديث
+// التوكن (بلا اتصال) بدل ترك الحالة على الافتراضي الفارغ، الذي كان يجعل شاشة
+// «رحلاتي» تعرض "لم تنضم لأي رحلة بعد" بالخطأ لمستخدم منضمّ فعلاً لرحلات —
+// راجع نمط travelapp_onboarding_dismissed_v1 في OnboardingBanner.tsx. لا علاقة
+// لهذا الكاش بصلاحيات الوصول الفعلية (تلك محسومة خادمياً من التوكن الحقيقي عبر
+// firestore.rules)، فهو عرض بصري فقط قد يُصبح قديماً حتى تعود المزامنة الحقيقية.
+const CLAIMS_CACHE_PREFIX = 'travelapp_claims_cache_v1_'
+
+interface CachedClaims { isAdmin: boolean; joinedTripIds: string[] }
+
+function readCachedClaims(uid: string): CachedClaims | null {
+  try {
+    const raw = window.localStorage.getItem(CLAIMS_CACHE_PREFIX + uid)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) return null
+    const { isAdmin, joinedTripIds } = parsed as Record<string, unknown>
+    if (!Array.isArray(joinedTripIds)) return null
+    return {
+      isAdmin: isAdmin === true,
+      joinedTripIds: joinedTripIds.filter((id): id is string => typeof id === 'string'),
+    }
+  } catch {
+    return null
+  }
+}
+
+function writeCachedClaims(uid: string, claims: CachedClaims): void {
+  try {
+    window.localStorage.setItem(CLAIMS_CACHE_PREFIX + uid, JSON.stringify(claims))
+  } catch {
+    // localStorage قد يكون ممتلئاً أو معطلاً (وضع خاص) — هذا الكاش تحسين عرض
+    // بحت، لا يستحق كسر تسجيل الدخول لأجله.
+  }
+}
+
 // ⚠️ رموز بيئة غير متوافقة مع النافذة المنبثقة (webview داخل واتساب/تيليجرام
 // غالباً) — هنا وحدها نتراجع لـ signInWithRedirect. لا نتراجع عند إلغاء
 // المستخدم نفسه (auth/popup-closed-by-user وما شابه)، فتلك ليست بيئة معطوبة
@@ -88,13 +124,22 @@ export function useAuth(): UseAuth {
     const syncClaims = async (u: User) => {
       try {
         const tokenResult = await u.getIdTokenResult()
-        setIsAdmin(tokenResult.claims.admin === true)
+        const admin = tokenResult.claims.admin === true
         const trips = readTripsClaim(tokenResult.claims)
-        setJoinedTripIds(Object.keys(trips).filter(id => trips[id] === true))
+        const tripIds = Object.keys(trips).filter(id => trips[id] === true)
+        setIsAdmin(admin)
+        setJoinedTripIds(tripIds)
+        writeCachedClaims(u.uid, { isAdmin: admin, joinedTripIds: tripIds })
       } catch {
-        // غالباً انقطاع شبكة أثناء تحديث التوكن — نُبقي آخر قيم معروفة (أو
-        // الافتراضية عند أول تحميل) ونُكمل بدل تعليق الشاشة؛ محاولة onlineRetry
-        // أدناه ستُعيد المزامنة فور عودة الاتصال.
+        // غالباً انقطاع شبكة أثناء تحديث التوكن — بلا هذا السقوط للكاش المحلي
+        // كانت الحالة تبقى على افتراضيها الفارغ عند أول تحميل، فتعرض شاشة
+        // «رحلاتي» "لم تنضم لأي رحلة بعد" رغم انضمامه فعلاً؛ محاولة onlineRetry
+        // أدناه ستُعيد المزامنة الحقيقية فور عودة الاتصال.
+        const cached = readCachedClaims(u.uid)
+        if (cached) {
+          setIsAdmin(cached.isAdmin)
+          setJoinedTripIds(cached.joinedTripIds)
+        }
       } finally {
         setAuthLoading(false)
       }
