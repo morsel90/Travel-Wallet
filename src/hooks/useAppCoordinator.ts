@@ -354,6 +354,20 @@ export function useAppCoordinator() {
     return onIdle(() => preloadAll(LAZY_IMPORTERS))
   }, [hasAccess])
 
+  // 🐛 دفعة تمرير اصطناعية (تمرير بكسل واحد ثم رجوع) عند إقلاع التطبيق —
+  // تلافياً لعلة معروفة في iOS Safari (وضع PWA standalone تحديداً): قيمة
+  // env(safe-area-inset-top) لا تُحتسَب بشكل صحيح عند أول رسم للصفحة، وتبقى
+  // صفراً حتى يقع أول تمرير حقيقي. أي شاشة قصيرة بما يكفي لألا تحتاج تمريراً
+  // (TripPicker بقائمة رحلتين مثلاً) تبقى حشوتها العلوية صفراً للأبد فيتداخل
+  // هيدرها مع شريط الحالة/الشقّ (notch) — بخلاف شاشة طويلة (التطبيق الكامل
+  // بمصاريفه) يُمرّرها المستخدم عفواً فتُصحَّح صدفة، وهو بالضبط الفرق الذي
+  // لوحظ بين الشاشتين. غير ضار على شاشة غير قابلة للتمرير (scrollTo لا يُحدث
+  // شيئاً مرئياً حين لا تفيض الصفحة) ولا على أجهزة غير iOS.
+  useEffect(() => {
+    window.scrollTo(0, 1)
+    requestAnimationFrame(() => window.scrollTo(0, 0))
+  }, [])
+
   return {
     /** 🆕 رابط دعوة بنقرة واحدة — App.tsx يعرض InviteJoinScreen طالما 'joining' أو 'needsName'. */
     invite: inviteJoin,
