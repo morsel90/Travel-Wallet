@@ -172,7 +172,9 @@ const TripPicker = ({
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      <header className="bg-teal-700 text-white shadow-md">
+      {/* pt-[env(safe-area-inset-top)] كما في Header.tsx — بلا هذا الحشو تتداخل
+          خلفية الهيدر مع شريط الحالة/الشقّ (notch) على iOS بدل تمديدها تحته. */}
+      <header className="bg-teal-700 text-white shadow-md pt-[env(safe-area-inset-top)]">
         <div className="max-w-md mx-auto px-5 py-4 flex items-center gap-2.5">
           <PieChart className="w-6 h-6 text-teal-100 shrink-0" />
           <h1 className="font-bold text-lg flex-1">رحلاتي</h1>
