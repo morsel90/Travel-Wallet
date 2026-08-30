@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import { PieChart, Loader2, Wallet, Receipt, Scale } from '../icons'
 import { useHeaderCollapse } from '../hooks/useHeaderCollapse'
+import { useIosSafeAreaFix } from '../hooks/useIosSafeAreaFix'
 import AccountMenu from './AccountMenu'
 
 export interface HeaderStats {
@@ -97,6 +98,7 @@ const Header = ({
   onSignOut,
 }: HeaderProps) => {
   const isCollapsed = useHeaderCollapse()
+  useIosSafeAreaFix()
 
   const renderPills = (compact: boolean) =>
     STAT_ITEMS(stats as HeaderStats).map(({ key, Icon, value, tone }) => (

@@ -6,6 +6,7 @@ import type { MyTrip } from '../hooks/useMyTrips'
 import { TRIP_STATUS_LABEL } from '../types'
 import { tripUrl } from '../utils/tripId'
 import { haptic } from '../utils/haptics'
+import { useIosSafeAreaFix } from '../hooks/useIosSafeAreaFix'
 import NewTripForm from './admin/NewTripForm'
 
 // 🆕 استعادة نسخة احتياطية (تبويب داخل شاشة الإنشاء، للمسؤول وحده) — لا تلمسها
@@ -98,6 +99,7 @@ const TripPicker = ({
 }: TripPickerProps) => {
   const [isCreating, setIsCreating] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
+  useIosSafeAreaFix()
   // 🆕 الإنشاء والاستعادة تبويبان لنفس الشاشة لا زرّان منفصلان في الهيدر —
   // كلاهما ينتج رحلة جديدة بمعرّف، والفرق فقط مصدر بياناتها. تبويب الاستعادة
   // يظهر للمسؤول وحده (isAdmin أدناه)، فعضو عادي لا يرى تبديلاً أصلاً.
