@@ -80,7 +80,27 @@ export function useAuth(): UseAuth {
   const [isSigningIn, setIsSigningIn] = useState(false)
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
+    // 🐛 u.getIdTokenResult() يحاول تحديث التوكن عبر الشبكة إن كانت النسخة
+    // المحفوظة منتهية الصلاحية — إن لم يكن هناك اتصال، يرفض الوعد (reject) بدل
+    // أن يُعلَّق (hang)، لكن بلا try/catch هنا كان الرفض يمنع setAuthLoading(false)
+    // من التنفيذ أبداً فتبقى شاشة "جارٍ التحقق من جلستك..." للأبد. وبما أنه لا
+    // مستمع لعودة الاتصال، فحتى عودة الشبكة لا تُصلح شيئاً دون تحديث الصفحة يدوياً.
+    const syncClaims = async (u: User) => {
+      try {
+        const tokenResult = await u.getIdTokenResult()
+        setIsAdmin(tokenResult.claims.admin === true)
+        const trips = readTripsClaim(tokenResult.claims)
+        setJoinedTripIds(Object.keys(trips).filter(id => trips[id] === true))
+      } catch {
+        // غالباً انقطاع شبكة أثناء تحديث التوكن — نُبقي آخر قيم معروفة (أو
+        // الافتراضية عند أول تحميل) ونُكمل بدل تعليق الشاشة؛ محاولة onlineRetry
+        // أدناه ستُعيد المزامنة فور عودة الاتصال.
+      } finally {
+        setAuthLoading(false)
+      }
+    }
+
+    const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u)
 
       if (!u) {
@@ -90,15 +110,18 @@ export function useAuth(): UseAuth {
         return
       }
 
-      const tokenResult = await u.getIdTokenResult()
-      setIsAdmin(tokenResult.claims.admin === true)
-
-      const trips = readTripsClaim(tokenResult.claims)
-      setJoinedTripIds(Object.keys(trips).filter(id => trips[id] === true))
-
-      setAuthLoading(false)
+      void syncClaims(u)
     })
-    return unsub
+
+    const onlineRetry = () => {
+      if (auth.currentUser) void syncClaims(auth.currentUser)
+    }
+    window.addEventListener('online', onlineRetry)
+
+    return () => {
+      unsub()
+      window.removeEventListener('online', onlineRetry)
+    }
   }, [])
 
   // 🆕 يُكمل تسجيل الدخول بعد العودة من signInWithRedirect (مسار المتصفحات

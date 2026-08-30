@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useAuth } from './useAuth'
+import { auth } from '../firebase'
 
 // firebase/auth واجهة الاتصال الحقيقية بالخادم — نستبدلها بالكامل حتى لا يحدث
 // أي اتصال شبكة فعلي، ونتحكم يدوياً بمتى ينطلق onAuthStateChanged وبأي مستخدم،
@@ -47,6 +48,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   // 🆕 لا محاولة إعادة توجيه معلَّقة في الحالة الافتراضية لكل اختبار.
   mocks.getRedirectResult.mockResolvedValue(null)
+  // onAuthStateChanged الحقيقية تُعيد دالة إلغاء اشتراك دائماً — الـ hook يستدعيها
+  // عند التفكيك، فلا بد أن يعكس الموك ذلك بدل إعادة undefined.
+  mocks.onAuthStateChanged.mockReturnValue(() => {})
 })
 
 afterEach(() => {
@@ -106,6 +110,57 @@ describe('useAuth', () => {
       await fireAuthChange(null)
       expect(result.current.isAdmin).toBe(false)
       expect(result.current.joinedTripIds).toEqual([])
+    })
+  })
+
+  describe('انقطاع الشبكة أثناء استعادة الجلسة', () => {
+    afterEach(() => {
+      ;(auth as { currentUser: unknown }).currentUser = null
+    })
+
+    it('فشل تحديث التوكن (بلا اتصال) لا يُبقي الشاشة عالقة في التحميل', async () => {
+      const { result } = renderHook(() => useAuth())
+      const user = mkUser({})
+      user.getIdTokenResult.mockRejectedValue(authError('auth/network-request-failed'))
+
+      await fireAuthChange(user)
+
+      expect(result.current.authLoading).toBe(false)
+      expect(result.current.user).toBe(user)
+    })
+
+    it('عودة الاتصال (حدث online) تُعيد محاولة المزامنة تلقائياً دون إعادة تحميل الصفحة', async () => {
+      const { result } = renderHook(() => useAuth())
+      const user = mkUser({})
+      user.getIdTokenResult.mockRejectedValueOnce(authError('auth/network-request-failed'))
+
+      await fireAuthChange(user)
+      expect(result.current.authLoading).toBe(false)
+      expect(result.current.isAdmin).toBe(false)
+
+      user.getIdTokenResult.mockResolvedValueOnce({ claims: { admin: true, trips: { [TRIP_ID]: true } } })
+      ;(auth as { currentUser: unknown }).currentUser = user
+
+      await act(async () => {
+        window.dispatchEvent(new Event('online'))
+        await Promise.resolve()
+      })
+
+      expect(result.current.isAdmin).toBe(true)
+      expect(result.current.joinedTripIds).toEqual([TRIP_ID])
+    })
+
+    it('حدث online بلا مستخدم حالي (auth.currentUser فارغ) لا يفعل شيئاً', async () => {
+      const { result } = renderHook(() => useAuth())
+      await fireAuthChange(null)
+
+      await act(async () => {
+        window.dispatchEvent(new Event('online'))
+        await Promise.resolve()
+      })
+
+      expect(result.current.user).toBeNull()
+      expect(result.current.authLoading).toBe(false)
     })
   })
 
