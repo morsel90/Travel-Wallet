@@ -16,11 +16,21 @@ import { useEffect } from 'react'
 // هيدره (Header.tsx وTripPicker.tsx)، ليُحاكي التمرير عند كل تركيب (mount) —
 // لا مرة واحدة فقط عند إقلاع التطبيق.
 //
-// غير ضار على شاشة غير قابلة للتمرير أصلاً (scrollTo لا يُحدث شيئاً مرئياً
-// حين لا تفيض الصفحة) ولا على أجهزة غير iOS.
+// 🐛 محاولة أولى بلا هذا الحشو فشلت تحديداً على TripPicker: window.scrollTo
+// لا يُحرِّك شيئاً إن كانت الصفحة لا تفيض عن الشاشة أصلاً (قائمة برحلتين تكفيها
+// شاشة واحدة بلا تمرير) — فالتمرير المُحاكى كان بلا أثر تماماً هناك، بخلاف
+// شاشة التطبيق الكامل الطويلة حيث يُحرِّك شيئاً فعلاً. لذا نفرض حشوة سفلية
+// اصطناعية مؤقتة على body تضمن وجود ما يُمرَّر إليه دائماً، بصرف النظر عن طول
+// محتوى الشاشة الحالية، ثم نُزيلها فور اكتمال المحاكاة.
 export function useIosSafeAreaFix(): void {
   useEffect(() => {
+    const originalMinHeight = document.body.style.minHeight
+    document.body.style.minHeight = 'calc(100vh + 1px)'
+
     window.scrollTo(0, 1)
-    requestAnimationFrame(() => window.scrollTo(0, 0))
+    requestAnimationFrame(() => {
+      window.scrollTo(0, 0)
+      document.body.style.minHeight = originalMinHeight
+    })
   }, [])
 }
