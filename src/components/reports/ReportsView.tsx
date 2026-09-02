@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 // تمت إعادة استيراد أيقونة Printer
-import { X, Download, Printer, BarChart3, Users, TrendingUp, Wallet, Receipt, Scale, ArrowRightLeft, CalendarRange } from '../../icons'
+import { X, Download, Printer, BarChart3, Users, TrendingUp, Wallet, Receipt, Scale, ArrowRightLeft } from '../../icons'
 import type { Expense, Traveler, TravelerBalance, Settlement, CategoryTotal, ItinerarySegment, PeriodKey } from '../../types'
 import { buildDailySummary, buildPeriodTravelerSummaries } from '../../utils/reportData'
 import { exportTripToExcel } from '../../utils/reports'
@@ -11,6 +11,7 @@ import { filterCycleExpenses } from '../../utils/longTerm'
 import { formatPeriodLabel } from '../../utils/period'
 import { PrintableTripReport } from './PrintDocs'
 import { ItinerarySection } from '../ItinerarySection'
+import { PeriodSelect, ALL_PERIODS, type PeriodFilter } from '../longterm/PeriodSelect'
 
 interface ReportsViewProps {
   travelers: Traveler[]
@@ -37,9 +38,6 @@ const TABS: Array<{ key: ReportTab; label: string; Icon: typeof BarChart3 }> = [
   { key: 'summary',   label: 'ملخص الرحلة',  Icon: BarChart3 },
   { key: 'daily',     label: 'الملخص اليومي', Icon: TrendingUp },
 ]
-
-const ALL_PERIODS = 'all' as const
-type PeriodFilter = PeriodKey | typeof ALL_PERIODS
 
 const fmt = (n: number): string => n.toFixed(2)
 
@@ -182,18 +180,8 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
         {/* 🆕 مُصفّي الدورة — الرحلة الطويلة فقط (periods). يؤثّر في التبويبين
             معاً، ولذا يعيش هنا في الهيدر الثابت لا داخل تبويب واحد. */}
         {periods && periods.length > 0 && (
-          <div className="max-w-4xl mx-auto px-4 pb-3 flex items-center gap-2">
-            <CalendarRange className="w-4 h-4 text-teal-200 shrink-0" />
-            <select
-              value={selectedPeriod}
-              onChange={e => setSelectedPeriod(e.target.value as PeriodFilter)}
-              className="flex-1 sm:flex-none bg-teal-800/60 text-teal-50 text-xs font-bold rounded-xl px-3 py-2 border-none outline-none focus:ring-2 focus:ring-teal-400"
-            >
-              <option value={ALL_PERIODS}>جميع الفترات</option>
-              {[...periods].reverse().map(p => (
-                <option key={p} value={p}>دورة {formatPeriodLabel(p)}</option>
-              ))}
-            </select>
+          <div className="max-w-4xl mx-auto px-4 pb-3">
+            <PeriodSelect periods={periods} value={selectedPeriod} onChange={setSelectedPeriod} />
           </div>
         )}
       </header>

@@ -144,21 +144,25 @@ test('إغلاق الشهر يُرحّل الأرصدة دون أن يغيّر �
   const reportsHeader = screen.getByRole('banner').filter({ hasText: 'تقارير الرحلة' })
   await expect(reportsHeader).toBeVisible()
 
-  // ⚠️ combobox داخل هيدر التقارير تحديداً — لا مُرتِّب سجلّ المصاريف
-  // (#expenses-section له combobox خاص به بنفس الدور، فبلا هذا النطاق يقع
-  // strict-mode violation).
-  const periodSelect = reportsHeader.getByRole('combobox')
-  await expect(periodSelect).toBeVisible()
+  // ⚠️ زرّ قائمة منسدلة مخصَّص (PeriodSelect) لا <select> أصلي بعد الآن — يُحدَّد
+  // بـ aria-haspopup="menu" لا بنصّه (نصّه يتغيّر مع كل اختيار). لا مُرتِّب سجلّ
+  // المصاريف هنا (#expenses-section له combobox خاص به بدور مختلف تماماً).
+  const periodTrigger = reportsHeader.locator('button[aria-haspopup="menu"]')
+  await expect(periodTrigger).toBeVisible()
+  const selectPeriod = async (label: string) => {
+    await periodTrigger.click()
+    await screen.getByRole('menuitem', { name: label, exact: true }).click()
+  }
 
   // دورة أغسطس (المُغلقة): 400.00 ريال مصروف حقيقي — لا أثر لمصروفَي الترحيل
   // (تصفير رصيد سعد + فتح عجز خالد) رغم وقوع أحدهما تاريخياً داخل أغسطس.
-  await periodSelect.selectOption({ label: 'دورة أغسطس 2026' })
+  await selectPeriod('دورة أغسطس 2026')
   await expect(screen.getByText('إجمالي المصروف')).toBeVisible()
   await expect(screen.getByText('400.00', { exact: true }).first()).toBeVisible()
 
   // دورة سبتمبر (الحالية، بلا نشاط حقيقي بعد): رصيد الافتتاح يطابق بالضبط ما
   // رُحِّل فعلاً — سعد دائن 800، خالد مدين 200 (سالب).
-  await periodSelect.selectOption({ label: `دورة ${NEXT_PERIOD_LABEL}` })
+  await selectPeriod(`دورة ${NEXT_PERIOD_LABEL}`)
   await expect(screen.getByText('رصيد الافتتاح')).toBeVisible()
 })
 
@@ -173,7 +177,7 @@ test('ملف المسافر في رحلة طويلة يفتح نافذة الخ�
   await expect(page.locator('#long-term-section')).toBeVisible()
 
   await travelerCard(page, MONA.name).getByText(MONA.name, { exact: true }).click()
-  await expect(page.getByRole('heading', { name: `ملف المسافر: ${MONA.name}` })).toBeVisible()
+  await expect(page.getByRole('heading', { name: MONA.name, exact: true })).toBeVisible()
   // الزرّ أسفل تبويب «الخلاصة والتسويات» — التبويب الافتراضي عند الفتح.
   await page.getByRole('button', { name: 'إخراج من الرحلة', exact: true }).click()
 
@@ -191,7 +195,7 @@ test('خروج منتدَب: يُمنع برصيد غير مسوّى، ويمر�
   await expect(page.locator('#long-term-section')).toBeVisible()
 
   await travelerCard(page, KHALED.name).getByText(KHALED.name, { exact: true }).click()
-  await expect(page.getByRole('heading', { name: `ملف المسافر: ${KHALED.name}` })).toBeVisible()
+  await expect(page.getByRole('heading', { name: KHALED.name, exact: true })).toBeVisible()
 
   // ⚠️ النص المتوقَّع «تسوية وخروج من الرحلة» لا «إخراج من الرحلة»: خالد عليه
   // عجز، والزرّ يصف ما سيحدث فعلاً. رُصد أن الصياغة المجرّدة السابقة («إخراج»
