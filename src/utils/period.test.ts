@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest'
 import {
   isValidPeriodKey, normalizePeriodKey, currentPeriodKey, shiftPeriod,
   nextPeriod, previousPeriod, periodStartDate, periodEndDate, isInPeriod, formatPeriodLabel,
+  listPeriods,
 } from './period'
+import type { Expense } from '../types'
+
+const expense = (date: string): Pick<Expense, 'date'> => ({ date })
 
 describe('isValidPeriodKey', () => {
   it('يقبل YYYY-MM بشهر ضمن المدى', () => {
@@ -101,5 +105,31 @@ describe('formatPeriodLabel', () => {
 
   it('يعيد المفتاح غير الصالح كما هو', () => {
     expect(formatPeriodLabel('2026-13')).toBe('2026-13')
+  })
+})
+
+describe('listPeriods', () => {
+  it('يبني كل الشهور بين أول مصروف والشهر الحالي — بلا فجوات', () => {
+    // مصروفان في يونيو وأغسطس فقط — يوليو بينهما بلا أي مصروف، ويجب أن يظهر.
+    const periods = listPeriods([expense('2026-06-15'), expense('2026-08-02')], '2026-08')
+    expect(periods).toEqual(['2026-06', '2026-07', '2026-08'])
+  })
+
+  it('لا مصاريف بعد ⇐ الشهر الحالي وحده', () => {
+    expect(listPeriods([], '2026-08')).toEqual(['2026-08'])
+  })
+
+  it('يتجاهل تواريخ المصاريف التالفة عند تحديد أول شهر', () => {
+    const periods = listPeriods([expense('غير صالح'), expense('2026-08-01')], '2026-08')
+    expect(periods).toEqual(['2026-08'])
+  })
+
+  it('مصروف مؤرَّخ بعد الشهر الحالي (بيانات فاسدة) لا يمدّد القائمة إلى الأمام', () => {
+    const periods = listPeriods([expense('2026-10-01')], '2026-08')
+    expect(periods).toEqual(['2026-08'])
+  })
+
+  it('يعيد مصفوفة فارغة لـ currentPeriod غير صالح بدل اختراع شهر', () => {
+    expect(listPeriods([expense('2026-08-01')], 'غير صالح')).toEqual([])
   })
 })

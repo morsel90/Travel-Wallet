@@ -11,7 +11,7 @@
 // ⚠️ ولهذا فإن أي اختلاف بين هذا الملف ونظيره الخادمي يظهر كمعاينة تخالف
 // النتيجة — مزعج، لا خطر. أما العكس (الاعتماد على هذا الملف كحارس) فثغرة.
 import type { TravelerBalance, RolloverMovement, TripType, Expense, PeriodKey } from '../types'
-import { isInPeriod } from './period'
+import { isInPeriod, periodStartDate, periodEndDate, nextPeriod, previousPeriod } from './period'
 
 /**
  * هللة واحدة — نفس عتبة calculateSettlements بالضبط، وللسبب نفسه: أرصدة شبه
@@ -85,6 +85,80 @@ export function filterCycleExpenses<T extends Pick<Expense, 'date' | 'category'>
  */
 export function calculateCycleWallet(cumulativeRemaining: number, cycleSpent: number): number {
   return cumulativeRemaining + cycleSpent
+}
+
+/**
+ * رصيد مسافر عند حدّ إغلاق فعلي بين شهرين متتاليين — **قراءة مباشرة لمصروف
+ * الترحيل الذي كتبه closeMonth فعلاً، لا إعادة بناء من deposited/سجلّات
+ * الإيداع.** deposited على مستند المسافر تراكميّ بلا تأريخ (انظر تعليق
+ * calculateCycleWallet)، فلا سبيل لمعرفة قيمته «عند لحظة ماضية» منه وحده.
+ * لكن closeMonth يترك أثراً مؤرَّخاً بصيغة Expense.date (نصّية، لا التباس
+ * منطقة زمنية) لكل تحويل فعلي:
+ *   • رصيد دائن أُغلق به `before` → مصروف ترحيل بتاريخ periodEndDate(before).
+ *   • عجز افتُتح به `after`      → مصروف ترحيل بتاريخ periodStartDate(after).
+ * فحص كِلا التاريخين كافٍ لمعرفة الرصيد عند تلك اللحظة تحديداً بلا افتراض.
+ *
+ * @returns +المبلغ (دائن أُغلق)، −المبلغ (عجز افتُتح)، أو null إن لم يُعثر
+ *          على أثر إغلاق بين الفترتين لهذا المسافر (لم يُغلق `before` بعد،
+ *          أو كان رصيده مسوّى صفراً عند الإغلاق فلم يُكتب له مصروف أصلاً).
+ */
+export function boundaryRolloverAmount(
+  travelerId: number,
+  expenses: Pick<Expense, 'date' | 'category' | 'participants' | 'amount'>[],
+  before: PeriodKey,
+  after: PeriodKey,
+): number | null {
+  const isOwnRollover = (e: typeof expenses[number]): boolean =>
+    e.category === ROLLOVER_CATEGORY && e.participants.length === 1 && e.participants[0] === travelerId
+
+  const closingEntry = expenses.find(e => isOwnRollover(e) && e.date === periodEndDate(before))
+  if (closingEntry) return Number.isFinite(closingEntry.amount) ? closingEntry.amount : 0
+
+  const openingEntry = expenses.find(e => isOwnRollover(e) && e.date === periodStartDate(after))
+  if (openingEntry) return -(Number.isFinite(openingEntry.amount) ? openingEntry.amount : 0)
+
+  return null
+}
+
+/**
+ * رصيد افتتاح الدورة `period` لمسافر — أي رصيده فور بدئها (قبل أي نشاط
+ * حقيقي فيها)، مقروءاً من حدّ الإغلاق بينها وبين الدورة السابقة.
+ *
+ * ⚠️ **غياب مصروف الترحيل عند الحدّ لا يعني تلقائياً «لا معلومة».** closeMonth
+ * لا يكتب شيئاً لمسافر رصيده مسوّى (صفر) أصلاً عند الإغلاق — فذاك افتتاح
+ * بصفر معروف بيقين، لا مجهول. `lastClosedPeriod` (من مستند الرحلة) هو الفيصل:
+ * إن كانت الدورة السابقة *أُغلقت* فعلاً (`lastClosedPeriod >= previousPeriod`)
+ * ولم يُعثر على مصروف ترحيل، فالافتتاح صفر معروف. الفرق بين «افتتح بصفر فعلاً»
+ * و«لا معلومة» (أول دورة في الرحلة، أو دورة سابقة لم تُغلق بعد) مهمّ في تقرير
+ * مالي، فلا يُطمَس أحدهما بالآخر — ولا يُستنتَج «صفر» من مجرّد غياب حركة.
+ */
+export function periodOpeningBalance(
+  travelerId: number,
+  expenses: Pick<Expense, 'date' | 'category' | 'participants' | 'amount'>[],
+  period: PeriodKey,
+  lastClosedPeriod: PeriodKey | null,
+): number | null {
+  const before = previousPeriod(period)
+  const boundary = boundaryRolloverAmount(travelerId, expenses, before, period)
+  if (boundary !== null) return boundary
+  return lastClosedPeriod !== null && lastClosedPeriod >= before ? 0 : null
+}
+
+/**
+ * رصيد إغلاق الدورة `period` لمسافر — المبلغ الذي رُحِّل فعلاً إلى الدورة
+ * التالية عند إغلاقها. null إن لم تُغلق `period` بعد (بينها ما زالت مفتوحة،
+ * استخدم الرصيد المتبقي التراكمي الحيّ بدل هذه الدالة لعرض حالتها الحالية).
+ * انظر تعليق periodOpeningBalance لماذا الغياب وحده لا يكفي — نفس المبدأ هنا.
+ */
+export function periodClosingBalance(
+  travelerId: number,
+  expenses: Pick<Expense, 'date' | 'category' | 'participants' | 'amount'>[],
+  period: PeriodKey,
+  lastClosedPeriod: PeriodKey | null,
+): number | null {
+  const boundary = boundaryRolloverAmount(travelerId, expenses, period, nextPeriod(period))
+  if (boundary !== null) return boundary
+  return lastClosedPeriod !== null && lastClosedPeriod >= period ? 0 : null
 }
 
 /**

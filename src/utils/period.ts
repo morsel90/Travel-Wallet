@@ -13,7 +13,7 @@
 // في اشتقاق شهر «الآن» وفي عدد أيام الشهر. أي إعادة كتابة تُدخل `new Date(key)`
 // في مسار المقارنة تُعيد فخّ المنطقة الزمنية الذي وُجد هذا الملف لتفاديه:
 // `new Date('2026-08')` تُفسَّر UTC، فتصير في الرياض ٢٠٢٦-٠٧-٣١ ٠٣:٠٠.
-import type { PeriodKey } from '../types'
+import type { Expense, PeriodKey } from '../types'
 
 /** `YYYY-MM` بشهر ضمن 01..12 — أي شيء آخر ليس مفتاح شهر. */
 const PERIOD_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
@@ -101,4 +101,39 @@ export function isInPeriod(expenseDate: unknown, key: PeriodKey): boolean {
 export function formatPeriodLabel(key: PeriodKey): string {
   if (!isValidPeriodKey(key)) return String(key)
   return `${MONTH_NAMES[Number(key.slice(5, 7)) - 1]} ${key.slice(0, 4)}`
+}
+
+/**
+ * كل الشهور من أول مصروف حتى الشهر المفتوح حالياً، تصاعدياً — لمُصفّي الفترة
+ * في التقارير/كشوف الحساب.
+ *
+ * ⚠️ **متسلسلة بلا فجوات عمداً**: لا تُبنى من التواريخ الفعلية للمصاريف وحدها
+ * (شهر بلا أي مصروف كان سيختفي من القائمة، فيظنّ من يراها أن الرحلة توقّفت
+ * فيه لا أنه ببساطة شهر هادئ). تُبنى بالمشي من أول شهر ظهر فيه نشاط حتى
+ * currentPeriod عبر nextPeriod، فيظهر كل شهر بينهما ولو بلا مصروف واحد.
+ *
+ * لا مصاريف بعد → [currentPeriod] وحده (لا قائمة فارغة: الشهر المفتوح موجود
+ * دوماً بمجرد أن تصير الرحلة طويلة المدى، حتى بلا أي نشاط فيه).
+ */
+export function listPeriods(expenses: Pick<Expense, 'date'>[], currentPeriod: PeriodKey): PeriodKey[] {
+  if (!isValidPeriodKey(currentPeriod)) return []
+
+  let earliest = currentPeriod
+  for (const e of expenses) {
+    const key = typeof e.date === 'string' ? e.date.slice(0, 7) : ''
+    if (isValidPeriodKey(key) && key < earliest) earliest = key
+  }
+
+  // سقف احترازي — رحلة حقيقية لا تمتد آلاف الأشهر؛ يمنع حلقة لا تنتهي عملياً
+  // لو حمل مصروف فاسد تاريخاً بسنة بعيدة جداً (القاعدة ١٩: بيانات تالفة لا
+  // تُسقط مساراً يعمل على كل عرض).
+  const MAX_PERIODS = 600
+  const periods: PeriodKey[] = []
+  let cursor = earliest
+  while (cursor <= currentPeriod && periods.length < MAX_PERIODS) {
+    periods.push(cursor)
+    if (cursor === currentPeriod) break
+    cursor = nextPeriod(cursor)
+  }
+  return periods
 }

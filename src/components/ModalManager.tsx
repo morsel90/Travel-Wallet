@@ -67,7 +67,7 @@ interface ModalManagerProps {
   confirmDeleteTraveler: (id: number) => void
   // التقارير — بيانات العرض فقط (onClose يُدار داخلياً)
   reports: Pick<ComponentProps<typeof ReportsView>,
-    'travelers' | 'expenses' | 'balances' | 'settlements' | 'categoryTotals' | 'itinerary'>
+    'travelers' | 'expenses' | 'balances' | 'settlements' | 'categoryTotals' | 'itinerary' | 'periods' | 'lastClosedPeriod'>
   // الإيداع — حقول النموذج + الإرسال (traveler/onClose يُدارَان داخلياً)
   deposit: Pick<ComponentProps<typeof DepositModal>,
     'amount' | 'setAmount' | 'mode' | 'setMode' | 'reason' | 'setReason' | 'onSubmit'>

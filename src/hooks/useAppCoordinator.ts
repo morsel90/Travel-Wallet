@@ -13,7 +13,7 @@ import { tripRouteSummary } from '../utils/itinerary'
 import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from '../utils/tripId'
 import { acceptsExpenses, closedTripNotice } from '../utils/tripStatus'
 import { isLongTerm } from '../utils/tripType'
-import { formatPeriodLabel } from '../utils/period'
+import { formatPeriodLabel, listPeriods } from '../utils/period'
 import { planRollover, describeExitBlock, filterCycleExpenses, calculateCycleWallet } from '../utils/longTerm'
 import { describeWriteError, writeErrorCode } from '../utils/writeErrors'
 import { onIdle, preloadAll } from '../utils/preload'
@@ -139,6 +139,12 @@ export function useAppCoordinator() {
   const rolloverPlan = useMemo(
     () => (isLongTermTrip ? planRollover(balances) : []),
     [isLongTermTrip, balances],
+  )
+  // 🆕 قائمة الفترات لمُصفّي الدورة في التقارير/كشف الحساب — تصاعدياً، من أول
+  // نشاط حتى الشهر المفتوح حالياً (انظر listPeriods في utils/period.ts).
+  const periods = useMemo(
+    () => (isLongTermTrip ? listPeriods(activeExpenses, currentPeriod) : []),
+    [isLongTermTrip, activeExpenses, currentPeriod],
   )
 
   // 🆕 محفظة الدورة الحالية — للهيدر ولبطاقة كل مسافر. **لا حساب مالي جديد**:
@@ -424,6 +430,8 @@ export function useAppCoordinator() {
       // انظر تعليق useMemo أعلاه لماذا هي اشتقاق لا حساب مالي جديد.
       cycleWallet,
       cycleWallets,
+      // 🆕 لمُصفّي الدورة في التقارير/كشف الحساب — انظر ReportsView.tsx وTravelerProfileModal.tsx.
+      periods,
       movements: rolloverPlan,
       canManage: canManageLongTerm,
       isClosingMonth: longTermActions.isClosingMonth,

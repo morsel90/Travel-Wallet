@@ -2,9 +2,10 @@
 // تكمّل reports.ts (الذي يبني صفوف Excel)، لكن هذه تُعيد كائنات مُهيكلة تناسب
 // عرض واجهة صفحة التقارير (ReportsView).
 
-import type { Expense, Traveler } from '../types'
+import type { Expense, PeriodKey, Traveler } from '../types'
 import { splitByShares } from './calculations'
 import { matchesTraveler } from './participants'
+import { filterCycleExpenses, periodOpeningBalance } from './longTerm'
 
 export interface TravelerReportLine {
   id: string
@@ -154,4 +155,65 @@ export function buildAccountStatement(deposited: number, traveler: Traveler, exp
   const totalPaidByPocket = entries.filter(e => e.kind === 'paidByPocket').reduce((s, e) => s + e.amount, 0)
 
   return { opening: deposited, rows, totalShare, totalPaidByPocket, remaining: deposited + totalPaidByPocket - totalShare }
+}
+
+export interface PeriodTravelerSummary {
+  id: number
+  name: string
+  /** رصيد الافتتاح — 0 حين hasKnownOpening=false (لا يُفسَّر كرصيد حقيقي). */
+  opening: number
+  /**
+   * false يعني «رصيد الافتتاح غير معروف» — أول دورة في الرحلة (لا حدّ إغلاق
+   * سابق أصلاً)، أو الدورة السابقة لم تُغلق بعد. لا «كان صفراً فعلاً»: اعرض
+   * «—» لا 0 لكلّ من opening وclosing في هذه الحالة — closing المحسوب هنا
+   * حينها ليس رصيداً نهائياً حقيقياً (لا يعرف رصيد الإيداع الأصلي وقتها، فقط
+   * صافي حركة هذه الدورة وحدها)، بل صافي حركة الدورة (paidByPocket − spent)
+   * فوق صفر مفترض. **spent وحده موثوق دائماً بصرف النظر عن hasKnownOpening.**
+   */
+  hasKnownOpening: boolean
+  /** حصته من المصاريف الحقيقية في الدورة (بلا مصاريف الترحيل) — موثوق دائماً. */
+  spent: number
+  /** ما دفعه من جيبه لمصاريف الدورة، إن وُجد. */
+  paidByPocket: number
+  /** opening + paidByPocket − spent — رصيد نهائي حقيقي فقط حين hasKnownOpening=true. */
+  closing: number
+}
+
+/**
+ * ملخّص كل مسافر لدورة واحدة: افتتاحها (periodOpeningBalance)، صرفه الحقيقي
+ * فيها، وإغلاقها — **بإعادة استخدام buildAccountStatement نفسها** لا حساب
+ * موازٍ: تمرير رصيد الافتتاح كـ"المودَع" ومصاريف الدورة الحقيقية فقط (بلا
+ * مصاريف الترحيل) يُنتج بالضبط ما تنتجه أي دورة عادية، سواء أُغلقت الدورة
+ * فعلاً أم كانت لا تزال مفتوحة (عندها closing هو ما *سيُرحَّل* لو أُغلقت الآن).
+ *
+ * ⚠️ `allExpenses` يجب أن تكون **غير مُصفّاة** — periodOpeningBalance يبحث عن
+ * مصروف الترحيل في تاريخ حدّ الدورة السابقة، وهو خارج مصاريف هذه الدورة نفسها.
+ *
+ * `lastClosedPeriod` (من مستند الرحلة، null إن لم يُغلق شهر بعد) يمرَّر كما
+ * هو إلى periodOpeningBalance — لازم لتمييز «افتتح بصفر معروف» (مسافر مسوّى
+ * عند إغلاق فعلي) عن «لا معلومة» (دورة سابقة لم تُغلق قط). بدونه يُعامَل كل
+ * مسافر مسوّى كـ«مجهول الافتتاح» ولو أُغلقت دورته السابقة فعلاً — انظر تعليق
+ * periodOpeningBalance في utils/longTerm.ts.
+ */
+export function buildPeriodTravelerSummaries(
+  travelers: Traveler[],
+  allExpenses: Expense[],
+  period: PeriodKey,
+  lastClosedPeriod: PeriodKey | null,
+): PeriodTravelerSummary[] {
+  const periodExpenses = filterCycleExpenses(allExpenses, period)
+  return travelers.map(t => {
+    const openingLookup = periodOpeningBalance(t.id, allExpenses, period, lastClosedPeriod)
+    const opening = openingLookup ?? 0
+    const statement = buildAccountStatement(opening, t, periodExpenses)
+    return {
+      id: t.id,
+      name: t.name,
+      opening,
+      hasKnownOpening: openingLookup !== null,
+      spent: statement.totalShare,
+      paidByPocket: statement.totalPaidByPocket,
+      closing: statement.remaining,
+    }
+  })
 }

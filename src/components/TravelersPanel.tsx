@@ -1,5 +1,5 @@
 import type { Dispatch, FormEvent, SetStateAction } from 'react'
-import type { Traveler, TravelerBalance } from '../types'
+import type { Traveler, TravelerBalance, PeriodKey } from '../types'
 import { TravelerCard, AddTravelerForm } from './TravelerSection'
 import { TravelerCardSkeleton } from './Skeleton'
 import EmptyState from './EmptyState'
@@ -35,6 +35,10 @@ interface TravelersPanelProps {
    *  useAppCoordinator.longTerm.cycleWallets، undefined/فارغة في الرحلة
    *  القياسية فلا تعرض بطاقة أي مسافر شيئاً مختلفاً. */
   cycleWallets?: Record<number, number>
+  /** 🆕 الفترات المتاحة لمُصفّي الدورة في ملف كل مسافر — انظر ReportsView.tsx. */
+  periods?: PeriodKey[]
+  /** 🆕 آخر شهر أُغلق فعلاً — انظر تعليقها في ReportsView.tsx. */
+  lastClosedPeriod?: PeriodKey | null
 }
 
 // ─── قسم أرصدة المسافرين ──────────────────────────────────────────────────────
@@ -42,7 +46,7 @@ interface TravelersPanelProps {
 // من DataContext/UIActionsContext كما كان — لم يتغيّر شيء في استهلاكه للسياق.
 export const TravelersPanel = ({
   isInitialLoading, isAdmin, activeTravelers, balances,
-  isAddingTraveler, onStartAddTraveler, travelerForm, longTermExit, cycleWallets,
+  isAddingTraveler, onStartAddTraveler, travelerForm, longTermExit, cycleWallets, periods, lastClosedPeriod,
 }: TravelersPanelProps) => (
   <section id="travelers-section" className="scroll-mt-24">
     <div className="flex justify-between items-center mb-4 px-1">
@@ -75,6 +79,8 @@ export const TravelersPanel = ({
                 traveler={traveler}
                 longTermExit={longTermExit}
                 cycleWallet={cycleWallets?.[traveler.id]}
+                periods={periods}
+                lastClosedPeriod={lastClosedPeriod}
               />
             ))
         }

@@ -1,6 +1,6 @@
 import { memo, useCallback, useState } from 'react'
 import { Pencil, Trash2, Plus, X, History, Loader2, UserCheck, FileText } from '../icons'
-import type { Traveler, TravelerBalance } from '../types'
+import type { Traveler, TravelerBalance, PeriodKey } from '../types'
 import { useTripData, useTripActions } from '../store/tripStore'
 import { matchesTraveler } from '../utils/participants'
 // تأكد من مسار استيراد النافذة الجديدة بناءً على مكان حفظك لها
@@ -22,6 +22,10 @@ interface TravelerCardProps {
    *  undefined في الرحلة القياسية، فتبقى البطاقة كما كانت بلا حرف. حاضرة في
    *  الرحلة الطويلة فقط (انظر TravelersPanel.tsx). */
   cycleWallet?: number
+  /** 🆕 الفترات المتاحة لمُصفّي الدورة في ملف المسافر — انظر ReportsView.tsx. */
+  periods?: PeriodKey[]
+  /** 🆕 آخر شهر أُغلق فعلاً — انظر تعليقها في ReportsView.tsx. */
+  lastClosedPeriod?: PeriodKey | null
 }
 
 // دالة تحويل الأرقام الهندية/الشرقية (١٢٣) إلى أرقام غربية (123) لمنع خطأ الـ NaN
@@ -31,7 +35,7 @@ const convertArabicNumerals = (str: string): string => {
 };
 
 // مكوّن عرض بطاقة رصيد المسافر المنفرد (Traveler Card)
-export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet }: TravelerCardProps) => {
+export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods, lastClosedPeriod }: TravelerCardProps) => {
   // جلبنا settlements و travelers لدعم بيانات النافذة المنبثقة
   const { isAdmin, expenses, travelers, user } = useTripData()
   // 🆕 نموذج الهوية الهجين: تمييز بطاقة المستخدم نفسه بين بطاقات بقية المسافرين
@@ -194,6 +198,8 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet }: Trave
           balance={traveler}
           expenses={expenses}
           settlements={[]}
+          periods={periods}
+          lastClosedPeriod={lastClosedPeriod}
           allTravelers={travelers}
           isAdmin={isAdmin}
           initialTab={profileInitialTab}
