@@ -2,12 +2,13 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { X, Wallet, Receipt, Scale, Loader2, Download, Printer, HandCoins, DoorOpen, CalendarRange } from '../../icons'
+import { X, Wallet, Receipt, Scale, Loader2, Download, Printer, HandCoins, DoorOpen, CalendarRange, RefreshCw } from '../../icons'
 import type { Expense, Traveler, TravelerBalance, Settlement, PeriodKey } from '../../types'
+import type { StatementRow } from '../../utils/reportData'
 import { buildTravelerReport, buildAccountStatement } from '../../utils/reportData'
 import { useDepositLogs } from '../../hooks/useDepositLogs'
 import { exportTravelerToExcel } from '../../utils/reports'
-import { settlementDirection, filterCycleExpenses, periodOpeningBalance } from '../../utils/longTerm'
+import { settlementDirection, filterCycleExpenses, periodOpeningBalance, ROLLOVER_CATEGORY } from '../../utils/longTerm'
 import { formatPeriodLabel } from '../../utils/period'
 import { PrintableStatement } from '../reports/PrintDocs' // تأكد من صحة مسار استيراد مستند الطباعة
 
@@ -285,41 +286,18 @@ export default function TravelerProfileModal({
               </section>
             )}
 
-            <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
-                <h3 className="text-sm font-bold text-slate-800">حركة المصاريف — رصيد جارٍ</h3>
-              </div>
+            <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-5">
+              <h3 className="text-sm font-bold text-slate-800 mb-1">حركة المصاريف — رصيد جارٍ</h3>
               {statement.rows.length === 0 ? (
                 <p className="text-center text-slate-400 font-medium text-sm py-8">لم يشارك في أي مصروف بعد.</p>
               ) : (
-                <div className="divide-y divide-slate-100">
-                  {statement.rows.map(r => {
-                    const isPocketPay = r.kind === 'paidByPocket'
-                    return (
-                      <div key={r.id} className="flex items-center justify-between px-4 py-3 gap-3">
-                        <div className="min-w-0">
-                          <p className="font-bold text-slate-800 text-sm truncate flex items-center gap-1.5">
-                            {r.description}
-                            {isPocketPay && (
-                              <span className="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.5 rounded-full shrink-0">
-                                دفعها من جيبه
-                              </span>
-                            )}
-                          </p>
-                          <p className="text-[11px] text-slate-400 font-bold">{r.date} · {r.category}</p>
-                        </div>
-                        <div className="text-left shrink-0">
-                          <p className={`font-black tabular-nums text-sm ${isPocketPay ? 'text-teal-600' : 'text-rose-600'}`} dir="ltr">
-                            {isPocketPay ? '+' : '−'}{fmt(r.amount)}
-                          </p>
-                          <p className={`text-[11px] font-bold tabular-nums ${r.balanceAfter < 0 ? 'text-rose-500' : 'text-teal-600'}`} dir="ltr">
-                            {fmt(r.balanceAfter)} ﷼
-                          </p>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                <StatementTimeline
+                  opening={statement.opening}
+                  openingLabel={isFiltered ? 'رصيد الافتتاح' : 'المودَع الابتدائي'}
+                  rows={statement.rows}
+                  closing={statement.remaining}
+                  closingLabel={isFiltered ? 'رصيد الإغلاق' : 'الرصيد الحالي'}
+                />
               )}
             </section>
 
@@ -418,5 +396,108 @@ function KpiCard({ Icon, label, value, tone }: { Icon: typeof Wallet; label: str
       </div>
       <p className={`text-base font-black tabular-nums ${TONE[tone]}`} dir="ltr">{value}</p>
     </div>
+  )
+}
+
+// ─── خط زمني كشف الحساب ───────────────────────────────────────────────────────
+// 🆕 استُبدلت به قائمة صفوف مسطّحة (bullet list) كانت تكرر نفس المعلومة
+// (تاريخ/وصف/مبلغ/رصيد) في أربعة أعمدة بلا رابط بصري بينها — القراءة تتطلب
+// تتبّع عمود "الرصيد الجاري" يدوياً سطراً سطراً. خط عمودي متصل بنقاط ملوّنة
+// (نمط سجلّ Git الشائع) يجعل القصة الزمنية الكاملة مقروءة بنظرة واحدة: يبدأ
+// برصيد الافتتاح، ينتهي بالرصيد الحالي، وكل حركة بينهما نقطة على نفس الخط.
+//
+// ⚠️ لا حساب مالي جديد هنا — عرضي بحت فوق statement.rows/opening/remaining
+// المحسوبة أصلاً في buildAccountStatement.
+
+/** لون/أيقونة كل نقطة — يميّز مصروف الترحيل الشهري (ROLLOVER_CATEGORY) عن
+ *  الصرف الحقيقي بلون مستقل (indigo)، هو نفسه لون "الميزة الطويلة" في بقية
+ *  التطبيق (LongTermPanel/الهيدر)، فلا يُقرأ كخطأ أو صرف عادي بالخطأ. */
+function timelineRowStyle(row: StatementRow): { Icon: typeof Wallet; dot: string; amountColor: string; sign: string; badge?: string } {
+  if (row.category === ROLLOVER_CATEGORY) {
+    return { Icon: RefreshCw, dot: 'bg-indigo-500', amountColor: 'text-indigo-600', sign: '−', badge: 'ترحيل شهري' }
+  }
+  if (row.kind === 'paidByPocket') {
+    return { Icon: HandCoins, dot: 'bg-teal-500', amountColor: 'text-teal-600', sign: '+', badge: 'دفعها من جيبه' }
+  }
+  return { Icon: Receipt, dot: 'bg-rose-500', amountColor: 'text-rose-600', sign: '−' }
+}
+
+/** "١٠ يوليو" — تُبنى من مكوّنات التاريخ مباشرة (Date محلّي، لا new Date(iso))
+ *  لتفادي فخّ منطقة زمنية UTC الموصوف في utils/period.ts؛ نفس المبدأ هنا. */
+function formatRowDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  if (!y || !m || !d) return dateStr
+  return new Date(y, m - 1, d).toLocaleDateString('ar-SA-u-ca-gregory-nu-latn', { day: 'numeric', month: 'short' })
+}
+
+interface StatementTimelineProps {
+  opening: number
+  openingLabel: string
+  rows: StatementRow[]
+  closing: number
+  closingLabel: string
+}
+
+function StatementTimeline({ opening, openingLabel, rows, closing, closingLabel }: StatementTimelineProps) {
+  const closingNegative = closing < 0
+  return (
+    <ol className="relative">
+      {/* الخط العمودي المتصل — خلف كل النقاط، بعرض النقطة بالضبط (26px) لتتمركز فوقه. */}
+      <div className="absolute top-1 bottom-1 start-[13px] w-0.5 bg-slate-200" aria-hidden="true" />
+
+      <li className="relative flex gap-3 pb-5 ps-9">
+        <span className="absolute start-0 top-0.5 w-[26px] h-[26px] rounded-full bg-slate-600 text-white flex items-center justify-center ring-4 ring-white shrink-0">
+          <Wallet className="w-3 h-3" />
+        </span>
+        <div className="flex-1 flex items-center justify-between min-w-0 gap-2 pt-1">
+          <p className="font-bold text-slate-700 text-sm">{openingLabel}</p>
+          <p className="font-black tabular-nums text-sm text-slate-700 shrink-0" dir="ltr">{fmt(opening)} ﷼</p>
+        </div>
+      </li>
+
+      {rows.map(r => {
+        const { Icon, dot, amountColor, sign, badge } = timelineRowStyle(r)
+        return (
+          <li key={r.id} className="relative flex gap-3 pb-5 ps-9">
+            <span className={`absolute start-0 top-0.5 w-[26px] h-[26px] rounded-full ${dot} text-white flex items-center justify-center ring-4 ring-white shrink-0`}>
+              <Icon className="w-3 h-3" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-bold text-slate-800 text-sm truncate flex items-center gap-1.5 flex-wrap">
+                    {r.description}
+                    {badge && (
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-full shrink-0">
+                        {badge}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-[11px] text-slate-400 font-bold mt-0.5">{formatRowDate(r.date)} · {r.category}</p>
+                </div>
+                <p className={`font-black tabular-nums text-sm shrink-0 ${amountColor}`} dir="ltr">
+                  {sign}{fmt(r.amount)}
+                </p>
+              </div>
+              <p className="text-[11px] font-bold text-slate-400 mt-1" dir="ltr">
+                الرصيد: <span className={r.balanceAfter < 0 ? 'text-rose-500' : 'text-teal-600'}>{fmt(r.balanceAfter)} ﷼</span>
+              </p>
+            </div>
+          </li>
+        )
+      })}
+
+      <li className="relative flex gap-3 ps-9">
+        <span className={`absolute start-0 top-0.5 w-[26px] h-[26px] rounded-full ${closingNegative ? 'bg-rose-600' : 'bg-teal-600'} text-white flex items-center justify-center ring-4 ring-white shrink-0`}>
+          <Scale className="w-3 h-3" />
+        </span>
+        <div className="flex-1 flex items-center justify-between min-w-0 gap-2 pt-1">
+          <p className="font-bold text-slate-800 text-sm">{closingLabel}</p>
+          <p className={`font-black tabular-nums text-sm shrink-0 ${closingNegative ? 'text-rose-600' : 'text-teal-600'}`} dir="ltr">
+            {fmt(closing)} ﷼
+          </p>
+        </div>
+      </li>
+    </ol>
   )
 }
