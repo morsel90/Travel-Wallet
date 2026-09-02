@@ -154,6 +154,13 @@ export default function App() {
                 totalSpent: ledger.totalSpent,
                 totalRemaining: ledger.totalRemaining,
               }}
+              // 🆕 أرقام الدورة الحالية — الرحلة الطويلة فقط (longTerm غير null).
+              cycleStats={ledger.isInitialLoading || !longTerm ? null : {
+                periodLabel: longTerm.periodLabel,
+                totalDeposited: longTerm.cycleWallet,
+                totalSpent: longTerm.periodTotal,
+                totalRemaining: ledger.totalRemaining,
+              }}
               isOnline={session.isOnline}
               // زر التبديل يظهر متى وُجدت رحلة أخرى غير المفتوحة حالياً (نشطة
               // أو مؤرشفة)، أو للمسؤول دائماً (يتصفّح كل الرحلات ويُنشئ/يستعيد
@@ -208,6 +215,7 @@ export default function App() {
                     canManage: longTerm.canManage,
                     isBusy: longTerm.isClosingMonth || longTerm.isExitingTraveler,
                   } : undefined}
+                  cycleWallets={longTerm?.cycleWallets}
                 />
   
                 <ChartsPanel

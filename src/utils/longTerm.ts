@@ -10,7 +10,8 @@
 //
 // ⚠️ ولهذا فإن أي اختلاف بين هذا الملف ونظيره الخادمي يظهر كمعاينة تخالف
 // النتيجة — مزعج، لا خطر. أما العكس (الاعتماد على هذا الملف كحارس) فثغرة.
-import type { TravelerBalance, RolloverMovement, TripType } from '../types'
+import type { TravelerBalance, RolloverMovement, TripType, Expense, PeriodKey } from '../types'
+import { isInPeriod } from './period'
 
 /**
  * هللة واحدة — نفس عتبة calculateSettlements بالضبط، وللسبب نفسه: أرصدة شبه
@@ -57,6 +58,33 @@ export function planRollover(balances: TravelerBalance[]): RolloverMovement[] {
 /** عدد الحركات التي ستُكتب فعلاً — من رصيده صفر لا يُكتب له شيء. */
 export function countRolloverMovements(movements: RolloverMovement[]): number {
   return movements.filter(m => m.direction !== 'settled').length
+}
+
+/**
+ * مصاريف *حقيقية* لشهر واحد: مؤرَّخة داخله، وليست مصروف تسوية كتبه closeMonth
+ * نفسه (ROLLOVER_CATEGORY). الاستبعاد مقصود لا سهو — مصروف الترحيل يُصفّر
+ * رصيد شهر منتهٍ أو يفتح عجزاً موروثاً في شهر جديد، وكلاهما محاسبة إغلاق لا
+ * إنفاق فعلي، فحسابه ضمن «مصاريف هذا الشهر» يُضاعف نفس المبلغ الذي أنتجه هو.
+ *
+ * ⚠️ هذه هي «الدورة الحالية» في كل مكان يعرضها (الهيدر، «الشهر المحاسبي») —
+ * قيمة واحدة، لا حسابان قد ينحرف أحدهما عن الآخر.
+ */
+export function filterCycleExpenses<T extends Pick<Expense, 'date' | 'category'>>(
+  expenses: T[],
+  period: PeriodKey,
+): T[] {
+  return expenses.filter(e => e.category !== ROLLOVER_CATEGORY && isInPeriod(e.date, period))
+}
+
+/**
+ * محفظة الدورة = الرصيد المتبقي (التراكمي) + مصاريف الدورة الحقيقية. لا مصدر
+ * مالي جديد: بما أن «المتبقي» التراكمي *هو* متبقي الدورة الحالية أصلاً (انظر
+ * أعلى الملف)، فمحفظتها تُشتق منه جبرياً — رصيد افتتاحي مُرحَّل + أي إيداع
+ * جديد هذا الشهر، بلا حاجة لتأريخ الإيداعات (غير متاح اليوم في المخطط).
+ * الطرح دائماً يُعيد "متبقي" نفسه، مهما بدا الرقمان — وهذا هو الاتساق المطلوب.
+ */
+export function calculateCycleWallet(cumulativeRemaining: number, cycleSpent: number): number {
+  return cumulativeRemaining + cycleSpent
 }
 
 /**

@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { PieChart, Loader2, Wallet, Receipt, Scale } from '../icons'
+import { PieChart, Loader2, Wallet, Receipt, Scale, RefreshCw } from '../icons'
 import { useHeaderCollapse } from '../hooks/useHeaderCollapse'
 import AccountMenu from './AccountMenu'
 
@@ -7,6 +8,16 @@ export interface HeaderStats {
   totalDeposited: number
   totalSpent: number
   totalRemaining: number
+}
+
+/**
+ * 🆕 أرقام الدورة المحاسبية الحالية — undefined/null في الرحلة القياسية، فلا
+ * يظهر شارة الدورة ولا زرّ التبديل بحرف (نفس مبدأ `longTerm` في
+ * useAppCoordinator: قيمة واحدة تُفحص هنا بدل شرط `tripType` داخل هذا الملف).
+ */
+export interface HeaderCycleStats extends HeaderStats {
+  /** «أغسطس 2026» — يُعرض في الشارة فوق الإحصاءات. */
+  periodLabel: string
 }
 
 // 1. إضافة onStatClick و isOnline للخصائص (Props)
@@ -36,6 +47,9 @@ interface HeaderProps {
    * زرّ «تسجيل الدخول كمسؤول» عمّن لا يحتاجه أصلاً. */
   isOrganizer: boolean
   stats: HeaderStats | null
+  /** 🆕 أرقام الدورة الحالية — الرحلة الطويلة فقط. غيابها (undefined/null)
+   * يُبقي الهيدر بلا شارة ولا زرّ تبديل، بالضبط كما كان قبل هذه الميزة. */
+  cycleStats?: HeaderCycleStats | null
   onStatClick?: (stat: 'deposited' | 'spent' | 'remaining') => void
   isOnline?: boolean // افتراضياً ستكون true إذا لم تُمرر
   // 🆕 قائمة الحساب الموحّدة — تجمع رحلاتي/بروفايلي/وضع المسؤول/تسجيل الخروج.
@@ -87,6 +101,7 @@ const Header = ({
   onEditTrip,
   isOrganizer,
   stats,
+  cycleStats,
   onStatClick,
   isOnline = true, // تعيين قيمة افتراضية
   displayName,
@@ -98,8 +113,14 @@ const Header = ({
 }: HeaderProps) => {
   const isCollapsed = useHeaderCollapse()
 
+  // 🆕 الافتراضي: عرض الدورة الحالية حين تتوفر (طلب صاحب الحساب صراحةً) —
+  // القيمة تبقى true بلا أثر في الرحلة القياسية لأن cycleStats غائبة أصلاً
+  // هناك، فـ displayedStats تسقط إلى stats دائماً بغضّ النظر عن هذه الحالة.
+  const [showCycle, setShowCycle] = useState(true)
+  const displayedStats: HeaderStats | null = cycleStats && showCycle ? cycleStats : stats
+
   const renderPills = (compact: boolean) =>
-    STAT_ITEMS(stats as HeaderStats).map(({ key, Icon, value, tone }) => (
+    STAT_ITEMS(displayedStats as HeaderStats).map(({ key, Icon, value, tone }) => (
       // 3. تحويل span إلى button ليكون قابلاً للضغط مع تأثيرات الحوامة (Hover)
       <button
         key={key}
@@ -179,7 +200,7 @@ const Header = ({
                 aria-live="polite"
                 aria-atomic="true"
               >
-                {stats ? renderPills(true) : renderPillSkeleton(3, true)}
+                {displayedStats ? renderPills(true) : renderPillSkeleton(3, true)}
               </div>
             </>
           ) : (
@@ -227,13 +248,33 @@ const Header = ({
       </div>
 
       {!isCollapsed && (
-        <div
-          className={`max-w-7xl mx-auto px-4 pb-3.5 -mt-1 flex items-center justify-center gap-3 sm:gap-4 ${SCROLL_ROW}`}
-          aria-live="polite"
-          aria-atomic="true"
-        >
-          {stats ? renderPills(false) : renderPillSkeleton(3, false)}
-        </div>
+        <>
+          {/* 🆕 شارة الدورة الحالية + زرّ التبديل — الرحلة الطويلة فقط
+              (cycleStats). ضغطة واحدة تُبدّل بين رقمَي الدورة والإجمالي
+              التراكمي في الحبات الثلاث أسفلها معاً؛ «المتبقي» لا يتغيّر رقمه
+              بين الحالتين (هو نفسه في الدورتين، انظر calculateCycleWallet) —
+              وهذا مقصود لا عرض ناقص. */}
+          {cycleStats && (
+            <div className="max-w-7xl mx-auto px-4 -mt-1 pb-1 flex items-center justify-center">
+              <button
+                type="button"
+                onClick={() => setShowCycle(v => !v)}
+                title={showCycle ? 'اضغط لعرض الإجمالي التراكمي للرحلة' : 'اضغط لعرض الدورة الحالية'}
+                className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-50 bg-indigo-500/40 hover:bg-indigo-500/60 px-2.5 py-1 rounded-full transition-colors"
+              >
+                {showCycle ? `دورة ${cycleStats.periodLabel}` : 'الإجمالي التراكمي للرحلة'}
+                <RefreshCw className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+          <div
+            className={`max-w-7xl mx-auto px-4 pb-3.5 -mt-1 flex items-center justify-center gap-3 sm:gap-4 ${SCROLL_ROW}`}
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            {displayedStats ? renderPills(false) : renderPillSkeleton(3, false)}
+          </div>
+        </>
       )}
     </header>
   )

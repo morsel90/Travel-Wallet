@@ -18,6 +18,10 @@ interface LongTermExitProps {
 interface TravelerCardProps {
   traveler: TravelerBalance
   longTermExit?: LongTermExitProps
+  /** 🆕 محفظة الدورة الحالية لهذا المسافر (مرحّل + حصته من مصاريف الدورة) —
+   *  undefined في الرحلة القياسية، فتبقى البطاقة كما كانت بلا حرف. حاضرة في
+   *  الرحلة الطويلة فقط (انظر TravelersPanel.tsx). */
+  cycleWallet?: number
 }
 
 // دالة تحويل الأرقام الهندية/الشرقية (١٢٣) إلى أرقام غربية (123) لمنع خطأ الـ NaN
@@ -27,7 +31,7 @@ const convertArabicNumerals = (str: string): string => {
 };
 
 // مكوّن عرض بطاقة رصيد المسافر المنفرد (Traveler Card)
-export const TravelerCard = memo(({ traveler, longTermExit }: TravelerCardProps) => {
+export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet }: TravelerCardProps) => {
   // جلبنا settlements و travelers لدعم بيانات النافذة المنبثقة
   const { isAdmin, expenses, travelers, user } = useTripData()
   // 🆕 نموذج الهوية الهجين: تمييز بطاقة المستخدم نفسه بين بطاقات بقية المسافرين
@@ -51,7 +55,12 @@ export const TravelerCard = memo(({ traveler, longTermExit }: TravelerCardProps)
   
   const hasExpenses = expenses.some(e => e.participants.some(p => matchesTraveler(traveler, p)))
   const isNegative = traveler.remaining < 0
-  const percentage = Math.min(100, Math.max(0, (traveler.remaining / traveler.deposited) * 100)) || 0
+  // 🆕 في الرحلة الطويلة، أساس الشريط والنسبة محفظة الدورة الحالية لا إجمالي
+  // المودَع التراكمي — ذاك يكبر مع كل ترحيل شهري فيُظهر الشريط شبه فارغ دوماً
+  // مهما بلغ إنفاق هذا الشهر (انظر tripCycleBudget أدناه ولماذا cycleWallet
+  // undefined = رحلة قياسية بلا أي أثر).
+  const tripCycleBudget = cycleWallet ?? traveler.deposited
+  const percentage = Math.min(100, Math.max(0, (traveler.remaining / tripCycleBudget) * 100)) || 0
 
   // استخراج كائن المسافر الأساسي من القائمة
   const baseTraveler: Traveler = travelers.find(t => t.id === traveler.id) ?? traveler
@@ -89,7 +98,14 @@ export const TravelerCard = memo(({ traveler, longTermExit }: TravelerCardProps)
                 )}
               </span>
               <span className="text-xs text-slate-500 truncate min-w-0 leading-tight">
-                المودع: <span className="font-bold text-slate-700">{traveler.deposited} ﷼</span>
+                {/* 🆕 محفظة الدورة (مرحّل + مصاريف هذه الدورة) لا إجمالي المودَع
+                    التراكمي — ذاك يتضخّم مع كل ترحيل شهري ويوهم بأن رصيداً
+                    ضخماً «مودَع الآن» بينما هو مجموع كل الأشهر منذ بداية
+                    الرحلة. cycleWallet غائبة تماماً في الرحلة القياسية. */}
+                {cycleWallet !== undefined ? 'ميزانية الدورة' : 'المودع'}:{' '}
+                <span className="font-bold text-slate-700">
+                  {cycleWallet !== undefined ? cycleWallet.toFixed(2) : traveler.deposited} ﷼
+                </span>
               </span>
             </div>
           </div>
@@ -98,7 +114,9 @@ export const TravelerCard = memo(({ traveler, longTermExit }: TravelerCardProps)
               بدل خلفية محايدة + حدّ، ونصّ داكن اللون فوقها. نمط Fintech حديث: يوصل
               حالة الرصيد بوضوح دون أن يقرأه المستخدم كرسالة خطأ/تنبيه حرج. */}
           <div className={`text-left shrink-0 px-3 py-1.5 rounded-2xl ${isNegative ? 'bg-rose-50' : 'bg-teal-50'}`}>
-            <div className="text-[10px] sm:text-xs font-medium text-slate-400 mb-0.5 text-center">المتبقي</div>
+            <div className="text-[10px] sm:text-xs font-medium text-slate-400 mb-0.5 text-center">
+              {cycleWallet !== undefined ? 'متبقي الدورة' : 'المتبقي'}
+            </div>
             <div className={`text-sm sm:text-base font-black tabular-nums text-center leading-none ${isNegative ? 'text-rose-700' : 'text-teal-700'}`} dir="ltr">
               {traveler.remaining.toFixed(2)}
             </div>

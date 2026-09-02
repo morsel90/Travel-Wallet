@@ -8,13 +8,13 @@ import {
   useOrganizerBankDetails, useSyncTravelerNameFromProfile, useLongTermActions,
 } from './index'
 import { useFilteredExpenses } from './useFilteredExpenses'
-import { calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from '../utils/calculations'
+import { calculateBalances, calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from '../utils/calculations'
 import { tripRouteSummary } from '../utils/itinerary'
 import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from '../utils/tripId'
 import { acceptsExpenses, closedTripNotice } from '../utils/tripStatus'
 import { isLongTerm } from '../utils/tripType'
-import { isInPeriod } from '../utils/period'
-import { planRollover, describeExitBlock } from '../utils/longTerm'
+import { formatPeriodLabel } from '../utils/period'
+import { planRollover, describeExitBlock, filterCycleExpenses, calculateCycleWallet } from '../utils/longTerm'
 import { describeWriteError, writeErrorCode } from '../utils/writeErrors'
 import { onIdle, preloadAll } from '../utils/preload'
 import { chartsImporters } from '../components/ChartsPanel'
@@ -129,7 +129,7 @@ export function useAppCoordinator() {
   const canManageLongTerm = isLongTermTrip && (isAdmin || isOrganizer)
 
   const periodExpenses = useMemo(
-    () => (isLongTermTrip ? activeExpenses.filter(e => isInPeriod(e.date, currentPeriod)) : []),
+    () => (isLongTermTrip ? filterCycleExpenses(activeExpenses, currentPeriod) : []),
     [isLongTermTrip, activeExpenses, currentPeriod],
   )
   const periodTotal = useMemo(
@@ -140,6 +140,31 @@ export function useAppCoordinator() {
     () => (isLongTermTrip ? planRollover(balances) : []),
     [isLongTermTrip, balances],
   )
+
+  // 🆕 محفظة الدورة الحالية — للهيدر ولبطاقة كل مسافر. **لا حساب مالي جديد**:
+  // حصة كل مسافر من مصاريف الدورة (periodExpenses، مُصفّاة أصلاً من مصاريف
+  // الترحيل) تُشتق بإعادة استدعاء calculateBalances نفسها على مسافرين
+  // بـ deposited=0 — فتصير totalExpenses حصته من هذا الشهر وحده بنفس منطق
+  // splitByShares/paidBy المستخدَم في كل مكان آخر، لا نسخة مكرَّرة منه.
+  const cycleShareBalances = useMemo(
+    () => (isLongTermTrip
+      ? calculateBalances(activeTravelers.map(t => ({ ...t, deposited: 0 })), periodExpenses)
+      : []),
+    [isLongTermTrip, activeTravelers, periodExpenses],
+  )
+  const cycleWallet = useMemo(
+    () => (isLongTermTrip ? calculateCycleWallet(totalRemaining, periodTotal) : 0),
+    [isLongTermTrip, totalRemaining, periodTotal],
+  )
+  const cycleWallets = useMemo(() => {
+    if (!isLongTermTrip) return {}
+    const map: Record<number, number> = {}
+    balances.forEach(b => {
+      const share = cycleShareBalances.find(c => c.id === b.id)?.totalExpenses ?? 0
+      map[b.id] = calculateCycleWallet(b.remaining, share)
+    })
+    return map
+  }, [isLongTermTrip, balances, cycleShareBalances])
 
   /**
    * 🆕 حارس خروج العضو — يُمرَّر إلى useTravelerActions **فقط في الرحلة
@@ -391,9 +416,14 @@ export function useAppCoordinator() {
      */
     longTerm: isLongTermTrip ? {
       period: currentPeriod,
+      periodLabel: formatPeriodLabel(currentPeriod),
       lastClosedPeriod,
       periodTotal,
       periodCount: periodExpenses.length,
+      // 🆕 محفظة الدورة الحالية — إجمالية (الهيدر) وبِحسب كل مسافر (بطاقته).
+      // انظر تعليق useMemo أعلاه لماذا هي اشتقاق لا حساب مالي جديد.
+      cycleWallet,
+      cycleWallets,
       movements: rolloverPlan,
       canManage: canManageLongTerm,
       isClosingMonth: longTermActions.isClosingMonth,
