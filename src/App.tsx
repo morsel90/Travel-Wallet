@@ -216,6 +216,8 @@ export default function App() {
                     isBusy: longTerm.isClosingMonth || longTerm.isExitingTraveler,
                   } : undefined}
                   cycleWallets={longTerm?.cycleWallets}
+                  periods={longTerm?.periods}
+                  lastClosedPeriod={longTerm?.lastClosedPeriod}
                 />
   
                 <ChartsPanel
@@ -297,6 +299,8 @@ export default function App() {
                 settlements: ledger.settlements,
                 categoryTotals: ledger.categoryTotals,
                 itinerary: trip.itinerary,
+                periods: longTerm?.periods,
+                lastClosedPeriod: longTerm?.lastClosedPeriod,
               }}
               deposit={{
                 amount: deposit.depositAmount, setAmount: deposit.setDepositAmount,

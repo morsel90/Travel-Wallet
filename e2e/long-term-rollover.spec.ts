@@ -131,6 +131,35 @@ test('إغلاق الشهر يُرحّل الأرصدة دون أن يغيّر �
   // الإغلاق يحمل اسمه الآن؛ ما نتحقق منه هو أن أغسطس لم يعد قابلاً للإغلاق.
   await expect(panel.getByRole('button', { name: /إغلاق أغسطس 2026/ })).toHaveCount(0)
   await expect(panel.getByRole('button', { name: new RegExp(`إغلاق ${NEXT_PERIOD_LABEL}`) })).toBeVisible()
+
+  // ── مُصفّي الدورة في التقارير: يعتمد على ما كتبه closeMonth الحقيقي فعلاً ──
+  // لا معاينة عميلية — القيم هنا من الخادم (نفس الاختبار السابق)، فتحقّقها هنا
+  // يُثبت أن boundaryRolloverAmount/periodOpeningBalance تقرآن مصروف الترحيل
+  // الحقيقي الذي كتبه closeMonth بصيغته الفعلية، لا افتراضاً محلياً عنه.
+  await page.getByRole('button', { name: 'التقارير' }).click()
+  // ⚠️ نطاق كل ما يلي #root لا الصفحة كلها: #print-root (بوابة الطباعة
+  // المخفيّة بصرياً فقط عبر CSS) يحمل نسخة مطابقة من كل نص، فيقع strict-mode
+  // violation بلا هذا التضييق.
+  const screen = page.locator('#root')
+  const reportsHeader = screen.getByRole('banner').filter({ hasText: 'تقارير الرحلة' })
+  await expect(reportsHeader).toBeVisible()
+
+  // ⚠️ combobox داخل هيدر التقارير تحديداً — لا مُرتِّب سجلّ المصاريف
+  // (#expenses-section له combobox خاص به بنفس الدور، فبلا هذا النطاق يقع
+  // strict-mode violation).
+  const periodSelect = reportsHeader.getByRole('combobox')
+  await expect(periodSelect).toBeVisible()
+
+  // دورة أغسطس (المُغلقة): 400.00 ريال مصروف حقيقي — لا أثر لمصروفَي الترحيل
+  // (تصفير رصيد سعد + فتح عجز خالد) رغم وقوع أحدهما تاريخياً داخل أغسطس.
+  await periodSelect.selectOption({ label: 'دورة أغسطس 2026' })
+  await expect(screen.getByText('إجمالي المصروف')).toBeVisible()
+  await expect(screen.getByText('400.00', { exact: true }).first()).toBeVisible()
+
+  // دورة سبتمبر (الحالية، بلا نشاط حقيقي بعد): رصيد الافتتاح يطابق بالضبط ما
+  // رُحِّل فعلاً — سعد دائن 800، خالد مدين 200 (سالب).
+  await periodSelect.selectOption({ label: `دورة ${NEXT_PERIOD_LABEL}` })
+  await expect(screen.getByText('رصيد الافتتاح')).toBeVisible()
 })
 
 test('ملف المسافر في رحلة طويلة يفتح نافذة الخروج لا تأكيد الحذف المعتاد', async ({ page }) => {

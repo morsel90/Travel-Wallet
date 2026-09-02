@@ -2,10 +2,13 @@ import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 // تمت إعادة استيراد أيقونة Printer
-import { X, Download, Printer, BarChart3, Users, TrendingUp, Wallet, Receipt, Scale, ArrowRightLeft } from '../../icons'
-import type { Expense, Traveler, TravelerBalance, Settlement, CategoryTotal, ItinerarySegment } from '../../types'
-import { buildDailySummary } from '../../utils/reportData'
+import { X, Download, Printer, BarChart3, Users, TrendingUp, Wallet, Receipt, Scale, ArrowRightLeft, CalendarRange } from '../../icons'
+import type { Expense, Traveler, TravelerBalance, Settlement, CategoryTotal, ItinerarySegment, PeriodKey } from '../../types'
+import { buildDailySummary, buildPeriodTravelerSummaries } from '../../utils/reportData'
 import { exportTripToExcel } from '../../utils/reports'
+import { calculateSettlements, calculateCategoryTotals } from '../../utils/calculations'
+import { filterCycleExpenses } from '../../utils/longTerm'
+import { formatPeriodLabel } from '../../utils/period'
 import { PrintableTripReport } from './PrintDocs'
 import { ItinerarySection } from '../ItinerarySection'
 
@@ -16,6 +19,15 @@ interface ReportsViewProps {
   settlements: Settlement[]
   categoryTotals: CategoryTotal[]
   itinerary?: ItinerarySegment[]
+  /**
+   * 🆕 الفترات المتاحة للتصفية (تصاعدياً) — الرحلة الطويلة فقط. غيابها يخفي
+   * مُصفّي الدورة بالكامل، فلا يتغيّر أي شيء في الرحلة القياسية. مصدرها
+   * useAppCoordinator.longTerm.periods (انظر utils/period.ts: listPeriods).
+   */
+  periods?: PeriodKey[]
+  /** 🆕 آخر شهر أُغلق فعلاً — لتمييز «افتتح بصفر معروف» عن «لا معلومة» في
+   *  buildPeriodTravelerSummaries. مصدرها useAppCoordinator.longTerm.lastClosedPeriod. */
+  lastClosedPeriod?: PeriodKey | null
   onClose: () => void
 }
 
@@ -26,21 +38,66 @@ const TABS: Array<{ key: ReportTab; label: string; Icon: typeof BarChart3 }> = [
   { key: 'daily',     label: 'الملخص اليومي', Icon: TrendingUp },
 ]
 
+const ALL_PERIODS = 'all' as const
+type PeriodFilter = PeriodKey | typeof ALL_PERIODS
+
 const fmt = (n: number): string => n.toFixed(2)
 
-function ReportsView({ travelers, expenses, balances, settlements, categoryTotals, itinerary, onClose }: ReportsViewProps) {
+function ReportsView({ travelers, expenses, balances, settlements, categoryTotals, itinerary, periods, lastClosedPeriod = null, onClose }: ReportsViewProps) {
   const [activeTab, setActiveTab] = useState<ReportTab>('summary')
+  const [selectedPeriod, setSelectedPeriod] = useState<PeriodFilter>(ALL_PERIODS)
+
+  // 🆕 تصفية الدورة — periods غائبة في الرحلة القياسية فيسقط isFiltered دائماً
+  // إلى false، ويبقى كل ما يلي مطابقاً حرفياً لسلوكه قبل هذه الميزة.
+  //
+  // ⚠️ **بديل كامل لا تصحيح جزئي**: expenses/balances/settlements/categoryTotals
+  // الأصلية لا تُلمَس؛ display* هي ما يُستهلك في كل مكان أدناه (الشاشة والطباعة
+  // والتصدير معاً) — مصدر واحد للأرقام المعروضة أياً كانت الدورة المختارة.
+  const isFiltered = !!periods && selectedPeriod !== ALL_PERIODS
+
+  const displayExpenses = useMemo(
+    () => (isFiltered ? filterCycleExpenses(expenses, selectedPeriod as PeriodKey) : expenses),
+    [isFiltered, expenses, selectedPeriod],
+  )
+  // 🆕 صيغة TravelerBalance متوافقة (deposited=افتتاح الدورة، remaining=إغلاقها)
+  // كي تعمل PrintableTripReport وbuildTravelerRows/exportTripToExcel كما هي
+  // تماماً بلا أي تغيير — انظر تعليق buildPeriodTravelerSummaries في reportData.ts
+  // لماذا opening/closing غير موثوقين لدورة لم يُعرف افتتاحها الحقيقي.
+  const periodSummaries = useMemo(
+    () => (isFiltered ? buildPeriodTravelerSummaries(travelers, expenses, selectedPeriod as PeriodKey, lastClosedPeriod) : null),
+    [isFiltered, travelers, expenses, selectedPeriod, lastClosedPeriod],
+  )
+  const displayBalances = useMemo<TravelerBalance[]>(() => {
+    if (!periodSummaries) return balances
+    return periodSummaries.map(s => {
+      const traveler = travelers.find(t => t.id === s.id)
+      return { ...(traveler as Traveler), deposited: s.opening, totalExpenses: s.spent, remaining: s.closing }
+    })
+  }, [periodSummaries, travelers, balances])
+  // 🆕 أول دورة في الرحلة (لا حدّ إغلاق سابق) — رصيد الافتتاح/الإغلاق أعلاه
+  // حينها ليسا رصيدين حقيقيين، بل صافي حركة الدورة فوق صفر مفترض. انظر
+  // hasKnownOpening في reportData.ts.
+  const hasUnknownOpening = periodSummaries?.some(s => !s.hasKnownOpening) ?? false
+  const displaySettlements = useMemo(
+    () => (isFiltered ? calculateSettlements(displayBalances) : settlements),
+    [isFiltered, displayBalances, settlements],
+  )
+  const displayCategoryTotals = useMemo(
+    () => (isFiltered ? calculateCategoryTotals(displayExpenses) : categoryTotals),
+    [isFiltered, displayExpenses, categoryTotals],
+  )
 
   const totals = useMemo(() => ({
-    deposited: balances.reduce((s, b) => s + b.deposited, 0),
-    spent:     balances.reduce((s, b) => s + b.totalExpenses, 0),
-    remaining: balances.reduce((s, b) => s + b.remaining, 0),
-    days:      new Set(expenses.map(e => e.date)).size,
-  }), [balances, expenses])
+    deposited: displayBalances.reduce((s, b) => s + b.deposited, 0),
+    spent:     displayBalances.reduce((s, b) => s + b.totalExpenses, 0),
+    remaining: displayBalances.reduce((s, b) => s + b.remaining, 0),
+    days:      new Set(displayExpenses.map(e => e.date)).size,
+  }), [displayBalances, displayExpenses])
 
-  const categoriesTotal = useMemo(() => categoryTotals.reduce((s, c) => s + c.total, 0), [categoryTotals])
-  const daily = useMemo(() => buildDailySummary(expenses), [expenses])
+  const categoriesTotal = useMemo(() => displayCategoryTotals.reduce((s, c) => s + c.total, 0), [displayCategoryTotals])
+  const daily = useMemo(() => buildDailySummary(displayExpenses), [displayExpenses])
   const generatedAt = new Date().toLocaleString('ar-SA', { dateStyle: 'medium', timeStyle: 'short' })
+  const periodSubtitle = isFiltered ? `دورة ${formatPeriodLabel(selectedPeriod as PeriodKey)}` : ''
 
   // تمت إعادة دالة الطباعة لتتوافق مع iOS
   const handlePrint = () => {
@@ -79,7 +136,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
             <button
               type="button"
               onClick={handlePrint}
-              disabled={expenses.length === 0}
+              disabled={displayExpenses.length === 0}
               className="flex items-center gap-1.5 bg-teal-800/60 hover:bg-teal-800 text-teal-50 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-40"
             >
               <Printer className="w-3.5 h-3.5" /> PDF
@@ -87,8 +144,11 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
 
             <button
               type="button"
-              onClick={() => exportTripToExcel({ expenses, travelers, balances, settlements })}
-              disabled={expenses.length === 0}
+              onClick={() => exportTripToExcel({
+                expenses: displayExpenses, travelers, balances: displayBalances, settlements: displaySettlements,
+                filenameSuffix: isFiltered ? `_دورة_${formatPeriodLabel(selectedPeriod as PeriodKey)}` : undefined,
+              })}
+              disabled={displayExpenses.length === 0}
               className="flex items-center gap-1.5 bg-teal-800/60 hover:bg-teal-800 text-teal-50 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-40"
             >
               <Download className="w-3.5 h-3.5" /> Excel
@@ -118,6 +178,24 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
             </button>
           ))}
         </div>
+
+        {/* 🆕 مُصفّي الدورة — الرحلة الطويلة فقط (periods). يؤثّر في التبويبين
+            معاً، ولذا يعيش هنا في الهيدر الثابت لا داخل تبويب واحد. */}
+        {periods && periods.length > 0 && (
+          <div className="max-w-4xl mx-auto px-4 pb-3 flex items-center gap-2">
+            <CalendarRange className="w-4 h-4 text-teal-200 shrink-0" />
+            <select
+              value={selectedPeriod}
+              onChange={e => setSelectedPeriod(e.target.value as PeriodFilter)}
+              className="flex-1 sm:flex-none bg-teal-800/60 text-teal-50 text-xs font-bold rounded-xl px-3 py-2 border-none outline-none focus:ring-2 focus:ring-teal-400"
+            >
+              <option value={ALL_PERIODS}>جميع الفترات</option>
+              {[...periods].reverse().map(p => (
+                <option key={p} value={p}>دورة {formatPeriodLabel(p)}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-6 space-y-6 pb-24">
@@ -128,23 +206,32 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
             <ItinerarySection itinerary={itinerary} />
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <KpiCard Icon={Wallet} label="إجمالي المودَع" value={fmt(totals.deposited)} tone="teal" />
+              <KpiCard Icon={Wallet} label={isFiltered ? 'رصيد الافتتاح' : 'إجمالي المودَع'} value={fmt(totals.deposited)} tone="teal" />
               <KpiCard Icon={Receipt} label="إجمالي المصروف" value={fmt(totals.spent)} tone="rose" />
-              <KpiCard Icon={Scale} label="المتبقي" value={fmt(totals.remaining)} tone={totals.remaining < 0 ? 'rose' : 'teal'} />
-              <KpiCard Icon={Receipt} label="عدد المصاريف" value={String(expenses.length)} tone="slate" />
+              <KpiCard Icon={Scale} label={isFiltered ? 'رصيد الإغلاق' : 'المتبقي'} value={fmt(totals.remaining)} tone={totals.remaining < 0 ? 'rose' : 'teal'} />
+              <KpiCard Icon={Receipt} label="عدد المصاريف" value={String(displayExpenses.length)} tone="slate" />
               <KpiCard Icon={Users} label="عدد المسافرين" value={String(travelers.length)} tone="slate" />
               <KpiCard Icon={TrendingUp} label="عدد الأيام" value={String(totals.days)} tone="slate" />
             </div>
+
+            {/* 🆕 تنبيه لأول دورة في الرحلة — لا حدّ إغلاق سابق يُعرَف منه رصيد
+                افتتاحها الحقيقي، فرصيد «رصيد الافتتاح/الإغلاق» أعلاه صافي
+                حركة الدورة فوق صفر مفترض لا رصيداً حقيقياً. */}
+            {isFiltered && hasUnknownOpening && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 -mt-2">
+                هذه أول دورة مسجَّلة في الرحلة — لا رصيد افتتاحي سابق معروف لها، فـ«رصيد الافتتاح/الإغلاق» أعلاه صافي حركة هذه الدورة وحدها لا رصيداً نهائياً حقيقياً.
+              </p>
+            )}
 
             <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
               <h2 className="text-base font-bold text-slate-800 flex items-center gap-2 mb-4">
                 <ArrowRightLeft className="w-5 h-5 text-teal-600" /> التسويات المقترحة
               </h2>
-              {settlements.length === 0 ? (
+              {displaySettlements.length === 0 ? (
                 <p className="text-center text-slate-400 font-medium text-sm py-4">🎉 لا توجد تسويات مطلوبة — الأرصدة متساوية.</p>
               ) : (
                 <div className="grid gap-2.5 sm:grid-cols-2">
-                  {settlements.map((s, i) => (
+                  {displaySettlements.map((s, i) => (
                     <div key={i} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-3">
                       <span className="text-sm font-bold text-slate-700">{s.fromName} ← {s.toName}</span>
                       <span className="font-black text-rose-600 tabular-nums text-sm">{fmt(s.amount)} ﷼</span>
@@ -154,13 +241,13 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
               )}
             </section>
 
-            {categoryTotals.length > 0 && (
+            {displayCategoryTotals.length > 0 && (
               <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
                 <h2 className="text-base font-bold text-slate-800 flex items-center gap-2 mb-4">
                   <BarChart3 className="w-5 h-5 text-teal-600" /> التوزيع حسب الفئة
                 </h2>
                 <div className="space-y-3.5">
-                  {categoryTotals.map((item, i) => {
+                  {displayCategoryTotals.map((item, i) => {
                     const pct = categoriesTotal > 0 ? (item.total / categoriesTotal) * 100 : 0
                     return (
                       <div key={i} className="space-y-1.5">
@@ -235,14 +322,14 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
           <div className="print-doc-trip">
             {/* مسار الرحلة صار قسماً رسمياً داخل PrintableTripReport (أسلوب موحّد مع بقية التقرير) */}
             <PrintableTripReport
-              tripName=""
+              tripName={periodSubtitle}
               generatedAt={generatedAt}
               travelers={travelers}
-              expenses={expenses}
-              balances={balances}
-              settlements={settlements}
-              categoryTotals={categoryTotals}
-              itinerary={itinerary}
+              expenses={displayExpenses}
+              balances={displayBalances}
+              settlements={displaySettlements}
+              categoryTotals={displayCategoryTotals}
+              itinerary={isFiltered ? undefined : itinerary}
             />
           </div>
         </div>,

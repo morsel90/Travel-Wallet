@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   ROLLOVER_EPSILON, ROLLOVER_CATEGORY, settlementDirection, planRollover, countRolloverMovements,
   describeExitBlock, describeOrganizerExitBlock, filterCycleExpenses, calculateCycleWallet,
+  boundaryRolloverAmount, periodOpeningBalance, periodClosingBalance,
 } from './longTerm'
 import type { TravelerBalance, Expense } from '../types'
 
@@ -117,6 +118,70 @@ describe('calculateCycleWallet', () => {
       const wallet = calculateCycleWallet(remaining, spent)
       expect(wallet - spent).toBeCloseTo(remaining, 10)
     }
+  })
+})
+
+describe('boundaryRolloverAmount', () => {
+  // نفس شكل buildAdjustmentExpense في functions/index.js بالضبط — تسمية
+  // الحقول والقيم مطابقة لما يكتبه closeMonth فعلاً.
+  const rollover = (date: string, amount: number, travelerId = 1) =>
+    expense({ id: `r-${date}`, date, amount, category: ROLLOVER_CATEGORY, participants: [travelerId] })
+
+  it('يقرأ رصيداً دائناً من مصروف الترحيل المؤرَّخ بنهاية الشهر السابق', () => {
+    const expenses = [rollover('2026-08-31', 800)]
+    expect(boundaryRolloverAmount(1, expenses, '2026-08', '2026-09')).toBe(800)
+  })
+
+  it('يقرأ عجزاً من مصروف الترحيل المؤرَّخ ببداية الشهر التالي', () => {
+    const expenses = [rollover('2026-09-01', 200)]
+    expect(boundaryRolloverAmount(1, expenses, '2026-08', '2026-09')).toBe(-200)
+  })
+
+  it('null حين لا يوجد أثر إغلاق بين الفترتين', () => {
+    expect(boundaryRolloverAmount(1, [], '2026-08', '2026-09')).toBeNull()
+  })
+
+  it('لا يخلط بين مسافرين — رصيد مسافر آخر بنفس التاريخ لا يُطابَق', () => {
+    const expenses = [rollover('2026-08-31', 800, 2)]
+    expect(boundaryRolloverAmount(1, expenses, '2026-08', '2026-09')).toBeNull()
+  })
+
+  it('لا يخلط مصروفاً حقيقياً بنفس التاريخ مع مصروف ترحيل', () => {
+    const expenses = [expense({ id: 'real', date: '2026-08-31', amount: 800, category: 'طعام وشراب' })]
+    expect(boundaryRolloverAmount(1, expenses, '2026-08', '2026-09')).toBeNull()
+  })
+})
+
+describe('periodOpeningBalance / periodClosingBalance', () => {
+  it('إغلاق دورة = افتتاح الدورة التالية — نفس القراءة من زاويتين', () => {
+    const expenses = [
+      expense({ id: 'r', date: '2026-08-31', amount: 800, category: ROLLOVER_CATEGORY, participants: [1] }),
+    ]
+    expect(periodClosingBalance(1, expenses, '2026-08', '2026-08')).toBe(800)
+    expect(periodOpeningBalance(1, expenses, '2026-09', '2026-08')).toBe(800)
+  })
+
+  it('أول دورة في الرحلة — لا افتتاح معروف (لا lastClosedPeriod أصلاً)', () => {
+    expect(periodOpeningBalance(1, [], '2026-07', null)).toBeNull()
+  })
+
+  // ⚠️ الحالة التي كشفها e2e فعلاً: closeMonth لا يكتب شيئاً لمسافر رصيده
+  // مسوّى (صفر) عند الإغلاق — غياب المصروف هنا لا يعني «لا معلومة» إن كانت
+  // الدورة السابقة *أُغلقت* بالفعل (lastClosedPeriod يثبت ذلك).
+  it('مسافر مسوّى عند إغلاق فعلي — افتتاح صفر معروف لا مجهول', () => {
+    // لا مصروف ترحيل لهذا المسافر إطلاقاً (لم يكن له رصيد يُرحَّل)، لكن أغسطس
+    // أُغلق فعلاً (lastClosedPeriod='2026-08') — فسبتمبر يفتتح بصفر معروف.
+    expect(periodOpeningBalance(1, [], '2026-09', '2026-08')).toBe(0)
+  })
+
+  it('لا خلط بين «لم تُغلق بعد» و«أُغلقت ومسوّى» — lastClosedPeriod أقدم من المطلوب', () => {
+    // آخر إغلاق كان يوليو — أغسطس نفسه لم يُغلق بعد، فسبتمبر لا يزال مجهول الافتتاح.
+    expect(periodOpeningBalance(1, [], '2026-09', '2026-07')).toBeNull()
+  })
+
+  it('نفس المبدأ لـ periodClosingBalance — دورة أُغلقت ومسافرها مسوّى', () => {
+    expect(periodClosingBalance(1, [], '2026-08', '2026-08')).toBe(0)
+    expect(periodClosingBalance(1, [], '2026-08', '2026-07')).toBeNull()
   })
 })
 

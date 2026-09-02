@@ -65,4 +65,5 @@ export {
   DoorOpen,      // 🆕 خروج منتدَب من رحلة طويلة المدى (ExitTravelerModal)
   Smartphone,    // 🆕 محفظة رقمية/رقم جوال كبديل للحساب البنكي (UserProfileModal + BankDetailsCard)
   Archive,       // 🆕 صفّ «الرحلات المؤرشفة» القابل للطي في «رحلاتي» (نمط واتساب)
+  CalendarRange, // 🆕 مُصفّي الدورة في التقارير/كشف الحساب (الرحلات طويلة المدى)
 } from 'lucide-react'

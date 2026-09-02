@@ -92,17 +92,20 @@ export interface TripExcelParams {
   travelers: Traveler[]
   balances: TravelerBalance[]
   settlements: Settlement[]
+  /** 🆕 يُلحَق باسم الملف — لتمييز تصدير مُصفّى بدورة واحدة (مثلاً
+   *  `_دورة_أغسطس_2026`) عن تقرير الرحلة الكامل. اختياري، بلا أثر إن غاب. */
+  filenameSuffix?: string
 }
 
 /** يجمّع كل الأوراق ويُنزّل مصنّف Excel واحداً للرحلة. */
-export function exportTripToExcel({ expenses, travelers, balances, settlements }: TripExcelParams): void {
+export function exportTripToExcel({ expenses, travelers, balances, settlements, filenameSuffix }: TripExcelParams): void {
   const sheets: XlsxSheet[] = [
     { name: 'المصاريف', rows: buildExpenseRows(expenses, travelers), rtl: true },
     { name: 'ملخص المسافرين', rows: buildTravelerRows(balances), rtl: true },
     { name: 'التسويات', rows: buildSettlementRows(settlements), rtl: true },
     { name: 'الملخص اليومي', rows: buildDailyRows(expenses), rtl: true },
   ]
-  downloadXlsx(`تقرير_الرحلة_${todayStr()}.xlsx`, sheets)
+  downloadXlsx(`تقرير_الرحلة${filenameSuffix ?? ''}_${todayStr()}.xlsx`, sheets)
 }
 
 // ============================================================================
@@ -113,10 +116,12 @@ export interface TravelerExcelParams {
   balance: TravelerBalance
   // قد تكون null إن لم يُبنَ كشف الحساب بعد (انظر TravelerProfileModal)
   statement: AccountStatement | null
+  /** 🆕 يُلحَق باسم الملف — انظر TripExcelParams.filenameSuffix لنفس الغرض. */
+  filenameSuffix?: string
 }
 
 /** يجمّع بيانات المسافر الفردية ويُنزّل كشف حسابه كملف Excel */
-export function exportTravelerToExcel({ traveler, balance, statement }: TravelerExcelParams): void {
+export function exportTravelerToExcel({ traveler, balance, statement, filenameSuffix }: TravelerExcelParams): void {
   // 1. بناء ورقة الخلاصة
   const summaryRows: XlsxCell[][] = [
     ['البيان', 'القيمة (ريال)'],
@@ -146,5 +151,5 @@ export function exportTravelerToExcel({ traveler, balance, statement }: Traveler
 
   // استبدال المسافات في اسم المسافر بشرطة سفلية لاسم الملف
   const safeName = traveler.name.replace(/\s+/g, '_')
-  downloadXlsx(`كشف_حساب_${safeName}_${todayStr()}.xlsx`, sheets)
+  downloadXlsx(`كشف_حساب_${safeName}${filenameSuffix ?? ''}_${todayStr()}.xlsx`, sheets)
 }
