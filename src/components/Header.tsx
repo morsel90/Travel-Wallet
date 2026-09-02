@@ -119,6 +119,35 @@ const Header = ({
   const [showCycle, setShowCycle] = useState(true)
   const displayedStats: HeaderStats | null = cycleStats && showCycle ? cycleStats : stats
 
+  // 🆕 شارة الدورة الحالية + زرّ التبديل — الرحلة الطويلة فقط (cycleStats).
+  // ⚠️ **تُعرض دائماً بغضّ النظر عن isCollapsed، داخل صفّ الحبات نفسه لا في
+  // صفّ منفصل مشروط بـ `!isCollapsed`.** أول نسخة وضعتها في صفّ خاص يختفي مع
+  // التقلّص — فصار ظهورها/اختفاؤها يغيّر ارتفاع الهيدر (اللاصق) تبعاً لحالة
+  // isCollapsed نفسها، وisCollapsed مبنية على حدث scroll. النتيجة حلقة تغذية
+  // راجعة رُصدت فعلاً في e2e (long-term-rollover.spec.ts): تمرير Playwright
+  // التلقائي نحو زرّ أسفل الصفحة يُطلق حدث scroll → الهيدر يتقلّص → الشارة
+  // تختفي فيقصر الهيدر → المحتوى يرتفع → الهدف يتحرّك → إعادة محاولة النقر
+  // تُمرّر مجدداً → قد يتوسّع الهيدر مجدداً → ذباب لا ينتهي حتى انتهاء المهلة
+  // ("element is not stable"). الحل: الشارة جزء من صفّ الحبات ذاته (يظهر في
+  // الحالتين المتقلّصة والكاملة كما تفعل الحبات تماماً)، فتبديل isCollapsed
+  // لا يغيّر وجودها من الأساس — فقط حجمها (compact)، تماماً كبقية الحبات.
+  const renderCycleBadge = (compact: boolean) =>
+    cycleStats && (
+      <button
+        type="button"
+        onClick={() => setShowCycle(v => !v)}
+        title={showCycle ? 'اضغط لعرض الإجمالي التراكمي للرحلة' : 'اضغط لعرض الدورة الحالية'}
+        className={`flex items-center gap-1 shrink-0 rounded-full font-bold scroll-snap-start transition-colors bg-indigo-500/40 hover:bg-indigo-500/60 text-indigo-50 ${
+          compact ? 'text-[10px] px-2 py-1.5' : 'text-xs px-3 py-2'
+        }`}
+      >
+        {showCycle
+          ? (compact ? cycleStats.periodLabel : `دورة ${cycleStats.periodLabel}`)
+          : (compact ? 'الإجمالي' : 'الإجمالي التراكمي للرحلة')}
+        <RefreshCw className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+      </button>
+    )
+
   const renderPills = (compact: boolean) =>
     STAT_ITEMS(displayedStats as HeaderStats).map(({ key, Icon, value, tone }) => (
       // 3. تحويل span إلى button ليكون قابلاً للضغط مع تأثيرات الحوامة (Hover)
@@ -200,6 +229,7 @@ const Header = ({
                 aria-live="polite"
                 aria-atomic="true"
               >
+                {renderCycleBadge(true)}
                 {displayedStats ? renderPills(true) : renderPillSkeleton(3, true)}
               </div>
             </>
@@ -248,33 +278,16 @@ const Header = ({
       </div>
 
       {!isCollapsed && (
-        <>
-          {/* 🆕 شارة الدورة الحالية + زرّ التبديل — الرحلة الطويلة فقط
-              (cycleStats). ضغطة واحدة تُبدّل بين رقمَي الدورة والإجمالي
-              التراكمي في الحبات الثلاث أسفلها معاً؛ «المتبقي» لا يتغيّر رقمه
-              بين الحالتين (هو نفسه في الدورتين، انظر calculateCycleWallet) —
-              وهذا مقصود لا عرض ناقص. */}
-          {cycleStats && (
-            <div className="max-w-7xl mx-auto px-4 -mt-1 pb-1 flex items-center justify-center">
-              <button
-                type="button"
-                onClick={() => setShowCycle(v => !v)}
-                title={showCycle ? 'اضغط لعرض الإجمالي التراكمي للرحلة' : 'اضغط لعرض الدورة الحالية'}
-                className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-50 bg-indigo-500/40 hover:bg-indigo-500/60 px-2.5 py-1 rounded-full transition-colors"
-              >
-                {showCycle ? `دورة ${cycleStats.periodLabel}` : 'الإجمالي التراكمي للرحلة'}
-                <RefreshCw className="w-3 h-3" />
-              </button>
-            </div>
-          )}
-          <div
-            className={`max-w-7xl mx-auto px-4 pb-3.5 -mt-1 flex items-center justify-center gap-3 sm:gap-4 ${SCROLL_ROW}`}
-            aria-live="polite"
-            aria-atomic="true"
-          >
-            {displayedStats ? renderPills(false) : renderPillSkeleton(3, false)}
-          </div>
-        </>
+        <div
+          className={`max-w-7xl mx-auto px-4 pb-3.5 -mt-1 flex items-center justify-center gap-3 sm:gap-4 ${SCROLL_ROW}`}
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {/* «المتبقي» لا يتغيّر رقمه بين الدورة والإجمالي التراكمي (هو نفسه
+              في الحالتين، انظر calculateCycleWallet) — مقصود لا عرض ناقص. */}
+          {renderCycleBadge(false)}
+          {displayedStats ? renderPills(false) : renderPillSkeleton(3, false)}
+        </div>
       )}
     </header>
   )
