@@ -52,45 +52,40 @@ describe('Header — عنوان الرحلة', () => {
   })
 })
 
-describe('Header — شارة الدورة الحالية (رحلة طويلة)', () => {
+describe('Header — السطر الموجز (رقم واحد بدل حبّات وشارة/تبديل)', () => {
+  // ⚠️ استُبدلت ثلاث حبّات ملوّنة + شارة/زرّ تبديل الدورة بسطر نصّي هادئ واحد
+  // ("المتبقي فقط") — طلب صاحب الحساب صراحةً إزالة الشارة والتبديل لأنهما
+  // زادا الزحمة. لا حالة داخلية بعد الآن، فلا اختبار تبديل يلزم.
   beforeEach(() => {
     mockIsCollapsed.mockReturnValue(false)
   })
 
-  const cycleStats = { periodLabel: 'أغسطس 2026', totalDeposited: 300, totalSpent: 50, totalRemaining: 600 }
+  const cycleStats = { periodLabel: 'أغسطس 2026', totalDeposited: 300, totalSpent: 50, totalRemaining: 700 }
 
-  it('لا شارة ولا زرّ تبديل حين تغيب cycleStats — الرحلة القياسية بلا أثر', () => {
+  it('رحلة قياسية — سطر «المتبقي» وحده، بلا اسم دورة', () => {
     render(<Header {...baseProps} />)
+    expect(screen.getByText('المتبقي 600.00 ﷼')).toBeInTheDocument()
     expect(screen.queryByText(/دورة/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/الإجمالي التراكمي للرحلة/)).not.toBeInTheDocument()
   })
 
-  it('تعرض أرقام الدورة افتراضياً — لا الإجمالي التراكمي', () => {
+  it('رحلة طويلة — اسم الدورة + متبقي الدورة (لا الإجمالي التراكمي)، بلا زرّ تبديل', () => {
     render(<Header {...baseProps} cycleStats={cycleStats} />)
-    expect(screen.getByText('دورة أغسطس 2026')).toBeInTheDocument()
-    expect(screen.getByText('300.00')).toBeInTheDocument() // محفظة الدورة
-    expect(screen.getByText('50.00')).toBeInTheDocument()  // مصاريف الدورة
-    expect(screen.queryByText('1000.00')).not.toBeInTheDocument() // الإجمالي التراكمي لم يظهر
+    expect(screen.getByText('دورة أغسطس 2026 · المتبقي 700.00 ﷼')).toBeInTheDocument()
+    // 600.00 (stats.totalRemaining التراكمي) لا يظهر — الدورة فقط، ولا خيار لعرضه.
+    expect(screen.queryByText(/600\.00/)).not.toBeInTheDocument()
   })
 
-  it('الضغط على الشارة يبدّل إلى الإجمالي التراكمي للرحلة', async () => {
+  it('الضغط على السطر يستدعي onStatClick بمفتاح remaining', async () => {
     const user = userEvent.setup()
-    render(<Header {...baseProps} cycleStats={cycleStats} />)
+    const onStatClick = vi.fn()
+    render(<Header {...baseProps} onStatClick={onStatClick} />)
 
-    await user.click(screen.getByText('دورة أغسطس 2026'))
-
-    expect(screen.getByText('الإجمالي التراكمي للرحلة')).toBeInTheDocument()
-    expect(screen.getByText('1000.00')).toBeInTheDocument() // stats.totalDeposited
-    expect(screen.getByText('400.00')).toBeInTheDocument()  // stats.totalSpent
-    expect(screen.queryByText('300.00')).not.toBeInTheDocument()
+    await user.click(screen.getByText('المتبقي 600.00 ﷼'))
+    expect(onStatClick).toHaveBeenCalledWith('remaining')
   })
 
-  it('«المتبقي» نفس الرقم في الحالتين — الدورة والإجمالي التراكمي متّسقان به', async () => {
-    const user = userEvent.setup()
-    render(<Header {...baseProps} cycleStats={cycleStats} />)
-
-    expect(screen.getAllByText('600.00')).toHaveLength(1)
-    await user.click(screen.getByText('دورة أغسطس 2026'))
-    expect(screen.getAllByText('600.00')).toHaveLength(1)
+  it('بلا onStatClick — السطر نصّ بحت لا زرّاً', () => {
+    render(<Header {...baseProps} />)
+    expect(screen.getByText('المتبقي 600.00 ﷼').closest('button')).toBeNull()
   })
 })
