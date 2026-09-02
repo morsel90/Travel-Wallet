@@ -136,7 +136,7 @@ export default function TravelerProfileModal({
         <header className="sticky top-0 z-10 bg-teal-700 text-white shadow-md">
           <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
             <h1 className="font-bold text-base sm:text-lg truncate">
-              ملف المسافر: {traveler.name}
+              {traveler.name}
             </h1>
             <div className="flex items-center gap-2 shrink-0">
               <button

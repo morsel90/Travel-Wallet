@@ -5,13 +5,13 @@ import { calculateBalances } from '../utils/calculations'
 import * as fx from '../fixtures'
 
 const meta = {
-  title: 'المسافرون/ملف المسافر',
+  title: 'المسافرون/كشف حساب المسافر',
   component: TravelerProfileModal,
   parameters: {
     docs: {
       description: {
         component:
-          'ملف المسافر كاملاً — بلا سياق (كل بياناته props مباشرة، بخلاف TravelerCard). ' +
+          'كشف حساب المسافر كاملاً — بلا سياق (كل بياناته props مباشرة، بخلاف TravelerCard). ' +
           'قصة "كشف الحساب — خط زمني" هي ما يصعب بلوغه في التطبيق الحيّ (تتطلب رحلة طويلة مُغلَقة فعلاً).',
       },
     },

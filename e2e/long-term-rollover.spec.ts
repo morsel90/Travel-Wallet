@@ -177,7 +177,7 @@ test('ملف المسافر في رحلة طويلة يفتح نافذة الخ�
   await expect(page.locator('#long-term-section')).toBeVisible()
 
   await travelerCard(page, MONA.name).getByText(MONA.name, { exact: true }).click()
-  await expect(page.getByRole('heading', { name: `ملف المسافر: ${MONA.name}` })).toBeVisible()
+  await expect(page.getByRole('heading', { name: MONA.name, exact: true })).toBeVisible()
   // الزرّ أسفل تبويب «الخلاصة والتسويات» — التبويب الافتراضي عند الفتح.
   await page.getByRole('button', { name: 'إخراج من الرحلة', exact: true }).click()
 
@@ -195,7 +195,7 @@ test('خروج منتدَب: يُمنع برصيد غير مسوّى، ويمر�
   await expect(page.locator('#long-term-section')).toBeVisible()
 
   await travelerCard(page, KHALED.name).getByText(KHALED.name, { exact: true }).click()
-  await expect(page.getByRole('heading', { name: `ملف المسافر: ${KHALED.name}` })).toBeVisible()
+  await expect(page.getByRole('heading', { name: KHALED.name, exact: true })).toBeVisible()
 
   // ⚠️ النص المتوقَّع «تسوية وخروج من الرحلة» لا «إخراج من الرحلة»: خالد عليه
   // عجز، والزرّ يصف ما سيحدث فعلاً. رُصد أن الصياغة المجرّدة السابقة («إخراج»
