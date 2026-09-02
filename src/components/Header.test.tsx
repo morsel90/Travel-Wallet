@@ -5,6 +5,7 @@
 // تحقّق بصري منها غير موثوق أصلاً.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import Header from './Header'
 
 const mockIsCollapsed = vi.fn(() => false)
@@ -48,5 +49,48 @@ describe('Header — عنوان الرحلة', () => {
     mockIsCollapsed.mockReturnValue(true)
     render(<Header {...baseProps} />)
     expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument()
+  })
+})
+
+describe('Header — شارة الدورة الحالية (رحلة طويلة)', () => {
+  beforeEach(() => {
+    mockIsCollapsed.mockReturnValue(false)
+  })
+
+  const cycleStats = { periodLabel: 'أغسطس 2026', totalDeposited: 300, totalSpent: 50, totalRemaining: 600 }
+
+  it('لا شارة ولا زرّ تبديل حين تغيب cycleStats — الرحلة القياسية بلا أثر', () => {
+    render(<Header {...baseProps} />)
+    expect(screen.queryByText(/دورة/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/الإجمالي التراكمي للرحلة/)).not.toBeInTheDocument()
+  })
+
+  it('تعرض أرقام الدورة افتراضياً — لا الإجمالي التراكمي', () => {
+    render(<Header {...baseProps} cycleStats={cycleStats} />)
+    expect(screen.getByText('دورة أغسطس 2026')).toBeInTheDocument()
+    expect(screen.getByText('300.00')).toBeInTheDocument() // محفظة الدورة
+    expect(screen.getByText('50.00')).toBeInTheDocument()  // مصاريف الدورة
+    expect(screen.queryByText('1000.00')).not.toBeInTheDocument() // الإجمالي التراكمي لم يظهر
+  })
+
+  it('الضغط على الشارة يبدّل إلى الإجمالي التراكمي للرحلة', async () => {
+    const user = userEvent.setup()
+    render(<Header {...baseProps} cycleStats={cycleStats} />)
+
+    await user.click(screen.getByText('دورة أغسطس 2026'))
+
+    expect(screen.getByText('الإجمالي التراكمي للرحلة')).toBeInTheDocument()
+    expect(screen.getByText('1000.00')).toBeInTheDocument() // stats.totalDeposited
+    expect(screen.getByText('400.00')).toBeInTheDocument()  // stats.totalSpent
+    expect(screen.queryByText('300.00')).not.toBeInTheDocument()
+  })
+
+  it('«المتبقي» نفس الرقم في الحالتين — الدورة والإجمالي التراكمي متّسقان به', async () => {
+    const user = userEvent.setup()
+    render(<Header {...baseProps} cycleStats={cycleStats} />)
+
+    expect(screen.getAllByText('600.00')).toHaveLength(1)
+    await user.click(screen.getByText('دورة أغسطس 2026'))
+    expect(screen.getAllByText('600.00')).toHaveLength(1)
   })
 })

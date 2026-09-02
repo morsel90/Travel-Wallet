@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { PieChart, Loader2, Wallet, Receipt, Scale } from '../icons'
+import { PieChart, Loader2, Wallet, Receipt, Scale, RefreshCw } from '../icons'
 import { useHeaderCollapse } from '../hooks/useHeaderCollapse'
 import AccountMenu from './AccountMenu'
 
@@ -7,6 +8,16 @@ export interface HeaderStats {
   totalDeposited: number
   totalSpent: number
   totalRemaining: number
+}
+
+/**
+ * 🆕 أرقام الدورة المحاسبية الحالية — undefined/null في الرحلة القياسية، فلا
+ * يظهر شارة الدورة ولا زرّ التبديل بحرف (نفس مبدأ `longTerm` في
+ * useAppCoordinator: قيمة واحدة تُفحص هنا بدل شرط `tripType` داخل هذا الملف).
+ */
+export interface HeaderCycleStats extends HeaderStats {
+  /** «أغسطس 2026» — يُعرض في الشارة فوق الإحصاءات. */
+  periodLabel: string
 }
 
 // 1. إضافة onStatClick و isOnline للخصائص (Props)
@@ -36,6 +47,9 @@ interface HeaderProps {
    * زرّ «تسجيل الدخول كمسؤول» عمّن لا يحتاجه أصلاً. */
   isOrganizer: boolean
   stats: HeaderStats | null
+  /** 🆕 أرقام الدورة الحالية — الرحلة الطويلة فقط. غيابها (undefined/null)
+   * يُبقي الهيدر بلا شارة ولا زرّ تبديل، بالضبط كما كان قبل هذه الميزة. */
+  cycleStats?: HeaderCycleStats | null
   onStatClick?: (stat: 'deposited' | 'spent' | 'remaining') => void
   isOnline?: boolean // افتراضياً ستكون true إذا لم تُمرر
   // 🆕 قائمة الحساب الموحّدة — تجمع رحلاتي/بروفايلي/وضع المسؤول/تسجيل الخروج.
@@ -87,6 +101,7 @@ const Header = ({
   onEditTrip,
   isOrganizer,
   stats,
+  cycleStats,
   onStatClick,
   isOnline = true, // تعيين قيمة افتراضية
   displayName,
@@ -98,8 +113,43 @@ const Header = ({
 }: HeaderProps) => {
   const isCollapsed = useHeaderCollapse()
 
+  // 🆕 الافتراضي: عرض الدورة الحالية حين تتوفر (طلب صاحب الحساب صراحةً) —
+  // القيمة تبقى true بلا أثر في الرحلة القياسية لأن cycleStats غائبة أصلاً
+  // هناك، فـ displayedStats تسقط إلى stats دائماً بغضّ النظر عن هذه الحالة.
+  const [showCycle, setShowCycle] = useState(true)
+  const displayedStats: HeaderStats | null = cycleStats && showCycle ? cycleStats : stats
+
+  // 🆕 شارة الدورة الحالية + زرّ التبديل — الرحلة الطويلة فقط (cycleStats).
+  // ⚠️ **تُعرض دائماً بغضّ النظر عن isCollapsed، داخل صفّ الحبات نفسه لا في
+  // صفّ منفصل مشروط بـ `!isCollapsed`.** أول نسخة وضعتها في صفّ خاص يختفي مع
+  // التقلّص — فصار ظهورها/اختفاؤها يغيّر ارتفاع الهيدر (اللاصق) تبعاً لحالة
+  // isCollapsed نفسها، وisCollapsed مبنية على حدث scroll. النتيجة حلقة تغذية
+  // راجعة رُصدت فعلاً في e2e (long-term-rollover.spec.ts): تمرير Playwright
+  // التلقائي نحو زرّ أسفل الصفحة يُطلق حدث scroll → الهيدر يتقلّص → الشارة
+  // تختفي فيقصر الهيدر → المحتوى يرتفع → الهدف يتحرّك → إعادة محاولة النقر
+  // تُمرّر مجدداً → قد يتوسّع الهيدر مجدداً → ذباب لا ينتهي حتى انتهاء المهلة
+  // ("element is not stable"). الحل: الشارة جزء من صفّ الحبات ذاته (يظهر في
+  // الحالتين المتقلّصة والكاملة كما تفعل الحبات تماماً)، فتبديل isCollapsed
+  // لا يغيّر وجودها من الأساس — فقط حجمها (compact)، تماماً كبقية الحبات.
+  const renderCycleBadge = (compact: boolean) =>
+    cycleStats && (
+      <button
+        type="button"
+        onClick={() => setShowCycle(v => !v)}
+        title={showCycle ? 'اضغط لعرض الإجمالي التراكمي للرحلة' : 'اضغط لعرض الدورة الحالية'}
+        className={`flex items-center gap-1 shrink-0 rounded-full font-bold scroll-snap-start transition-colors bg-indigo-500/40 hover:bg-indigo-500/60 text-indigo-50 ${
+          compact ? 'text-[10px] px-2 py-1.5' : 'text-xs px-3 py-2'
+        }`}
+      >
+        {showCycle
+          ? (compact ? cycleStats.periodLabel : `دورة ${cycleStats.periodLabel}`)
+          : (compact ? 'الإجمالي' : 'الإجمالي التراكمي للرحلة')}
+        <RefreshCw className={compact ? 'w-3 h-3' : 'w-3.5 h-3.5'} />
+      </button>
+    )
+
   const renderPills = (compact: boolean) =>
-    STAT_ITEMS(stats as HeaderStats).map(({ key, Icon, value, tone }) => (
+    STAT_ITEMS(displayedStats as HeaderStats).map(({ key, Icon, value, tone }) => (
       // 3. تحويل span إلى button ليكون قابلاً للضغط مع تأثيرات الحوامة (Hover)
       <button
         key={key}
@@ -179,7 +229,8 @@ const Header = ({
                 aria-live="polite"
                 aria-atomic="true"
               >
-                {stats ? renderPills(true) : renderPillSkeleton(3, true)}
+                {renderCycleBadge(true)}
+                {displayedStats ? renderPills(true) : renderPillSkeleton(3, true)}
               </div>
             </>
           ) : (
@@ -232,7 +283,10 @@ const Header = ({
           aria-live="polite"
           aria-atomic="true"
         >
-          {stats ? renderPills(false) : renderPillSkeleton(3, false)}
+          {/* «المتبقي» لا يتغيّر رقمه بين الدورة والإجمالي التراكمي (هو نفسه
+              في الحالتين، انظر calculateCycleWallet) — مقصود لا عرض ناقص. */}
+          {renderCycleBadge(false)}
+          {displayedStats ? renderPills(false) : renderPillSkeleton(3, false)}
         </div>
       )}
     </header>

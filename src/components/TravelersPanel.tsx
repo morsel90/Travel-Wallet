@@ -31,6 +31,10 @@ interface TravelersPanelProps {
   onStartAddTraveler: () => void
   travelerForm: TravelerFormProps
   longTermExit?: LongTermExitProps
+  /** 🆕 محفظة الدورة الحالية لكل مسافر (id → قيمة) — مصدرها
+   *  useAppCoordinator.longTerm.cycleWallets، undefined/فارغة في الرحلة
+   *  القياسية فلا تعرض بطاقة أي مسافر شيئاً مختلفاً. */
+  cycleWallets?: Record<number, number>
 }
 
 // ─── قسم أرصدة المسافرين ──────────────────────────────────────────────────────
@@ -38,7 +42,7 @@ interface TravelersPanelProps {
 // من DataContext/UIActionsContext كما كان — لم يتغيّر شيء في استهلاكه للسياق.
 export const TravelersPanel = ({
   isInitialLoading, isAdmin, activeTravelers, balances,
-  isAddingTraveler, onStartAddTraveler, travelerForm, longTermExit,
+  isAddingTraveler, onStartAddTraveler, travelerForm, longTermExit, cycleWallets,
 }: TravelersPanelProps) => (
   <section id="travelers-section" className="scroll-mt-24">
     <div className="flex justify-between items-center mb-4 px-1">
@@ -66,7 +70,12 @@ export const TravelersPanel = ({
         {isInitialLoading
           ? Array.from({ length: 4 }, (_, i) => <TravelerCardSkeleton key={i} />)
           : balances.map(traveler => (
-              <TravelerCard key={traveler.id} traveler={traveler} longTermExit={longTermExit} />
+              <TravelerCard
+                key={traveler.id}
+                traveler={traveler}
+                longTermExit={longTermExit}
+                cycleWallet={cycleWallets?.[traveler.id]}
+              />
             ))
         }
 

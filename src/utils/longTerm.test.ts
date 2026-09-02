@@ -1,13 +1,18 @@
 import { describe, it, expect } from 'vitest'
 import {
-  ROLLOVER_EPSILON, settlementDirection, planRollover, countRolloverMovements, describeExitBlock,
-  describeOrganizerExitBlock,
+  ROLLOVER_EPSILON, ROLLOVER_CATEGORY, settlementDirection, planRollover, countRolloverMovements,
+  describeExitBlock, describeOrganizerExitBlock, filterCycleExpenses, calculateCycleWallet,
 } from './longTerm'
-import type { TravelerBalance } from '../types'
+import type { TravelerBalance, Expense } from '../types'
 
 const balance = (over: Partial<TravelerBalance>): TravelerBalance => ({
   id: 1, name: 'سعد', shortName: 'سعد', deposited: 0,
   totalExpenses: 0, remaining: 0, ...over,
+})
+
+const expense = (over: Partial<Expense>): Expense => ({
+  id: 'e1', date: '2026-08-10', description: 'مصروف', amount: 100, originalAmount: 100,
+  currency: 'SAR', exchangeRate: 1, participants: [1], createdAt: 0, ...over,
 })
 
 describe('settlementDirection', () => {
@@ -78,6 +83,40 @@ describe('describeExitBlock', () => {
   it('يمنع الخروج ويسمّي المبلغ والاتجاه', () => {
     expect(describeExitBlock('long_term', 'سعد', 300)).toContain('له رصيد متبقٍّ 300.00 ريال')
     expect(describeExitBlock('long_term', 'خالد', -120.5)).toContain('عليه 120.50 ريال')
+  })
+})
+
+describe('filterCycleExpenses', () => {
+  it('يستبعد مصاريف الشهور الأخرى', () => {
+    const result = filterCycleExpenses([
+      expense({ id: 'a', date: '2026-08-05' }),
+      expense({ id: 'b', date: '2026-07-31' }),
+      expense({ id: 'c', date: '2026-09-01' }),
+    ], '2026-08')
+    expect(result.map(e => e.id)).toEqual(['a'])
+  })
+
+  // ⚠️ الجوهر: مصروف الترحيل الذي كتبه closeMonth مؤرَّخ داخل الشهر (افتتاحاً
+  // لعجز، أو إغلاقاً لرصيد) لكنه محاسبة إغلاق لا إنفاق فعلي — عدّه ضمن «مصاريف
+  // هذا الشهر» يُضاعف نفس المبلغ الذي أنتجه هو (انظر تعليق closeMonth).
+  it('يستبعد مصاريف الترحيل رغم وقوعها داخل الشهر', () => {
+    const result = filterCycleExpenses([
+      expense({ id: 'real', date: '2026-08-05' }),
+      expense({ id: 'rollover', date: '2026-08-01', category: ROLLOVER_CATEGORY }),
+    ], '2026-08')
+    expect(result.map(e => e.id)).toEqual(['real'])
+  })
+})
+
+describe('calculateCycleWallet', () => {
+  // ⚠️ الجوهر: مهما كانت القيمتان، محفظة الدورة ناقص مصاريفها يُعيد الرصيد
+  // المتبقي نفسه دائماً — هذا هو الاتساق بين «رصيد الدورة» و«المتبقي» في
+  // البطاقة/الهيدر، بلا اعتماد على أي مصدر بيانات آخر.
+  it('يُعيد المتبقي نفسه عند طرح مصاريف الدورة من محفظتها', () => {
+    for (const [remaining, spent] of [[800, 0], [-200, 0], [150.5, 320], [-90, 45]]) {
+      const wallet = calculateCycleWallet(remaining, spent)
+      expect(wallet - spent).toBeCloseTo(remaining, 10)
+    }
   })
 })
 
