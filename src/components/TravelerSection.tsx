@@ -22,10 +22,8 @@ interface TravelerCardProps {
    *  undefined في الرحلة القياسية، فتبقى البطاقة كما كانت بلا حرف. حاضرة في
    *  الرحلة الطويلة فقط (انظر TravelersPanel.tsx). */
   cycleWallet?: number
-  /** 🆕 الفترات المتاحة لمُصفّي الدورة في ملف المسافر — انظر ReportsView.tsx. */
+  /** 🆕 الفترات المتاحة في ملف المسافر — انظر تعليقها في TravelerProfileModal.tsx. */
   periods?: PeriodKey[]
-  /** 🆕 آخر شهر أُغلق فعلاً — انظر تعليقها في ReportsView.tsx. */
-  lastClosedPeriod?: PeriodKey | null
 }
 
 // دالة تحويل الأرقام الهندية/الشرقية (١٢٣) إلى أرقام غربية (123) لمنع خطأ الـ NaN
@@ -35,7 +33,7 @@ const convertArabicNumerals = (str: string): string => {
 };
 
 // مكوّن عرض بطاقة رصيد المسافر المنفرد (Traveler Card)
-export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods, lastClosedPeriod }: TravelerCardProps) => {
+export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods }: TravelerCardProps) => {
   // جلبنا settlements و travelers لدعم بيانات النافذة المنبثقة
   const { isAdmin, isOrganizer, expenses, travelers, user } = useTripData()
   // 🆕 نموذج الهوية الهجين: تمييز بطاقة المستخدم نفسه بين بطاقات بقية المسافرين
@@ -199,7 +197,6 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
           expenses={expenses}
           settlements={[]}
           periods={periods}
-          lastClosedPeriod={lastClosedPeriod}
           allTravelers={travelers}
           isAdmin={isAdmin}
           isOrganizer={isOrganizer}

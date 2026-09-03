@@ -218,7 +218,6 @@ export default function App() {
                   } : undefined}
                   cycleWallets={longTerm?.cycleWallets}
                   periods={longTerm?.periods}
-                  lastClosedPeriod={longTerm?.lastClosedPeriod}
                 />
   
                 <ChartsPanel

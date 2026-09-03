@@ -8,7 +8,7 @@ import type { TimelineRow } from '../../utils/reportData'
 import { buildTravelerReport, buildAccountStatement, buildMergedTimeline } from '../../utils/reportData'
 import { useDepositLogs } from '../../hooks/useDepositLogs'
 import { exportTravelerToExcel } from '../../utils/reports'
-import { settlementDirection, filterCycleExpenses, periodOpeningBalance, ROLLOVER_CATEGORY } from '../../utils/longTerm'
+import { settlementDirection, filterCycleExpenses, ROLLOVER_CATEGORY } from '../../utils/longTerm'
 import { formatPeriodLabel } from '../../utils/period'
 import { PrintableStatement } from '../reports/PrintDocs' // تأكد من صحة مسار استيراد مستند الطباعة
 
@@ -41,10 +41,10 @@ interface TravelerProfileModalProps {
   /** 🆕 التبويب الذي تُفتح عليه النافذة — 'statement' لزر "كشف حسابي" على بطاقة المستخدم نفسه (TravelerSection.tsx)، افتراضياً 'summary' لبقية نقاط الفتح. */
   initialTab?: TabType
   longTermExit?: LongTermExitProps
-  /** 🆕 الفترات المتاحة للتصفية (تصاعدياً) — الرحلة الطويلة فقط، انظر ReportsView.tsx. */
+  /** 🆕 الفترات المتاحة (تصاعدياً) — الرحلة الطويلة فقط. آخر عنصر هو الدورة
+   *  الحالية دوماً (انظر currentPeriod أدناه)، وهي الوحيدة المعروضة الآن —
+   *  لا مُصفّي يدوي بعد الآن، انظر ReportsView.tsx لعرض دورة سابقة بعينها. */
   periods?: PeriodKey[]
-  /** 🆕 آخر شهر أُغلق فعلاً — انظر تعليقها في ReportsView.tsx. */
-  lastClosedPeriod?: PeriodKey | null
 }
 
 type TabType = 'summary' | 'statement'
@@ -65,7 +65,6 @@ export default function TravelerProfileModal({
   initialTab = 'summary',
   longTermExit,
   periods,
-  lastClosedPeriod = null,
 }: TravelerProfileModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab)
 
@@ -79,9 +78,8 @@ export default function TravelerProfileModal({
   // بينما لا علاقة طبيعية بين "الدورة" و"كشف الحساب التفصيلي" (تراكمي بطبعه).
   // بدل ذلك: "الخلاصة والتسويات" (والمؤشرات العلوية فوق التبويبين) تعرض
   // الدورة الحالية دوماً في الرحلة الطويلة، و"كشف الحساب التفصيلي" يعرض كل
-  // الدورات دوماً (انظر `statement` أدناه، منفصل عمداً عن `periodStatement`).
-  // periods غائبة في الرحلة القياسية فيسقط hasPeriods دائماً إلى false،
-  // فتساوي displayExpenses/opening حرفياً expenses/balance.deposited تماماً
+  // الدورات دوماً (انظر `statement` أدناه). periods غائبة في الرحلة القياسية
+  // فيسقط hasPeriods دائماً إلى false، فتساوي displayExpenses حرفياً expenses
   // كسلوك ما قبل ميزة الفترات أصلاً.
   const hasPeriods = !!periods && periods.length > 0
   // 🆕 آخر عنصر في periods هو الدورة الحالية دائماً — ثابتة من بناء listPeriods
@@ -92,23 +90,27 @@ export default function TravelerProfileModal({
     () => (hasPeriods ? filterCycleExpenses(expenses, currentPeriod!) : expenses),
     [hasPeriods, expenses, currentPeriod],
   )
-  // 🆕 opening غير مبنيّ على balance.deposited (تراكمي) — periodOpeningBalance
-  // تقرأ رصيد افتتاح الدورة الحالية الحقيقي من مصروف الترحيل الذي كتبه
-  // closeMonth (انظر تعليقها في utils/longTerm.ts). null (لا صفر) يعني
-  // «غير معروف» — أول دورة في الرحلة، أو الدورة السابقة لم تُغلق بعد.
-  const openingLookup = useMemo(
-    () => (hasPeriods ? periodOpeningBalance(traveler.id, expenses, currentPeriod!, lastClosedPeriod) : null),
-    [hasPeriods, traveler.id, expenses, currentPeriod, lastClosedPeriod],
-  )
-  const opening = hasPeriods ? (openingLookup ?? 0) : balance.deposited
-  const hasUnknownOpening = hasPeriods && openingLookup === null
 
   const travelerReport = useMemo(() => buildTravelerReport(traveler, displayExpenses), [traveler, displayExpenses])
-  // 🆕 مؤشرات الدورة الحالية (المؤشرات العلوية + "الخلاصة والتسويات") — منفصلة
-  // عمداً عن `statement` أدناه، الذي يبقى تراكمياً على كل الدورات دائماً
-  // لتغذية "كشف الحساب التفصيلي" والتصدير/الطباعة. في الرحلة القياسية
-  // (hasPeriods=false) الاثنان متطابقان رقمياً دوماً — لا فرق ملحوظ هناك.
-  const periodStatement = useMemo(() => buildAccountStatement(opening, traveler, displayExpenses), [opening, traveler, displayExpenses])
+  // ⚠️ **لا "رصيد افتتاح" مُجمَّد في المؤشرات العلوية — المسافر لا يهمّه متى
+  // بدأت الدورة، بل كم يملك الآن.** "المودَع" هنا يعني "المتاح له هذه الدورة"
+  // (المُرحَّل من الدورة السابقة + أي إيداع أُضيف خلالها)، لا رصيد حدّ الدورة
+  // الجامد وحده. اشتقاقه جبري من balance.remaining (صحيح دائماً، مقروء من
+  // travelers/{id}.deposited لكل عضو بلا حاجة لصلاحية depositLogs) بعكس
+  // معادلة الرصيد المعروفة:
+  //   balance.remaining = المودَع هذه الدورة + دفعه من جيبه هذه الدورة − نصيبه هذه الدورة
+  //   ⇒ المودَع هذه الدورة = balance.remaining − دفعه من جيبه + نصيبه
+  // ولذلك لا يحتاج معرفة رصيد حدّ الدورة (periodOpeningBalance) إطلاقاً —
+  // ولا معنى لـ"رصيد افتتاح غير معروف" بعد الآن، فالمعادلة لا تفترضه أصلاً.
+  //
+  // ⚠️ **كان هذا خطأً حقيقياً لا نظرياً قبل هذا الإصلاح**: النسخة السابقة كانت
+  // تعرض رصيد حدّ الدورة الجامد (من مصروف الترحيل الذي كتبه closeMonth) دون
+  // أي علم بإيداعات أُضيفت *بعده* (DepositModal يكتب depositLogs مباشرة، لا
+  // مصروفاً يدخل filterCycleExpenses إطلاقاً) — فمن أضاف إيداعاً هذه الدورة
+  // كان يرى "المودَع" في الخلاصة أقلّ من رصيده الحقيقي (المعروض بصحة في كشف
+  // الحساب التفصيلي) بقيمة ذلك الإيداع بالضبط، ما بدا له كأن إيداعه اختفى.
+  const periodPocketAndShare = useMemo(() => buildAccountStatement(0, traveler, displayExpenses), [traveler, displayExpenses])
+  const depositedThisCycle = balance.remaining + periodPocketAndShare.totalShare - periodPocketAndShare.totalPaidByPocket
   const statement = useMemo(() => buildAccountStatement(balance.deposited, traveler, expenses), [balance.deposited, traveler, expenses])
   const pays = useMemo(() => settlements.filter(s => s.fromId === traveler.id), [settlements, traveler.id])
   const receives = useMemo(() => settlements.filter(s => s.toId === traveler.id), [settlements, traveler.id])
@@ -203,24 +205,23 @@ export default function TravelerProfileModal({
         </header>
 
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-6 pb-24">
-          {/* المؤشرات العلوية الأساسية — دورة حالية دوماً (لا مُصفّي يدوي) */}
+          {/* المؤشرات العلوية الأساسية — دورة حالية دوماً (لا مُصفّي يدوي).
+              "المودَع" = المتاح له هذه الدورة (مُرحَّل + إيداعات أُضيفت خلالها)،
+              و"المتبقي" = balance.remaining الحيّ — كلاهما بلا حاجة لمعرفة رصيد
+              حدّ الدورة، انظر تعليق depositedThisCycle أعلاه. لا بطاقة "دفعه من
+              جيبه" هنا عمداً — تفصيل موجود بالفعل في "كشف الحساب التفصيلي"،
+              والخلاصة تبقى ثلاث بطاقات فقط مهما كانت الحالة. */}
           <div className="grid grid-cols-3 gap-3">
-            <KpiCard Icon={Wallet} label={hasPeriods ? 'رصيد الافتتاح' : 'المودَع'} value={fmt(opening)} tone="teal" />
-            <KpiCard Icon={Receipt} label="نصيبه" value={fmt(periodStatement.totalShare)} tone="rose" />
-            <KpiCard Icon={Scale} label={hasPeriods ? 'رصيد الإغلاق' : 'المتبقي'} value={fmt(periodStatement.remaining)} tone={periodStatement.remaining < 0 ? 'rose' : 'teal'} />
+            <KpiCard Icon={Wallet} label="المودَع" value={fmt(depositedThisCycle)} tone="teal" />
+            <KpiCard Icon={Receipt} label="نصيبه" value={fmt(periodPocketAndShare.totalShare)} tone="rose" />
+            <KpiCard Icon={Scale} label="المتبقي" value={fmt(balance.remaining)} tone={balance.remaining < 0 ? 'rose' : 'teal'} />
           </div>
           {/* 🆕 توضيح أن الأرقام أعلاه للدورة الحالية تحديداً — بلا مُصفّي يدوي بعد
               الآن، هذه القراءة الوحيدة لمعرفة الدورة المقصودة. */}
           {hasPeriods && (
             <p className="text-[11px] text-slate-400 font-bold text-center -mt-3">أرقام دورة {formatPeriodLabel(currentPeriod!)}</p>
           )}
-  
-          {hasUnknownOpening && (
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-              هذه أول دورة مسجَّلة له — لا رصيد افتتاحي سابق معروف، فـ«رصيد الافتتاح/الإغلاق» أعلاه صافي حركة هذه الدورة وحدها لا رصيداً نهائياً حقيقياً.
-            </p>
-          )}
-  
+
           {/* أزرار التبديل */}
           <div className="flex bg-slate-200/70 p-1 rounded-xl">
             <button

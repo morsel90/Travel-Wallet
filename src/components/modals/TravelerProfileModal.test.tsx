@@ -120,4 +120,30 @@ describe('TravelerProfileModal — الدورة الحالية للخلاصة، 
     expect(main.getByText('غداء يوليو')).toBeInTheDocument()
     expect(main.getByText('عشاء أغسطس')).toBeInTheDocument()
   })
+
+  // 🆕 خطأ حقيقي أبلغ عنه المستخدم: إيداع أُضيف *خلال* الدورة الحالية كان
+  // يختفي من "المودَع" في الخلاصة (تُبنى وقتها من رصيد حدّ دورة جامد لا يعرف
+  // شيئاً عمّا حدث بعده) رغم ظهوره بصحة في "الرصيد الحالي" أسفل كشف الحساب
+  // التفصيلي (balance.remaining دائماً صحيح). المودَع الصحيح = المتبقي +
+  // نصيبه هذه الدورة − دفعه من جيبه هذه الدورة (جبرياً، بلا حاجة لمعرفة رصيد
+  // حدّ الدورة أو حتى قراءة depositLogs).
+  it('المودَع في الخلاصة يشمل إيداعاً أُضيف خلال الدورة الحالية — لا يختفي كما في الخطأ المُبلَّغ عنه', () => {
+    const breakfast: Expense = {
+      id: 'e-breakfast', date: '2026-08-05', description: 'فطور', amount: 8.33, originalAmount: 8.33,
+      currency: 'SAR', exchangeRate: 1, participants: [1], createdAt: 300, category: 'طعام وشراب',
+    }
+    // balance.remaining هو المصدر الوحيد الموثوق (يُقرأ من travelers/{id}.deposited
+    // مباشرة، لا حاجة لصلاحية depositLogs) — 50.60 يشمل الإيداع الذي أُضيف
+    // هذه الدورة، تماماً كما ظهر بصحة في تقرير المستخدم أسفل كشف الحساب.
+    const balanceWithMidCycleDeposit: TravelerBalance = { ...traveler, totalExpenses: 8.33, remaining: 50.60 }
+    renderModal({
+      expenses: [breakfast], periods, balance: balanceWithMidCycleDeposit, initialTab: 'summary',
+    })
+    const main = within(screen.getByRole('main'))
+    // المودَع = 50.60 (المتبقي) + 8.33 (نصيبه) − 0 (دفعه من جيبه) = 58.93 —
+    // لا 38.93 ولا أي رقم جامد آخر يتجاهل الإيداع.
+    expect(main.getByText('58.93')).toBeInTheDocument()
+    expect(main.getByText('8.33')).toBeInTheDocument()
+    expect(main.getByText('50.60')).toBeInTheDocument()
+  })
 })
