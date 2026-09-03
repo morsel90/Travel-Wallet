@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import TravelerProfileModal from './TravelerProfileModal'
 import type { DepositLogEntry, Expense, Traveler, TravelerBalance } from '../../types'
 import { useDepositLogs } from '../../hooks/useDepositLogs'
@@ -78,5 +78,46 @@ describe('TravelerProfileModal — دمج سجل تعديلات الرصيد ف�
     // العنصر [0] هو رصيد الافتتاح دائماً؛ التالي مباشرة يجب أن يكون تعديل الرصيد لا المصروف.
     expect(items[1].textContent).toContain('تعديل رصيد')
     expect(items[2].textContent).toContain('عشاء')
+  })
+})
+
+// 🆕 لا مُصفّي دورة يدوي بعد الآن: "الخلاصة والتسويات" (والمؤشرات العلوية)
+// تعرض الدورة الحالية دوماً، و"كشف الحساب التفصيلي" يعرض كل الدورات دوماً —
+// بلا أي تبديل يدوي بينهما.
+describe('TravelerProfileModal — الدورة الحالية للخلاصة، كل الدورات لكشف الحساب التفصيلي', () => {
+  const julyExpense: Expense = {
+    id: 'e-july', date: '2026-07-15', description: 'غداء يوليو', amount: 100, originalAmount: 100,
+    currency: 'SAR', exchangeRate: 1, participants: [1], createdAt: 100, category: 'طعام وشراب',
+  }
+  const augustExpense: Expense = {
+    id: 'e-august', date: '2026-08-05', description: 'عشاء أغسطس', amount: 50, originalAmount: 50,
+    currency: 'SAR', exchangeRate: 1, participants: [1], createdAt: 200, category: 'طعام وشراب',
+  }
+  const twoPeriodExpenses = [julyExpense, augustExpense]
+  // periods مرتّبة تصاعدياً وتنتهي دوماً بالدورة الحالية (نفس عقد listPeriods
+  // في utils/period.ts) — أغسطس هنا هي "الحالية".
+  const periods = ['2026-07' as const, '2026-08' as const]
+
+  it('عنصر تحكّم تصفية الدورة غائب تماماً — تسمية نصية فقط تُبيّن الدورة المقصودة', () => {
+    renderModal({ expenses: twoPeriodExpenses, periods })
+    expect(screen.queryByLabelText('تصفية الدورة')).not.toBeInTheDocument()
+    expect(screen.getByText('أرقام دورة أغسطس 2026')).toBeInTheDocument()
+  })
+
+  // 🆕 استعلامات مقصورة على <main> عمداً: المودال يُخرج دائماً مستند طباعة
+  // مخفي (#print-root) موازياً لمحتوى الشاشة — تراكمي دوماً بغضّ النظر عن
+  // التبويب المفتوح — فيتكرر أي نص فيه أيضاً، ويُبطل استعلاماً غير مُقيَّد.
+  it('الخلاصة والتسويات: الدورة الحالية (أغسطس) فقط — مصروف يوليو غائب', () => {
+    renderModal({ expenses: twoPeriodExpenses, periods, initialTab: 'summary' })
+    const main = within(screen.getByRole('main'))
+    expect(main.getByText('عشاء أغسطس')).toBeInTheDocument()
+    expect(main.queryByText('غداء يوليو')).not.toBeInTheDocument()
+  })
+
+  it('كشف الحساب التفصيلي: تراكمي على كل الدورات — يوليو وأغسطس معاً', () => {
+    renderModal({ expenses: twoPeriodExpenses, periods, initialTab: 'statement' })
+    const main = within(screen.getByRole('main'))
+    expect(main.getByText('غداء يوليو')).toBeInTheDocument()
+    expect(main.getByText('عشاء أغسطس')).toBeInTheDocument()
   })
 })

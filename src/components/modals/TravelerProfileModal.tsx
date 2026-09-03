@@ -2,7 +2,7 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { X, Wallet, Receipt, Scale, Loader2, Download, Printer, HandCoins, DoorOpen, RefreshCw, Landmark } from '../../icons'
+import { X, Wallet, Receipt, Scale, Download, Printer, HandCoins, DoorOpen, RefreshCw, Landmark } from '../../icons'
 import type { Expense, Traveler, TravelerBalance, Settlement, PeriodKey } from '../../types'
 import type { TimelineRow } from '../../utils/reportData'
 import { buildTravelerReport, buildAccountStatement, buildMergedTimeline } from '../../utils/reportData'
@@ -11,7 +11,6 @@ import { exportTravelerToExcel } from '../../utils/reports'
 import { settlementDirection, filterCycleExpenses, periodOpeningBalance, ROLLOVER_CATEGORY } from '../../utils/longTerm'
 import { formatPeriodLabel } from '../../utils/period'
 import { PrintableStatement } from '../reports/PrintDocs' // تأكد من صحة مسار استيراد مستند الطباعة
-import { PeriodSelect, ALL_PERIODS, type PeriodFilter } from '../longterm/PeriodSelect'
 
 /** 🆕 حاضرة فقط في الرحلة الطويلة (مصدرها useAppCoordinator.longTerm عبر
  *  TravelerCard) — غيابها يعني رحلة قياسية، فلا يظهر قسم الخروج بحرف. مقصودة
@@ -69,7 +68,6 @@ export default function TravelerProfileModal({
   lastClosedPeriod = null,
 }: TravelerProfileModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab)
-  const [selectedPeriod, setSelectedPeriod] = useState<PeriodFilter>(ALL_PERIODS)
 
   const nameById = useMemo(() => {
     const m = new Map<number, string>()
@@ -77,27 +75,41 @@ export default function TravelerProfileModal({
     return m
   }, [allTravelers])
 
-  // 🆕 تصفية الدورة — periods غائبة في الرحلة القياسية فيسقط isFiltered دائماً
-  // إلى false، وdisplayExpenses/opening يساويان expenses/balance.deposited
-  // حرفياً كما كانا قبل هذه الميزة.
-  const isFiltered = !!periods && selectedPeriod !== ALL_PERIODS
+  // 🆕 لا مُصفّي دورة يدوي بعد الآن — كان يُبدّل التصفية على التبويبين معاً
+  // بينما لا علاقة طبيعية بين "الدورة" و"كشف الحساب التفصيلي" (تراكمي بطبعه).
+  // بدل ذلك: "الخلاصة والتسويات" (والمؤشرات العلوية فوق التبويبين) تعرض
+  // الدورة الحالية دوماً في الرحلة الطويلة، و"كشف الحساب التفصيلي" يعرض كل
+  // الدورات دوماً (انظر `statement` أدناه، منفصل عمداً عن `periodStatement`).
+  // periods غائبة في الرحلة القياسية فيسقط hasPeriods دائماً إلى false،
+  // فتساوي displayExpenses/opening حرفياً expenses/balance.deposited تماماً
+  // كسلوك ما قبل ميزة الفترات أصلاً.
+  const hasPeriods = !!periods && periods.length > 0
+  // 🆕 آخر عنصر في periods هو الدورة الحالية دائماً — ثابتة من بناء listPeriods
+  // في utils/period.ts (تنتهي القائمة عند currentPeriod دوماً، ولو بلا مصروف
+  // واحد بعد في تلك الدورة). لا حاجة لتمرير الدورة الحالية كخاصية منفصلة.
+  const currentPeriod: PeriodKey | null = hasPeriods ? periods![periods!.length - 1] : null
   const displayExpenses = useMemo(
-    () => (isFiltered ? filterCycleExpenses(expenses, selectedPeriod as PeriodKey) : expenses),
-    [isFiltered, expenses, selectedPeriod],
+    () => (hasPeriods ? filterCycleExpenses(expenses, currentPeriod!) : expenses),
+    [hasPeriods, expenses, currentPeriod],
   )
-  // 🆕 opening غير مبنيّ على balance.deposited (تراكمي) حين تُصفَّى دورة —
-  // periodOpeningBalance تقرأ رصيد افتتاحها الحقيقي من مصروف الترحيل الذي
-  // كتبه closeMonth (انظر تعليقها في utils/longTerm.ts). null (لا صفر) يعني
+  // 🆕 opening غير مبنيّ على balance.deposited (تراكمي) — periodOpeningBalance
+  // تقرأ رصيد افتتاح الدورة الحالية الحقيقي من مصروف الترحيل الذي كتبه
+  // closeMonth (انظر تعليقها في utils/longTerm.ts). null (لا صفر) يعني
   // «غير معروف» — أول دورة في الرحلة، أو الدورة السابقة لم تُغلق بعد.
   const openingLookup = useMemo(
-    () => (isFiltered ? periodOpeningBalance(traveler.id, expenses, selectedPeriod as PeriodKey, lastClosedPeriod) : null),
-    [isFiltered, traveler.id, expenses, selectedPeriod, lastClosedPeriod],
+    () => (hasPeriods ? periodOpeningBalance(traveler.id, expenses, currentPeriod!, lastClosedPeriod) : null),
+    [hasPeriods, traveler.id, expenses, currentPeriod, lastClosedPeriod],
   )
-  const opening = isFiltered ? (openingLookup ?? 0) : balance.deposited
-  const hasUnknownOpening = isFiltered && openingLookup === null
+  const opening = hasPeriods ? (openingLookup ?? 0) : balance.deposited
+  const hasUnknownOpening = hasPeriods && openingLookup === null
 
   const travelerReport = useMemo(() => buildTravelerReport(traveler, displayExpenses), [traveler, displayExpenses])
-  const statement = useMemo(() => buildAccountStatement(opening, traveler, displayExpenses), [opening, traveler, displayExpenses])
+  // 🆕 مؤشرات الدورة الحالية (المؤشرات العلوية + "الخلاصة والتسويات") — منفصلة
+  // عمداً عن `statement` أدناه، الذي يبقى تراكمياً على كل الدورات دائماً
+  // لتغذية "كشف الحساب التفصيلي" والتصدير/الطباعة. في الرحلة القياسية
+  // (hasPeriods=false) الاثنان متطابقان رقمياً دوماً — لا فرق ملحوظ هناك.
+  const periodStatement = useMemo(() => buildAccountStatement(opening, traveler, displayExpenses), [opening, traveler, displayExpenses])
+  const statement = useMemo(() => buildAccountStatement(balance.deposited, traveler, expenses), [balance.deposited, traveler, expenses])
   const pays = useMemo(() => settlements.filter(s => s.fromId === traveler.id), [settlements, traveler.id])
   const receives = useMemo(() => settlements.filter(s => s.toId === traveler.id), [settlements, traveler.id])
   // 🆕 من يرى سجل تعديلات الرصيد: المسؤول أو منظّم الرحلة (يريان سجل أي
@@ -105,14 +117,13 @@ export default function TravelerProfileModal({
   // firestore.rules (isOwnTraveler/isOrganizer) وdocs/DECISIONS.md.
   const canViewDepositLogs = isAdmin || isOrganizer || isSelf
   const { logs, error: logsError } = useDepositLogs(traveler.id, canViewDepositLogs && activeTab === 'statement')
-  // 🆕 دمج سجل الإيداعات داخل خط كشف الحساب — غير المُصفَّى بدورة فقط
-  // (periodOpeningBalance مصدرها مصروف الترحيل لا deposited، فلا صلة زمنية
-  // طبيعية بعد بين "الدورة" وحركات الإيداع، انظر buildMergedTimeline). يبقى
-  // الخط البسيط (statement.rows) هو المعروض حين لا تتوفر السجلات بعد (تحميل/
-  // بلا صلاحية/خطأ) كي لا يختفي كشف الحساب كاملاً بانتظارها.
+  // 🆕 دمج سجل الإيداعات داخل خط كشف الحساب — دائماً على كل المصاريف (expenses
+  // الكاملة لا displayExpenses)، لأن "كشف الحساب التفصيلي" تراكمي دوماً الآن.
+  // يبقى الخط البسيط (statement.rows) هو المعروض حين لا تتوفر السجلات بعد
+  // (تحميل/بلا صلاحية/خطأ) كي لا يختفي كشف الحساب كاملاً بانتظارها.
   const mergedTimeline = useMemo(
-    () => (!isFiltered && canViewDepositLogs && logs && !logsError ? buildMergedTimeline(traveler, displayExpenses, logs) : null),
-    [isFiltered, canViewDepositLogs, logs, logsError, traveler, displayExpenses],
+    () => (canViewDepositLogs && logs && !logsError ? buildMergedTimeline(traveler, expenses, logs) : null),
+    [canViewDepositLogs, logs, logsError, traveler, expenses],
   )
 
   // إعادة حيلة محرك WebKit لتجاوز حظر الطباعة التلقائي في iOS Safari
@@ -173,9 +184,8 @@ export default function TravelerProfileModal({
                 type="button"
                 onClick={() => exportTravelerToExcel({
                   traveler,
-                  balance: { ...traveler, deposited: opening, totalExpenses: statement.totalShare, remaining: statement.remaining },
+                  balance: { ...traveler, deposited: statement.opening, totalExpenses: statement.totalShare, remaining: statement.remaining },
                   statement,
-                  filenameSuffix: isFiltered ? `_دورة_${formatPeriodLabel(selectedPeriod as PeriodKey)}` : undefined,
                 })}
                 className="flex items-center gap-1.5 bg-teal-800/60 hover:bg-teal-800 text-teal-50 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors"
               >
@@ -190,22 +200,20 @@ export default function TravelerProfileModal({
               </button>
             </div>
           </div>
-  
-          {/* 🆕 مُصفّي الدورة — الرحلة الطويلة فقط (periods). يؤثّر في التبويبين معاً. */}
-          {periods && periods.length > 0 && (
-            <div className="max-w-4xl mx-auto px-4 pb-3">
-              <PeriodSelect periods={periods} value={selectedPeriod} onChange={setSelectedPeriod} />
-            </div>
-          )}
         </header>
-  
+
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-6 pb-24">
-          {/* المؤشرات العلوية الأساسية */}
+          {/* المؤشرات العلوية الأساسية — دورة حالية دوماً (لا مُصفّي يدوي) */}
           <div className="grid grid-cols-3 gap-3">
-            <KpiCard Icon={Wallet} label={isFiltered ? 'رصيد الافتتاح' : 'المودَع'} value={fmt(opening)} tone="teal" />
-            <KpiCard Icon={Receipt} label="نصيبه" value={fmt(statement.totalShare)} tone="rose" />
-            <KpiCard Icon={Scale} label={isFiltered ? 'رصيد الإغلاق' : 'المتبقي'} value={fmt(statement.remaining)} tone={statement.remaining < 0 ? 'rose' : 'teal'} />
+            <KpiCard Icon={Wallet} label={hasPeriods ? 'رصيد الافتتاح' : 'المودَع'} value={fmt(opening)} tone="teal" />
+            <KpiCard Icon={Receipt} label="نصيبه" value={fmt(periodStatement.totalShare)} tone="rose" />
+            <KpiCard Icon={Scale} label={hasPeriods ? 'رصيد الإغلاق' : 'المتبقي'} value={fmt(periodStatement.remaining)} tone={periodStatement.remaining < 0 ? 'rose' : 'teal'} />
           </div>
+          {/* 🆕 توضيح أن الأرقام أعلاه للدورة الحالية تحديداً — بلا مُصفّي يدوي بعد
+              الآن، هذه القراءة الوحيدة لمعرفة الدورة المقصودة. */}
+          {hasPeriods && (
+            <p className="text-[11px] text-slate-400 font-bold text-center -mt-3">أرقام دورة {formatPeriodLabel(currentPeriod!)}</p>
+          )}
   
           {hasUnknownOpening && (
             <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
@@ -301,13 +309,13 @@ export default function TravelerProfileModal({
                   تُعرض لغيره تفادياً لتكرار ما تقوله بطاقات "الخلاصة" أعلاه بالفعل. */}
               {statement.totalPaidByPocket !== 0 && (
                 <section className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <KpiCard Icon={Wallet} label={isFiltered ? 'رصيد الافتتاح' : 'المودَع'} value={fmt(statement.opening)} tone="teal" />
+                  <KpiCard Icon={Wallet} label="المودَع" value={fmt(statement.opening)} tone="teal" />
                   <KpiCard Icon={HandCoins} label="دفعه من جيبه" value={fmt(statement.totalPaidByPocket)} tone="teal" />
                   <KpiCard Icon={Receipt} label="نصيبه من المصاريف" value={fmt(statement.totalShare)} tone="rose" />
-                  <KpiCard Icon={Scale} label={isFiltered ? 'رصيد الإغلاق' : 'المتبقي'} value={fmt(statement.remaining)} tone={statement.remaining < 0 ? 'rose' : 'teal'} />
+                  <KpiCard Icon={Scale} label="المتبقي" value={fmt(statement.remaining)} tone={statement.remaining < 0 ? 'rose' : 'teal'} />
                 </section>
               )}
-  
+
               <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-5">
                 <h3 className="text-sm font-bold text-slate-800 mb-1">
                   {mergedTimeline ? 'حركة الحساب — رصيد جارٍ' : 'حركة المصاريف — رصيد جارٍ'}
@@ -325,49 +333,17 @@ export default function TravelerProfileModal({
                 ) : (
                   <StatementTimeline
                     opening={statement.opening}
-                    openingLabel={isFiltered ? 'رصيد الافتتاح' : 'المودَع الابتدائي'}
+                    openingLabel="المودَع الابتدائي"
                     rows={statement.rows}
                     closing={statement.remaining}
-                    closingLabel={isFiltered ? 'رصيد الإغلاق' : 'الرصيد الحالي'}
+                    closingLabel="الرصيد الحالي"
                   />
                 )}
                 {/* 🆕 لا تُخفى مشكلة التحميل صامتة — تظهر تحت الخط البسيط بدل قسم منفصل كامل. */}
-                {!isFiltered && canViewDepositLogs && logsError && (
+                {canViewDepositLogs && logsError && (
                   <p className="text-[11px] text-rose-500 font-bold mt-3">تعذّر تحميل سجل تعديلات الرصيد — الخط أعلاه يعرض حركة المصاريف فقط حالياً.</p>
                 )}
               </section>
-
-              {isFiltered && canViewDepositLogs && (
-                <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
-                    <h3 className="text-sm font-bold text-slate-800">سجل تعديلات الرصيد</h3>
-                  </div>
-                  {logsError ? (
-                    <p className="text-center text-rose-500 text-sm py-6">تعذّر تحميل السجل — تحقّق من صلاحياتك.</p>
-                  ) : logs === null ? (
-                    <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-teal-500" /></div>
-                  ) : logs.length === 0 ? (
-                    <p className="text-center text-slate-400 text-sm py-6">لا توجد تعديلات مسجّلة على الرصيد.</p>
-                  ) : (
-                    <div className="divide-y divide-slate-100">
-                      {logs.map(log => (
-                        <div key={log.id} className="flex items-center justify-between px-4 py-3 gap-3 text-sm">
-                          <div className="min-w-0">
-                            <p className="font-bold text-slate-700">{MODE_LABELS[log.mode] ?? log.mode}</p>
-                            <p className="text-[11px] text-slate-400 font-bold">
-                              {new Date(log.createdAt).toLocaleDateString('ar-SA', { dateStyle: 'medium' })}
-                              {log.reason ? ` · ${log.reason}` : ''}
-                            </p>
-                          </div>
-                          <span className={`font-black tabular-nums shrink-0 ${log.delta >= 0 ? 'text-teal-600' : 'text-rose-600'}`} dir="ltr">
-                            {log.delta >= 0 ? '+' : ''}{fmt(log.delta)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </section>
-              )}
             </div>
           )}
         </main>
@@ -404,7 +380,7 @@ export default function TravelerProfileModal({
           {traveler && statement && (
             <div className="print-doc-statement">
               <PrintableStatement
-                tripName={isFiltered ? `دورة ${formatPeriodLabel(selectedPeriod as PeriodKey)}` : ''}
+                tripName=""
                 generatedAt={generatedAt}
                 traveler={traveler}
                 statement={statement}
