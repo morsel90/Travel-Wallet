@@ -182,12 +182,22 @@ const Header = ({
                   className="flex items-center gap-2.5 min-w-0 text-right"
                 >
                   <Logo isCollapsed={isCollapsed} isOnline={isOnline} />
-                  <h1 className="font-bold tracking-wide truncate text-xl">{tripName}</h1>
+                  {/* 🆕 line-clamp-2 لا truncate: اسم يخلط عربية بمقطع لاتيني
+                      يتقطّع مع truncate بترتيب بصري مُضلِّل (قصور معروف في
+                      تفاعل text-overflow:ellipsis مع bidi — جرّبنا dir="ltr"
+                      فزاد الأمر سوءاً). الالتفاف لسطرين يعرض الاسم كاملاً دوماً؛
+                      bdi يعزل اتجاهه عن سياق RTL المحيط عند الالتفاف. */}
+                  <h1 className="font-bold tracking-wide line-clamp-2 text-xl"><bdi>{tripName}</bdi></h1>
                 </button>
               ) : (
                 <div className="flex items-center gap-2.5 min-w-0">
                   <Logo isCollapsed={isCollapsed} isOnline={isOnline} />
-                  <h1 className="font-bold tracking-wide truncate text-xl">{tripName}</h1>
+                  {/* 🆕 line-clamp-2 لا truncate: اسم يخلط عربية بمقطع لاتيني
+                      يتقطّع مع truncate بترتيب بصري مُضلِّل (قصور معروف في
+                      تفاعل text-overflow:ellipsis مع bidi — جرّبنا dir="ltr"
+                      فزاد الأمر سوءاً). الالتفاف لسطرين يعرض الاسم كاملاً دوماً؛
+                      bdi يعزل اتجاهه عن سياق RTL المحيط عند الالتفاف. */}
+                  <h1 className="font-bold tracking-wide line-clamp-2 text-xl"><bdi>{tripName}</bdi></h1>
                 </div>
               )}
 

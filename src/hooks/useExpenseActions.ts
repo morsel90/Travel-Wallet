@@ -29,6 +29,8 @@ export interface UseExpenseActionsResult {
   isAddingExpense: boolean
   editingExpense: Expense | null
   expenseToDelete: string | null
+  // 🆕 انظر تعليق التعريف في الحالة الداخلية أعلاه — SmartInputBar تربط عليه
+  expenseAddedSignal: number
   setExpenseToDelete: Dispatch<SetStateAction<string | null>>
   // تم التعديل هنا لتقبل الدالة النصوص الممررة من الشريط السريع
   openExpenseForm: (initialDesc?: string, initialAmount?: string) => void
@@ -49,6 +51,10 @@ export function useExpenseActions({
   const [isAddingExpense, setIsAddingExpense] = useState(false)
   const [editingExpense,  setEditingExpense]  = useState<Expense | null>(null)
   const [expenseToDelete, setExpenseToDelete] = useState<string | null>(null)
+  // 🆕 يتزايد فقط عند نجاح إضافة مصروف جديد فعلياً (لا عند التعديل ولا الإلغاء)
+  // — SmartInputBar تراقبه لتفريغ حقولها بعد إرسال ناجح عبر نموذج التفاصيل
+  // الكامل، دون أن تفقد مسودتها إن ألغى المستخدم النموذج بدل إرساله.
+  const [expenseAddedSignal, setExpenseAddedSignal] = useState(0)
 
   const isSubmittingExpenseRef = useRef(false)
 
@@ -167,6 +173,7 @@ export function useExpenseActions({
     haptic.success()
     // 🆕 ومضة احتفالية فقط عند أول مصروف فعلي يُسجَّل في الرحلة (وليس عند تعديل)
     if (!wasEditing && isFirstExpense) haptic.flash()
+    if (!wasEditing) setExpenseAddedSignal(s => s + 1)
 
     if (!user) {
       if (wasEditing && editingId) setExpenses(prev => prev.map(x => x.id === editingId ? { id: editingId, ...payload } : x))
@@ -314,6 +321,8 @@ export function useExpenseActions({
       paidBy:       exp.paidBy ?? 'fund',
     })
     setIsAddingExpense(true)
+    // 🆕 انظر تعليق openExpenseForm أعلاه — نفس السبب.
+    setExpenseToDelete(null)
   }, [activeTravelers])
 
   const cancelExpenseForm = useCallback(() => {
@@ -355,6 +364,11 @@ export function useExpenseActions({
       amount: initialAmount,
     })
     setIsAddingExpense(true)
+    // 🆕 نافذتا التأكيد بالحذف ونموذج المصروف مستقلّتان بنيوياً (كلتاهما Modal
+    // بملء الشاشة، z-[9999]) بلا أي إقصاء متبادل — فتح إحداهما بينما الأخرى ما
+    // زالت في حركة الخروج (AnimatePresence exit) يُبقيهما مرسومتين معاً متراكبتين
+    // فوق بعضهما بصرياً. إغلاقها هنا صريحاً يمنع ذلك بصرف النظر عن توقيت الحركة.
+    setExpenseToDelete(null)
   }, [emptyExpenseForm])
 
   const toggleParticipant = useCallback((id: number) => {
@@ -389,6 +403,7 @@ export function useExpenseActions({
 
   return {
     newExpense, setNewExpense, isAddingExpense, editingExpense, expenseToDelete, setExpenseToDelete,
+    expenseAddedSignal,
     openExpenseForm, cancelExpenseForm, handleAddExpense, handleQuickAddExpense, startEditExpense, requestDeleteExpense,
     confirmDelete, handleRestoreExpense, toggleParticipant, toggleAllParticipants,
   }

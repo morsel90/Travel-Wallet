@@ -1,4 +1,4 @@
-import { useState, useRef, FormEvent } from 'react'
+import { useState, useRef, useEffect, FormEvent } from 'react'
 import { Plus, AlertTriangle } from '../icons'
 import { haptic } from '../utils/haptics'
 
@@ -13,6 +13,15 @@ interface SmartInputBarProps {
   visible: boolean
   onQuickAdd: (description: string, amount: number) => string | null
   onExpand: (desc: string, amount: string) => void
+  /**
+   * 🆕 يتغيّر فقط عند نجاح إضافة مصروف جديد عبر نموذج التفاصيل الكامل (لا
+   * الإلغاء، ولا التعديل). المسار السريع (handleSubmit أدناه) يُفرِّغ حقوله
+   * بنفسه أصلاً؛ هذه الخاصية تغطّي المسار الآخر وحده — الضغط على "إضافة
+   * تفاصيل" لا يُفرِّغ الحقول لحظتها (يُبقي المسودة لو أُلغي النموذج)، فبلا هذا
+   * الأثر كانت الحقول تبقى معبّأة بعد إرسال ناجح، وضغطة عرضية على زر الإرسال
+   * السريع تُنشئ مصروفاً مكرراً بصمت.
+   */
+  clearSignal: number
 }
 
 /**
@@ -37,13 +46,19 @@ const convertArabicNumerals = (str: string): string => {
  * @param {SmartInputBarProps} props - الخصائص الممررة للمكوّن.
  * @returns {JSX.Element | null} واجهة شريط الإدخال، أو null إذا كان مخفياً.
  */
-const SmartInputBar = ({ visible, onQuickAdd, onExpand }: SmartInputBarProps) => {
+const SmartInputBar = ({ visible, onQuickAdd, onExpand, clearSignal }: SmartInputBarProps) => {
   const [desc, setDesc] = useState('')
   const [amount, setAmount] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const descRef = useRef<HTMLInputElement>(null)
   const amountRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setDesc('')
+    setAmount('')
+    setError(null)
+  }, [clearSignal])
 
   if (!visible) return null
 
