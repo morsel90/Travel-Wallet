@@ -404,6 +404,53 @@ describe('الرصيد الابتدائي — deposited == 0 عند الإنشا
   })
 })
 
+// 🆕 قراءة depositLogs: المسؤول ومنظّم الرحلة يريان سجلّ أي مسافر، وصاحب
+// الملف المربوط بحسابه يرى سجلّه هو فقط — لا سجلّ غيره. الكتابة (اختُبرت أعلاه
+// في «دفتر الإيداعات») تبقى isAdmin() حصراً بلا تغيير.
+describe('قراءة سجل تعديلات الرصيد — depositLogs', () => {
+  it('المسؤول يقرأ سجل أي مسافر', async () => {
+    await seed(db => setDoc(travelerDoc(db, 1), validTraveler({ id: 1 })))
+    await seed(db => setDoc(doc(depositLogsCol(db, 1)), validDepositLog('admin-1')))
+    await assertSucceeds(getDocs(depositLogsCol(adminDb(), 1)))
+  })
+
+  it('منظّم الرحلة يقرأ سجل أي مسافر، حتى لو لم يربط حسابه بذلك المسافر', async () => {
+    await seedOrganizer('organizer-1')
+    await seed(db => setDoc(travelerDoc(db, 1), validTraveler({ id: 1, uid: 'someone-else' })))
+    await seed(db => setDoc(doc(depositLogsCol(db, 1)), validDepositLog('admin-1')))
+    await assertSucceeds(getDocs(depositLogsCol(organizerDb('organizer-1'), 1)))
+  })
+
+  it('مسافر مربوط بحسابه يقرأ سجلّه هو', async () => {
+    await seed(db => setDoc(travelerDoc(db, 1), validTraveler({ id: 1, uid: 'member-1' })))
+    await seed(db => setDoc(doc(depositLogsCol(db, 1)), validDepositLog('admin-1')))
+    await assertSucceeds(getDocs(depositLogsCol(memberDb('member-1'), 1)))
+  })
+
+  // ⚠️ الحالة السلبية الحقيقية: لا يكفي أن يكون عضواً في نفس الرحلة، ولا حتى
+  // أن يكون هو صاحب ملف مسافر آخر — سجلّ كل مسافر مقصور على uid ذلك المسافر
+  // بعينه.
+  it('عضو عادي لا يقرأ سجل مسافر آخر — حتى لو كان هو نفسه مربوطاً بملف مختلف', async () => {
+    await seed(db => setDoc(travelerDoc(db, 1), validTraveler({ id: 1, uid: 'someone-else' })))
+    await seed(db => setDoc(travelerDoc(db, 2), validTraveler({ id: 2, uid: 'member-1' })))
+    await seed(db => setDoc(doc(depositLogsCol(db, 1)), validDepositLog('admin-1')))
+    await assertFails(getDocs(depositLogsCol(memberDb('member-1'), 1)))
+  })
+
+  it('عضو عادي بلا ملف مربوط لا يقرأ سجل أي مسافر', async () => {
+    await seed(db => setDoc(travelerDoc(db, 1), validTraveler({ id: 1, uid: null })))
+    await seed(db => setDoc(doc(depositLogsCol(db, 1)), validDepositLog('admin-1')))
+    await assertFails(getDocs(depositLogsCol(memberDb('member-1'), 1)))
+  })
+
+  it('جلسة غريبة (بلا عضوية) أو مجهولة لا تقرأ أي سجل', async () => {
+    await seed(db => setDoc(travelerDoc(db, 1), validTraveler({ id: 1 })))
+    await seed(db => setDoc(doc(depositLogsCol(db, 1)), validDepositLog('admin-1')))
+    await assertFails(getDocs(depositLogsCol(strangerDb(), 1)))
+    await assertFails(getDocs(depositLogsCol(anonDb(), 1)))
+  })
+})
+
 describe('تفرّد الاسم المختصر — travelerNames', () => {
   it('عضو يستطيع حجز اسم مختصر جديد لم يُستخدم من قبل', async () => {
     await assertSucceeds(setDoc(travelerNameDoc(memberDb(), 'فهد'), { travelerId: 1 }))

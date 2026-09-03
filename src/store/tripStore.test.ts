@@ -4,7 +4,7 @@ import type { TripStoreState } from './tripStore'
 
 const initial: TripStoreState = {
   data: {
-    travelers: [], expenses: [], user: null, isAdmin: false,
+    travelers: [], expenses: [], user: null, isAdmin: false, isOrganizer: false,
     currencies: {}, ratesUpdatedAt: null,
   },
   actions: {

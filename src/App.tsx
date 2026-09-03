@@ -121,6 +121,7 @@ export default function App() {
         expenses={ledger.activeExpenses}
         user={session.user}
         isAdmin={session.isAdmin}
+        isOrganizer={session.isOrganizer}
         currencies={rates.currencies}
         ratesUpdatedAt={rates.ratesUpdatedAt}
         cancelExpenseForm={expense.cancelExpenseForm}
@@ -217,7 +218,6 @@ export default function App() {
                   } : undefined}
                   cycleWallets={longTerm?.cycleWallets}
                   periods={longTerm?.periods}
-                  lastClosedPeriod={longTerm?.lastClosedPeriod}
                 />
   
                 <ChartsPanel

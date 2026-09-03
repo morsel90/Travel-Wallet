@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import type { Expense, Traveler } from '../types'
-import { buildTravelerReport, buildDailySummary, buildAccountStatement, buildPeriodTravelerSummaries } from './reportData'
+import type { DepositLogEntry, Expense, Traveler } from '../types'
+import { buildTravelerReport, buildDailySummary, buildAccountStatement, buildMergedTimeline, buildPeriodTravelerSummaries } from './reportData'
 import { ROLLOVER_CATEGORY } from './longTerm'
 
 const ahmed: Traveler = { id: 1, name: 'أحمد الغامدي', shortName: 'أحمد', deposited: 1000, deletedAt: null }
@@ -105,6 +105,59 @@ describe('buildAccountStatement', () => {
     ])
     // المودَع(100) + دفعه من جيبه(100) − حصصه في e1 وe3(250) = −50
     expect(st.remaining).toBe(100 + 100 - 250)
+  })
+})
+
+describe('buildMergedTimeline', () => {
+  const log = (overrides: Partial<DepositLogEntry> = {}): DepositLogEntry => ({
+    id: 'log-1',
+    travelerId: 1,
+    previousDeposited: 0,
+    newDeposited: 1000,
+    delta: 1000,
+    mode: 'set',
+    reason: null,
+    changedByEmail: 'admin@example.com',
+    changedByUid: 'admin-1',
+    createdAt: 0,
+    ...overrides,
+  })
+
+  it('بلا سجلات: legacyOpening = deposited كاملاً (كل الرصيد غير مُفسَّر بأي سطر)، وclosing = remaining', () => {
+    const st = buildAccountStatement(1000, ahmed, expenses)
+    const timeline = buildMergedTimeline(ahmed, expenses, [])
+    expect(timeline.legacyOpening).toBe(1000)
+    expect(timeline.rows.every(r => r.kind !== 'deposit')).toBe(true)
+    expect(timeline.closing).toBe(st.remaining)
+  })
+
+  it('سجل واحد يفسّر كامل الرصيد: legacyOpening صفر، وclosing يطابق remaining كما تحسبه buildAccountStatement', () => {
+    const st = buildAccountStatement(1000, ahmed, expenses)
+    // خارج نطاق كل مصاريف الاختبار (createdAt: 1..3) — قبلها زمنياً.
+    const timeline = buildMergedTimeline(ahmed, expenses, [log({ createdAt: -1 })])
+    expect(timeline.legacyOpening).toBe(0)
+    expect(timeline.closing).toBe(st.remaining)
+  })
+
+  it('يدمج حركة الإيداع في مكانها الزمني الصحيح بين حركتي مصروف، لا في البداية أو النهاية', () => {
+    // e1 (createdAt:1) ← سجل الإيداع (createdAt:2) ← e2 (createdAt:2 أيضاً، لكن e3 لاحقاً بوضوح)
+    // نضع السجل بين e1 وe3 زمنياً (createdAt: 2.5) للتأكد من ترتيبه في المنتصف تحديداً لا الطرفين.
+    const timeline = buildMergedTimeline(ahmed, expenses, [log({ createdAt: 2.5, delta: 500, newDeposited: 1500, previousDeposited: 1000 })])
+    const kinds = timeline.rows.map(r => r.kind)
+    // e1:share، e2:share، الإيداع، e3:share — بنفس ترتيب createdAt (1، 2، 2.5، 3)
+    expect(kinds).toEqual(['share', 'share', 'deposit', 'share'])
+  })
+
+  it('يقصر فروقاً عائمة صغيرة جداً (أقل من 0.005) إلى صفر بدل «رصيد قديم غير موثَّق» زائف', () => {
+    // 999.999999999 بدل 1000 بالضبط — فرق تراكمي نموذجي لأخطاء الفاصلة العائمة، لا رصيداً حقيقياً.
+    const timeline = buildMergedTimeline(ahmed, expenses, [log({ createdAt: -1, newDeposited: 999.999999999, delta: 999.999999999 })])
+    expect(timeline.legacyOpening).toBe(0)
+  })
+
+  it('رصيد قديم حقيقي (مسافر سابق لسجل التدقيق) يبقى ظاهراً — لا يُقصَر لأنه ليس خطأ فاصلة عائمة', () => {
+    // نصف الرصيد فقط موثَّق بسجل؛ النصف الآخر أقدم من أي سجل تدقيق.
+    const timeline = buildMergedTimeline(ahmed, expenses, [log({ createdAt: -1, newDeposited: 500, delta: 500 })])
+    expect(timeline.legacyOpening).toBe(500)
   })
 })
 

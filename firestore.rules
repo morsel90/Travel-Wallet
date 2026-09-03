@@ -70,6 +70,16 @@ service cloud.firestore {
       return isSignedIn() && exists(ref) && get(ref).data.get('role', 'member') == 'organizer';
     }
 
+    // 🆕 صاحب ملف مسافر بعينه — لقراءة سجلّ تعديلات رصيده هو فقط (لا رصيد أي
+    // مسافر آخر): يفحص أن traveler.uid يطابق request.auth.uid بـget() على
+    // مستند المسافر نفسه، لا على claim. appId/travelerId معرَّفان دائماً في
+    // نطاق هذه الدالة لأنها لا تُستدعى إلا من داخل
+    // artifacts/{appId}/.../travelers/{travelerId}/depositLogs.
+    function isOwnTraveler(appId, travelerId) {
+      let ref = /databases/$(database)/documents/artifacts/$(appId)/public/data/travelers/$(travelerId);
+      return isMember(appId) && exists(ref) && get(ref).data.get('uid', null) == request.auth.uid;
+    }
+
     // التحقّق من بنية المصروف — تم السماح بحقل deletedAt الاختياري كـ number (Unix timestamp)
     // وحقل createdByUid الاختياري (uid صاحب المصروف) — انظر isExpenseOwner أدناه
     // وحقل category الاختياري (فئة المصروف — للرسم البياني في src/components/charts/)
@@ -438,10 +448,14 @@ service cloud.firestore {
                         && tripAcceptsWrites(appId);
         allow delete: if false; // 🚫 حظر الحذف الصلب نهائياً لحماية سجل الأرصدة التراكمي
 
-        // سجل تدقيق تعديلات الرصيد — مرئي للمسؤول فقط، وغير قابل للتعديل أو
-        // الحذف نهائياً بعد إنشائه (سجل تدقيق حقيقي لا يمكن التلاعب به لاحقاً)
+        // سجل تدقيق تعديلات الرصيد — غير قابل للتعديل أو الحذف نهائياً بعد
+        // إنشائه (سجل تدقيق حقيقي لا يمكن التلاعب به لاحقاً). القراءة: 🆕
+        // المسؤول العالمي أو منظّم الرحلة (يريان سجلّ أي مسافر) أو صاحب الملف
+        // نفسه حين يُربط حسابه (يرى سجلّه هو فقط — isOwnTraveler). الكتابة
+        // تبقى isAdmin() حصراً بلا تغيير: توسيع القراءة لا يمنح أحداً صلاحية
+        // تحرير السجل أو كتابة سطر جديد فيه.
         match /depositLogs/{logId} {
-          allow read:          if isAdmin();
+          allow read:          if isAdmin() || isOrganizer(appId) || isOwnTraveler(appId, travelerId);
           allow create:        if isAdmin() && isValidDepositLog(request.resource.data)
                                  && tripAcceptsWrites(appId);
           allow update, delete: if false;

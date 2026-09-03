@@ -2,10 +2,11 @@
 // تكمّل reports.ts (الذي يبني صفوف Excel)، لكن هذه تُعيد كائنات مُهيكلة تناسب
 // عرض واجهة صفحة التقارير (ReportsView).
 
-import type { Expense, PeriodKey, Traveler } from '../types'
+import type { DepositLogEntry, DepositMode, Expense, PeriodKey, Traveler } from '../types'
 import { splitByShares } from './calculations'
 import { matchesTraveler } from './participants'
 import { filterCycleExpenses, periodOpeningBalance } from './longTerm'
+import { replayDepositLogs } from './deposits'
 
 export interface TravelerReportLine {
   id: string
@@ -115,9 +116,13 @@ export interface AccountStatement {
  * المبلغ كاملاً ثم يُخصم نصيبه كغيره من المشاركين). لهذا `id` هنا `exp.id`
  * ملحقاً بـ `kind`، لا exp.id وحده.
  */
-export function buildAccountStatement(deposited: number, traveler: Traveler, expenses: Expense[]): AccountStatement {
-  interface Entry { exp: Expense; kind: StatementRow['kind']; amount: number }
-  const entries: Entry[] = []
+interface ExpenseEntry { exp: Expense; kind: StatementRow['kind']; amount: number }
+
+/** إدخالات مصروف واحد لهذا المسافر (حصة و/أو دفعها من جيبه) — غير مرتّبة،
+ *  مشتركة بين buildAccountStatement وbuildMergedTimeline لتفادي تكرار نفس
+ *  منطق matchesTraveler/splitByShares في مكانين قد ينحرفان لاحقاً. */
+function collectExpenseEntries(traveler: Traveler, expenses: Expense[]): ExpenseEntry[] {
+  const entries: ExpenseEntry[] = []
 
   for (const exp of expenses) {
     // 🆕 دفعها من جيبه — انظر تعليق paidBy في calculateBalances؛ نفس تحصين
@@ -135,7 +140,11 @@ export function buildAccountStatement(deposited: number, traveler: Traveler, exp
     }
   }
 
-  entries.sort((a, b) => a.exp.createdAt - b.exp.createdAt)
+  return entries
+}
+
+export function buildAccountStatement(deposited: number, traveler: Traveler, expenses: Expense[]): AccountStatement {
+  const entries = collectExpenseEntries(traveler, expenses).sort((a, b) => a.exp.createdAt - b.exp.createdAt)
 
   let balance = deposited
   const rows: StatementRow[] = entries.map(({ exp, kind, amount }) => {
@@ -155,6 +164,92 @@ export function buildAccountStatement(deposited: number, traveler: Traveler, exp
   const totalPaidByPocket = entries.filter(e => e.kind === 'paidByPocket').reduce((s, e) => s + e.amount, 0)
 
   return { opening: deposited, rows, totalShare, totalPaidByPocket, remaining: deposited + totalPaidByPocket - totalShare }
+}
+
+export interface DepositTimelineRow {
+  id: string
+  date: string
+  kind: 'deposit'
+  mode: DepositMode
+  reason: string | null
+  /** الفرق الفعلي الموقَّع (newDeposited − previousDeposited) — قد يكون سالباً
+   *  حتى في mode='add' لو كان previousDeposited تالفاً وطُهِّر لصفر أولاً،
+   *  انظر applyDepositMode في utils/deposits.ts. */
+  delta: number
+  balanceAfter: number
+}
+
+export type TimelineRow = StatementRow | DepositTimelineRow
+
+export interface MergedTimeline {
+  /** الرصيد قبل أول حركة في `rows` — صفر لأي مسافر تُفسِّر سجلاته كامل رصيده
+   *  الحالي، أو المبلغ غير الموثَّق بأي سجل (مسافر سابق لإدخال سجل التدقيق،
+   *  انظر docs/DECISIONS.md). ليس رصيداً "مودَعاً" بالمعنى المعتاد — هو فقط
+   *  ما تبقّى غير مفسَّر بعد طرح مجموع السجلّات من deposited. */
+  legacyOpening: number
+  rows: TimelineRow[]
+  closing: number
+}
+
+/** فروق أصغر من هذا تُقرَّب لصفر — تفادياً لسطر "رصيد قديم غير موثَّق: ٠٫٠٠"
+ *  زائف ناتج عن تراكم أخطاء الفاصلة العائمة لا عن رصيد حقيقي غير مُفسَّر. */
+const LEGACY_EPSILON = 0.005
+
+/** "٢٠٢٦-٠٩-٠٣" من طابع زمني — بمكوّنات Date محلية لا toISOString (UTC)، نفس
+ *  مبدأ formatRowDate في TravelerProfileModal وtripId.ts: تفادي فخّ منطقة
+ *  زمنية يُزيح تاريخ حركة قرب منتصف الليل ليوم مختلف. */
+function localDateFromTimestamp(ts: number): string {
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/**
+ * يدمج حركات المصاريف (حصة/دفعها من جيبه) مع سجل تعديلات الرصيد (depositLogs)
+ * في خط زمني واحد مرتّب بالتاريخ الحقيقي (createdAt) لكل حركة — بلا أي حساب
+ * مالي جديد، عرضي بحت فوق ما تحسبه buildAccountStatement/replayDepositLogs
+ * أصلاً.
+ *
+ * ⚠️ **لماذا الدمج آمن رياضياً**: `DepositLogEntry.delta` هو الفرق الفعلي
+ * المخزَّن فعلاً (newDeposited − previousDeposited، انظر تعليق
+ * applyDepositMode في utils/deposits.ts)، فسلسلة الفروق بترتيبها الزمني
+ * الصحيح تتلسكب (telescopes) بالضبط إلى `replayDepositLogs(logs)`. ولذلك:
+ *
+ *   legacyOpening + Σ(كل حركة في rows) = traveler.deposited + totalPaidByPocket − totalShare
+ *
+ * وهي نفس `remaining` التي تحسبها buildAccountStatement تماماً — مهما كان
+ * ترتيب تداخل حركات الإيداع والمصاريف زمنياً (حركة إيداع لا تتأثر بأي مصروف
+ * يسبقها أو يليها؛ `deposited` طرفٌ مستقل عن دفتر المصاريف، انظر
+ * docs/DECISIONS.md «كل تعديل على deposited حركة مُدقَّقة»).
+ *
+ * نطاق محدود عمداً: لا صلة له بالرصيد الافتتاحي لدورة مُصفّاة
+ * (periodOpeningBalance يقرأ مصروف ترحيل، لا deposited) — يُستدعى فقط في
+ * العرض غير المُصفَّى بدورة. انظر TravelerProfileModal.
+ */
+export function buildMergedTimeline(traveler: Traveler, expenses: Expense[], logs: DepositLogEntry[]): MergedTimeline {
+  const expenseItems = collectExpenseEntries(traveler, expenses).map(({ exp, kind, amount }) => ({
+    ts: exp.createdAt,
+    signedAmount: kind === 'paidByPocket' ? amount : -amount,
+    row: { id: `${exp.id}:${kind}`, date: exp.date, description: exp.description, category: exp.category || 'أخرى', kind, amount } satisfies Omit<StatementRow, 'balanceAfter'>,
+  }))
+
+  const depositItems = logs.map(log => ({
+    ts: log.createdAt,
+    signedAmount: log.delta,
+    row: { id: log.id, date: localDateFromTimestamp(log.createdAt), kind: 'deposit' as const, mode: log.mode, reason: log.reason, delta: log.delta } satisfies Omit<DepositTimelineRow, 'balanceAfter'>,
+  }))
+
+  const items = [...expenseItems, ...depositItems].sort((a, b) => a.ts - b.ts)
+
+  const legacyOpeningRaw = traveler.deposited - replayDepositLogs(logs)
+  const legacyOpening = Math.abs(legacyOpeningRaw) < LEGACY_EPSILON ? 0 : legacyOpeningRaw
+
+  let balance = legacyOpening
+  const rows: TimelineRow[] = items.map(({ row, signedAmount }) => {
+    balance += signedAmount
+    return { ...row, balanceAfter: balance }
+  })
+
+  return { legacyOpening, rows, closing: balance }
 }
 
 export interface PeriodTravelerSummary {

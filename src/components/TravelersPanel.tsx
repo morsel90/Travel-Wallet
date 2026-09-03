@@ -35,10 +35,8 @@ interface TravelersPanelProps {
    *  useAppCoordinator.longTerm.cycleWallets، undefined/فارغة في الرحلة
    *  القياسية فلا تعرض بطاقة أي مسافر شيئاً مختلفاً. */
   cycleWallets?: Record<number, number>
-  /** 🆕 الفترات المتاحة لمُصفّي الدورة في ملف كل مسافر — انظر ReportsView.tsx. */
+  /** 🆕 الفترات المتاحة في ملف كل مسافر — انظر تعليقها في TravelerProfileModal.tsx. */
   periods?: PeriodKey[]
-  /** 🆕 آخر شهر أُغلق فعلاً — انظر تعليقها في ReportsView.tsx. */
-  lastClosedPeriod?: PeriodKey | null
 }
 
 // ─── قسم أرصدة المسافرين ──────────────────────────────────────────────────────
@@ -46,7 +44,7 @@ interface TravelersPanelProps {
 // من DataContext/UIActionsContext كما كان — لم يتغيّر شيء في استهلاكه للسياق.
 export const TravelersPanel = ({
   isInitialLoading, isAdmin, activeTravelers, balances,
-  isAddingTraveler, onStartAddTraveler, travelerForm, longTermExit, cycleWallets, periods, lastClosedPeriod,
+  isAddingTraveler, onStartAddTraveler, travelerForm, longTermExit, cycleWallets, periods,
 }: TravelersPanelProps) => (
   <section id="travelers-section" className="scroll-mt-24">
     <div className="flex justify-between items-center mb-4 px-1">
@@ -80,7 +78,6 @@ export const TravelersPanel = ({
                 longTermExit={longTermExit}
                 cycleWallet={cycleWallets?.[traveler.id]}
                 periods={periods}
-                lastClosedPeriod={lastClosedPeriod}
               />
             ))
         }

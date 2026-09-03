@@ -27,7 +27,7 @@ const baseExpenseForm: ExpenseFormData = {
 function renderItem(expense: Expense) {
   return render(
     <TripStoreProvider
-      travelers={travelers} expenses={[expense]} user={null} isAdmin={false}
+      travelers={travelers} expenses={[expense]} user={null} isAdmin={false} isOrganizer={false}
       currencies={{}} ratesUpdatedAt={null}
       cancelExpenseForm={() => {}} startEditExpense={() => {}} requestDeleteExpense={() => {}}
       openDeposit={() => {}} requestDeleteTraveler={() => {}} openDepositHistory={() => {}}

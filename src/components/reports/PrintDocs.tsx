@@ -2,8 +2,8 @@
 // #print-root (عبر Portal في ReportsView) وتظهر فقط عند الطباعة/حفظ PDF. تعتمد
 // على الطباعة الأصلية للمتصفح لضمان تشكيل عربي مثالي (المتصفح يرسم النص).
 
-import type { Traveler, TravelerBalance, Settlement, CategoryTotal, Expense, DepositLogEntry, ItinerarySegment } from '../../types'
-import { buildDailySummary, type AccountStatement } from '../../utils/reportData'
+import type { Traveler, TravelerBalance, Settlement, CategoryTotal, Expense, ItinerarySegment } from '../../types'
+import { buildDailySummary, type AccountStatement, type MergedTimeline } from '../../utils/reportData'
 
 const fmt = (n: number): string => n.toFixed(2)
 
@@ -229,11 +229,14 @@ interface StatementProps {
   generatedAt: string
   traveler: Traveler
   statement: AccountStatement
-  logs: DepositLogEntry[] | null
-  isAdmin: boolean
+  /** 🆕 الخط المدمج (مصاريف + سجل إيداعات) — null حين لا صلاحية، أو دورة
+   *  مُصفَّاة، أو السجل لم يُحمَّل/فشل (انظر تعليقها في TravelerProfileModal).
+   *  في كل هذه الحالات يُطبع جدول statement.rows البسيط بدلاً منه. */
+  timeline: MergedTimeline | null
+  canViewDepositLogs: boolean
 }
 
-export const PrintableStatement = ({ tripName, generatedAt, traveler, statement, logs, isAdmin }: StatementProps) => (
+export const PrintableStatement = ({ tripName, generatedAt, traveler, statement, timeline, canViewDepositLogs }: StatementProps) => (
   <DocFrame title={`كشف حساب — ${traveler.name}`} subtitle={tripName} generatedAt={generatedAt}>
     <div className={`grid ${statement.totalPaidByPocket !== 0 ? 'grid-cols-4' : 'grid-cols-3'} gap-2 text-center print:break-inside-avoid`}>
       {[
@@ -250,8 +253,40 @@ export const PrintableStatement = ({ tripName, generatedAt, traveler, statement,
       ))}
     </div>
 
-    <SectionTitle>حركة المصاريف (حصصه وما دفعه من جيبه)</SectionTitle>
-    {statement.rows.length === 0 ? (
+    {/* 🆕 canViewDepositLogs && timeline: جدول واحد مدمج (مصاريف + تعديلات
+        رصيد) بعمود "النوع" — بدل جدولين منفصلين. غير ذلك (لا صلاحية/دورة
+        مُصفَّاة/تعذّر التحميل): جدول statement.rows البسيط كما كان دائماً. */}
+    <SectionTitle>{timeline && canViewDepositLogs ? 'حركة الحساب' : 'حركة المصاريف (حصصه وما دفعه من جيبه)'}</SectionTitle>
+    {timeline && canViewDepositLogs ? (
+      timeline.rows.length === 0 ? (
+        <p className="text-slate-500">لا حركة مسجّلة بعد.</p>
+      ) : (
+        <table className="w-full border-collapse">
+          <thead>
+            <tr>
+              <th className={th}>التاريخ</th>
+              <th className={th}>النوع</th>
+              <th className={th}>الوصف</th>
+              <th className={th}>الأثر على رصيده</th>
+              <th className={th}>الرصيد بعده</th>
+            </tr>
+          </thead>
+          <tbody>
+            {timeline.rows.map(r => (
+              <tr key={r.id}>
+                <td className={td}>{r.date}</td>
+                <td className={td}>{r.kind === 'deposit' ? (MODE_LABELS[r.mode] ?? r.mode) : r.kind === 'paidByPocket' ? 'دفعها من جيبه' : 'حصة مصروف'}</td>
+                <td className={td}>{r.kind === 'deposit' ? (r.reason ?? '—') : `${r.description} (${r.category})`}</td>
+                <td className={td} dir="ltr">
+                  {r.kind === 'deposit' ? `${r.delta >= 0 ? '+' : ''}${fmt(r.delta)}` : `${r.kind === 'paidByPocket' ? '+' : '−'}${fmt(r.amount)}`}
+                </td>
+                <td className={td} dir="ltr">{fmt(r.balanceAfter)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )
+    ) : statement.rows.length === 0 ? (
       <p className="text-slate-500">لم يشارك في أي مصروف بعد.</p>
     ) : (
       <table className="w-full border-collapse">
@@ -276,34 +311,6 @@ export const PrintableStatement = ({ tripName, generatedAt, traveler, statement,
           ))}
         </tbody>
       </table>
-    )}
-
-    {isAdmin && logs && logs.length > 0 && (
-      <>
-        <SectionTitle>سجل تعديلات الرصيد</SectionTitle>
-        <table className="w-full border-collapse">
-          <thead>
-            <tr>
-              <th className={th}>التاريخ</th>
-              <th className={th}>النوع</th>
-              <th className={th}>مِن ← إلى</th>
-              <th className={th}>الفرق</th>
-              <th className={th}>السبب</th>
-            </tr>
-          </thead>
-          <tbody>
-            {logs.map(log => (
-              <tr key={log.id}>
-                <td className={td}>{new Date(log.createdAt).toLocaleDateString('ar-SA', { dateStyle: 'medium' })}</td>
-                <td className={td}>{MODE_LABELS[log.mode] ?? log.mode}</td>
-                <td className={td} dir="ltr">{fmt(log.previousDeposited)} ← {fmt(log.newDeposited)}</td>
-                <td className={td} dir="ltr">{log.delta >= 0 ? '+' : ''}{fmt(log.delta)}</td>
-                <td className={td}>{log.reason ?? '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </>
     )}
   </DocFrame>
 )
