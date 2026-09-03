@@ -29,6 +29,8 @@ export const الخلاصة_والتسويات: Story = {
     settlements: fx.settlements,
     allTravelers: fx.travelersWithMine,
     isAdmin: false,
+    isOrganizer: false,
+    isSelf: false,
     onClose: () => {},
   },
 }
@@ -66,6 +68,8 @@ export const كشف_الحساب_خط_زمني: Story = {
     settlements: fx.settlements,
     allTravelers: fx.travelersWithMine,
     isAdmin: false,
+    isOrganizer: false,
+    isSelf: false,
     initialTab: 'statement',
     onClose: () => {},
   },

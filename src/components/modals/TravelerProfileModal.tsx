@@ -2,10 +2,10 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { X, Wallet, Receipt, Scale, Loader2, Download, Printer, HandCoins, DoorOpen, RefreshCw } from '../../icons'
+import { X, Wallet, Receipt, Scale, Loader2, Download, Printer, HandCoins, DoorOpen, RefreshCw, Landmark } from '../../icons'
 import type { Expense, Traveler, TravelerBalance, Settlement, PeriodKey } from '../../types'
-import type { StatementRow } from '../../utils/reportData'
-import { buildTravelerReport, buildAccountStatement } from '../../utils/reportData'
+import type { TimelineRow } from '../../utils/reportData'
+import { buildTravelerReport, buildAccountStatement, buildMergedTimeline } from '../../utils/reportData'
 import { useDepositLogs } from '../../hooks/useDepositLogs'
 import { exportTravelerToExcel } from '../../utils/reports'
 import { settlementDirection, filterCycleExpenses, periodOpeningBalance, ROLLOVER_CATEGORY } from '../../utils/longTerm'
@@ -31,6 +31,13 @@ interface TravelerProfileModalProps {
   settlements: Settlement[]
   allTravelers: Traveler[]
   isAdmin: boolean
+  /** 🆕 منظّم الرحلة (docs/PLAN-member-management.md المرحلة ٣) — مع isAdmin
+   *  وisSelf يحدّد من يرى سجل تعديلات الرصيد المدمج في الخط الزمني (انظر
+   *  canViewDepositLogs أدناه وfirestore.rules). */
+  isOrganizer: boolean
+  /** 🆕 هذا الملف مربوط بحساب المستخدم الحالي (traveler.uid === user.uid) —
+   *  محسوبة في TravelerSection (isMine) وممرَّرة هنا بدل تمرير user كاملاً. */
+  isSelf: boolean
   onClose: () => void
   /** 🆕 التبويب الذي تُفتح عليه النافذة — 'statement' لزر "كشف حسابي" على بطاقة المستخدم نفسه (TravelerSection.tsx)، افتراضياً 'summary' لبقية نقاط الفتح. */
   initialTab?: TabType
@@ -53,6 +60,8 @@ export default function TravelerProfileModal({
   settlements,
   allTravelers,
   isAdmin,
+  isOrganizer,
+  isSelf,
   onClose,
   initialTab = 'summary',
   longTermExit,
@@ -91,7 +100,20 @@ export default function TravelerProfileModal({
   const statement = useMemo(() => buildAccountStatement(opening, traveler, displayExpenses), [opening, traveler, displayExpenses])
   const pays = useMemo(() => settlements.filter(s => s.fromId === traveler.id), [settlements, traveler.id])
   const receives = useMemo(() => settlements.filter(s => s.toId === traveler.id), [settlements, traveler.id])
-  const { logs, error: logsError } = useDepositLogs(traveler.id, isAdmin && activeTab === 'statement')
+  // 🆕 من يرى سجل تعديلات الرصيد: المسؤول أو منظّم الرحلة (يريان سجل أي
+  // مسافر) أو صاحب الملف نفسه حين يُربط حسابه (يرى سجلّه هو فقط) — انظر
+  // firestore.rules (isOwnTraveler/isOrganizer) وdocs/DECISIONS.md.
+  const canViewDepositLogs = isAdmin || isOrganizer || isSelf
+  const { logs, error: logsError } = useDepositLogs(traveler.id, canViewDepositLogs && activeTab === 'statement')
+  // 🆕 دمج سجل الإيداعات داخل خط كشف الحساب — غير المُصفَّى بدورة فقط
+  // (periodOpeningBalance مصدرها مصروف الترحيل لا deposited، فلا صلة زمنية
+  // طبيعية بعد بين "الدورة" وحركات الإيداع، انظر buildMergedTimeline). يبقى
+  // الخط البسيط (statement.rows) هو المعروض حين لا تتوفر السجلات بعد (تحميل/
+  // بلا صلاحية/خطأ) كي لا يختفي كشف الحساب كاملاً بانتظارها.
+  const mergedTimeline = useMemo(
+    () => (!isFiltered && canViewDepositLogs && logs && !logsError ? buildMergedTimeline(traveler, displayExpenses, logs) : null),
+    [isFiltered, canViewDepositLogs, logs, logsError, traveler, displayExpenses],
+  )
 
   // إعادة حيلة محرك WebKit لتجاوز حظر الطباعة التلقائي في iOS Safari
   const handlePrint = () => {
@@ -287,9 +309,19 @@ export default function TravelerProfileModal({
               )}
   
               <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-5">
-                <h3 className="text-sm font-bold text-slate-800 mb-1">حركة المصاريف — رصيد جارٍ</h3>
-                {statement.rows.length === 0 ? (
+                <h3 className="text-sm font-bold text-slate-800 mb-1">
+                  {mergedTimeline ? 'حركة الحساب — رصيد جارٍ' : 'حركة المصاريف — رصيد جارٍ'}
+                </h3>
+                {(mergedTimeline ? mergedTimeline.rows.length === 0 : statement.rows.length === 0) ? (
                   <p className="text-center text-slate-400 font-medium text-sm py-8">لم يشارك في أي مصروف بعد.</p>
+                ) : mergedTimeline ? (
+                  <StatementTimeline
+                    opening={mergedTimeline.legacyOpening}
+                    openingLabel={mergedTimeline.legacyOpening !== 0 ? 'رصيد سابق لسجل التعديلات' : 'قبل أول حركة موثّقة'}
+                    rows={mergedTimeline.rows}
+                    closing={mergedTimeline.closing}
+                    closingLabel="الرصيد الحالي"
+                  />
                 ) : (
                   <StatementTimeline
                     opening={statement.opening}
@@ -299,9 +331,13 @@ export default function TravelerProfileModal({
                     closingLabel={isFiltered ? 'رصيد الإغلاق' : 'الرصيد الحالي'}
                   />
                 )}
+                {/* 🆕 لا تُخفى مشكلة التحميل صامتة — تظهر تحت الخط البسيط بدل قسم منفصل كامل. */}
+                {!isFiltered && canViewDepositLogs && logsError && (
+                  <p className="text-[11px] text-rose-500 font-bold mt-3">تعذّر تحميل سجل تعديلات الرصيد — الخط أعلاه يعرض حركة المصاريف فقط حالياً.</p>
+                )}
               </section>
-  
-              {isAdmin && (
+
+              {isFiltered && canViewDepositLogs && (
                 <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                   <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
                     <h3 className="text-sm font-bold text-slate-800">سجل تعديلات الرصيد</h3>
@@ -372,8 +408,8 @@ export default function TravelerProfileModal({
                 generatedAt={generatedAt}
                 traveler={traveler}
                 statement={statement}
-                logs={logs}
-                isAdmin={isAdmin}
+                timeline={mergedTimeline}
+                canViewDepositLogs={canViewDepositLogs}
               />
             </div>
           )}
@@ -412,17 +448,53 @@ function KpiCard({ Icon, label, value, tone }: { Icon: typeof Wallet; label: str
 // ⚠️ لا حساب مالي جديد هنا — عرضي بحت فوق statement.rows/opening/remaining
 // المحسوبة أصلاً في buildAccountStatement.
 
-/** لون/أيقونة كل نقطة — يميّز مصروف الترحيل الشهري (ROLLOVER_CATEGORY) عن
- *  الصرف الحقيقي بلون مستقل (indigo)، هو نفسه لون "الميزة الطويلة" في بقية
- *  التطبيق (LongTermPanel/الهيدر)، فلا يُقرأ كخطأ أو صرف عادي بالخطأ. */
-function timelineRowStyle(row: StatementRow): { Icon: typeof Wallet; dot: string; amountColor: string; sign: string; badge?: string } {
+interface TimelineRowView {
+  Icon: typeof Wallet
+  dot: string
+  amountColor: string
+  displayAmount: string
+  title: string
+  subtitle: string
+  badge?: string
+}
+
+/** لون/أيقونة/نص كل نقطة — يميّز مصروف الترحيل الشهري (ROLLOVER_CATEGORY) عن
+ *  الصرف الحقيقي بلون مستقل (indigo، نفس لون "الميزة الطويلة" في بقية
+ *  التطبيق)، وعن تعديل رصيد يدوي (amber، مستقل عن الثلاثة) — فلا يُقرأ أي
+ *  منها كنظيره بالخطأ. حقول `TimelineRow` تختلف حسب `kind`؛ هذه الدالة تُطبّع
+ *  كل الأنواع لواجهة عرض واحدة يستهلكها JSX الخط الزمني بلا تفريع هناك. */
+function timelineRowView(row: TimelineRow): TimelineRowView {
+  if (row.kind === 'deposit') {
+    const positive = row.delta >= 0
+    return {
+      Icon: Landmark,
+      dot: 'bg-amber-500',
+      amountColor: 'text-amber-600',
+      displayAmount: `${positive ? '+' : ''}${fmt(row.delta)}`,
+      title: MODE_LABELS[row.mode] ?? row.mode,
+      subtitle: row.reason ? `${formatRowDate(row.date)} · ${row.reason}` : formatRowDate(row.date),
+      badge: 'تعديل رصيد',
+    }
+  }
   if (row.category === ROLLOVER_CATEGORY) {
-    return { Icon: RefreshCw, dot: 'bg-indigo-500', amountColor: 'text-indigo-600', sign: '−', badge: 'ترحيل شهري' }
+    return {
+      Icon: RefreshCw, dot: 'bg-indigo-500', amountColor: 'text-indigo-600',
+      displayAmount: `−${fmt(row.amount)}`, title: row.description,
+      subtitle: `${formatRowDate(row.date)} · ${row.category}`, badge: 'ترحيل شهري',
+    }
   }
   if (row.kind === 'paidByPocket') {
-    return { Icon: HandCoins, dot: 'bg-teal-500', amountColor: 'text-teal-600', sign: '+', badge: 'دفعها من جيبه' }
+    return {
+      Icon: HandCoins, dot: 'bg-teal-500', amountColor: 'text-teal-600',
+      displayAmount: `+${fmt(row.amount)}`, title: row.description,
+      subtitle: `${formatRowDate(row.date)} · ${row.category}`, badge: 'دفعها من جيبه',
+    }
   }
-  return { Icon: Receipt, dot: 'bg-rose-500', amountColor: 'text-rose-600', sign: '−' }
+  return {
+    Icon: Receipt, dot: 'bg-rose-500', amountColor: 'text-rose-600',
+    displayAmount: `−${fmt(row.amount)}`, title: row.description,
+    subtitle: `${formatRowDate(row.date)} · ${row.category}`,
+  }
 }
 
 /** "١٠ يوليو" — تُبنى من مكوّنات التاريخ مباشرة (Date محلّي، لا new Date(iso))
@@ -436,7 +508,7 @@ function formatRowDate(dateStr: string): string {
 interface StatementTimelineProps {
   opening: number
   openingLabel: string
-  rows: StatementRow[]
+  rows: TimelineRow[]
   closing: number
   closingLabel: string
 }
@@ -459,7 +531,7 @@ function StatementTimeline({ opening, openingLabel, rows, closing, closingLabel 
       </li>
 
       {rows.map(r => {
-        const { Icon, dot, amountColor, sign, badge } = timelineRowStyle(r)
+        const { Icon, dot, amountColor, displayAmount, title, subtitle, badge } = timelineRowView(r)
         return (
           <li key={r.id} className="relative flex gap-3 pb-5 ps-9">
             <span className={`absolute start-0 top-0.5 w-[26px] h-[26px] rounded-full ${dot} text-white flex items-center justify-center ring-4 ring-white shrink-0`}>
@@ -469,17 +541,17 @@ function StatementTimeline({ opening, openingLabel, rows, closing, closingLabel 
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="font-bold text-slate-800 text-sm truncate flex items-center gap-1.5 flex-wrap">
-                    {r.description}
+                    {title}
                     {badge && (
                       <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-full shrink-0">
                         {badge}
                       </span>
                     )}
                   </p>
-                  <p className="text-[11px] text-slate-400 font-bold mt-0.5">{formatRowDate(r.date)} · {r.category}</p>
+                  <p className="text-[11px] text-slate-400 font-bold mt-0.5">{subtitle}</p>
                 </div>
                 <p className={`font-black tabular-nums text-sm shrink-0 ${amountColor}`} dir="ltr">
-                  {sign}{fmt(r.amount)}
+                  {displayAmount}
                 </p>
               </div>
               <p className="text-[11px] font-bold text-slate-400 mt-1" dir="ltr">

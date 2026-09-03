@@ -25,7 +25,7 @@ const baseExpenseForm: ExpenseFormData = {
 
 function baseProps(overrides: Partial<Parameters<typeof TripStoreProvider>[0]> = {}) {
   return {
-    travelers: [], expenses: [], user: null, isAdmin: false,
+    travelers: [], expenses: [], user: null, isAdmin: false, isOrganizer: false,
     currencies: {}, ratesUpdatedAt: null,
     cancelExpenseForm: () => {}, startEditExpense: () => {}, requestDeleteExpense: () => {},
     openDeposit: () => {}, requestDeleteTraveler: () => {}, openDepositHistory: () => {},

@@ -30,6 +30,7 @@ export const baseData: TripDataSlice = {
   expenses: fx.expenses,
   user: null,
   isAdmin: false,
+  isOrganizer: false,
   currencies,
   // تاريخ ثابت لا Date.now(): القصة يجب أن تُعرض متطابقة في كل تشغيل
   ratesUpdatedAt: new Date('2026-07-21T09:00:00'),

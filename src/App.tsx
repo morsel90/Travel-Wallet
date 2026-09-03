@@ -121,6 +121,7 @@ export default function App() {
         expenses={ledger.activeExpenses}
         user={session.user}
         isAdmin={session.isAdmin}
+        isOrganizer={session.isOrganizer}
         currencies={rates.currencies}
         ratesUpdatedAt={rates.ratesUpdatedAt}
         cancelExpenseForm={expense.cancelExpenseForm}

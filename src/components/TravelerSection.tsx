@@ -37,7 +37,7 @@ const convertArabicNumerals = (str: string): string => {
 // مكوّن عرض بطاقة رصيد المسافر المنفرد (Traveler Card)
 export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods, lastClosedPeriod }: TravelerCardProps) => {
   // جلبنا settlements و travelers لدعم بيانات النافذة المنبثقة
-  const { isAdmin, expenses, travelers, user } = useTripData()
+  const { isAdmin, isOrganizer, expenses, travelers, user } = useTripData()
   // 🆕 نموذج الهوية الهجين: تمييز بطاقة المستخدم نفسه بين بطاقات بقية المسافرين
   // — traveler.uid يُقارَن لا يُفترض، فمن دون حساب (تصفّح محلي) أو مسافر غير
   // مربوط لا يرى الشارة على أي بطاقة، وهذا صحيح ومقصود.
@@ -202,6 +202,8 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
           lastClosedPeriod={lastClosedPeriod}
           allTravelers={travelers}
           isAdmin={isAdmin}
+          isOrganizer={isOrganizer}
+          isSelf={isMine}
           initialTab={profileInitialTab}
           onClose={() => setShowProfile(false)}
           longTermExit={longTermExit ? {

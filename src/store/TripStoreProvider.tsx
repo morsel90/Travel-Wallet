@@ -41,6 +41,7 @@ interface TripStoreProviderProps {
   expenses: Expense[]
   user: User | null
   isAdmin: boolean
+  isOrganizer: boolean
   currencies: CurrencyMap
   ratesUpdatedAt: Date | null
 
@@ -65,7 +66,7 @@ interface TripStoreProviderProps {
 }
 
 export function TripStoreProvider({
-  travelers, expenses, user, isAdmin, currencies, ratesUpdatedAt,
+  travelers, expenses, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt,
   cancelExpenseForm, startEditExpense, requestDeleteExpense,
   openDeposit, requestDeleteTraveler, openDepositHistory,
   expenseForm, setExpenseForm, isExpenseFormOpen, isEditingExpense,
@@ -74,7 +75,7 @@ export function TripStoreProvider({
 }: TripStoreProviderProps) {
   const storeRef = useRef<TripStore>()
   storeRef.current ??= createTripStore({
-    data: { travelers, expenses, user, isAdmin, currencies, ratesUpdatedAt },
+    data: { travelers, expenses, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt },
     actions: {
       cancelExpenseForm, startEditExpense, requestDeleteExpense,
       openDeposit, requestDeleteTraveler, openDepositHistory,
@@ -88,9 +89,9 @@ export function TripStoreProvider({
 
   useLayoutEffect(() => {
     store.setState({
-      data: { travelers, expenses, user, isAdmin, currencies, ratesUpdatedAt },
+      data: { travelers, expenses, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt },
     })
-  }, [store, travelers, expenses, user, isAdmin, currencies, ratesUpdatedAt])
+  }, [store, travelers, expenses, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt])
 
   // ⚠️ كل ما فيها دوال، أكثرها useCallback بلا اعتماديات. تتغير عملياً عند
   // تغيّر قائمة المسافرين النشطين فقط (نادر). لا تُضف إليها أي قيمة متغيّرة —

@@ -26,6 +26,10 @@ export interface TripDataSlice {
   expenses: Expense[]
   user: User | null
   isAdmin: boolean
+  /** 🆕 منظّم الرحلة الحالية (docs/PLAN-member-management.md المرحلة ٣) —
+   *  محسوبة أصلاً في useAppCoordinator، تُضاف هنا لتصل TravelerSection/
+   *  TravelerProfileModal (قراءة سجل تعديلات الرصيد — انظر firestore.rules). */
+  isOrganizer: boolean
   currencies: CurrencyMap
   ratesUpdatedAt: Date | null
 }
