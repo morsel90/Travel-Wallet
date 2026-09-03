@@ -285,6 +285,7 @@ export default function App() {
               visible={!ledger.isInitialLoading && !expense.isAddingExpense && trip.canAddExpenses}
               onQuickAdd={expense.handleQuickAddExpense}
               onExpand={expense.openExpenseForm}
+              clearSignal={expense.expenseAddedSignal}
             />
   
             <ModalManager
