@@ -76,13 +76,18 @@ export const NextSegmentWidget = ({ itinerary }: NextSegmentWidgetProps) => {
           <p className="text-sm font-semibold text-slate-800">
             إلى {nextSegment.arrival.location}
           </p>
-          {countdown && (
-            <p className="text-xs font-bold text-teal-700 mt-0.5">{toArabicDigits(countdown)}</p>
-          )}
         </div>
       </div>
+      {/*
+        🆕 العدّ التنازلي يحلّ محل التاريخ هنا، لا يُضاف إليه: "بعد 5 أيام" و
+        "الأربعاء، 9 سبتمبر" يقولان الشيء نفسه، والأول هو ما يُقرأ بنظرة واحدة.
+        والتاريخ الكامل لكل مقطع معروض أصلاً في «مسار الرحلة» (ItinerarySection).
+        يسقط للتاريخ حين يتعذّر العدّ (وقت تالف) كي لا يبقى الصندوق بسطر واحد.
+      */}
       <div className="text-left bg-white px-3 py-1.5 rounded-xl shadow-sm border border-teal-50">
-        <p className="text-[10px] text-slate-500">{formattedDate}</p>
+        <p className="text-xs font-bold text-teal-700">
+          {countdown ? toArabicDigits(countdown) : formattedDate}
+        </p>
         <p className="text-sm font-bold text-slate-800" dir="ltr">{formattedTime}</p>
       </div>
     </div>
