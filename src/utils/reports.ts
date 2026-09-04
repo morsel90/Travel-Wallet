@@ -85,8 +85,8 @@ export function buildDailyRows(expenses: Expense[]): XlsxCell[][] {
 /** ورقة "ملخص الفترة": بديل «الملخص اليومي» في الرحلات طويلة المدى — انظر
  *  تعليق buildPeriodOverview في reportData.ts لماذا التجميع بالدورة لا باليوم. */
 export function buildPeriodRows(expenses: Expense[], periods: PeriodKey[]): XlsxCell[][] {
-  const header: XlsxCell[] = ['الدورة', 'عدد المصاريف', 'إجمالي الدورة (ريال)', 'التراكمي (ريال)']
-  const rows: XlsxCell[][] = buildPeriodOverview(expenses, periods).map(r => [r.label, r.count, money(r.spent), money(r.cumulative)])
+  const header: XlsxCell[] = ['الدورة', 'عدد المصاريف', 'إجمالي الدورة (ريال)']
+  const rows: XlsxCell[][] = buildPeriodOverview(expenses, periods).map(r => [r.label, r.count, money(r.spent)])
   return [header, ...rows]
 }
 

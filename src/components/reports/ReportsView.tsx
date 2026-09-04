@@ -228,18 +228,21 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
                   <h2 className="text-sm font-bold text-slate-800">ملخص الفترة</h2>
                 </div>
                 <div className="divide-y divide-slate-100">
-                  <div className="grid grid-cols-4 gap-2 px-4 py-2.5 bg-slate-50/50 text-[11px] font-bold text-slate-400">
+                  {/* 🆕 بلا عمود تراكمي عمداً — الرصيد يُرحَّل فعلياً بين الدورات
+                      (closeMonth)، فمجموع الصرف "منذ بداية الرحلة" ليس رقماً
+                      أحد يتابعه في رحلة طويلة المدى؛ ما يهمّ هو صرف *هذه*
+                      الدورة وحدها. انظر تعليق buildPeriodOverview في reportData.ts. */}
+                  <div className="grid grid-cols-3 gap-2 px-4 py-2.5 bg-slate-50/50 text-[11px] font-bold text-slate-400">
                     <span>الدورة</span>
                     <span className="text-center">العدد</span>
                     <span className="text-left">إجمالي الدورة</span>
-                    <span className="text-left">التراكمي</span>
                   </div>
                   {periodOverview.map(row => {
                     const isCurrent = row.period === currentPeriod
                     return (
                       <div
                         key={row.period}
-                        className={`grid grid-cols-4 gap-2 px-4 py-3 text-sm items-center ${isCurrent ? 'bg-teal-50/60' : ''}`}
+                        className={`grid grid-cols-3 gap-2 px-4 py-3 text-sm items-center ${isCurrent ? 'bg-teal-50/60' : ''}`}
                       >
                         <span className="font-bold text-slate-700 flex items-center gap-1.5 flex-wrap">
                           {row.label}
@@ -249,7 +252,6 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
                         </span>
                         <span className="text-center text-slate-500 font-bold tabular-nums">{row.count}</span>
                         <span className="text-left font-black text-slate-800 tabular-nums">{fmt(row.spent)}</span>
-                        <span className="text-left font-bold text-teal-600 tabular-nums">{fmt(row.cumulative)}</span>
                       </div>
                     )
                   })}

@@ -205,11 +205,11 @@ describe('buildPeriodOverview', () => {
     currency: 'SAR', exchangeRate: 1, participants: [1], createdAt: 99, category: ROLLOVER_CATEGORY,
   }
 
-  it('يجمّع بالدورة الشهرية لا باليوم، بمجموع تراكمي عبر الرحلة كلها', () => {
+  it('يجمّع بالدورة الشهرية لا باليوم — بلا مجموع تراكمي (الرصيد يُرحَّل فعلياً بين الدورات)', () => {
     const rows = buildPeriodOverview([...expenses, rollover, augustExpense], ['2026-07', '2026-08'])
     expect(rows).toEqual([
-      { period: '2026-07', label: 'يوليو 2026', count: 3, spent: 600, cumulative: 600 },
-      { period: '2026-08', label: 'أغسطس 2026', count: 1, spent: 100, cumulative: 700 },
+      { period: '2026-07', label: 'يوليو 2026', count: 3, spent: 600 },
+      { period: '2026-08', label: 'أغسطس 2026', count: 1, spent: 100 },
     ])
   })
 
@@ -221,6 +221,6 @@ describe('buildPeriodOverview', () => {
 
   it('دورة بلا أي مصروف تظهر بصفر — لا تختفي من القائمة', () => {
     const rows = buildPeriodOverview(expenses, ['2026-07', '2026-08', '2026-09'])
-    expect(rows[2]).toEqual({ period: '2026-09', label: 'سبتمبر 2026', count: 0, spent: 0, cumulative: 600 })
+    expect(rows[2]).toEqual({ period: '2026-09', label: 'سبتمبر 2026', count: 0, spent: 0 })
   })
 })

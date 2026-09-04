@@ -210,7 +210,6 @@ export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses
                 <th className={th}>الدورة</th>
                 <th className={th}>العدد</th>
                 <th className={th}>إجمالي الدورة</th>
-                <th className={th}>التراكمي</th>
               </tr>
             </thead>
             <tbody>
@@ -219,7 +218,6 @@ export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses
                   <td className={td}>{r.label}</td>
                   <td className={td} dir="ltr">{r.count}</td>
                   <td className={td} dir="ltr">{fmt(r.spent)}</td>
-                  <td className={td} dir="ltr">{fmt(r.cumulative)}</td>
                 </tr>
               ))}
             </tbody>

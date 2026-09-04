@@ -320,7 +320,6 @@ export interface PeriodOverviewRow {
   label: string
   count: number
   spent: number
-  cumulative: number
 }
 
 /**
@@ -328,15 +327,16 @@ export interface PeriodOverviewRow {
  * طويلة المدى: جدول بعشرات أو مئات الأيام غير مفيد لرحلة تمتد أشهراً،
  * والمستوى المفيد فعلاً هناك هو الدورة الشهرية. مصاريف كل دورة حقيقية فقط
  * (بلا مصاريف الترحيل)، بنفس استبعاد filterCycleExpenses/buildDailySummary.
- * `periods` تصاعدياً (كما تُبنى في listPeriods) فالتراكمي يتراكم بالترتيب
- * الصحيح.
+ *
+ * ⚠️ **بلا مجموع تراكمي عمداً** (بخلاف buildDailySummary) — الرصيد يُرحَّل
+ * فعلياً بين الدورات (closeMonth)، فمجموع الصرف "منذ بداية الرحلة" ليس رقماً
+ * أحد يتابعه: من يهمّه الأمر يريد كم دفع *هذه* الدورة تحديداً، ثم يبدأ من
+ * جديد مع الدورة التالية.
  */
 export function buildPeriodOverview(expenses: Expense[], periods: PeriodKey[]): PeriodOverviewRow[] {
-  let cumulative = 0
   return periods.map(period => {
     const periodExpenses = filterCycleExpenses(expenses, period)
     const spent = periodExpenses.reduce((s, e) => s + (Number.isFinite(e.amount) ? e.amount : 0), 0)
-    cumulative += spent
-    return { period, label: formatPeriodLabel(period), count: periodExpenses.length, spent, cumulative }
+    return { period, label: formatPeriodLabel(period), count: periodExpenses.length, spent }
   })
 }
