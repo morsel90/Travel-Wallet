@@ -2,11 +2,12 @@
 // تكمّل reports.ts (الذي يبني صفوف Excel)، لكن هذه تُعيد كائنات مُهيكلة تناسب
 // عرض واجهة صفحة التقارير (ReportsView).
 
-import type { DepositLogEntry, DepositMode, Expense, PeriodKey, Traveler } from '../types'
+import type { DepositLogEntry, DepositMode, Expense, PeriodKey, Traveler, TravelerBalance } from '../types'
 import { splitByShares } from './calculations'
 import { matchesTraveler } from './participants'
-import { filterCycleExpenses, periodOpeningBalance } from './longTerm'
+import { filterCycleExpenses } from './longTerm'
 import { replayDepositLogs } from './deposits'
+import { formatPeriodLabel } from './period'
 
 export interface TravelerReportLine {
   id: string
@@ -255,60 +256,87 @@ export function buildMergedTimeline(traveler: Traveler, expenses: Expense[], log
 export interface PeriodTravelerSummary {
   id: number
   name: string
-  /** رصيد الافتتاح — 0 حين hasKnownOpening=false (لا يُفسَّر كرصيد حقيقي). */
+  /** المتاح له هذه الدورة (مُرحَّل + أي إيداع أُضيف خلالها) — انظر تعليق
+   *  buildCurrentPeriodTravelerSummaries لصيغة الاشتقاق. */
   opening: number
-  /**
-   * false يعني «رصيد الافتتاح غير معروف» — أول دورة في الرحلة (لا حدّ إغلاق
-   * سابق أصلاً)، أو الدورة السابقة لم تُغلق بعد. لا «كان صفراً فعلاً»: اعرض
-   * «—» لا 0 لكلّ من opening وclosing في هذه الحالة — closing المحسوب هنا
-   * حينها ليس رصيداً نهائياً حقيقياً (لا يعرف رصيد الإيداع الأصلي وقتها، فقط
-   * صافي حركة هذه الدورة وحدها)، بل صافي حركة الدورة (paidByPocket − spent)
-   * فوق صفر مفترض. **spent وحده موثوق دائماً بصرف النظر عن hasKnownOpening.**
-   */
+  /** 🆕 دائماً true الآن — كانت تميّز «افتتاح مجهول» لدورة سابقة لا حدّ إغلاق
+   *  معروف لها، لكن ReportsView.tsx لم يعد يعرض أي دورة سوى الحالية (لا مُصفّي
+   *  يدوي بعد الآن، انظر تعليق periods في ReportsView.tsx)، وopening هنا دائماً
+   *  معروف جبرياً بصرف النظر عن تاريخ الإغلاق. أُبقي الحقل لتوافق الشكل مع
+   *  استهلاكه الحالي، لا لأنه يحمل معلومة متغيّرة بعد اليوم. */
   hasKnownOpening: boolean
   /** حصته من المصاريف الحقيقية في الدورة (بلا مصاريف الترحيل) — موثوق دائماً. */
   spent: number
   /** ما دفعه من جيبه لمصاريف الدورة، إن وُجد. */
   paidByPocket: number
-  /** opening + paidByPocket − spent — رصيد نهائي حقيقي فقط حين hasKnownOpening=true. */
+  /** الرصيد الحيّ الحالي (balance.remaining) — نفس closing لأي دورة مفتوحة. */
   closing: number
 }
 
 /**
- * ملخّص كل مسافر لدورة واحدة: افتتاحها (periodOpeningBalance)، صرفه الحقيقي
- * فيها، وإغلاقها — **بإعادة استخدام buildAccountStatement نفسها** لا حساب
- * موازٍ: تمرير رصيد الافتتاح كـ"المودَع" ومصاريف الدورة الحقيقية فقط (بلا
- * مصاريف الترحيل) يُنتج بالضبط ما تنتجه أي دورة عادية، سواء أُغلقت الدورة
- * فعلاً أم كانت لا تزال مفتوحة (عندها closing هو ما *سيُرحَّل* لو أُغلقت الآن).
+ * ملخّص كل مسافر **للدورة الحالية** (المفتوحة، لم تُغلق بعد) — الدورة الوحيدة
+ * التي يعرضها ReportsView.tsx الآن (لا مُصفّي يدوي لدورة سابقة بعد اليوم).
  *
- * ⚠️ `allExpenses` يجب أن تكون **غير مُصفّاة** — periodOpeningBalance يبحث عن
- * مصروف الترحيل في تاريخ حدّ الدورة السابقة، وهو خارج مصاريف هذه الدورة نفسها.
+ * ⚠️ **لماذا لا periodOpeningBalance هنا**: تلك تقرأ رصيد حدّ الإغلاق بين
+ * الدورة الحالية والسابقة (مصروف الترحيل الذي كتبه closeMonth إن وُجد) —
+ * صحيح تاريخياً لدورة *منتهية*، لكن الدورة الحالية لم تنتهِ بعد، وأي إيداع
+ * أُضيف *خلالها* (DepositModal يكتب depositLogs مباشرة، لا مصروفاً يدخل
+ * filterCycleExpenses) غائب عن ذلك الرصيد الجامد كلياً. هذا بالضبط الخطأ
+ * الذي أُصلح في TravelerProfileModal (commit 974db32) — إجمالي المودَع في
+ * تقرير الرحلة يعاني نفس العرض: مسافر أضاف إيداعاً هذه الدورة يرى «المودَع»
+ * أقلّ من حقيقته بقيمة ذلك الإيداع بالضبط.
  *
- * `lastClosedPeriod` (من مستند الرحلة، null إن لم يُغلق شهر بعد) يمرَّر كما
- * هو إلى periodOpeningBalance — لازم لتمييز «افتتح بصفر معروف» (مسافر مسوّى
- * عند إغلاق فعلي) عن «لا معلومة» (دورة سابقة لم تُغلق قط). بدونه يُعامَل كل
- * مسافر مسوّى كـ«مجهول الافتتاح» ولو أُغلقت دورته السابقة فعلاً — انظر تعليق
- * periodOpeningBalance في utils/longTerm.ts.
+ * الحل نفسه بالضبط: اشتقاق جبري من `liveBalances` (calculateBalances على
+ * كامل تاريخ الرحلة — صحيح دائماً، حيّ من travelers/{id}.deposited، بلا
+ * حاجة لصلاحية depositLogs ولا لمعرفة رصيد حدّ الدورة) بعكس معادلة الرصيد:
+ *   remaining = opening + paidByPocket − spent  ⇒  opening = remaining − paidByPocket + spent
  */
-export function buildPeriodTravelerSummaries(
+export function buildCurrentPeriodTravelerSummaries(
   travelers: Traveler[],
+  liveBalances: TravelerBalance[],
   allExpenses: Expense[],
   period: PeriodKey,
-  lastClosedPeriod: PeriodKey | null,
 ): PeriodTravelerSummary[] {
   const periodExpenses = filterCycleExpenses(allExpenses, period)
   return travelers.map(t => {
-    const openingLookup = periodOpeningBalance(t.id, allExpenses, period, lastClosedPeriod)
-    const opening = openingLookup ?? 0
-    const statement = buildAccountStatement(opening, t, periodExpenses)
+    const remaining = liveBalances.find(b => b.id === t.id)?.remaining ?? 0
+    // opening=0 هنا وسيط حسابي بحت (لا معنى مالياً له وحده) — نصيبه ودفعه من
+    // جيبه هذه الدورة فقط هما المطلوبان لاشتقاق opening الحقيقي جبرياً أدناه.
+    const statement = buildAccountStatement(0, t, periodExpenses)
     return {
       id: t.id,
       name: t.name,
-      opening,
-      hasKnownOpening: openingLookup !== null,
+      opening: remaining + statement.totalShare - statement.totalPaidByPocket,
+      hasKnownOpening: true,
       spent: statement.totalShare,
       paidByPocket: statement.totalPaidByPocket,
-      closing: statement.remaining,
+      closing: remaining,
     }
+  })
+}
+
+export interface PeriodOverviewRow {
+  period: PeriodKey
+  label: string
+  count: number
+  spent: number
+}
+
+/**
+ * ملخّص كل دورة على حدة عبر الرحلة كلها — بديل «الملخص اليومي» في الرحلات
+ * طويلة المدى: جدول بعشرات أو مئات الأيام غير مفيد لرحلة تمتد أشهراً،
+ * والمستوى المفيد فعلاً هناك هو الدورة الشهرية. مصاريف كل دورة حقيقية فقط
+ * (بلا مصاريف الترحيل)، بنفس استبعاد filterCycleExpenses/buildDailySummary.
+ *
+ * ⚠️ **بلا مجموع تراكمي عمداً** (بخلاف buildDailySummary) — الرصيد يُرحَّل
+ * فعلياً بين الدورات (closeMonth)، فمجموع الصرف "منذ بداية الرحلة" ليس رقماً
+ * أحد يتابعه: من يهمّه الأمر يريد كم دفع *هذه* الدورة تحديداً، ثم يبدأ من
+ * جديد مع الدورة التالية.
+ */
+export function buildPeriodOverview(expenses: Expense[], periods: PeriodKey[]): PeriodOverviewRow[] {
+  return periods.map(period => {
+    const periodExpenses = filterCycleExpenses(expenses, period)
+    const spent = periodExpenses.reduce((s, e) => s + (Number.isFinite(e.amount) ? e.amount : 0), 0)
+    return { period, label: formatPeriodLabel(period), count: periodExpenses.length, spent }
   })
 }

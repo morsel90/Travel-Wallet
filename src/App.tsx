@@ -301,7 +301,6 @@ export default function App() {
                 categoryTotals: ledger.categoryTotals,
                 itinerary: trip.itinerary,
                 periods: longTerm?.periods,
-                lastClosedPeriod: longTerm?.lastClosedPeriod,
               }}
               deposit={{
                 amount: deposit.depositAmount, setAmount: deposit.setDepositAmount,

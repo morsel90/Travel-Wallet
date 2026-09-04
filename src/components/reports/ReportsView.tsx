@@ -2,16 +2,15 @@ import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 // تمت إعادة استيراد أيقونة Printer
-import { X, Download, Printer, BarChart3, Users, TrendingUp, Wallet, Receipt, Scale, ArrowRightLeft } from '../../icons'
+import { X, Download, Printer, BarChart3, TrendingUp, Wallet, Receipt, Scale, ArrowRightLeft, CalendarRange } from '../../icons'
 import type { Expense, Traveler, TravelerBalance, Settlement, CategoryTotal, ItinerarySegment, PeriodKey } from '../../types'
-import { buildDailySummary, buildPeriodTravelerSummaries } from '../../utils/reportData'
+import { buildDailySummary, buildPeriodOverview, buildCurrentPeriodTravelerSummaries } from '../../utils/reportData'
 import { exportTripToExcel } from '../../utils/reports'
 import { calculateSettlements, calculateCategoryTotals } from '../../utils/calculations'
 import { filterCycleExpenses } from '../../utils/longTerm'
 import { formatPeriodLabel } from '../../utils/period'
 import { PrintableTripReport } from './PrintDocs'
 import { ItinerarySection } from '../ItinerarySection'
-import { PeriodSelect, ALL_PERIODS, type PeriodFilter } from '../longterm/PeriodSelect'
 
 interface ReportsViewProps {
   travelers: Traveler[]
@@ -21,81 +20,95 @@ interface ReportsViewProps {
   categoryTotals: CategoryTotal[]
   itinerary?: ItinerarySegment[]
   /**
-   * 🆕 الفترات المتاحة للتصفية (تصاعدياً) — الرحلة الطويلة فقط. غيابها يخفي
-   * مُصفّي الدورة بالكامل، فلا يتغيّر أي شيء في الرحلة القياسية. مصدرها
-   * useAppCoordinator.longTerm.periods (انظر utils/period.ts: listPeriods).
+   * 🆕 الفترات المتاحة (تصاعدياً) — الرحلة الطويلة فقط. غيابها يُبقي الشاشة
+   * على تبويبَي «ملخص الرحلة»/«الملخص اليومي» كما كانت قبل ميزة الفترات
+   * تماماً. حضورها يستبدلهما بـ«ملخص الفترة الحالية»/«تفصيل كامل الرحلة» —
+   * مصدرها useAppCoordinator.longTerm.periods (انظر utils/period.ts: listPeriods).
+   *
+   * ⚠️ **لا مُصفّي دورة يدوي بعد الآن** — كان يسمح بعرض دورة سابقة بعينها،
+   * لكن لا فائدة عملية منه: دورة سابقة *مُغلقة* عرضها التاريخي متاح أصلاً في
+   * تبويب «تفصيل كامل الرحلة» (ملخص الفترة لكل دورة)، ومسافر واحد يراجع
+   * تفاصيله في ملفه الشخصي. نفس القرار المُتّخذ في TravelerProfileModal
+   * (commit c3acfbf) — الخلاصة للدورة الحالية دوماً، والتفصيلي تراكمي دوماً.
    */
   periods?: PeriodKey[]
-  /** 🆕 آخر شهر أُغلق فعلاً — لتمييز «افتتح بصفر معروف» عن «لا معلومة» في
-   *  buildPeriodTravelerSummaries. مصدرها useAppCoordinator.longTerm.lastClosedPeriod. */
-  lastClosedPeriod?: PeriodKey | null
   onClose: () => void
 }
 
-type ReportTab = 'summary' | 'daily'
-
-const TABS: Array<{ key: ReportTab; label: string; Icon: typeof BarChart3 }> = [
-  { key: 'summary',   label: 'ملخص الرحلة',  Icon: BarChart3 },
-  { key: 'daily',     label: 'الملخص اليومي', Icon: TrendingUp },
-]
+type ReportTab = 'current' | 'full' | 'daily'
 
 const fmt = (n: number): string => n.toFixed(2)
 
-function ReportsView({ travelers, expenses, balances, settlements, categoryTotals, itinerary, periods, lastClosedPeriod = null, onClose }: ReportsViewProps) {
-  const [activeTab, setActiveTab] = useState<ReportTab>('summary')
-  const [selectedPeriod, setSelectedPeriod] = useState<PeriodFilter>(ALL_PERIODS)
+function ReportsView({ travelers, expenses, balances, settlements, categoryTotals, itinerary, periods, onClose }: ReportsViewProps) {
+  const hasPeriods = !!periods && periods.length > 0
+  // 🆕 آخر عنصر في periods هو الدورة الحالية (المفتوحة) دائماً — نفس مبدأ
+  // TravelerProfileModal (ثابتة من بناء listPeriods، تنتهي القائمة عند
+  // currentPeriod دوماً ولو بلا مصروف واحد بعد).
+  const currentPeriod: PeriodKey | null = hasPeriods ? periods![periods!.length - 1] : null
 
-  // 🆕 تصفية الدورة — periods غائبة في الرحلة القياسية فيسقط isFiltered دائماً
-  // إلى false، ويبقى كل ما يلي مطابقاً حرفياً لسلوكه قبل هذه الميزة.
+  // 🆕 تبويبان فقط دائماً — لا ثلاثة: «ملخص الفترة الحالية» و«تفصيل كامل
+  // الرحلة» في الرحلة الطويلة (periods)، أو «ملخص الرحلة» و«الملخص اليومي»
+  // في الرحلة القياسية كما كانا قبل ميزة الفترات تماماً.
+  const TABS: Array<{ key: ReportTab; label: string; Icon: typeof BarChart3 }> = hasPeriods
+    ? [
+        { key: 'current', label: 'ملخص الفترة الحالية', Icon: CalendarRange },
+        { key: 'full',    label: 'تفصيل كامل الرحلة',   Icon: BarChart3 },
+      ]
+    : [
+        { key: 'full',  label: 'ملخص الرحلة',    Icon: BarChart3 },
+        { key: 'daily', label: 'الملخص اليومي', Icon: TrendingUp },
+      ]
+
+  const [activeTab, setActiveTab] = useState<ReportTab>(hasPeriods ? 'current' : 'full')
+
+  // ─── الدورة الحالية (الرحلة الطويلة فقط) ────────────────────────────────
   //
-  // ⚠️ **بديل كامل لا تصحيح جزئي**: expenses/balances/settlements/categoryTotals
-  // الأصلية لا تُلمَس؛ display* هي ما يُستهلك في كل مكان أدناه (الشاشة والطباعة
-  // والتصدير معاً) — مصدر واحد للأرقام المعروضة أياً كانت الدورة المختارة.
-  const isFiltered = !!periods && selectedPeriod !== ALL_PERIODS
-
-  const displayExpenses = useMemo(
-    () => (isFiltered ? filterCycleExpenses(expenses, selectedPeriod as PeriodKey) : expenses),
-    [isFiltered, expenses, selectedPeriod],
+  // ⚠️ **إصلاح: إجمالي المودَع كان يختفي جزئياً لدورة حالية أُضيف خلالها
+  // إيداع.** buildPeriodTravelerSummaries القديمة كانت تقرأ رصيد حدّ الإغلاق
+  // الجامد (periodOpeningBalance) — لا يعرف شيئاً عن إيداعات أُضيفت *بعده* في
+  // دورة ما زالت مفتوحة. الحل: اشتقاق جبري من balances الحيّة
+  // (buildCurrentPeriodTravelerSummaries، نفس حيلة TravelerProfileModal —
+  // commit 974db32). صيغة TravelerBalance المُعادة متوافقة تماماً (deposited/
+  // totalExpenses/remaining) فتُستهلك في التسويات والفئات كأي أرصدة عادية.
+  const currentPeriodExpenses = useMemo(
+    () => (hasPeriods ? filterCycleExpenses(expenses, currentPeriod!) : []),
+    [hasPeriods, expenses, currentPeriod],
   )
-  // 🆕 صيغة TravelerBalance متوافقة (deposited=افتتاح الدورة، remaining=إغلاقها)
-  // كي تعمل PrintableTripReport وbuildTravelerRows/exportTripToExcel كما هي
-  // تماماً بلا أي تغيير — انظر تعليق buildPeriodTravelerSummaries في reportData.ts
-  // لماذا opening/closing غير موثوقين لدورة لم يُعرف افتتاحها الحقيقي.
-  const periodSummaries = useMemo(
-    () => (isFiltered ? buildPeriodTravelerSummaries(travelers, expenses, selectedPeriod as PeriodKey, lastClosedPeriod) : null),
-    [isFiltered, travelers, expenses, selectedPeriod, lastClosedPeriod],
-  )
-  const displayBalances = useMemo<TravelerBalance[]>(() => {
-    if (!periodSummaries) return balances
-    return periodSummaries.map(s => {
+  const currentPeriodBalances = useMemo<TravelerBalance[]>(() => {
+    if (!hasPeriods) return []
+    const summaries = buildCurrentPeriodTravelerSummaries(travelers, balances, expenses, currentPeriod!)
+    return summaries.map(s => {
       const traveler = travelers.find(t => t.id === s.id)
       return { ...(traveler as Traveler), deposited: s.opening, totalExpenses: s.spent, remaining: s.closing }
     })
-  }, [periodSummaries, travelers, balances])
-  // 🆕 أول دورة في الرحلة (لا حدّ إغلاق سابق) — رصيد الافتتاح/الإغلاق أعلاه
-  // حينها ليسا رصيدين حقيقيين، بل صافي حركة الدورة فوق صفر مفترض. انظر
-  // hasKnownOpening في reportData.ts.
-  const hasUnknownOpening = periodSummaries?.some(s => !s.hasKnownOpening) ?? false
-  const displaySettlements = useMemo(
-    () => (isFiltered ? calculateSettlements(displayBalances) : settlements),
-    [isFiltered, displayBalances, settlements],
+  }, [hasPeriods, travelers, balances, expenses, currentPeriod])
+  const currentSettlements = useMemo(
+    () => (hasPeriods ? calculateSettlements(currentPeriodBalances) : []),
+    [hasPeriods, currentPeriodBalances],
   )
-  const displayCategoryTotals = useMemo(
-    () => (isFiltered ? calculateCategoryTotals(displayExpenses) : categoryTotals),
-    [isFiltered, displayExpenses, categoryTotals],
+  const currentCategoryTotals = useMemo(
+    () => (hasPeriods ? calculateCategoryTotals(currentPeriodExpenses) : []),
+    [hasPeriods, currentPeriodExpenses],
   )
+  const currentTotals = useMemo(() => ({
+    deposited: currentPeriodBalances.reduce((s, b) => s + b.deposited, 0),
+    spent:     currentPeriodBalances.reduce((s, b) => s + b.totalExpenses, 0),
+    remaining: currentPeriodBalances.reduce((s, b) => s + b.remaining, 0),
+    days:      new Set(currentPeriodExpenses.map(e => e.date)).size,
+  }), [currentPeriodBalances, currentPeriodExpenses])
 
-  const totals = useMemo(() => ({
-    deposited: displayBalances.reduce((s, b) => s + b.deposited, 0),
-    spent:     displayBalances.reduce((s, b) => s + b.totalExpenses, 0),
-    remaining: displayBalances.reduce((s, b) => s + b.remaining, 0),
-    days:      new Set(displayExpenses.map(e => e.date)).size,
-  }), [displayBalances, displayExpenses])
-
-  const categoriesTotal = useMemo(() => displayCategoryTotals.reduce((s, c) => s + c.total, 0), [displayCategoryTotals])
-  const daily = useMemo(() => buildDailySummary(displayExpenses), [displayExpenses])
+  // ─── تفصيل كامل الرحلة — تراكمي دوماً بلا أي تصفية ──────────────────────
+  const fullTotals = useMemo(() => ({
+    deposited: balances.reduce((s, b) => s + b.deposited, 0),
+    spent:     balances.reduce((s, b) => s + b.totalExpenses, 0),
+    remaining: balances.reduce((s, b) => s + b.remaining, 0),
+    days:      new Set(expenses.map(e => e.date)).size,
+  }), [balances, expenses])
+  const daily = useMemo(() => buildDailySummary(expenses), [expenses])
+  // 🆕 ملخّص كل دورة عبر الرحلة كلها — جزء من «تفصيل كامل الرحلة»، بديل
+  // «الملخص اليومي» غير المفيد لرحلة تمتد أشهراً.
+  const periodOverview = useMemo(() => (hasPeriods ? buildPeriodOverview(expenses, periods!) : []), [hasPeriods, expenses, periods])
   const generatedAt = new Date().toLocaleString('ar-SA', { dateStyle: 'medium', timeStyle: 'short' })
-  const periodSubtitle = isFiltered ? `دورة ${formatPeriodLabel(selectedPeriod as PeriodKey)}` : ''
 
   // تمت إعادة دالة الطباعة لتتوافق مع iOS
   const handlePrint = () => {
@@ -129,12 +142,13 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
             <h1 className="font-bold text-lg truncate">تقارير الرحلة</h1>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            
-            {/* تمت إعادة زر الـ PDF */}
+
+            {/* تمت إعادة زر الـ PDF — يطبع تفصيل الرحلة الكامل دائماً (تراكمي)
+                بصرف النظر عن التبويب المفتوح، مطابقةً لـexportTripToExcel أدناه. */}
             <button
               type="button"
               onClick={handlePrint}
-              disabled={displayExpenses.length === 0}
+              disabled={expenses.length === 0}
               className="flex items-center gap-1.5 bg-teal-800/60 hover:bg-teal-800 text-teal-50 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-40"
             >
               <Printer className="w-3.5 h-3.5" /> PDF
@@ -142,11 +156,8 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
 
             <button
               type="button"
-              onClick={() => exportTripToExcel({
-                expenses: displayExpenses, travelers, balances: displayBalances, settlements: displaySettlements,
-                filenameSuffix: isFiltered ? `_دورة_${formatPeriodLabel(selectedPeriod as PeriodKey)}` : undefined,
-              })}
-              disabled={displayExpenses.length === 0}
+              onClick={() => exportTripToExcel({ expenses, travelers, balances, settlements, periods })}
+              disabled={expenses.length === 0}
               className="flex items-center gap-1.5 bg-teal-800/60 hover:bg-teal-800 text-teal-50 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-40"
             >
               <Download className="w-3.5 h-3.5" /> Excel
@@ -161,15 +172,18 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
             </button>
           </div>
         </div>
+      </header>
 
-        <div className="max-w-4xl mx-auto px-4 pb-3 flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <main className="max-w-4xl mx-auto px-4 py-6 space-y-5 pb-24">
+        {/* أزرار التبديل — نفس نمط التبويب في TravelerProfileModal.tsx */}
+        <div className="flex bg-slate-200/70 p-1 rounded-xl">
           {TABS.map(({ key, label, Icon }) => (
             <button
               key={key}
               type="button"
               onClick={() => setActiveTab(key)}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                activeTab === key ? 'bg-white text-teal-700 shadow-sm' : 'bg-teal-800/40 text-teal-50 hover:bg-teal-800/70'
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-colors ${
+                activeTab === key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'
               }`}
             >
               <Icon className="w-3.5 h-3.5" /> {label}
@@ -177,77 +191,67 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
           ))}
         </div>
 
-        {/* 🆕 مُصفّي الدورة — الرحلة الطويلة فقط (periods). يؤثّر في التبويبين
-            معاً، ولذا يعيش هنا في الهيدر الثابت لا داخل تبويب واحد. */}
-        {periods && periods.length > 0 && (
-          <div className="max-w-4xl mx-auto px-4 pb-3">
-            <PeriodSelect periods={periods} value={selectedPeriod} onChange={setSelectedPeriod} />
-          </div>
+        {activeTab === 'current' && (
+          <SummaryBody
+            depositLabel="المودَع"
+            remainingLabel="المتبقي"
+            deposited={currentTotals.deposited}
+            spent={currentTotals.spent}
+            remaining={currentTotals.remaining}
+            caption={`دورة ${formatPeriodLabel(currentPeriod!)} · ${currentPeriodExpenses.length} مصروف · ${travelers.length} مسافر · ${currentTotals.days} يوم`}
+            settlements={currentSettlements}
+            categoryTotals={currentCategoryTotals}
+          />
         )}
-      </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6 pb-24">
-        {activeTab === 'summary' && (
-          <div className="space-y-6">
-            
-            {/* قسم مسار الرحلة التفصيلي على الشاشة (بطاقة) */}
+        {activeTab === 'full' && (
+          <div className="space-y-5">
+            {/* قسم مسار الرحلة التفصيلي على الشاشة (بطاقة) — عنصر رحلة كاملة
+                لا دورة واحدة، فمكانه هنا في التفصيل الكامل تحديداً. */}
             <ItinerarySection itinerary={itinerary} />
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <KpiCard Icon={Wallet} label={isFiltered ? 'رصيد الافتتاح' : 'إجمالي المودَع'} value={fmt(totals.deposited)} tone="teal" />
-              <KpiCard Icon={Receipt} label="إجمالي المصروف" value={fmt(totals.spent)} tone="rose" />
-              <KpiCard Icon={Scale} label={isFiltered ? 'رصيد الإغلاق' : 'المتبقي'} value={fmt(totals.remaining)} tone={totals.remaining < 0 ? 'rose' : 'teal'} />
-              <KpiCard Icon={Receipt} label="عدد المصاريف" value={String(displayExpenses.length)} tone="slate" />
-              <KpiCard Icon={Users} label="عدد المسافرين" value={String(travelers.length)} tone="slate" />
-              <KpiCard Icon={TrendingUp} label="عدد الأيام" value={String(totals.days)} tone="slate" />
-            </div>
+            <SummaryBody
+              depositLabel="إجمالي المودَع"
+              remainingLabel="المتبقي"
+              deposited={fullTotals.deposited}
+              spent={fullTotals.spent}
+              remaining={fullTotals.remaining}
+              caption={`${expenses.length} مصروف · ${travelers.length} مسافر · ${fullTotals.days} يوم`}
+              settlements={settlements}
+              categoryTotals={categoryTotals}
+            />
 
-            {/* 🆕 تنبيه لأول دورة في الرحلة — لا حدّ إغلاق سابق يُعرَف منه رصيد
-                افتتاحها الحقيقي، فرصيد «رصيد الافتتاح/الإغلاق» أعلاه صافي
-                حركة الدورة فوق صفر مفترض لا رصيداً حقيقياً. */}
-            {isFiltered && hasUnknownOpening && (
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 -mt-2">
-                هذه أول دورة مسجَّلة في الرحلة — لا رصيد افتتاحي سابق معروف لها، فـ«رصيد الافتتاح/الإغلاق» أعلاه صافي حركة هذه الدورة وحدها لا رصيداً نهائياً حقيقياً.
-              </p>
-            )}
-
-            <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-              <h2 className="text-base font-bold text-slate-800 flex items-center gap-2 mb-4">
-                <ArrowRightLeft className="w-5 h-5 text-teal-600" /> التسويات المقترحة
-              </h2>
-              {displaySettlements.length === 0 ? (
-                <p className="text-center text-slate-400 font-medium text-sm py-4">🎉 لا توجد تسويات مطلوبة — الأرصدة متساوية.</p>
-              ) : (
-                <div className="grid gap-2.5 sm:grid-cols-2">
-                  {displaySettlements.map((s, i) => (
-                    <div key={i} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-3">
-                      <span className="text-sm font-bold text-slate-700">{s.fromName} ← {s.toName}</span>
-                      <span className="font-black text-rose-600 tabular-nums text-sm">{fmt(s.amount)} ﷼</span>
-                    </div>
-                  ))}
+            {hasPeriods && (
+              <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="flex items-center gap-2 px-4 sm:px-5 py-3 border-b border-slate-100 bg-slate-50/50">
+                  <CalendarRange className="w-4 h-4 text-teal-600" />
+                  <h2 className="text-sm font-bold text-slate-800">ملخص الفترة</h2>
                 </div>
-              )}
-            </section>
-
-            {displayCategoryTotals.length > 0 && (
-              <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-                <h2 className="text-base font-bold text-slate-800 flex items-center gap-2 mb-4">
-                  <BarChart3 className="w-5 h-5 text-teal-600" /> التوزيع حسب الفئة
-                </h2>
-                <div className="space-y-3.5">
-                  {displayCategoryTotals.map((item, i) => {
-                    const pct = categoriesTotal > 0 ? (item.total / categoriesTotal) * 100 : 0
+                <div className="divide-y divide-slate-100">
+                  {/* 🆕 بلا عمود تراكمي عمداً — الرصيد يُرحَّل فعلياً بين الدورات
+                      (closeMonth)، فمجموع الصرف "منذ بداية الرحلة" ليس رقماً
+                      أحد يتابعه في رحلة طويلة المدى؛ ما يهمّ هو صرف *هذه*
+                      الدورة وحدها. انظر تعليق buildPeriodOverview في reportData.ts. */}
+                  <div className="grid grid-cols-3 gap-2 px-4 py-2.5 bg-slate-50/50 text-[11px] font-bold text-slate-400">
+                    <span>الدورة</span>
+                    <span className="text-center">العدد</span>
+                    <span className="text-left">إجمالي الدورة</span>
+                  </div>
+                  {periodOverview.map(row => {
+                    const isCurrent = row.period === currentPeriod
                     return (
-                      <div key={i} className="space-y-1.5">
-                        <div className="flex justify-between items-center text-sm px-1">
-                          <span className="font-bold text-slate-800">{item.category}</span>
-                          <span className="font-black text-slate-700 tabular-nums">
-                            <span className="text-xs text-slate-400 me-1">({pct.toFixed(0)}%)</span>{fmt(item.total)} ﷼
-                          </span>
-                        </div>
-                        <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
-                          <div className="h-full bg-gradient-to-r from-teal-500 to-teal-600 rounded-full" style={{ width: `${pct}%` }} />
-                        </div>
+                      <div
+                        key={row.period}
+                        className={`grid grid-cols-3 gap-2 px-4 py-3 text-sm items-center ${isCurrent ? 'bg-teal-50/60' : ''}`}
+                      >
+                        <span className="font-bold text-slate-700 flex items-center gap-1.5 flex-wrap">
+                          {row.label}
+                          {isCurrent && (
+                            <span className="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.5 rounded-full shrink-0">الحالية</span>
+                          )}
+                        </span>
+                        <span className="text-center text-slate-500 font-bold tabular-nums">{row.count}</span>
+                        <span className="text-left font-black text-slate-800 tabular-nums">{fmt(row.spent)}</span>
                       </div>
                     )
                   })}
@@ -308,16 +312,18 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
             `}
           </style>
           <div className="print-doc-trip">
-            {/* مسار الرحلة صار قسماً رسمياً داخل PrintableTripReport (أسلوب موحّد مع بقية التقرير) */}
+            {/* مسار الرحلة صار قسماً رسمياً داخل PrintableTripReport (أسلوب موحّد مع بقية التقرير).
+                تراكمي دائماً — نفس بيانات تبويب «تفصيل كامل الرحلة» بالضبط. */}
             <PrintableTripReport
-              tripName={periodSubtitle}
+              tripName=""
               generatedAt={generatedAt}
               travelers={travelers}
-              expenses={displayExpenses}
-              balances={displayBalances}
-              settlements={displaySettlements}
-              categoryTotals={displayCategoryTotals}
-              itinerary={isFiltered ? undefined : itinerary}
+              expenses={expenses}
+              balances={balances}
+              settlements={settlements}
+              categoryTotals={categoryTotals}
+              itinerary={itinerary}
+              periods={periods}
             />
           </div>
         </div>,
@@ -335,12 +341,87 @@ const TONE: Record<'teal' | 'rose' | 'slate', string> = {
 
 function KpiCard({ Icon, label, value, tone }: { Icon: typeof Wallet; label: string; value: string; tone: 'teal' | 'rose' | 'slate' }) {
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-      <div className="flex items-center gap-1.5 text-slate-400 mb-1.5">
-        <Icon className="w-4 h-4" />
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 text-center">
+      <div className="flex items-center justify-center gap-1.5 text-slate-400 mb-1">
+        <Icon className="w-3.5 h-3.5" />
         <span className="text-[11px] font-bold">{label}</span>
       </div>
-      <p className={`text-lg font-black tabular-nums ${TONE[tone]}`} dir="ltr">{value}</p>
+      <p className={`text-base font-black tabular-nums ${TONE[tone]}`} dir="ltr">{value}</p>
+    </div>
+  )
+}
+
+/** جسد مشترك بين تبويبَي «ملخص الفترة الحالية» و«تفصيل كامل الرحلة» — نفس
+ *  ثلاث بطاقات الرصيد وقسمي التسويات/الفئات، تختلف فقط بيانات المصدر
+ *  (الدورة الحالية أو الرحلة كاملة) والتسميات. */
+function SummaryBody({
+  depositLabel, remainingLabel, deposited, spent, remaining, caption, settlements, categoryTotals,
+}: {
+  depositLabel: string
+  remainingLabel: string
+  deposited: number
+  spent: number
+  remaining: number
+  caption: string
+  settlements: Settlement[]
+  categoryTotals: CategoryTotal[]
+}) {
+  const categoriesTotal = useMemo(() => categoryTotals.reduce((s, c) => s + c.total, 0), [categoryTotals])
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-3 gap-3">
+        <KpiCard Icon={Wallet} label={depositLabel} value={fmt(deposited)} tone="teal" />
+        <KpiCard Icon={Receipt} label="إجمالي المصروف" value={fmt(spent)} tone="rose" />
+        <KpiCard Icon={Scale} label={remainingLabel} value={fmt(remaining)} tone={remaining < 0 ? 'rose' : 'teal'} />
+      </div>
+      {/* 🆕 وصف مختصر بدل ثلاث بطاقات ثانوية إضافية — نفس مبدأ "أرقام دورة X"
+          في TravelerProfileModal: سطر واحد خفيف تحت المؤشرات. */}
+      <p className="text-[11px] text-slate-400 font-bold text-center -mt-2">{caption}</p>
+
+      <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+        <h2 className="text-base font-bold text-slate-800 flex items-center gap-2 mb-4">
+          <ArrowRightLeft className="w-5 h-5 text-teal-600" /> التسويات المقترحة
+        </h2>
+        {settlements.length === 0 ? (
+          <p className="text-center text-slate-400 font-medium text-sm py-4">🎉 لا توجد تسويات مطلوبة — الأرصدة متساوية.</p>
+        ) : (
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            {settlements.map((s, i) => (
+              <div key={i} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <span className="text-sm font-bold text-slate-700">{s.fromName} ← {s.toName}</span>
+                <span className="font-black text-rose-600 tabular-nums text-sm">{fmt(s.amount)} ﷼</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {categoryTotals.length > 0 && (
+        <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+          <h2 className="text-base font-bold text-slate-800 flex items-center gap-2 mb-4">
+            <BarChart3 className="w-5 h-5 text-teal-600" /> التوزيع حسب الفئة
+          </h2>
+          <div className="space-y-3.5">
+            {categoryTotals.map((item, i) => {
+              const pct = categoriesTotal > 0 ? (item.total / categoriesTotal) * 100 : 0
+              return (
+                <div key={i} className="space-y-1.5">
+                  <div className="flex justify-between items-center text-sm px-1">
+                    <span className="font-bold text-slate-800">{item.category}</span>
+                    <span className="font-black text-slate-700 tabular-nums">
+                      <span className="text-xs text-slate-400 me-1">({pct.toFixed(0)}%)</span>{fmt(item.total)} ﷼
+                    </span>
+                  </div>
+                  <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
+                    <div className="h-full bg-gradient-to-r from-teal-500 to-teal-600 rounded-full" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
     </div>
   )
 }

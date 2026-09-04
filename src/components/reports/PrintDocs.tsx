@@ -2,8 +2,8 @@
 // #print-root (عبر Portal في ReportsView) وتظهر فقط عند الطباعة/حفظ PDF. تعتمد
 // على الطباعة الأصلية للمتصفح لضمان تشكيل عربي مثالي (المتصفح يرسم النص).
 
-import type { Traveler, TravelerBalance, Settlement, CategoryTotal, Expense, ItinerarySegment } from '../../types'
-import { buildDailySummary, type AccountStatement, type MergedTimeline } from '../../utils/reportData'
+import type { Traveler, TravelerBalance, Settlement, CategoryTotal, Expense, ItinerarySegment, PeriodKey } from '../../types'
+import { buildDailySummary, buildPeriodOverview, type AccountStatement, type MergedTimeline } from '../../utils/reportData'
 
 const fmt = (n: number): string => n.toFixed(2)
 
@@ -61,14 +61,19 @@ interface TripReportProps {
   settlements: Settlement[]
   categoryTotals: CategoryTotal[]
   itinerary?: ItinerarySegment[]
+  /** 🆕 الفترات المتاحة (تصاعدياً) — الرحلة الطويلة فقط. حضورها يستبدل قسم
+   *  «الملخص اليومي» بقسم «ملخص الفترة»، مطابقةً للشاشة — انظر ReportsView.tsx. */
+  periods?: PeriodKey[]
 }
 
-export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses, balances, settlements, categoryTotals, itinerary }: TripReportProps) => {
+export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses, balances, settlements, categoryTotals, itinerary, periods }: TripReportProps) => {
   const deposited = balances.reduce((s, b) => s + b.deposited, 0)
   const spent = balances.reduce((s, b) => s + b.totalExpenses, 0)
   const remaining = balances.reduce((s, b) => s + b.remaining, 0)
   const days = new Set(expenses.map(e => e.date)).size
-  const daily = buildDailySummary(expenses)
+  const hasPeriods = !!periods && periods.length > 0
+  const daily = hasPeriods ? [] : buildDailySummary(expenses)
+  const periodOverview = hasPeriods ? buildPeriodOverview(expenses, periods!) : []
   const catTotal = categoryTotals.reduce((s, c) => s + c.total, 0)
 
   return (
@@ -196,27 +201,53 @@ export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses
         </>
       )}
 
-      <SectionTitle>الملخص اليومي</SectionTitle>
-      <table className="w-full border-collapse">
-        <thead>
-          <tr>
-            <th className={th}>التاريخ</th>
-            <th className={th}>العدد</th>
-            <th className={th}>إجمالي اليوم</th>
-            <th className={th}>التراكمي</th>
-          </tr>
-        </thead>
-        <tbody>
-          {daily.map(r => (
-            <tr key={r.date}>
-              <td className={td}>{r.date}</td>
-              <td className={td} dir="ltr">{r.count}</td>
-              <td className={td} dir="ltr">{fmt(r.total)}</td>
-              <td className={td} dir="ltr">{fmt(r.cumulative)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {hasPeriods ? (
+        <>
+          <SectionTitle>ملخص الفترة</SectionTitle>
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                <th className={th}>الدورة</th>
+                <th className={th}>العدد</th>
+                <th className={th}>إجمالي الدورة</th>
+              </tr>
+            </thead>
+            <tbody>
+              {periodOverview.map(r => (
+                <tr key={r.period}>
+                  <td className={td}>{r.label}</td>
+                  <td className={td} dir="ltr">{r.count}</td>
+                  <td className={td} dir="ltr">{fmt(r.spent)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      ) : (
+        <>
+          <SectionTitle>الملخص اليومي</SectionTitle>
+          <table className="w-full border-collapse">
+            <thead>
+              <tr>
+                <th className={th}>التاريخ</th>
+                <th className={th}>العدد</th>
+                <th className={th}>إجمالي اليوم</th>
+                <th className={th}>التراكمي</th>
+              </tr>
+            </thead>
+            <tbody>
+              {daily.map(r => (
+                <tr key={r.date}>
+                  <td className={td}>{r.date}</td>
+                  <td className={td} dir="ltr">{r.count}</td>
+                  <td className={td} dir="ltr">{fmt(r.total)}</td>
+                  <td className={td} dir="ltr">{fmt(r.cumulative)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
     </DocFrame>
   )
 }

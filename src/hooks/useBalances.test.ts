@@ -25,9 +25,32 @@ describe('useBalances', () => {
     expect(result.current.totalDeposited).toBe(calculateTotalDeposited(travelers))
   })
 
-  it('totalRemaining = totalDeposited - totalSpent', () => {
+  it('totalRemaining = totalDeposited - totalSpent (بلا أي مصروف مدفوع من جيب)', () => {
     const { result } = renderHook(() => useBalances(travelers, expenses))
     expect(result.current.totalRemaining).toBe(result.current.totalDeposited - result.current.totalSpent)
+  })
+
+  // ⚠️ خطأ حقيقي أبلغ عنه المستخدم: "المتبقي" في هيدر الرحلة (Header.tsx،
+  // مصدره stats/cycleStats.totalRemaining هنا) كان أقلّ من الصحيح بقيمة كل
+  // مصروف دُفع من جيب مسافر بالضبط — لأن `totalDeposited − totalSpent` تتجاهل
+  // paidBy كلياً، بينما بطاقة كل مسافر (balances[i].remaining) كانت صحيحة
+  // دائماً. totalRemaining يجب أن يطابق مجموع balances[i].remaining تماماً،
+  // لا معادلة موازية قد تنحرف عنه.
+  it('totalRemaining يشمل مصروفاً مدفوعاً من جيب مسافر — لا يتجاهله كما في الخطأ المُبلَّغ عنه', () => {
+    const withPocketExpense: Expense[] = [
+      ...expenses,
+      {
+        id: 'e2', date: '2026-08-02', description: 'بنزين', amount: 96.95, originalAmount: 96.95,
+        currency: 'SAR', exchangeRate: 1, participants: [1, 2], createdAt: 2, paidBy: 1,
+      },
+    ]
+    const { result } = renderHook(() => useBalances(travelers, withPocketExpense))
+
+    // محمد دفع 96.95 من جيبه — يُقيَّد كاملاً لحسابه فوق نصيبه من نفس المصروف،
+    // فمجموع remaining الحقيقي أعلى من totalDeposited − totalSpent بمقدارها.
+    const naiveTotal = result.current.totalDeposited - result.current.totalSpent
+    expect(result.current.totalRemaining).toBe(naiveTotal + 96.95)
+    expect(result.current.totalRemaining).toBe(result.current.balances.reduce((s, b) => s + b.remaining, 0))
   })
 
   it('يتعامل مع قوائم فارغة دون أخطاء', () => {

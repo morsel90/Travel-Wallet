@@ -144,26 +144,31 @@ test('إغلاق الشهر يُرحّل الأرصدة دون أن يغيّر �
   const reportsHeader = screen.getByRole('banner').filter({ hasText: 'تقارير الرحلة' })
   await expect(reportsHeader).toBeVisible()
 
-  // ⚠️ زرّ قائمة منسدلة مخصَّص (PeriodSelect) لا <select> أصلي بعد الآن — يُحدَّد
-  // بـ aria-haspopup="menu" لا بنصّه (نصّه يتغيّر مع كل اختيار). لا مُرتِّب سجلّ
-  // المصاريف هنا (#expenses-section له combobox خاص به بدور مختلف تماماً).
-  const periodTrigger = reportsHeader.locator('button[aria-haspopup="menu"]')
-  await expect(periodTrigger).toBeVisible()
-  const selectPeriod = async (label: string) => {
-    await periodTrigger.click()
-    await screen.getByRole('menuitem', { name: label, exact: true }).click()
-  }
+  // ⚠️ لا مُصفّي دورة يدوي بعد الآن (PeriodSelect حُذف) — تبويب «ملخص الفترة
+  // الحالية» هو الافتراضي دوماً في رحلة طويلة المدى، ويعرض دورة سبتمبر
+  // (الحالية، بلا نشاط حقيقي بعد) مباشرةً بلا أي اختيار.
+  //
+  // المودَع المُجمَّع هنا يعتمد على ما كتبه closeMonth الحقيقي فعلاً — لا
+  // معاينة عميلية: سعد دائن 800 + خالد مدين 200 (سالب) + منى 0 = 600.00، نفس
+  // الرصيدين المتحقَّق منهما أعلاه على بطاقتي المسافرين، مُجمَّعين هنا في التقرير.
+  await expect(screen.getByText('ملخص الفترة الحالية')).toBeVisible()
+  // ⚠️ `exact: true` ليس تفصيلاً: هيدر التطبيق (خلف التقرير في الصفحة) يحمل
+  // زرّاً بنصّ "دورة سبتمبر 2026 · المتبقي ..." أيضاً — المطابقة التامة لنصّ
+  // وصف التقرير الكامل («... · N مصروف · N مسافر · N يوم») تعزله وحده.
+  await expect(screen.getByText(`دورة ${NEXT_PERIOD_LABEL} · 0 مصروف · 3 مسافر · 0 يوم`, { exact: true })).toBeVisible()
+  const currentDepositCard = screen.locator('div.p-3.text-center', { hasText: 'المودَع' })
+  await expect(currentDepositCard.getByText('600.00', { exact: true })).toBeVisible()
 
-  // دورة أغسطس (المُغلقة): 400.00 ريال مصروف حقيقي — لا أثر لمصروفَي الترحيل
-  // (تصفير رصيد سعد + فتح عجز خالد) رغم وقوع أحدهما تاريخياً داخل أغسطس.
-  await selectPeriod('دورة أغسطس 2026')
-  await expect(screen.getByText('إجمالي المصروف')).toBeVisible()
-  await expect(screen.getByText('400.00', { exact: true }).first()).toBeVisible()
-
-  // دورة سبتمبر (الحالية، بلا نشاط حقيقي بعد): رصيد الافتتاح يطابق بالضبط ما
-  // رُحِّل فعلاً — سعد دائن 800، خالد مدين 200 (سالب).
-  await selectPeriod(`دورة ${NEXT_PERIOD_LABEL}`)
-  await expect(screen.getByText('رصيد الافتتاح')).toBeVisible()
+  // ── تفصيل كامل الرحلة: دورة أغسطس (المُغلقة) في جدول «ملخص الفترة» —
+  // 400.00 ريال مصروف حقيقي فقط، لا أثر لمصروفَي الترحيل (تصفير رصيد سعد +
+  // فتح عجز خالد) رغم وقوع أحدهما تاريخياً داخل أغسطس.
+  // ⚠️ `.grid-cols-3` تحديداً لا `.grid` وحدها — الصفحة خلف التقرير (LongTermPanel،
+  // تخطيط الأعمدة الرئيسي) تحمل عناصر `div.grid` أخرى كثيرة، وأحدها («آخر شهر
+  // أُغلق: أغسطس») يحوي نفس النص أيضاً فيكسر التفرّد بلا هذا التضييق.
+  await screen.getByRole('button', { name: 'تفصيل كامل الرحلة' }).click()
+  const augustRow = screen.locator('div.grid-cols-3', { hasText: 'أغسطس 2026' })
+  await expect(augustRow).toBeVisible()
+  await expect(augustRow.getByText('400.00', { exact: true })).toBeVisible()
 })
 
 test('ملف المسافر في رحلة طويلة يفتح نافذة الخروج لا تأكيد الحذف المعتاد', async ({ page }) => {
