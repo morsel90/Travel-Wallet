@@ -1,6 +1,32 @@
+import { useEffect, useState } from 'react'
 import { Plane, Car, Train, Bus } from '../icons'
-import { findNextSegment } from '../utils/itinerary'
+import { findNextSegment, formatCountdown } from '../utils/itinerary'
 import type { ItinerarySegment } from '../types'
+
+/**
+ * 🆕 نبضة تُعيد الرسم كل نصف دقيقة لتحديث العدّ التنازلي. نصف دقيقة لا ثانية:
+ * أدقّ ما يعرضه العدّ هو الدقيقة، فنبضة الثانية كانت ستُعيد رسم الشريط 60 مرة
+ * لكل تغيّر مرئي واحد — وأغلب الوقت يكون الهدف بعد أيام ولا يتغيّر النص إطلاقاً.
+ * (useCountdown في hooks/ يدق كل ثانية عمداً لأنه لمهل قصيرة بالثواني.)
+ */
+/**
+ * 🆕 أرقام هندية-عربية لتطابق التاريخ والوقت المعروضين في نفس البطاقة، وهما
+ * ينسّقان بـ'ar-SA' (١٠:٠٨ م). بقية شاشات التطبيق تستخدم
+ * 'ar-SA-u-ca-gregory-nu-latn' بأرقام لاتينية — هذه البطاقة وحدها شذّت عن ذلك
+ * من قبل هذا التغيير، وتوحيدها خارج نطاقه؛ المهم ألا يختلط الشكلان داخل
+ * البطاقة الواحدة.
+ */
+const toArabicDigits = (text: string): string =>
+  text.replace(/\d/g, d => '٠١٢٣٤٥٦٧٨٩'[Number(d)])
+
+const useMinuteTick = (): number => {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+  return now
+}
 
 interface NextSegmentWidgetProps {
   // 🆕 يُمرَّر من App (المصدر: useTripConfig) بدل استدعاء الـ hook هنا. كان
@@ -10,11 +36,16 @@ interface NextSegmentWidgetProps {
 }
 
 export const NextSegmentWidget = ({ itinerary }: NextSegmentWidgetProps) => {
+  // ⚠️ قبل أي خروج مبكر — قواعد الخطّافات لا تسمح باستدعاء مشروط.
+  const now = useMinuteTick()
+
   if (!itinerary || itinerary.length === 0) return null
 
   // findNextSegment مشتركة مع بقية أدوات المسار وتفترض قائمة مرتّبة زمنياً —
   // وهذا ما تضمنه normalizeItinerary في useTripConfig عند القراءة.
-  const nextSegment = findNextSegment(itinerary)
+  // تُمرَّر `now` نفسها المستخدمة في العدّ التنازلي: مع نبضة الدقيقة يسقط
+  // المقطع من الشريط تلقائياً بمجرد أن يمرّ وقت انطلاقه.
+  const nextSegment = findNextSegment(itinerary, now)
 
   // إذا كانت كل الرحلات في الماضي، لا تعرض شيئاً
   if (!nextSegment) return null
@@ -32,6 +63,7 @@ export const NextSegmentWidget = ({ itinerary }: NextSegmentWidgetProps) => {
   const depDate = new Date(nextSegment.departure.time)
   const formattedDate = depDate.toLocaleDateString('ar-SA', { weekday: 'long', month: 'short', day: 'numeric' })
   const formattedTime = depDate.toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })
+  const countdown = formatCountdown(nextSegment.departure.time, now)
 
   return (
     <div className="bg-teal-50 border border-teal-100 rounded-2xl p-4 mb-4 rtl flex items-center justify-between shadow-sm">
@@ -44,6 +76,9 @@ export const NextSegmentWidget = ({ itinerary }: NextSegmentWidgetProps) => {
           <p className="text-sm font-semibold text-slate-800">
             إلى {nextSegment.arrival.location}
           </p>
+          {countdown && (
+            <p className="text-xs font-bold text-teal-700 mt-0.5">{toArabicDigits(countdown)}</p>
+          )}
         </div>
       </div>
       <div className="text-left bg-white px-3 py-1.5 rounded-xl shadow-sm border border-teal-50">
