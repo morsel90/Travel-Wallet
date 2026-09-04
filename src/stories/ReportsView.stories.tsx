@@ -35,12 +35,14 @@ export const رحلة_قياسية: Story = {
 
 // ⚠️ إعادة إنتاج مباشرة للخطأ المُبلَّغ عنه: أحمد أضاف 500 لرصيده *خلال* دورة
 // يوليو الحالية (deposited رُفع مباشرة إلى 3500، تماماً كما يفعل DepositModal
-// فعلياً — لا مصروف يعكس ذلك في filterCycleExpenses). قبل الإصلاح كانت
-// buildPeriodTravelerSummaries تعرض "المودَع" هذه الدورة كـ0 (أو تحذّر
-// "لا معلومة") رغم أن رصيده الحقيقي معروف تماماً. افتح مُصفّي الدورة أعلى
-// الشاشة واختر "دورة يوليو 2026": "المودَع" في ملخص الرحلة يجب أن يطابق
-// 3500 + 1000 = 4500 (مجموع deposited الحقيقي)، لا رقماً أقل بقيمة الإيداع.
-// تبويب "ملخص الفترة" (بدل "الملخص اليومي") ظاهر أيضاً لأن periods موجودة.
+// فعلياً — لا مصروف يعكس ذلك في filterCycleExpenses). قبل الإصلاح كانت الدالة
+// القديمة (المحذوفة) تعرض "المودَع" هذه الدورة كـ0 رغم أن رصيده الحقيقي معروف
+// تماماً. القصة تفتح افتراضياً على تبويب "ملخص الفترة الحالية" (لا مُصفّي
+// دورة يدوي بعد الآن — periods موجودة فتُخفي تبويب "ملخص الرحلة"/"الملخص
+// اليومي" القديمين لصالح "ملخص الفترة الحالية"/"تفصيل كامل الرحلة"): "المودَع"
+// هناك يجب أن يطابق 3500 (deposited الحقيقي لأحمد)، لا رقماً أقل بقيمة
+// الإيداع. تبويب "تفصيل كامل الرحلة" يُظهر إجمالي 4500 (3500+1000) وجدول
+// "ملخص الفترة" لكل دورة على حدة.
 const ahmedLongTerm: Traveler = { id: 1, name: 'أحمد الغامدي', shortName: 'أحمد', deposited: 3500, deletedAt: null }
 const saadLongTerm:  Traveler = { id: 2, name: 'سعد المطيري', shortName: 'سعد',  deposited: 1000, deletedAt: null }
 const longTermTravelers: Traveler[] = [ahmedLongTerm, saadLongTerm]
@@ -61,7 +63,6 @@ export const رحلة_طويلة_دورة_حالية_بإيداع: Story = {
     settlements: calculateSettlements(longTermBalances),
     categoryTotals: calculateCategoryTotals(longTermExpenses),
     periods: ['2026-07'],
-    lastClosedPeriod: null,
     onClose: () => {},
   },
 }

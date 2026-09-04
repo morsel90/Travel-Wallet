@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { DepositLogEntry, Expense, Traveler } from '../types'
-import { buildTravelerReport, buildDailySummary, buildAccountStatement, buildMergedTimeline, buildPeriodTravelerSummaries, buildCurrentPeriodTravelerSummaries, buildPeriodOverview } from './reportData'
+import { buildTravelerReport, buildDailySummary, buildAccountStatement, buildMergedTimeline, buildCurrentPeriodTravelerSummaries, buildPeriodOverview } from './reportData'
 import { calculateBalances } from './calculations'
 import { ROLLOVER_CATEGORY } from './longTerm'
 
@@ -162,76 +162,20 @@ describe('buildMergedTimeline', () => {
   })
 })
 
-describe('buildPeriodTravelerSummaries', () => {
-  // منى: لم تشارك في أي مصروف، رصيدها مسوّى (صفر) طوال الوقت — closeMonth لا
-  // يكتب لها مصروف ترحيل عند الإغلاق أصلاً (انظر settlementDirection). هذه
-  // هي الحالة التي كشفها e2e فعلاً: غياب مصروف الترحيل لا يعني «لا معلومة»
-  // إن كانت الدورة السابقة أُغلقت فعلاً.
-  const mona: Traveler = { id: 3, name: 'منى', shortName: 'منى', deposited: 0, deletedAt: null }
-
-  // سيناريو إغلاق حقيقي: يوليو (expenses أعلاه) يُغلق — أحمد دائن 650
-  // (1000−350)، سعد مدين 150 (100−250) — بنفس شكل مصاريف الترحيل التي يكتبها
-  // closeMonth فعلاً (buildAdjustmentExpense في functions/index.js). ثم
-  // مصروف واحد جديد في أغسطس، 100 مناصفةً بينهما.
-  const withRollover: Expense[] = [
-    ...expenses,
-    { id: 'r-credit', date: '2026-07-31', description: 'ترحيل رصيد أحمد', amount: 650, originalAmount: 650,
-      currency: 'SAR', exchangeRate: 1, participants: [1], createdAt: 99, category: 'تسوية شهرية' },
-    { id: 'r-debt', date: '2026-08-01', description: 'عجز مُرحَّل — سعد', amount: 150, originalAmount: 150,
-      currency: 'SAR', exchangeRate: 1, participants: [2], createdAt: 100, category: 'تسوية شهرية' },
-    { id: 'e4', date: '2026-08-05', description: 'بنزين', amount: 100, originalAmount: 100,
-      currency: 'SAR', exchangeRate: 1, participants: [1, 2], createdAt: 101 },
-  ]
-
-  it('يشتقّ افتتاح/صرف/إغلاق دورة أغسطس من ترحيل يوليو الفعلي', () => {
-    const [ahmedSummary, saadSummary] = buildPeriodTravelerSummaries([ahmed, saad], withRollover, '2026-08', '2026-07')
-
-    expect(ahmedSummary).toMatchObject({ id: 1, opening: 650, hasKnownOpening: true, spent: 50, closing: 600 })
-    expect(saadSummary).toMatchObject({ id: 2, opening: -150, hasKnownOpening: true, spent: 50, closing: -200 })
-  })
-
-  // ⚠️ الجوهر المكتشَف فعلاً عبر e2e (long-term-rollover.spec.ts): بلا
-  // lastClosedPeriod كانت منى تظهر «مجهولة الافتتاح» رغم أن يوليو أُغلق
-  // فعلاً — لمجرّد أن closeMonth لم يكتب لها مصروف ترحيل (رصيدها صفر أصلاً).
-  it('مسافر مسوّى عند إغلاق فعلي — افتتاح صفر معروف لا مجهول', () => {
-    const [, , monaSummary] = buildPeriodTravelerSummaries([ahmed, saad, mona], withRollover, '2026-08', '2026-07')
-    expect(monaSummary).toMatchObject({ id: 3, opening: 0, hasKnownOpening: true, spent: 0, closing: 0 })
-  })
-
-  it('دورة يوليو نفسها — لا افتتاح معروف (أول دورة، لا lastClosedPeriod)، والصرف لا يشمل مصروف الترحيل', () => {
-    const [ahmedSummary, saadSummary] = buildPeriodTravelerSummaries([ahmed, saad], withRollover, '2026-07', null)
-
-    // ⚠️ hasKnownOpening=false تعني أن opening (0) وclosing المُشتقّ منه *كلاهما*
-    // بلا معنى مالي حقيقي هنا — لا رصيد افتتاحي حقيقي معروف لأول دورة في
-    // الرحلة (يحتاج deposited الأصلي وقتها، لا التراكمي الحالي). المعروف
-    // بثقة هو الصرف الحقيقي وحده، وهو ما يفحصه هذا الاختبار.
-    expect(ahmedSummary.hasKnownOpening).toBe(false)
-    // 350 لا 1000 (650 ترحيل + 350 حقيقي) — لولا استبعاد فئة الترحيل لتضاعف الرقم.
-    expect(ahmedSummary.spent).toBe(350)
-    expect(saadSummary.spent).toBe(250)
-  })
-
-  // الاتّساق بين الإغلاق والافتتاح مُثبَت مباشرة على boundaryRolloverAmount
-  // نفسها في longTerm.test.ts («إغلاق دورة = افتتاح الدورة التالية») — لا
-  // تكرار له هنا عبر buildPeriodTravelerSummaries، إذ حالة يوليو تحديداً
-  // (hasKnownOpening=false) تجعل مقارنة closing بـopening الشهر التالي غير
-  // ذات معنى كما شُرح في الاختبار أعلاه.
-})
-
 describe('buildCurrentPeriodTravelerSummaries', () => {
   // ⚠️ خطأ حقيقي أبلغ عنه المستخدم: «إجمالي المودَع» في تقرير الرحلة الكامل
-  // كان خاطئاً لكل دورة اختبرها — وهي بالضبط حالة buildPeriodTravelerSummaries
-  // أعلاه («دورة يوليو نفسها») حين تكون الدورة المعروضة هي الدورة *الحالية*
-  // المفتوحة: opening يسقط إلى 0 مع hasKnownOpening=false لمجرّد أن الدورة لم
-  // تُغلق بعد (لا مصروف ترحيل، ولا lastClosedPeriod)، رغم أن رصيد كل مسافر
-  // الحقيقي معروف تماماً من balances الحيّة. هذه الدالة تحلّ محل تلك بالضبط
+  // كان خاطئاً لكل دورة اختبرها. السبب: الدالة القديمة (buildPeriodTravelerSummaries،
+  // حُذفت — ReportsView.tsx لم يعد يعرض إلا الدورة الحالية) كانت تقرأ رصيد حدّ
+  // إغلاق جامد (periodOpeningBalance)، فتسقط إلى opening=0 لمجرّد أن الدورة
+  // الحالية لم تُغلق بعد (لا مصروف ترحيل، ولا lastClosedPeriod)، رغم أن رصيد
+  // كل مسافر الحقيقي معروف تماماً من balances الحيّة. هذه الدالة تحلّ محلها
   // للدورة الحالية — نفس حيلة TravelerProfileModal الجبرية (commit 974db32).
-  it('يشتقّ المودَع جبرياً من الرصيد الحيّ — لا "لا معلومة" حتى بلا lastClosedPeriod', () => {
+  it('يشتقّ المودَع جبرياً من الرصيد الحيّ — لا "لا معلومة" حتى بلا رصيد إغلاق سابق معروف', () => {
     const liveBalances = calculateBalances([ahmed, saad], expenses)
     const [ahmedSummary, saadSummary] = buildCurrentPeriodTravelerSummaries([ahmed, saad], liveBalances, expenses, '2026-07')
 
     // أحمد: أودع 1000 فعلاً، ونصيبه 350 — المودَع المشتقّ هنا يجب أن يطابق
-    // 1000 (deposited الحقيقي) لا 0 كما كانت buildPeriodTravelerSummaries تُظهر.
+    // 1000 (deposited الحقيقي) لا 0 كما كانت الدالة القديمة تُظهر.
     expect(ahmedSummary).toMatchObject({ id: 1, opening: 1000, hasKnownOpening: true, spent: 350, closing: 650 })
     expect(saadSummary).toMatchObject({ id: 2, opening: 100, hasKnownOpening: true, spent: 250, closing: -150 })
   })
@@ -239,8 +183,8 @@ describe('buildCurrentPeriodTravelerSummaries', () => {
   it('إيداع أُضيف خلال الدورة الحالية يظهر كاملاً في المودَع — لا يختفي كما في الخطأ المُبلَّغ عنه', () => {
     // أحمد أضاف 500 لرصيده *بعد* آخر إغلاق (نفس ما يحدث فعلياً: DepositModal
     // يكتب depositLogs مباشرة، فيرتفع traveler.deposited الحيّ دون أي مصروف
-    // ترحيل يعكس ذلك). buildPeriodTravelerSummaries القديمة كانت تتجاهله
-    // تماماً لأنها تقرأ رصيد حدّ الإغلاق الجامد فقط.
+    // ترحيل يعكس ذلك). الدالة القديمة كانت تتجاهله تماماً لأنها تقرأ رصيد حدّ
+    // الإغلاق الجامد فقط.
     const ahmedWithMidCycleDeposit: Traveler = { ...ahmed, deposited: 1500 }
     const liveBalances = calculateBalances([ahmedWithMidCycleDeposit, saad], expenses)
     const [ahmedSummary] = buildCurrentPeriodTravelerSummaries([ahmedWithMidCycleDeposit, saad], liveBalances, expenses, '2026-07')

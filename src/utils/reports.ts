@@ -100,17 +100,16 @@ export interface TripExcelParams {
   travelers: Traveler[]
   balances: TravelerBalance[]
   settlements: Settlement[]
-  /** 🆕 يُلحَق باسم الملف — لتمييز تصدير مُصفّى بدورة واحدة (مثلاً
-   *  `_دورة_أغسطس_2026`) عن تقرير الرحلة الكامل. اختياري، بلا أثر إن غاب. */
-  filenameSuffix?: string
   /** 🆕 الفترات المتاحة (تصاعدياً) — الرحلة الطويلة فقط. حضورها يستبدل ورقة
    *  «الملخص اليومي» بورقة «ملخص الفترة» (buildPeriodRows)، مطابقةً لتبويب
    *  التقرير على الشاشة — انظر ReportsView.tsx. */
   periods?: PeriodKey[]
 }
 
-/** يجمّع كل الأوراق ويُنزّل مصنّف Excel واحداً للرحلة. */
-export function exportTripToExcel({ expenses, travelers, balances, settlements, filenameSuffix, periods }: TripExcelParams): void {
+/** يجمّع كل الأوراق ويُنزّل مصنّف Excel واحداً للرحلة — تراكمي دائماً (لا
+ *  تصفية بدورة، انظر ReportsView.tsx: زرّا PDF/Excel يصدّران تفصيل الرحلة
+ *  الكامل دوماً بصرف النظر عن التبويب المفتوح). */
+export function exportTripToExcel({ expenses, travelers, balances, settlements, periods }: TripExcelParams): void {
   const hasPeriods = !!periods && periods.length > 0
   const sheets: XlsxSheet[] = [
     { name: 'المصاريف', rows: buildExpenseRows(expenses, travelers), rtl: true },
@@ -120,7 +119,7 @@ export function exportTripToExcel({ expenses, travelers, balances, settlements, 
       ? { name: 'ملخص الفترة', rows: buildPeriodRows(expenses, periods!), rtl: true }
       : { name: 'الملخص اليومي', rows: buildDailyRows(expenses), rtl: true },
   ]
-  downloadXlsx(`تقرير_الرحلة${filenameSuffix ?? ''}_${todayStr()}.xlsx`, sheets)
+  downloadXlsx(`تقرير_الرحلة_${todayStr()}.xlsx`, sheets)
 }
 
 // ============================================================================
