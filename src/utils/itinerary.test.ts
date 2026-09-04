@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   toStoredTime, toInputTime, validateDraft, draftToSegment, segmentToDraft,
   isRenderableSegment, normalizeItinerary, findNextSegment, newSegmentId,
-  emptySegmentDraft, tripEndTime, tripRouteSummary, deriveTripType,
+  emptySegmentDraft, tripEndTime, tripRouteSummary, deriveTripType, formatCountdown,
 } from './itinerary'
 import type { SegmentDraft } from './itinerary'
 import type { ItinerarySegment } from '../types'
@@ -381,5 +381,47 @@ describe('newSegmentId / emptySegmentDraft', () => {
     expect(d.mode).toBe('flight')
     expect(d.id).toMatch(/^[0-9a-f]{16}$/)
     expect(validateDraft(d)).not.toBeNull()
+  })
+})
+
+describe('formatCountdown', () => {
+  // مرجع ثابت: الثلاثاء 21 يوليو 2026، 10:00 صباحاً بالتوقيت المحلي.
+  const now = new Date('2026-07-21T10:00:00').getTime()
+  const at = (local: string) => formatCountdown(local, now)
+
+  it('يعرض «غداً» ليوم تقويمي واحد لاحق مهما كان فارق الساعات', () => {
+    // 22 ساعة فقط، ومع ذلك «غداً» — التدرّج باليوم التقويمي لا بعدد الساعات.
+    expect(at('2026-07-22T08:00:00')).toBe('غداً')
+    expect(at('2026-07-22T23:00:00')).toBe('غداً')
+  })
+
+  it('يستخدم المثنّى ليومين', () => {
+    expect(at('2026-07-23T08:00:00')).toBe('بعد يومين')
+  })
+
+  it('يجمع جمع قلّة حتى 10 أيام وجمع كثرة بعدها', () => {
+    expect(at('2026-07-24T08:00:00')).toBe('بعد 3 أيام')
+    expect(at('2026-07-31T08:00:00')).toBe('بعد 10 أيام')
+    expect(at('2026-08-01T08:00:00')).toBe('بعد 11 يوماً')
+  })
+
+  it('يتحول للساعات في نفس اليوم التقويمي', () => {
+    expect(at('2026-07-21T11:30:00')).toBe('بعد ساعة')
+    expect(at('2026-07-21T12:30:00')).toBe('بعد ساعتين')
+    expect(at('2026-07-21T13:30:00')).toBe('بعد 3 ساعات')
+    expect(at('2026-07-21T21:30:00')).toBe('بعد 11 ساعة')
+  })
+
+  it('يتحول للدقائق في الساعة الأخيرة', () => {
+    expect(at('2026-07-21T10:45:00')).toBe('بعد 45 دقيقة')
+    expect(at('2026-07-21T10:05:00')).toBe('بعد 5 دقائق')
+    expect(at('2026-07-21T10:02:00')).toBe('بعد دقيقتين')
+    expect(at('2026-07-21T10:00:30')).toBe('بعد أقل من دقيقة')
+  })
+
+  it('يُرجع null لانطلاق مضى أو لوقت غير صالح', () => {
+    expect(at('2026-07-21T09:59:00')).toBeNull()
+    expect(at('2026-07-20T08:00:00')).toBeNull()
+    expect(at('ليس تاريخاً')).toBeNull()
   })
 })

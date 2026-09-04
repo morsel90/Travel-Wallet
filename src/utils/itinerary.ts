@@ -263,3 +263,52 @@ export function deriveTripType(currentType: TripType, itinerary: unknown): TripT
   const days = (new Date(summary.end).getTime() - new Date(summary.start).getTime()) / 86_400_000
   return days > LONG_TERM_THRESHOLD_DAYS ? 'long_term' : currentType
 }
+
+// ─── العدّ التنازلي للمقطع القادم ──────────────────────────────────────────
+
+/** بداية اليوم التقويمي بالتوقيت المحلي — أساس المقارنة "أي يوم؟" لا "كم ساعة؟". */
+function startOfDay(timestamp: number): number {
+  const d = new Date(timestamp)
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
+
+/**
+ * 🆕 نص العدّ التنازلي حتى وقت الانطلاق، يعرضه NextSegmentWidget.
+ *
+ * التدرّج **باليوم التقويمي لا بعدد الساعات**: رحلة الغد الساعة 8 صباحاً تبقى
+ * «غداً» حين ينظر إليها المسافر الساعة 11 ليلاً، ولا تصير «بعد 9 ساعات» —
+ * الأخيرة أدقّ عددياً لكن «غداً» هي ما يفكّر به المسافر فعلاً. وحين يحلّ اليوم
+ * نفسه تتحول للساعات، ثم للدقائق في الساعة الأخيرة حيث يصير كل ربع ساعة مهماً.
+ *
+ * يُرجع null لوقت غير صالح أو لانطلاق مضى — لا نص عدّ لشيء فات.
+ *
+ * ⚠️ الأرقام لاتينية (الافتراضي في JS) عمداً، مطابقةً لقرار العرض في
+ * ItinerarySection.tsx: تقويم ميلادي وأرقام لاتينية أوضح للمسافر.
+ */
+export function formatCountdown(departureTime: string, now: number = Date.now()): string | null {
+  const departure = new Date(departureTime).getTime()
+  if (Number.isNaN(departure) || departure <= now) return null
+
+  // Math.round لا floor: فارق اليومين يُحسب بين بدايتَي يومين، وقد يكون 23 أو
+  // 25 ساعة عند تغيّر التوقيت الصيفي، فيكسر القسمة الصحيحة.
+  const days = Math.round((startOfDay(departure) - startOfDay(now)) / 86_400_000)
+  if (days === 1) return 'غداً'
+  if (days === 2) return 'بعد يومين'
+  if (days > 2) return days <= 10 ? `بعد ${days} أيام` : `بعد ${days} يوماً`
+
+  // نفس اليوم التقويمي — ساعات، ثم دقائق في آخر ساعة.
+  const remainingMs = departure - now
+  const hours = Math.floor(remainingMs / 3_600_000)
+  if (hours >= 1) {
+    if (hours === 1) return 'بعد ساعة'
+    if (hours === 2) return 'بعد ساعتين'
+    return hours <= 10 ? `بعد ${hours} ساعات` : `بعد ${hours} ساعة`
+  }
+
+  // Math.ceil: 90 ثانية متبقية تُقرأ «بعد دقيقتين» لا «بعد دقيقة» ثم تختفي فجأة.
+  const minutes = Math.ceil(remainingMs / 60_000)
+  if (minutes <= 1) return 'بعد أقل من دقيقة'
+  if (minutes === 2) return 'بعد دقيقتين'
+  return minutes <= 10 ? `بعد ${minutes} دقائق` : `بعد ${minutes} دقيقة`
+}
