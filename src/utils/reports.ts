@@ -2,11 +2,11 @@
 // جداول (صفوف خلايا) جاهزة للتصدير إلى Excel. قابلة للاختبار بالكامل عبر Vitest
 // (انظر reports.test.ts). التصدير الفعلي يتم عبر utils/xlsx.ts.
 
-import type { Expense, Traveler, TravelerBalance, Settlement } from '../types'
+import type { Expense, Traveler, TravelerBalance, Settlement, PeriodKey } from '../types'
 import { toDisplayNames } from './participants'
 import { splitByShares } from './calculations'
 import { downloadXlsx, type XlsxCell, type XlsxSheet } from './xlsx'
-import type { AccountStatement } from './reportData'
+import { buildPeriodOverview, type AccountStatement } from './reportData'
 
 // تقريب لخانتين عشريتين مع إبقاء القيمة رقماً (لتعمل جمعيات Excel عليها).
 const money = (n: number): number => Math.round(n * 100) / 100
@@ -82,6 +82,14 @@ export function buildDailyRows(expenses: Expense[]): XlsxCell[][] {
   return [header, ...rows]
 }
 
+/** ورقة "ملخص الفترة": بديل «الملخص اليومي» في الرحلات طويلة المدى — انظر
+ *  تعليق buildPeriodOverview في reportData.ts لماذا التجميع بالدورة لا باليوم. */
+export function buildPeriodRows(expenses: Expense[], periods: PeriodKey[]): XlsxCell[][] {
+  const header: XlsxCell[] = ['الدورة', 'عدد المصاريف', 'إجمالي الدورة (ريال)', 'التراكمي (ريال)']
+  const rows: XlsxCell[][] = buildPeriodOverview(expenses, periods).map(r => [r.label, r.count, money(r.spent), money(r.cumulative)])
+  return [header, ...rows]
+}
+
 const todayStr = (): string => new Date().toISOString().split('T')[0]
 
 // ============================================================================
@@ -95,15 +103,22 @@ export interface TripExcelParams {
   /** 🆕 يُلحَق باسم الملف — لتمييز تصدير مُصفّى بدورة واحدة (مثلاً
    *  `_دورة_أغسطس_2026`) عن تقرير الرحلة الكامل. اختياري، بلا أثر إن غاب. */
   filenameSuffix?: string
+  /** 🆕 الفترات المتاحة (تصاعدياً) — الرحلة الطويلة فقط. حضورها يستبدل ورقة
+   *  «الملخص اليومي» بورقة «ملخص الفترة» (buildPeriodRows)، مطابقةً لتبويب
+   *  التقرير على الشاشة — انظر ReportsView.tsx. */
+  periods?: PeriodKey[]
 }
 
 /** يجمّع كل الأوراق ويُنزّل مصنّف Excel واحداً للرحلة. */
-export function exportTripToExcel({ expenses, travelers, balances, settlements, filenameSuffix }: TripExcelParams): void {
+export function exportTripToExcel({ expenses, travelers, balances, settlements, filenameSuffix, periods }: TripExcelParams): void {
+  const hasPeriods = !!periods && periods.length > 0
   const sheets: XlsxSheet[] = [
     { name: 'المصاريف', rows: buildExpenseRows(expenses, travelers), rtl: true },
     { name: 'ملخص المسافرين', rows: buildTravelerRows(balances), rtl: true },
     { name: 'التسويات', rows: buildSettlementRows(settlements), rtl: true },
-    { name: 'الملخص اليومي', rows: buildDailyRows(expenses), rtl: true },
+    hasPeriods
+      ? { name: 'ملخص الفترة', rows: buildPeriodRows(expenses, periods!), rtl: true }
+      : { name: 'الملخص اليومي', rows: buildDailyRows(expenses), rtl: true },
   ]
   downloadXlsx(`تقرير_الرحلة${filenameSuffix ?? ''}_${todayStr()}.xlsx`, sheets)
 }

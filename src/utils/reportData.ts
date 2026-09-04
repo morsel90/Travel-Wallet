@@ -2,11 +2,12 @@
 // تكمّل reports.ts (الذي يبني صفوف Excel)، لكن هذه تُعيد كائنات مُهيكلة تناسب
 // عرض واجهة صفحة التقارير (ReportsView).
 
-import type { DepositLogEntry, DepositMode, Expense, PeriodKey, Traveler } from '../types'
+import type { DepositLogEntry, DepositMode, Expense, PeriodKey, Traveler, TravelerBalance } from '../types'
 import { splitByShares } from './calculations'
 import { matchesTraveler } from './participants'
 import { filterCycleExpenses, periodOpeningBalance } from './longTerm'
 import { replayDepositLogs } from './deposits'
+import { formatPeriodLabel } from './period'
 
 export interface TravelerReportLine {
   id: string
@@ -310,5 +311,77 @@ export function buildPeriodTravelerSummaries(
       paidByPocket: statement.totalPaidByPocket,
       closing: statement.remaining,
     }
+  })
+}
+
+/**
+ * ملخّص كل مسافر **للدورة الحالية تحديداً** (المفتوحة، لم تُغلق بعد) — بديل
+ * buildPeriodTravelerSummaries حين تكون `period` هي آخر عنصر في periods.
+ *
+ * ⚠️ **لماذا لا periodOpeningBalance هنا**: تلك تقرأ رصيد حدّ الإغلاق بين
+ * الدورة الحالية والسابقة (مصروف الترحيل الذي كتبه closeMonth إن وُجد) —
+ * صحيح تاريخياً لدورة *منتهية*، لكن الدورة الحالية لم تنتهِ بعد، وأي إيداع
+ * أُضيف *خلالها* (DepositModal يكتب depositLogs مباشرة، لا مصروفاً يدخل
+ * filterCycleExpenses) غائب عن ذلك الرصيد الجامد كلياً. هذا بالضبط الخطأ
+ * الذي أُصلح في TravelerProfileModal (commit 974db32) — إجمالي المودَع في
+ * تقرير الرحلة يعاني نفس العرض: مسافر أضاف إيداعاً هذه الدورة يرى «المودَع»
+ * أقلّ من حقيقته بقيمة ذلك الإيداع بالضبط.
+ *
+ * الحل نفسه بالضبط: اشتقاق جبري من `liveBalances` (calculateBalances على
+ * كامل تاريخ الرحلة — صحيح دائماً، حيّ من travelers/{id}.deposited، بلا
+ * حاجة لصلاحية depositLogs ولا لمعرفة رصيد حدّ الدورة) بعكس معادلة الرصيد:
+ *   remaining = opening + paidByPocket − spent  ⇒  opening = remaining − paidByPocket + spent
+ *
+ * ولذلك opening هنا **دائماً معروف** (hasKnownOpening: true) — لا حاجة
+ * لـlastClosedPeriod ولا لتمييز «أول دورة في الرحلة» إطلاقاً، بخلاف الدالة
+ * التاريخية أعلاه.
+ */
+export function buildCurrentPeriodTravelerSummaries(
+  travelers: Traveler[],
+  liveBalances: TravelerBalance[],
+  allExpenses: Expense[],
+  period: PeriodKey,
+): PeriodTravelerSummary[] {
+  const periodExpenses = filterCycleExpenses(allExpenses, period)
+  return travelers.map(t => {
+    const remaining = liveBalances.find(b => b.id === t.id)?.remaining ?? 0
+    // opening=0 هنا وسيط حسابي بحت (لا معنى مالياً له وحده) — نصيبه ودفعه من
+    // جيبه هذه الدورة فقط هما المطلوبان لاشتقاق opening الحقيقي جبرياً أدناه.
+    const statement = buildAccountStatement(0, t, periodExpenses)
+    return {
+      id: t.id,
+      name: t.name,
+      opening: remaining + statement.totalShare - statement.totalPaidByPocket,
+      hasKnownOpening: true,
+      spent: statement.totalShare,
+      paidByPocket: statement.totalPaidByPocket,
+      closing: remaining,
+    }
+  })
+}
+
+export interface PeriodOverviewRow {
+  period: PeriodKey
+  label: string
+  count: number
+  spent: number
+  cumulative: number
+}
+
+/**
+ * ملخّص كل دورة على حدة عبر الرحلة كلها — بديل «الملخص اليومي» في الرحلات
+ * طويلة المدى: جدول بعشرات أو مئات الأيام غير مفيد لرحلة تمتد أشهراً،
+ * والمستوى المفيد فعلاً هناك هو الدورة الشهرية. مصاريف كل دورة حقيقية فقط
+ * (بلا مصاريف الترحيل)، بنفس استبعاد filterCycleExpenses/buildDailySummary.
+ * `periods` تصاعدياً (كما تُبنى في listPeriods) فالتراكمي يتراكم بالترتيب
+ * الصحيح.
+ */
+export function buildPeriodOverview(expenses: Expense[], periods: PeriodKey[]): PeriodOverviewRow[] {
+  let cumulative = 0
+  return periods.map(period => {
+    const periodExpenses = filterCycleExpenses(expenses, period)
+    const spent = periodExpenses.reduce((s, e) => s + (Number.isFinite(e.amount) ? e.amount : 0), 0)
+    cumulative += spent
+    return { period, label: formatPeriodLabel(period), count: periodExpenses.length, spent, cumulative }
   })
 }

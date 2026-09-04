@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { DepositLogEntry, Expense, Traveler } from '../types'
-import { buildTravelerReport, buildDailySummary, buildAccountStatement, buildMergedTimeline, buildPeriodTravelerSummaries } from './reportData'
+import { buildTravelerReport, buildDailySummary, buildAccountStatement, buildMergedTimeline, buildPeriodTravelerSummaries, buildCurrentPeriodTravelerSummaries, buildPeriodOverview } from './reportData'
+import { calculateBalances } from './calculations'
 import { ROLLOVER_CATEGORY } from './longTerm'
 
 const ahmed: Traveler = { id: 1, name: 'أحمد الغامدي', shortName: 'أحمد', deposited: 1000, deletedAt: null }
@@ -215,4 +216,67 @@ describe('buildPeriodTravelerSummaries', () => {
   // تكرار له هنا عبر buildPeriodTravelerSummaries، إذ حالة يوليو تحديداً
   // (hasKnownOpening=false) تجعل مقارنة closing بـopening الشهر التالي غير
   // ذات معنى كما شُرح في الاختبار أعلاه.
+})
+
+describe('buildCurrentPeriodTravelerSummaries', () => {
+  // ⚠️ خطأ حقيقي أبلغ عنه المستخدم: «إجمالي المودَع» في تقرير الرحلة الكامل
+  // كان خاطئاً لكل دورة اختبرها — وهي بالضبط حالة buildPeriodTravelerSummaries
+  // أعلاه («دورة يوليو نفسها») حين تكون الدورة المعروضة هي الدورة *الحالية*
+  // المفتوحة: opening يسقط إلى 0 مع hasKnownOpening=false لمجرّد أن الدورة لم
+  // تُغلق بعد (لا مصروف ترحيل، ولا lastClosedPeriod)، رغم أن رصيد كل مسافر
+  // الحقيقي معروف تماماً من balances الحيّة. هذه الدالة تحلّ محل تلك بالضبط
+  // للدورة الحالية — نفس حيلة TravelerProfileModal الجبرية (commit 974db32).
+  it('يشتقّ المودَع جبرياً من الرصيد الحيّ — لا "لا معلومة" حتى بلا lastClosedPeriod', () => {
+    const liveBalances = calculateBalances([ahmed, saad], expenses)
+    const [ahmedSummary, saadSummary] = buildCurrentPeriodTravelerSummaries([ahmed, saad], liveBalances, expenses, '2026-07')
+
+    // أحمد: أودع 1000 فعلاً، ونصيبه 350 — المودَع المشتقّ هنا يجب أن يطابق
+    // 1000 (deposited الحقيقي) لا 0 كما كانت buildPeriodTravelerSummaries تُظهر.
+    expect(ahmedSummary).toMatchObject({ id: 1, opening: 1000, hasKnownOpening: true, spent: 350, closing: 650 })
+    expect(saadSummary).toMatchObject({ id: 2, opening: 100, hasKnownOpening: true, spent: 250, closing: -150 })
+  })
+
+  it('إيداع أُضيف خلال الدورة الحالية يظهر كاملاً في المودَع — لا يختفي كما في الخطأ المُبلَّغ عنه', () => {
+    // أحمد أضاف 500 لرصيده *بعد* آخر إغلاق (نفس ما يحدث فعلياً: DepositModal
+    // يكتب depositLogs مباشرة، فيرتفع traveler.deposited الحيّ دون أي مصروف
+    // ترحيل يعكس ذلك). buildPeriodTravelerSummaries القديمة كانت تتجاهله
+    // تماماً لأنها تقرأ رصيد حدّ الإغلاق الجامد فقط.
+    const ahmedWithMidCycleDeposit: Traveler = { ...ahmed, deposited: 1500 }
+    const liveBalances = calculateBalances([ahmedWithMidCycleDeposit, saad], expenses)
+    const [ahmedSummary] = buildCurrentPeriodTravelerSummaries([ahmedWithMidCycleDeposit, saad], liveBalances, expenses, '2026-07')
+
+    // المودَع = 1500 (deposited الحقيقي بعد الإيداع) — لا 1000 القديم ولا 0.
+    expect(ahmedSummary.opening).toBe(1500)
+    expect(ahmedSummary.closing).toBe(1150) // 1500 - 350
+  })
+})
+
+describe('buildPeriodOverview', () => {
+  const augustExpense: Expense = {
+    id: 'e4', date: '2026-08-05', description: 'بنزين', amount: 100, originalAmount: 100,
+    currency: 'SAR', exchangeRate: 1, participants: [1, 2], createdAt: 101, category: 'مواصلات',
+  }
+  const rollover: Expense = {
+    id: 'r1', date: '2026-07-31', description: 'ترحيل', amount: 650, originalAmount: 650,
+    currency: 'SAR', exchangeRate: 1, participants: [1], createdAt: 99, category: ROLLOVER_CATEGORY,
+  }
+
+  it('يجمّع بالدورة الشهرية لا باليوم، بمجموع تراكمي عبر الرحلة كلها', () => {
+    const rows = buildPeriodOverview([...expenses, rollover, augustExpense], ['2026-07', '2026-08'])
+    expect(rows).toEqual([
+      { period: '2026-07', label: 'يوليو 2026', count: 3, spent: 600, cumulative: 600 },
+      { period: '2026-08', label: 'أغسطس 2026', count: 1, spent: 100, cumulative: 700 },
+    ])
+  })
+
+  it('يستبعد مصاريف الترحيل — لا تُحتسب صرفاً حقيقياً ولا تُضاعف رصيداً', () => {
+    const rows = buildPeriodOverview([...expenses, rollover], ['2026-07'])
+    // 600 (المصاريف الحقيقية فقط) لا 1250 (600 + 650 الترحيل)
+    expect(rows[0].spent).toBe(600)
+  })
+
+  it('دورة بلا أي مصروف تظهر بصفر — لا تختفي من القائمة', () => {
+    const rows = buildPeriodOverview(expenses, ['2026-07', '2026-08', '2026-09'])
+    expect(rows[2]).toEqual({ period: '2026-09', label: 'سبتمبر 2026', count: 0, spent: 0, cumulative: 600 })
+  })
 })

@@ -6,6 +6,7 @@ import {
   buildTravelerRows,
   buildSettlementRows,
   buildDailyRows,
+  buildPeriodRows,
 } from './reports'
 import { buildXlsxBytes } from './xlsx'
 
@@ -58,6 +59,16 @@ describe('buildDailyRows', () => {
     expect(rows[0]).toEqual(['التاريخ', 'عدد المصاريف', 'الإجمالي (ريال)'])
     expect(rows[1]).toEqual(['2026-07-10', 2, 300])
     expect(rows[2]).toEqual(['2026-07-11', 1, 300])
+  })
+})
+
+describe('buildPeriodRows', () => {
+  it('header + row per period — بديل «الملخص اليومي» في الرحلات الطويلة', () => {
+    const rows = buildPeriodRows(expenses, ['2026-07', '2026-08'])
+    expect(rows[0]).toEqual(['الدورة', 'عدد المصاريف', 'إجمالي الدورة (ريال)', 'التراكمي (ريال)'])
+    expect(rows[1]).toEqual(['يوليو 2026', 3, 600, 600])
+    // أغسطس بلا أي مصروف — يظهر بصفر لا يختفي
+    expect(rows[2]).toEqual(['أغسطس 2026', 0, 0, 600])
   })
 })
 
