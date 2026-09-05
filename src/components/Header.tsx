@@ -1,5 +1,6 @@
 import { PieChart, Loader2 } from '../icons'
 import { useHeaderCollapse } from '../hooks/useHeaderCollapse'
+import { useIosSafeAreaFix } from '../hooks/useIosSafeAreaFix'
 import AccountMenu from './AccountMenu'
 
 export interface HeaderStats {
@@ -97,6 +98,7 @@ const Header = ({
   onSignOut,
 }: HeaderProps) => {
   const isCollapsed = useHeaderCollapse()
+  useIosSafeAreaFix()
 
   // 🆕 سطر موجز واحد بدل ثلاث حبّات ملوّنة وشارة/زرّ تبديل دورة منفصلَين —
   // طلب صاحب الحساب صراحةً إزالتهما ("الشارة والتبديل زادا الزحمة")، بنمط
