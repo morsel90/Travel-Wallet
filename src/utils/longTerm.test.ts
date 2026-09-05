@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import {
   ROLLOVER_EPSILON, ROLLOVER_CATEGORY, settlementDirection, planRollover, countRolloverMovements,
   describeExitBlock, describeOrganizerExitBlock, filterCycleExpenses, calculateCycleWallet,
@@ -204,6 +206,19 @@ describe('describeOrganizerExitBlock', () => {
     // تسميات لم تعد موجودة في الواجهة — وجودها هنا يعني رسالة تُرشد إلى العدم.
     expect(message).not.toContain('تبويب «الأعضاء»')
     expect(message).not.toContain('إدارة الرحلة')
+  })
+
+  // ⚠️ الحارس الفعلي هو exitTraveler في functions/index.js، ونصّه منسوخ يدوياً
+  // (لا حزمة مشتركة بين العميل والدوال — نفس وضع tripEndTimeJs). فحين صُحّحت
+  // نسخة العميل وحدها بقي الخادم يردّ بالنصّ القديم، أي أن المنظّم يقرأ إرشاداً
+  // مختلفاً حسب أيّهما منعه — وهو بالضبط ما يتعهّد تعليق الدالة بمنعه. هذا
+  // الاختبار يقرأ الملف الخادمي نصّاً ويطابقه، فينكسر إن عُدّل أحدهما وحده.
+  it('نصّ المنع مطابق حرفياً لنسخته في functions/index.js', () => {
+    const server = readFileSync(resolve(__dirname, '../../functions/index.js'), 'utf8')
+    const client = describeOrganizerExitBlock('uid-1', 'uid-1', 'X')!
+    // الجزء الثابت بعد اسم المسافر — ما بعد أول شرطة طويلة.
+    const invariant = client.slice(client.indexOf('— هو منظّم الرحلة'))
+    expect(server).toContain(invariant)
   })
 
   it('لا يمنع عضواً عادياً مهما كان uid موجوداً', () => {

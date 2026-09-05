@@ -296,7 +296,7 @@ export default function TravelerProfileModal({
                     {settlementDirection(balance.remaining) === 'settled' ? 'إخراج من الرحلة' : 'تسوية وخروج من الرحلة'}
                   </button>
                   <p className="text-[11px] text-slate-500 mt-2 text-center leading-relaxed">
-                    يُسوَّى حسابه فوراً ويخرج من قائمة الأعضاء النشطين — سجلّه المالي يبقى محفوظاً.
+                    يُسوَّى حسابه فوراً ويخرج من قائمة المسافرين النشطين — سجلّه المالي يبقى محفوظاً.
                   </p>
                 </section>
               )}

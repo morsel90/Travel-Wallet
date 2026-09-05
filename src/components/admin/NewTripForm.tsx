@@ -87,7 +87,7 @@ export default function NewTripForm({ existingIds, isSaving, onCreate, onCancel 
       <p className="text-[11px] text-teal-800 bg-teal-50 border border-teal-200 rounded-lg p-2.5 leading-relaxed">
         ستصبح منظّم هذه الرحلة تلقائياً — بيانات البنك التي تظهر لأعضائها تُقرأ
         من بروفايلك، عدّلها من هناك في أي وقت. بعد الإنشاء، ادعُ الأعضاء عبر
-        رابط دعوة من تبويب "الأعضاء" داخل تفاصيل الرحلة.
+        رابط دعوة من تبويب «المسافرون» داخل تفاصيل الرحلة.
       </p>
 
       {error && (
