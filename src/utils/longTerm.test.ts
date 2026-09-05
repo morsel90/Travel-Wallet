@@ -190,6 +190,22 @@ describe('describeOrganizerExitBlock', () => {
     expect(describeOrganizerExitBlock('uid-1', 'uid-1', 'محمد')).toContain('محمد')
   })
 
+  // ⚠️ يثبّت **تسميات الواجهة** لا مجرّد وجود رسالة. النصّ كان يحيل إلى «تبويب
+  // الأعضاء في إدارة الرحلة» بعد أن دُمج الأول في «المسافرون» وحُذف الثاني
+  // (CHANGELOG 2026-08-29)، فظلّ يُرشد إلى مكان محذوف ولم يكشفه الاختبار أعلاه
+  // لأنه يفحص اسم المسافر وحده. أي إعادة تسمية قادمة لتبويب TRIP_TABS أو لزرّ
+  // تعيين المنظّم في TripDetailPanel.tsx يجب أن تُسقط هذا الاختبار.
+  it('يُرشد إلى المسار الفعلي في الواجهة بتسمياته الحالية', () => {
+    const message = describeOrganizerExitBlock('uid-1', 'uid-1', 'محمد')!
+    expect(message).toContain('المسافرون')
+    expect(message).toContain('تعيين منظّماً')
+    // الشرط الذي يفسّر غياب الزرّ عند مسافر مسجَّل يدوياً بلا حساب مرتبط.
+    expect(message).toContain('ربط حسابه')
+    // تسميات لم تعد موجودة في الواجهة — وجودها هنا يعني رسالة تُرشد إلى العدم.
+    expect(message).not.toContain('تبويب «الأعضاء»')
+    expect(message).not.toContain('إدارة الرحلة')
+  })
+
   it('لا يمنع عضواً عادياً مهما كان uid موجوداً', () => {
     expect(describeOrganizerExitBlock('uid-2', 'uid-1', 'سعد')).toBeNull()
   })
