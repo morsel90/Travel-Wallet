@@ -81,6 +81,12 @@ const backup = `itinerary-backup-${TRIP_ID}-${Date.now()}.json`
 writeFileSync(backup, JSON.stringify(old, null, 2))
 console.log(`\n💾 نسخة احتياطية للمسار القديم (${old.length} مقاطع) → ${backup}`)
 
-await ref.update({ itinerary })
-console.log(`✅ حُفظ المسار في الرحلة ${TRIP_ID}.`)
+// 🆕 رفع عدّاد نسخة المسار — Admin SDK يتجاوز firestore.rules، فلا شيء يفرض
+// هذا سوى السطر نفسه. وتركه كان **السبب المباشر** لضياع أول كتابة بهذا
+// السكربت: نجحت، ثم محتها بعد عشر ثوانٍ مسوّدة قديمة مفتوحة في متصفح، بلا أي
+// خطأ في الطرفين (انظر CHANGELOG 2026-09-05). برفعه هنا يصير المحرّر المفتوح
+// حاملاً نسخة قديمة، فيُرفض حفظه بدل أن يفوز.
+const rev = Number.isInteger(snap.data().itineraryRev) ? snap.data().itineraryRev : 0
+await ref.update({ itinerary, itineraryRev: rev + 1 })
+console.log(`✅ حُفظ المسار في الرحلة ${TRIP_ID} (itineraryRev: ${rev} → ${rev + 1}).`)
 process.exit(0)

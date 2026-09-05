@@ -1248,7 +1248,12 @@ exports.restoreTrip = onCall(
       ref: tripRef,
       // 🆕 المسؤول المستعيد يصبح منظّم الرحلة — نفس منطق الإنشاء بالضبط (لا
       // استعادة organizerUid القديم من النسخة: قد يشير لحساب لم يعد موجوداً).
-      data: { name: trip.name || tripId, itinerary: trip.itinerary, status: trip.status, organizerUid: request.auth.uid },
+      // 🆕 itineraryRev: 1 — الاستعادة تكتب مساراً جديداً كلياً، وAdmin SDK
+      // يتجاوز firestore.rules فلا شيء يفرض رفع العدّاد هنا سوى هذا السطر.
+      // تركه غائباً (=0) يعني أن محرّراً مفتوحاً على النسخة السابقة يستطيع
+      // الحفظ بـ 1 فيمحو المستعاد بكتابة شرعية تماماً. والاستعادة لا تقع إلا
+      // على رحلة فارغة أو غير موجودة، فالبدء من 1 لا يتخطّى عدّاداً قائماً.
+      data: { name: trip.name || tripId, itinerary: trip.itinerary, status: trip.status, organizerUid: request.auth.uid, itineraryRev: 1 },
     });
     for (const t of travelers) {
       ops.push({ ref: dataRoot.collection('travelers').doc(String(t.id)), data: t });

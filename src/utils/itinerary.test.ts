@@ -3,6 +3,7 @@ import {
   toStoredTime, toInputTime, validateDraft, draftToSegment, segmentToDraft,
   isRenderableSegment, normalizeItinerary, findNextSegment, newSegmentId,
   emptySegmentDraft, tripEndTime, tripRouteSummary, deriveTripType, formatCountdown,
+  normalizeItineraryRev,
 } from './itinerary'
 import type { SegmentDraft } from './itinerary'
 import type { ItinerarySegment } from '../types'
@@ -423,5 +424,28 @@ describe('formatCountdown', () => {
     expect(at('2026-07-21T09:59:00')).toBeNull()
     expect(at('2026-07-20T08:00:00')).toBeNull()
     expect(at('ليس تاريخاً')).toBeNull()
+  })
+})
+
+
+describe('normalizeItineraryRev', () => {
+  it('يمرّر عدداً صحيحاً موجباً كما هو', () => {
+    expect(normalizeItineraryRev(0)).toBe(0)
+    expect(normalizeItineraryRev(7)).toBe(7)
+  })
+
+  // ⚠️ رحلة أُنشئت قبل الميزة لا تحمل الحقل — الصفر يُدخلها البروتوكول من أول
+  // حفظ بلا ترحيل بيانات (نفس مبدأ غياب status = active).
+  it('الحقل الغائب يُقرأ صفراً', () => {
+    expect(normalizeItineraryRev(undefined)).toBe(0)
+    expect(normalizeItineraryRev(null)).toBe(0)
+  })
+
+  // ⚠️ قيمة تالفة كُتبت مباشرة عبر SDK لا يجوز أن تنتج NaN+1، وإلا رُفض كل
+  // حفظ لاحق بلا سبب مفهوم للمستخدم.
+  it('القيم التالفة تُقرأ صفراً لا NaN', () => {
+    for (const bad of ['3', 2.5, NaN, Infinity, -1, {}, [], true]) {
+      expect(normalizeItineraryRev(bad)).toBe(0)
+    }
   })
 })

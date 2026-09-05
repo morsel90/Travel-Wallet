@@ -678,6 +678,54 @@ describe('إدارة الرحلات — trips/{tripId}', () => {
     await assertFails(setDoc(tripConfigDoc(adminDb()), { notAllowed: true }))
   })
 
+  // 🆕 **القفل التفاؤلي على المسار — itineraryRevIsBumped.**
+  //
+  // الثغرة التي عالجها: setDoc(merge) يستبدل حقل itinerary بالمصفوفة كاملة،
+  // فمحرّران متزامنان كان أحدهما يمحو عمل الآخر بصمت وبلا خطأ. حدثت فعلاً —
+  // كتابة إدارية من الخادم مُحيت بعد عشر ثوانٍ بمسوّدة قديمة مفتوحة في متصفح
+  // (انظر CHANGELOG 2026-09-05). الحارس هنا لا في الواجهة: الواجهة تنبّه، وهذه
+  // القواعد ترفض.
+  describe('القفل التفاؤلي على المسار — itineraryRev', () => {
+    const segment = { id: 's1', mode: 'car', departure: { location: 'أ', time: '2026-01-01T08:00:00' }, arrival: { location: 'ب' } }
+    const other   = { id: 's2', mode: 'car', departure: { location: 'ب', time: '2026-01-02T08:00:00' }, arrival: { location: 'ج' } }
+
+    it('أول كتابة لمسار على رحلة بلا عدّاد تنجح بـ itineraryRev = 1', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة' }))
+      await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { itinerary: [segment], itineraryRev: 1 }, { merge: true }))
+    })
+
+    it('تعديل المسار بلا رفع العدّاد يُرفض — هذه هي الثغرة نفسها', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة', itinerary: [segment], itineraryRev: 3 }))
+      await assertFails(setDoc(tripConfigDoc(adminDb()), { itinerary: [other] }, { merge: true }))
+    })
+
+    it('تعديل المسار برفع العدّاد بمقدار واحد بالضبط ينجح', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة', itinerary: [segment], itineraryRev: 3 }))
+      await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { itinerary: [other], itineraryRev: 4 }, { merge: true }))
+    })
+
+    it('**الخاسر في السباق يُرفض**: محرّر فتح على 3 وحفظ غيرُه أولاً فصار الخادم 4', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة', itinerary: [other], itineraryRev: 4 }))
+      // المحرّر البطيء ما زال يرسل 3+1 = 4، والخادم الآن عند 4 فالمطلوب 5.
+      await assertFails(setDoc(tripConfigDoc(adminDb()), { itinerary: [segment], itineraryRev: 4 }, { merge: true }))
+    })
+
+    it('قفزة في العدّاد مرفوضة أيضاً — لا تخطّي للطابور', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة', itinerary: [segment], itineraryRev: 3 }))
+      await assertFails(setDoc(tripConfigDoc(adminDb()), { itinerary: [other], itineraryRev: 9 }, { merge: true }))
+    })
+
+    it('⚠️ حفظ الاسم وحده لا يحتاج رفع العدّاد — merge يمرّر المسار كما هو', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة', itinerary: [segment], itineraryRev: 3 }))
+      await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { name: 'اسم جديد' }, { merge: true }))
+    })
+
+    it('عدّاد بغير نوع صحيح يُرفض', async () => {
+      await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة', itinerary: [segment], itineraryRev: 3 }))
+      await assertFails(setDoc(tripConfigDoc(adminDb()), { itinerary: [other], itineraryRev: 'رابع' }, { merge: true }))
+    })
+  })
+
   // 🆕 القاعدة ١٨: انكسار حقيقي رُصد فعلاً (لا افتراضي) عبر
   // e2e/self-serve-trip-creation.spec.ts — إضافة createdByUid لكتابة الإنشاء
   // في manageTrip دون إدراجه في isValidTripConfig كانت تعني رفض *كل* تعديل
