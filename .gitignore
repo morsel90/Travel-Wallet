@@ -64,3 +64,6 @@ ui-debug.log
 # إعدادات Claude Code/Cowork المحلية (مفاتيح جلسات، أقفال مهام مجدولة) — خاصة
 # بالجهاز لا بالمشروع.
 /.claude/
+
+# نسخ احتياطية ينتجها scripts/set-school-calendar.mjs قبل كل كتابة
+itinerary-backup-*.json
