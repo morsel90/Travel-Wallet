@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react'
 import { onSnapshot } from 'firebase/firestore'
 import { tripsCol } from '../firestore'
-import { normalizeItinerary } from '../utils/itinerary'
+import { normalizeItinerary, normalizeItineraryRev } from '../utils/itinerary'
 import { normalizeTripStatus } from '../utils/tripStatus'
 import { normalizeTripType } from '../utils/tripType'
 import type { ItinerarySegment, TripStatus, TripType } from '../types'
@@ -19,6 +19,12 @@ export interface TripSummary {
   /** 🆕 uid منظّم الرحلة الحالي — غيابه يعني رحلة قديمة بلا منظّم معروف بعد. */
   organizerUid?: string
   itinerary: ItinerarySegment[]
+  /**
+   * 🆕 نسخة المسار — يرفعها كل حفظ بمقدار واحد، ويفرض ذلك firestore.rules
+   * (itineraryRevIsBumped). المحرّر يحتفظ بالقيمة التي فتح عليها ويرسلها +1،
+   * فيُرفض حفظه إن كان غيره قد حفظ بينهما بدل أن يمحوه بصمت. غياب الحقل = 0.
+   */
+  itineraryRev: number
   /** 🆕 حالة دورة الحياة — غياب الحقل = active (توافق خلفي، انظر utils/tripStatus.ts). */
   status: TripStatus
   /** 🆕 متى تغيّرت status آخر مرة — غيابها يعني "غير معروف" (انظر useTripConfig.ts). */
@@ -53,7 +59,7 @@ export function useAllTrips(enabled: boolean): UseAllTripsResult {
         const list: TripSummary[] = snap.docs.map(d => {
           const data = d.data() as {
             name?: unknown; organizerUid?: unknown; itinerary?: unknown; status?: unknown
-            statusChangedAt?: unknown; tripType?: unknown
+            statusChangedAt?: unknown; tripType?: unknown; itineraryRev?: unknown
           }
           return {
             id: d.id,
@@ -62,6 +68,7 @@ export function useAllTrips(enabled: boolean): UseAllTripsResult {
             status: normalizeTripStatus(data.status),
             statusChangedAt: typeof data.statusChangedAt === 'number' ? data.statusChangedAt : undefined,
             itinerary: normalizeItinerary(data.itinerary),
+            itineraryRev: normalizeItineraryRev(data.itineraryRev),
             tripType: normalizeTripType(data.tripType),
           }
         })

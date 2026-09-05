@@ -74,7 +74,7 @@ beforeEach(() => {
 
 const tripSummary = {
   id: 'trip-1', name: 'رحلة تركيا',
-  itinerary: [], status: 'active' as const, tripType: 'standard' as const,
+  itinerary: [], itineraryRev: 0, status: 'active' as const, tripType: 'standard' as const,
 }
 
 describe('removeMember — الصلاحية والعقد', () => {
@@ -283,11 +283,11 @@ describe('saveItinerary — الترقية التلقائية لنوع الرح�
     const shortItinerary = [segment('2026-07-01T10:00:00', '2026-07-10T10:00:00')]
     const { result } = setup()
     let ok
-    await act(async () => { ok = await result.current.saveItinerary('trip-1', shortItinerary, 'standard') })
+    await act(async () => { ok = await result.current.saveItinerary('trip-1', shortItinerary, 'standard', 0) })
 
     expect(ok).toBe(true)
     expect(mocks.getDoc).not.toHaveBeenCalled()
-    expect(mocks.setDoc).toHaveBeenCalledWith({}, { itinerary: shortItinerary }, { merge: true })
+    expect(mocks.setDoc).toHaveBeenCalledWith({}, { itinerary: shortItinerary, itineraryRev: 1 }, { merge: true })
   })
 
   it('مسار أطول من 14 يوماً يُرقّي إلى long_term ويضبط currentPeriod الشهر الجاري إن لم يكن مضبوطاً', async () => {
@@ -295,7 +295,7 @@ describe('saveItinerary — الترقية التلقائية لنوع الرح�
     mocks.getDoc.mockResolvedValue({ exists: () => false, data: () => ({}) })
     const { result } = setup()
     let ok
-    await act(async () => { ok = await result.current.saveItinerary('trip-1', longItinerary, 'standard') })
+    await act(async () => { ok = await result.current.saveItinerary('trip-1', longItinerary, 'standard', 0) })
 
     expect(ok).toBe(true)
     const payload = mocks.setDoc.mock.calls[0][1]
@@ -307,7 +307,7 @@ describe('saveItinerary — الترقية التلقائية لنوع الرح�
     const longItinerary = [segment('2026-07-01T10:00:00', '2026-07-20T10:00:00')]
     mocks.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ currentPeriod: '2025-01' }) })
     const { result } = setup()
-    await act(async () => { await result.current.saveItinerary('trip-1', longItinerary, 'standard') })
+    await act(async () => { await result.current.saveItinerary('trip-1', longItinerary, 'standard', 0) })
 
     const payload = mocks.setDoc.mock.calls[0][1]
     expect(payload.tripType).toBe('long_term')
@@ -317,18 +317,18 @@ describe('saveItinerary — الترقية التلقائية لنوع الرح�
   it('رحلة long_term أصلاً تبقى كذلك ولا تُخفَّض حتى لو قصُر مسارها', async () => {
     const shortItinerary = [segment('2026-07-01T10:00:00', '2026-07-02T10:00:00')]
     const { result } = setup()
-    await act(async () => { await result.current.saveItinerary('trip-1', shortItinerary, 'long_term') })
+    await act(async () => { await result.current.saveItinerary('trip-1', shortItinerary, 'long_term', 0) })
 
     expect(mocks.getDoc).not.toHaveBeenCalled()
     const payload = mocks.setDoc.mock.calls[0][1]
-    expect(payload).toEqual({ itinerary: shortItinerary })
+    expect(payload).toEqual({ itinerary: shortItinerary, itineraryRev: 1 })
   })
 
   it('يرفض مساراً يتجاوز الحدّ الأقصى بلا كتابة ولا قراءة', async () => {
     const tooMany = Array.from({ length: 51 }, (_, i) => segment(`2026-01-0${(i % 9) + 1}T10:00:00`, `2026-01-0${(i % 9) + 1}T12:00:00`))
     const { result } = setup()
     let ok
-    await act(async () => { ok = await result.current.saveItinerary('trip-1', tooMany, 'standard') })
+    await act(async () => { ok = await result.current.saveItinerary('trip-1', tooMany, 'standard', 0) })
 
     expect(ok).toBe(false)
     expect(mocks.getDoc).not.toHaveBeenCalled()

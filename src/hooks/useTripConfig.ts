@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { onSnapshot } from 'firebase/firestore'
 import type { User } from 'firebase/auth'
 import { tripConfigDoc } from '../firestore'
-import { normalizeItinerary } from '../utils/itinerary'
+import { normalizeItinerary, normalizeItineraryRev } from '../utils/itinerary'
 import { normalizeTripStatus } from '../utils/tripStatus'
 import { normalizeTripType } from '../utils/tripType'
 import { normalizePeriodKey, isValidPeriodKey } from '../utils/period'
@@ -26,6 +26,8 @@ export interface TripConfig {
   /** 🆕 uid منظّم الرحلة الحالي — غيابه يعني رحلة قديمة بلا منظّم معروف بعد. */
   organizerUid?: string
   itinerary?: ItinerarySegment[]
+  /** 🆕 نسخة المسار للقفل التفاؤلي عند الحفظ — غياب الحقل = 0. انظر utils/itinerary.ts. */
+  itineraryRev: number
   /** 🆕 حالة دورة الحياة — غياب الحقل يُعامَل كـ active (انظر utils/tripStatus.ts). */
   status: TripStatus
   /**
@@ -53,6 +55,7 @@ export interface TripConfig {
 
 const FALLBACK_CONFIG: TripConfig = {
   tripName: null,
+  itineraryRev: 0,
   status: 'active',
   // ⚠️ رحلة بلا مستند إعدادات هي رحلة قياسية بالتعريف — لا واجهة ترحيل لها.
   tripType: 'standard',
@@ -87,6 +90,7 @@ export function useTripConfig(user: User | null): TripConfig {
           name?: unknown
           organizerUid?: unknown
           itinerary?: unknown
+          itineraryRev?: unknown
           status?: unknown
           statusChangedAt?: unknown
           tripType?: unknown
@@ -103,6 +107,7 @@ export function useTripConfig(user: User | null): TripConfig {
           tripName: typeof data.name === 'string' ? data.name : null,
           organizerUid: typeof data.organizerUid === 'string' ? data.organizerUid : undefined,
           itinerary: itinerary.length > 0 ? itinerary : undefined,
+          itineraryRev: normalizeItineraryRev(data.itineraryRev),
           status: normalizeTripStatus(data.status),
           statusChangedAt: typeof data.statusChangedAt === 'number' ? data.statusChangedAt : undefined,
           tripType: normalizeTripType(data.tripType),

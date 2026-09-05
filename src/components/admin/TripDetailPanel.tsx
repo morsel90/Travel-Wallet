@@ -38,7 +38,7 @@ interface TripDetailPanelProps {
   viewerRole: 'admin' | 'organizer'
   isSaving: boolean
   onSaveTripName: (tripId: string, name: string) => Promise<boolean>
-  onSaveItinerary: (tripId: string, itinerary: TripSummary['itinerary'], currentType: TripSummary['tripType']) => Promise<boolean>
+  onSaveItinerary: (tripId: string, itinerary: TripSummary['itinerary'], currentType: TripSummary['tripType'], baseRev: number) => Promise<boolean>
   /** 🆕 تغيير حالة دورة حياة الرحلة (active / completed / archived). */
   onSaveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
   /** 🆕 تخفيض يدوي من طويلة المدى إلى قياسية — الترقية بالاتجاه المعاكس تلقائية بالكامل (انظر onSaveItinerary). */
@@ -150,6 +150,13 @@ export default function TripDetailPanel({
 
   const [nameForm, setNameForm] = useState(trip.name)
   const [workingItinerary, setWorkingItinerary] = useState(trip.itinerary)
+  // 🆕 اللقطة التي بُنيت عليها المسوّدة، ونسختها. **الفرق بينها وبين
+  // trip.itinerary هو ما تغيّر عند غيرنا؛ والفرق بينها وبين workingItinerary هو
+  // ما غيّرناه نحن.** خلط الاثنين هو أصل الثغرة: `itineraryDirty` كان يقارن
+  // المسوّدة بالحيّ، فوصول تعديل بعيد كان يجعله «متسخاً» بلا أن يلمس المستخدم
+  // شيئاً — فيضيء زرّ الحفظ ويكتب النسخة القديمة فوق البعيدة.
+  const [baseItinerary, setBaseItinerary] = useState(trip.itinerary)
+  const [baseRev, setBaseRev] = useState(trip.itineraryRev)
   const [draft, setDraft] = useState<SegmentDraft | null>(null)
   const [draftError, setDraftError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -162,6 +169,8 @@ export default function TripDetailPanel({
   useEffect(() => {
     setNameForm(trip.name)
     setWorkingItinerary(trip.itinerary)
+    setBaseItinerary(trip.itinerary)
+    setBaseRev(trip.itineraryRev)
     setDraft(null)
     setEditingId(null)
     setDraftError(null)
@@ -177,10 +186,32 @@ export default function TripDetailPanel({
 
   const nameDirty = nameForm !== trip.name
 
+  // ما غيّره المستخدم هنا — يقاس على اللقطة التي فتح عليها لا على الحيّ.
   const itineraryDirty = useMemo(
-    () => JSON.stringify(workingItinerary) !== JSON.stringify(trip.itinerary),
-    [workingItinerary, trip.itinerary]
+    () => JSON.stringify(workingItinerary) !== JSON.stringify(baseItinerary),
+    [workingItinerary, baseItinerary]
   )
+
+  // وما تغيّر عند غيرنا بينما اللوحة مفتوحة.
+  const remoteItineraryChanged = trip.itineraryRev !== baseRev
+
+  /**
+   * 🆕 تبنٍّ صامت للنسخة البعيدة **ما دام المستخدم لم يعدّل شيئاً**. هذه وحدها
+   * تُغلق الحالة التي وقعت فعلاً: لوحة مفتوحة بلا تعديل، تصل كتابة من جهة
+   * أخرى، فتبقى اللوحة على نسخة قديمة وتمحوها عند أول حفظ. لا شيء يُفقَد هنا
+   * لأنه لا شيء لدى المستخدم ليُفقَد.
+   *
+   * ⚠️ ولا نتبنّى أبداً حين يكون لديه تعديل غير محفوظ — تلك حالة تعارض حقيقي،
+   * تُعرض له ليقرّرها بنفسه (التنبيه أسفل تبويب المسار) بدل أن نمحو عمله نيابةً
+   * عنه، وهو نفس ما نمنع الخادمَ من فعله بنا.
+   */
+  useEffect(() => {
+    if (itineraryDirty) return
+    setWorkingItinerary(trip.itinerary)
+    setBaseItinerary(trip.itinerary)
+    setBaseRev(trip.itineraryRev)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip.itineraryRev])
 
   const saveName = () => onSaveTripName(trip.id, nameForm)
 
@@ -637,13 +668,33 @@ export default function TripDetailPanel({
               )}
             </div>
 
+            {/* 🆕 تعارض حقيقي: عدّل غيرُنا المسار بينما لدينا تعديل غير محفوظ.
+                لا نمحو أياً من الجانبين — نُظهر الحالة ونترك القرار له. الحفظ
+                هنا سيُرفض خادمياً على أي حال (itineraryRevIsBumped في
+                firestore.rules)، فالتنبيه يسبق الرفض بدل أن يليَه. */}
+            {remoteItineraryChanged && itineraryDirty && (
+              <div className="mt-4 flex flex-wrap items-center gap-2 bg-rose-50 border border-rose-200 rounded-xl p-3">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span className="text-xs font-bold text-rose-800 flex-1">
+                  عدّل أحدهم مسار الرحلة من جهاز آخر بينما تعدّل هنا. حفظك سيُرفض حمايةً لعمله — راجع نسخته ثم أعد تعديلك فوقها.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { setWorkingItinerary(trip.itinerary); setBaseItinerary(trip.itinerary); setBaseRev(trip.itineraryRev); cancelDraft() }}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition-colors"
+                >
+                  اعرض نسخته
+                </button>
+              </div>
+            )}
+
             {itineraryDirty && (
               <div className="mt-4 flex flex-wrap items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                 <span className="text-xs font-bold text-amber-800 flex-1">تعديلات غير محفوظة على المسار.</span>
                 <button
                   type="button"
-                  onClick={() => void onSaveItinerary(trip.id, workingItinerary, trip.tripType)}
+                  onClick={() => void onSaveItinerary(trip.id, workingItinerary, trip.tripType, baseRev)}
                   disabled={isSaving}
                   className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-40"
                 >
@@ -652,7 +703,7 @@ export default function TripDetailPanel({
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setWorkingItinerary(trip.itinerary); cancelDraft() }}
+                  onClick={() => { setWorkingItinerary(trip.itinerary); setBaseItinerary(trip.itinerary); setBaseRev(trip.itineraryRev); cancelDraft() }}
                   className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
                 >
                   تراجع

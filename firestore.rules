@@ -249,10 +249,12 @@ service cloud.firestore {
     function isValidTripConfig(d) {
       return d.keys().hasOnly([
                'name', 'itinerary', 'status', 'statusChangedAt', 'createdByUid', 'organizerUid', 'bankDetails',
-               'tripType', 'currentPeriod', 'lastClosedPeriod', 'lastClosedAt'
+               'tripType', 'currentPeriod', 'lastClosedPeriod', 'lastClosedAt', 'itineraryRev'
              ])
         && (!('name' in d) || (d.name is string && d.name.size() <= 100))
         && (!('itinerary' in d) || (d.itinerary is list && d.itinerary.size() <= 50))
+        // 🆕 عدّاد نسخة المسار — القفل التفاؤلي أدناه. غيابه = 0 (لا ترحيل بيانات).
+        && (!('itineraryRev' in d) || (d.itineraryRev is int && d.itineraryRev >= 0))
         && (!('bankDetails' in d) || isValidBankDetails(d.bankDetails))
         && (!('status' in d) || d.status in ['active', 'completed', 'archived'])
         && (!('statusChangedAt' in d) || d.statusChangedAt is number)
@@ -263,6 +265,40 @@ service cloud.firestore {
         && (!('currentPeriod' in d) || isValidPeriodKey(d.currentPeriod))
         && (!('lastClosedPeriod' in d) || isValidPeriodKey(d.lastClosedPeriod))
         && (!('lastClosedAt' in d) || d.lastClosedAt is number);
+    }
+
+    // 🆕 نسخة المسار الحالية — غياب الحقل يساوي صفراً، فرحلة أُنشئت قبل هذه
+    // الميزة تدخل البروتوكول من أول حفظ بلا ترحيل بيانات (نفس مبدأ غياب
+    // status = active وغياب tripType = standard).
+    function itineraryRevOf(d) {
+      return ('itineraryRev' in d) ? d.itineraryRev : 0;
+    }
+
+    // 🆕 **قفل تفاؤلي على المسار — الحارس ضد «آخر من يحفظ يفوز».**
+    //
+    // كتابة العميل تمرّ بـ setDoc(..., {merge:true})، فالمسار حقل واحد يحمل
+    // المصفوفة كاملة: أي حفظ يستبدلها بالكامل. محرّران متزامنان (جهازان
+    // للمنظّم نفسه، أو منظّم ومسؤول) كان أحدهما يمحو عمل الآخر **بصمت وبلا
+    // أي خطأ** — لا شيء في الكتابة يحمل معلومة «على أي نسخة بُني هذا التعديل».
+    // حدث هذا فعلاً: كتابة إدارية من الخادم مُحيت بعد عشر ثوانٍ بمسوّدة قديمة
+    // كانت مفتوحة في متصفح (انظر CHANGELOG 2026-09-05).
+    //
+    // العلاج: كل تعديل للمسار يجب أن يرفع itineraryRev بمقدار واحد **بالضبط**
+    // عن النسخة التي قرأها المحرّر. متزامنان يرسلان كلاهما base+1؛ الأول ينجح
+    // فيصير الخادم عند base+1، والثاني يُرفض لأن base+1 لم يعد يساوي
+    // (الحالي + 1). لا قفل ولا انتظار — الخاسر يعيد التحميل ويعيد المحاولة.
+    //
+    // ⚠️ حفظ الاسم أو الحالة لا يتأثر: مع merge تصل المصفوفة كما هي في
+    // request.resource.data، فتحقّق شرط «لم يتغيّر المسار» ويُتجاوز فحص العدّاد.
+    //
+    // ⚠️ وكتابات Admin SDK (الدوال والسكربتات) تتجاوز هذه القواعد بالكامل، فهي
+    // لا تُرفض هنا أبداً — لكنها **يجب** أن ترفع العدّاد بنفسها، وإلا بقي على
+    // قيمة قديمة يحملها محرّر مفتوح فيفوز عليها لاحقاً بكتابة شرعية تماماً.
+    // انظر restoreTrip في functions/index.js وscripts/set-school-calendar.mjs.
+    function itineraryRevIsBumped() {
+      return !('itinerary' in request.resource.data)
+        || (('itinerary' in resource.data) && request.resource.data.itinerary == resource.data.itinerary)
+        || itineraryRevOf(request.resource.data) == itineraryRevOf(resource.data) + 1;
     }
 
     // 🆕 مفتاح الشهر المحاسبي `YYYY-MM` — نفس النمط الذي تفرضه
@@ -534,6 +570,7 @@ service cloud.firestore {
       // فيتضاعف رصيد كل عضو مُرحَّل. الحارس الثاني (period > lastClosedPeriod)
       // داخل closeMonth نفسها — لا نعتمد على واحد منهما وحده.
       allow update: if (isAdmin() || isOrganizer(tripId)) && isValidTripConfig(request.resource.data)
+        && itineraryRevIsBumped()
         && (!('createdByUid' in resource.data)
             || (('createdByUid' in request.resource.data) && request.resource.data.createdByUid == resource.data.createdByUid))
         && (!('organizerUid' in resource.data)

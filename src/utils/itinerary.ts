@@ -181,6 +181,20 @@ export function normalizeItinerary(raw: unknown): ItinerarySegment[] {
     .sort((a, b) => new Date(a.departure.time).getTime() - new Date(b.departure.time).getTime())
 }
 
+/**
+ * 🆕 نسخة المسار المقروءة من مستند الرحلة — أساس القفل التفاؤلي الذي تفرضه
+ * `itineraryRevIsBumped` في firestore.rules.
+ *
+ * ⚠️ **كل ما ليس عدداً صحيحاً موجباً يُقرأ صفراً**، لا فقط الحقل الغائب: رحلة
+ * أُنشئت قبل هذه الميزة لا تحمل الحقل إطلاقاً (نفس مبدأ غياب `status` = active)،
+ * وقيمة تالفة كُتبت مباشرة عبر SDK لا يجوز أن تُسقط الواجهة ولا أن تنتج
+ * `NaN + 1` فيُرفض كل حفظ لاحق بلا سبب مفهوم. الصفر يعيد الرحلة إلى بداية
+ * البروتوكول: أول حفظ يكتب 1، وتستمر من هناك.
+ */
+export function normalizeItineraryRev(raw: unknown): number {
+  return typeof raw === 'number' && Number.isInteger(raw) && raw >= 0 ? raw : 0
+}
+
 /** أول مقطع لم يحن وقت انطلاقه بعد — يستخدمه NextSegmentWidget. */
 export function findNextSegment(
   itinerary: ItinerarySegment[],

@@ -69,7 +69,7 @@ export function useAppCoordinator() {
   // الحقول تُستهلك أيضاً في pickerTrips أدناه — صفّ الرحلة المفتوحة حالياً في
   // «رحلاتي» يعرض هذه النسخة الحيّة بدل لقطة myTrips الثابتة.
   const {
-    tripName, organizerUid, itinerary, status: tripStatus, statusChangedAt,
+    tripName, organizerUid, itinerary, itineraryRev, status: tripStatus, statusChangedAt,
     tripType, currentPeriod, lastClosedPeriod,
   } = useTripConfig(hasAccess ? user : null)
   // 🆕 قراءة حيّة لبيانات بنك منظّم *هذه* الرحلة — المصدر الوحيد المعروض في
@@ -260,10 +260,11 @@ export function useAppCoordinator() {
     name: tripName ?? TRIP_ID,
     organizerUid,
     itinerary: itinerary ?? [],
+    itineraryRev,
     status: tripStatus,
     statusChangedAt,
     tripType,
-  }), [tripName, organizerUid, itinerary, tripStatus, statusChangedAt, tripType])
+  }), [tripName, organizerUid, itinerary, itineraryRev, tripStatus, statusChangedAt, tripType])
 
   const tripAdmin = useTripAdminActions({ isAdmin, organizerTripId, showToast, handleFirestoreError })
 

@@ -27,7 +27,7 @@ import {
   tripDocById, expensesColByTrip, travelersColByTrip, travelerNamesColByTrip, depositLogsColByTrip,
 } from '../firestore'
 import { haptic } from '../utils/haptics'
-import { MAX_SEGMENTS, deriveTripType } from '../utils/itinerary'
+import { MAX_SEGMENTS, deriveTripType, normalizeItineraryRev } from '../utils/itinerary'
 import { currentPeriodKey } from '../utils/period'
 import { buildTripBackup, downloadTripBackup } from '../utils/backup'
 import { TRIP_STATUS_LABEL } from '../types'
@@ -101,7 +101,7 @@ interface UseTripAdminActionsParams {
 
 export interface UseTripAdminActionsResult {
   isSaving: boolean
-  saveItinerary: (tripId: string, itinerary: ItinerarySegment[], currentType: TripType) => Promise<boolean>
+  saveItinerary: (tripId: string, itinerary: ItinerarySegment[], currentType: TripType, baseRev: number) => Promise<boolean>
   saveTripName: (tripId: string, name: string) => Promise<boolean>
   /** 🆕 تغيير حالة دورة حياة الرحلة — القواعد تفرض أثرها، هذا يكتب الحقل فقط. */
   saveTripStatus: (tripId: string, status: TripStatus) => Promise<boolean>
@@ -147,11 +147,19 @@ export function useTripAdminActions({
 
   // كل مسارات الكتابة المباشرة تمرّ من هنا: فحص الصلاحية، علم الحفظ، رسالة
   // النجاح، ومعالجة الخطأ — بدل تكرار الأربعة في كل دالة.
+  /**
+   * @param explainDenial 🆕 يُستدعى عند `permission-denied` وحده ليُنتج رسالة
+   * أدقّ من «هذا الإجراء متاح للمسؤول أو المنظّم». الرفض هنا ليس دائماً نقص
+   * صلاحية: القفل التفاؤلي على المسار يرفض بنفس الكود حين يسبقك غيرُك بحفظ
+   * (انظر itineraryRevIsBumped في firestore.rules). قراءة إضافية واحدة على
+   * مسار نادر تُميّز الحالتين بدل تضليل المستخدم بأنه لا يملك الصلاحية.
+   */
   const write = useCallback(async (
     tripId: string,
     payload: Record<string, unknown>,
     successText: string,
     errorFallback: string,
+    explainDenial?: () => Promise<string | null>,
   ): Promise<boolean> => {
     if (!canAct(tripId)) {
       showToast({ text: 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.', type: 'error' }, 3000)
@@ -166,7 +174,9 @@ export function useTripAdminActions({
       return true
     } catch (err) {
       haptic.error()
-      handleFirestoreError(err, errorFallback)
+      const denialText = explainDenial ? await explainDenial().catch(() => null) : null
+      if (denialText) showToast({ text: denialText, type: 'error' }, 6000)
+      else handleFirestoreError(err, errorFallback)
       return false
     } finally {
       setIsSaving(false)
@@ -177,8 +187,13 @@ export function useTripAdminActions({
   // يدوياً — يُشتَقّ تلقائياً من مدّة المسار نفسه عند حفظه (انظر deriveTripType
   // في utils/itinerary.ts). اتجاه واحد فقط (standard→long_term)، فلا حاجة
   // لأي تأكيد إضافي من المستخدم.
+  /**
+   * @param baseRev 🆕 نسخة المسار التي فتح عليها المحرّر — تُرسَل +1، وتفرض
+   * firestore.rules أن يكون ذلك مساوياً لـ(الحالي + 1) بالضبط. فإن حفظ غيرُه
+   * بينهما رُفضت الكتابة بدل أن تمحو عمله بصمت. انظر itineraryRevIsBumped هناك.
+   */
   const saveItinerary = useCallback(async (
-    tripId: string, itinerary: ItinerarySegment[], currentType: TripType,
+    tripId: string, itinerary: ItinerarySegment[], currentType: TripType, baseRev: number,
   ): Promise<boolean> => {
     // نفس الحدّ المفروض في firestore.rules — نكشفه برسالة مفهومة بدل ترك
     // القواعد ترفض الكتابة بخطأ صلاحيات غامض.
@@ -188,7 +203,7 @@ export function useTripAdminActions({
     }
 
     const nextType = deriveTripType(currentType, itinerary)
-    const payload: Record<string, unknown> = { itinerary }
+    const payload: Record<string, unknown> = { itinerary, itineraryRev: baseRev + 1 }
 
     if (nextType !== currentType) {
       payload.tripType = nextType
@@ -209,6 +224,17 @@ export function useTripAdminActions({
         ? 'تم حفظ مسار الرحلة — وتحويلها تلقائياً إلى «طويلة المدى» لتجاوز مدّتها 14 يوماً'
         : 'تم حفظ مسار الرحلة',
       'تعذّر حفظ مسار الرحلة.',
+      // 🆕 تمييز التعارض عن نقص الصلاحية: كلاهما permission-denied. النسخة على
+      // الخادم تجاوزت ما فتحنا عليه ⇒ حفظ غيرُنا بيننا. ولا حاجة لطلب إعادة
+      // التحميل: رفض الخادم يُسقط التعديل المحلي ويُطلق onSnapshot بلقطة
+      // مصحّحة (انظر utils/writeErrors.ts)، فالمحرّر يستقبل الأحدث من تلقائه.
+      async () => {
+        const snap = await getDoc(tripDocById(tripId))
+        const serverRev = normalizeItineraryRev(snap.data()?.itineraryRev)
+        return serverRev === baseRev
+          ? null
+          : 'لم يُحفظ: عدّل أحدهم مسار الرحلة قبلك من جهاز آخر. ظهرت لك نسخته الأحدث الآن — راجعها ثم أعد تعديلك فوقها.'
+      },
     )
   }, [write, showToast])
 
