@@ -6,6 +6,7 @@ import {
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
   useTripAdminActions, useAllTrips, useMyTrips, useMyTripRole, useInviteJoin, useUserProfile,
   useOrganizerBankDetails, useSyncTravelerNameFromProfile, useLongTermActions,
+  useSyncRecovery,
 } from './index'
 import { useFilteredExpenses } from './useFilteredExpenses'
 import { calculateBalances, calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from '../utils/calculations'
@@ -41,7 +42,15 @@ import { tripPickerImporters } from '../components/TripPicker'
 const LAZY_IMPORTERS = [...chartsImporters, ...modalImporters, ...authImporters, ...tripPickerImporters]
 
 export function useAppCoordinator() {
-  const [isSyncing, setIsSyncing] = useState(false)
+  // 🆕 علم مستقل لكل مستمع بدل علم واحد مشترك بينهما. المشترك كان يكذب: كلاهما
+  // يرفعه عند الاشتراك ويُنزله في معالج لقطته، فأيّ المجموعتين وصلت أولاً
+  // تُطفئ الشارة بينما الأخرى ما زالت في قراءتها الأولى — ولأن كليهما يستخدم
+  // includeMetadataChanges، كان أي حدث بيانات-وصفية من إحداهما يُطفئها أيضاً.
+  // فتقول الواجهة "تمّت المزامنة" والبيانات قديمة فعلاً، وهو ما يجعل أي تأخّر
+  // حقيقي يبدو عطلاً عشوائياً بلا تفسير.
+  const [isExpensesSyncing, setIsExpensesSyncing] = useState(false)
+  const [isTravelersSyncing, setIsTravelersSyncing] = useState(false)
+  const isSyncing = isExpensesSyncing || isTravelersSyncing
   const [syncError, setSyncError] = useState<string | null>(null)
 
   const {
@@ -63,8 +72,8 @@ export function useAppCoordinator() {
   const { trips: myTrips, loading: myTripsLoading, error: myTripsError } = useMyTrips(joinedTripIds, user)
 
   const { ratesUpdatedAt, CURRENCIES } = useExchangeRates()
-  const { expenses,  setExpenses,  expensesLoaded,  refreshExpenses }  = useExpenses(hasAccess ? user : null, { setIsSyncing, setSyncError })
-  const { travelers, setTravelers, travelersLoaded, refreshTravelers } = useTravelers(hasAccess ? user : null, setIsSyncing)
+  const { expenses,  setExpenses,  expensesLoaded,  refreshExpenses }  = useExpenses(hasAccess ? user : null, { setIsSyncing: setIsExpensesSyncing, setSyncError })
+  const { travelers, setTravelers, travelersLoaded, refreshTravelers } = useTravelers(hasAccess ? user : null, setIsTravelersSyncing)
   // organizerUid للبطاقة البنكية، والمسار للويدجت والتقارير. 🆕 tripName وبقية
   // الحقول تُستهلك أيضاً في pickerTrips أدناه — صفّ الرحلة المفتوحة حالياً في
   // «رحلاتي» يعرض هذه النسخة الحيّة بدل لقطة myTrips الثابتة.
@@ -221,13 +230,42 @@ export function useAppCoordinator() {
     setSyncError(code ? describeWriteError(err, 'generic').text : fallback)
   }, [])
 
+  // جلب طازج من الخادم متجاوزاً الكاش — مشترك بين طريقين مختلفَي النية:
+  // سحب-للتحديث اليدوي (يُبلغ عن الفشل، فالمستخدم طلبه وينتظره) والتعافي
+  // التلقائي في useSyncRecovery (يصمت عند الفشل، فالمستخدم لم يطلب شيئاً).
+  const refreshFromServer = useCallback(async () => {
+    await Promise.all([refreshExpenses(), refreshTravelers()])
+  }, [refreshExpenses, refreshTravelers])
+
   const handlePullToRefresh = useCallback(async () => {
     try {
-      await Promise.all([refreshExpenses(), refreshTravelers()])
+      await refreshFromServer()
     } catch (err) {
       handleFirestoreError(err, 'تعذر تحديث البيانات — تحقّق من اتصالك وحاول مجدداً.')
     }
-  }, [refreshExpenses, refreshTravelers, handleFirestoreError])
+  }, [refreshFromServer, handleFirestoreError])
+
+  // 🆕 كتابات محلية لم يؤكّدها الخادم بعد (`_pending` مشتقّ من
+  // hasPendingWrites في المستمعَين). القراءة من الخادم أثناءها **تمحوها من
+  // الشاشة**: getDocsFromServer يتجاوز الكاش المحلي، فيعود بحالة الخادم التي
+  // لا تتضمّنها بعد، وsetExpenses/setTravelers يستبدلان القائمة بها — فيختفي
+  // مصروف أُضيف للتوّ ويظهر رصيد خاطئ حتى تصل لقطة onSnapshot التالية.
+  //
+  // سحب-للتحديث يحمل نفس الخطر أصلاً، لكنه إجراء يطلبه المستخدم في لحظة
+  // يختارها هو وينتظر نتيجته؛ أما التعافي فتلقائي وقد يقع في منتصف إدخال
+  // سريع للبيانات. لذا نمتنع عنه ما دامت هناك كتابة معلّقة — ووجودها دليل
+  // بذاته على أن الاتصال حيّ، أي أن لا شيء نتعافى منه أصلاً.
+  const hasUnconfirmedWrites = expenses.some(e => e._pending) || travelers.some(t => t._pending)
+
+  // 🆕 التعافي من المزامنة الصامتة: onSnapshot فوريّ ما دام الاتصال حيّاً، لكن
+  // الجوال يجمّد تبويب PWA في الخلفية أو يتخلّص منه بلا أي حدث يعرفه المتصفح —
+  // فيبقى ما تراه قديماً بلا مؤشر. هذا يفرض قراءة طازجة عند العودة. انظر
+  // التعليق الكامل والقياسات في useSyncRecovery.ts.
+  //
+  // ⚠️ سحب-للتحديث لا يغني عنه: إيماءة لمس بحتة (onTouchStart في
+  // PullToRefresh.tsx) ولا تعمل إلا عند قمة الصفحة — فلا وجود لها على سطح
+  // المكتب أصلاً، وتتطلب أن يشكّ المستخدم في البيانات ليسحبها.
+  useSyncRecovery(hasAccess && !hasUnconfirmedWrites, refreshFromServer)
 
   const expense = useExpenseActions({
     activeTravelers, user, isAdmin, setExpenses, showToast, handleFirestoreError, setSyncError,

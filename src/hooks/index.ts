@@ -25,3 +25,4 @@ export { useInviteJoin }       from './useInviteJoin' // 🆕 انضمام فو�
 export { useUserProfile }      from './useUserProfile' // 🆕 بروفايل المستخدم العام (اسم/بنك) — لتعبئة نموذج إنشاء رحلة تلقائياً
 export { useSyncTravelerNameFromProfile } from './useSyncTravelerNameFromProfile' // 🆕 يزامن اسم مسافري مع بروفايلي بلا أي واجهة جديدة
 export { useLongTermActions } from './useLongTermActions' // 🆕 الرحلات طويلة المدى: إغلاق الشهر (closeMonth) وخروج المنتدَبين (exitTraveler)
+export { useSyncRecovery }     from './useSyncRecovery' // 🆕 تعافٍ من المزامنة الصامتة عند عودة التطبيق للواجهة/الشبكة

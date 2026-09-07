@@ -2,7 +2,7 @@
 
 <div dir="rtl" style="text-align: right">
 
-## آخر تحديث: 2026-08-19
+## آخر تحديث: 2026-09-08
 
 ### توثيق هذا الملف أُعيد تنظيمه
 
@@ -37,8 +37,14 @@
 - Haptic feedback (Web Vibration API + visual flash for iOS)
 - Rate limiting on expense creation
 - Trip itinerary (flights/car/train/bus) stored per-trip + "next segment" widget
-- In-app admin panel (admin-only): list all trips, create a trip, edit bank details and itinerary, delete an *empty* trip
+- In-app admin/organizer panel: list all trips, create a trip, edit bank details and itinerary, delete an *empty* trip. Admins see every trip; a trip's **organizer** sees a limited panel for their own trip only
 - 🆕 "My trips" picker: opening the app with no `?trip=` shows the trips you belong to instead of the default one
+- 🆕 Long-term trips: monthly cycles (`closeMonth` rolls balances over), mid-cycle traveler exit + refund (`exitTraveler`), and cycle-scoped reports/statements
+- 🆕 Trip lifecycle advances itself: `active → completed → archived` derived from the itinerary, never deletion
+- 🆕 Backup & restore: export a trip's full data, and re-create it from that backup (`restoreTrip`)
+- 🆕 Optimistic locking on the itinerary (`itineraryRev`) — concurrent editors can no longer silently overwrite each other
+- 🆕 Sync recovery: a fresh server read when the app returns to the foreground or the network comes back (see `docs/DECISIONS.md`)
+- 🆕 Error tracking via Sentry (client + Cloud Functions) — entirely optional, absent by default
 
 ---
 
@@ -154,7 +160,7 @@ node scripts/set-admin.mjs grant admin@example.com
 npm run dev
 
 # 7. Open http://localhost:5173/?trip=YOUR_TRIP_ID, sign in (Google/Email),
-#    then generate an invite link from the trip's admin panel ("الأعضاء" tab)
+#    then generate an invite link from the trip's admin panel ("المسافرون" tab)
 #    to bring other members in — there is no PIN to share.
 
 # 8. (optional) Prepare the E2E browser — first time only
