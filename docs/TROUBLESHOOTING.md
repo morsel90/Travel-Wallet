@@ -22,7 +22,7 @@
 Simply add to `CURRENCY_LABELS` in `constants.ts`. The `buildCurrencyMap` function and `useExchangeRates` hook handle the rest automatically.
 
 ### Create a new trip
-Sign in as admin → **إدارة الرحلات** → «إنشاء رحلة جديدة». Enter a trip id and a name; the app calls `manageTrip` which writes `trips/{tripId}`. 🆕 No PIN — invite members from the same panel's "الأعضاء" tab (generates a one-click `?invite=TOKEN` link) once the trip exists.
+Sign in as admin → **إدارة الرحلات** → «إنشاء رحلة جديدة». Enter a trip id and a name; the app calls `manageTrip` which writes `trips/{tripId}`. 🆕 No PIN — invite members from the same panel's "المسافرون" tab (generates a one-click `?invite=TOKEN` link) once the trip exists.
 
 `scripts/create-trip.mjs` still works and is the fallback if functions are not deployed — it also no longer prompts for a PIN.
 
@@ -94,7 +94,7 @@ The app exports Excel directly from the UI (button in expense section header). F
 | Issue | Likely Cause | Solution |
 |---|---|---|
 | "خطأ في الصلاحيات" | User not a member of this trip, or trip not created in Firestore | Run `scripts/create-trip.mjs` for this tripId; user must join again via an invite link |
-| 🆕 Signed-in user stuck on "لست عضواً في هذه الرحلة" | They are authenticated but have no `trips` claim for this `TRIP_ID` — no self-service join exists anymore | Get a fresh invite link from the trip's admin panel ("الأعضاء" tab) |
+| 🆕 Signed-in user stuck on "لست عضواً في هذه الرحلة" | They are authenticated but have no `trips` claim for this `TRIP_ID` — no self-service join exists anymore | Get a fresh invite link from the trip's admin panel ("المسافرون" tab) |
 | Expenses not syncing | Network offline; Firestore SDK queues writes | Check `isOnline` banner; writes sync when connection returns |
 | An expense appeared then vanished | The server rejected the write and Firestore reverted the local copy. A toast now names the cause | Read the toast — usually permissions or the one-expense-per-second limit |
 | `recharts` not found (build error) | Old dependency referenced somewhere | Run `npm install` (package.json no longer lists recharts) |
@@ -127,7 +127,7 @@ The app exports Excel directly from the UI (button in expense section header). F
 | 🆕 E2E fails with "Port 5173 is already in use" | A leftover `vite`/`npm run dev` from another terminal | `lsof -i :5173` then kill it; do not run a dev server alongside `npm run test:e2e` |
 | 🆕 A removed member can still open the trip | Expected for up to 60 minutes — `isMember()` reads the ID token, and tokens live an hour | Wait it out — there is no immediate-cut alternative (no PIN to reset anymore). The members tab says this before you click |
 | 🆕 The members tab is empty although people have joined | They joined before the roster existed (2026-08-14). Membership lived only in their claims, which cannot be queried | `node scripts/backfill-member-roster.mjs --apply`. Those rows show "تاريخ الانضمام غير معروف" — the date was never stored anywhere |
-| 🆕 "تعذّر جلب قائمة الأعضاء" for an admin | The roster is `read: if isAdmin()`, and the admin claim may not be on the current token yet | Sign out and back in — the claim only refreshes on a new token. Same cause as the empty trips list |
+| 🆕 "تعذّر جلب قائمة الأعضاء أو المسافرين" for an admin | The roster is `read: if isAdmin()`, and the admin claim may not be on the current token yet | Sign out and back in — the claim only refreshes on a new token. Same cause as the empty trips list |
 | 🆕 Removing an admin from a trip appears to do nothing | Correct: `admin: true` is global and bypasses trip membership, so there was no trip-scoped access to revoke | Expected — the toast says so. Revoke admin with `scripts/set-admin.mjs revoke <email>` instead |
 | 🆕 «الرصيد الابتدائي غير صالح» when adding a traveler | The field holds something non-finite — most often a stray `Infinity`, a lone `.`, or a negative | Expected. Fix it or leave it empty (empty means zero). Before this guard the traveler was written with a non-finite balance and every derived total showed it |
 | 🆕 A traveler added while offline on an old tab vanished after reconnecting | Its create carried `deposited > 0`, which the rules now refuse; the SDK reverted the local copy | Expected for one reload after the 2026-08-14 deploy. Reload the tab and re-add — the balance now goes through the audited path |

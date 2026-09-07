@@ -245,6 +245,18 @@ export function useAppCoordinator() {
     }
   }, [refreshFromServer, handleFirestoreError])
 
+  // 🆕 كتابات محلية لم يؤكّدها الخادم بعد (`_pending` مشتقّ من
+  // hasPendingWrites في المستمعَين). القراءة من الخادم أثناءها **تمحوها من
+  // الشاشة**: getDocsFromServer يتجاوز الكاش المحلي، فيعود بحالة الخادم التي
+  // لا تتضمّنها بعد، وsetExpenses/setTravelers يستبدلان القائمة بها — فيختفي
+  // مصروف أُضيف للتوّ ويظهر رصيد خاطئ حتى تصل لقطة onSnapshot التالية.
+  //
+  // سحب-للتحديث يحمل نفس الخطر أصلاً، لكنه إجراء يطلبه المستخدم في لحظة
+  // يختارها هو وينتظر نتيجته؛ أما التعافي فتلقائي وقد يقع في منتصف إدخال
+  // سريع للبيانات. لذا نمتنع عنه ما دامت هناك كتابة معلّقة — ووجودها دليل
+  // بذاته على أن الاتصال حيّ، أي أن لا شيء نتعافى منه أصلاً.
+  const hasUnconfirmedWrites = expenses.some(e => e._pending) || travelers.some(t => t._pending)
+
   // 🆕 التعافي من المزامنة الصامتة: onSnapshot فوريّ ما دام الاتصال حيّاً، لكن
   // الجوال يجمّد تبويب PWA في الخلفية أو يتخلّص منه بلا أي حدث يعرفه المتصفح —
   // فيبقى ما تراه قديماً بلا مؤشر. هذا يفرض قراءة طازجة عند العودة. انظر
@@ -253,7 +265,7 @@ export function useAppCoordinator() {
   // ⚠️ سحب-للتحديث لا يغني عنه: إيماءة لمس بحتة (onTouchStart في
   // PullToRefresh.tsx) ولا تعمل إلا عند قمة الصفحة — فلا وجود لها على سطح
   // المكتب أصلاً، وتتطلب أن يشكّ المستخدم في البيانات ليسحبها.
-  useSyncRecovery(hasAccess, refreshFromServer)
+  useSyncRecovery(hasAccess && !hasUnconfirmedWrites, refreshFromServer)
 
   const expense = useExpenseActions({
     activeTravelers, user, isAdmin, setExpenses, showToast, handleFirestoreError, setSyncError,
