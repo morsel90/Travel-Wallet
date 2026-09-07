@@ -113,6 +113,9 @@ vi.mock('./hooks', () => ({
   // دالة سهماً لا `noop` مباشرة: vi.mock مرفوعة فوق تعريف noop، فالوصول له هنا
   // مباشرة (لا داخل إغلاق يُستدعى لاحقاً) يسبق تهيئته.
   useSyncTravelerNameFromProfile: () => undefined,
+  // 🆕 تعافي المزامنة — مستمعا أحداث فقط (visibilitychange/online) بلا أثر على
+  // العرض؛ منطقه مغطّى في useSyncRecovery.test.ts.
+  useSyncRecovery: () => undefined,
   useAdminAuth: () => ({
     showAdminSignIn: false, openAdminSignIn: noop, handleAdminSignOut: noop, adminModalProps: {},
   }),
