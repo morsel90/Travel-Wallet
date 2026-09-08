@@ -9,7 +9,7 @@
 // تكراراً هنا عبر عناصر واجهة.
 import { test, expect } from '@playwright/test'
 import { seedTrip } from './utils/seed'
-import { openTripAsAdmin, openTripAsMember, openTripDetailFromHeader } from './utils/flows'
+import { openTripAsAdmin, openTripAsMember, openTripDetailFromHeader, openTripMenu } from './utils/flows'
 
 const CREDS = {
   tripId: 'e2e-organizer-role',
@@ -29,9 +29,15 @@ test('منظّم الرحلة: يُعيَّن من المسؤول، يرى لو�
   const memberPage = await memberContext.newPage()
   await openTripAsMember(memberPage, CREDS)
   await expect(memberPage.getByText('أرصدة المسافرين')).toBeVisible()
-  // 🆕 اسم الرحلة في الهيدر غير قابل للضغط لعضو عادي — لا يملك صلاحية admin
-  // ولا isOrganizer بعد (القاعدة ١٧: لا معنى لعنصر تعديل لمن لا يملك ما يعدّله).
-  await expect(memberPage.getByRole('button', { name: 'تعديل الرحلة' })).not.toBeVisible()
+  // 🆕 اسم الرحلة صار يفتح ورقة «المزيد» لكل عضو (تقارير/إحصائيات/مسار)،
+  // فالحارس انتقل من *وجود الزرّ* إلى *بنودٍ داخل الورقة*: العضو العادي — لا
+  // admin ولا isOrganizer بعد — لا يرى «إدارة الرحلة» فيها.
+  await openTripMenu(memberPage)
+  await expect(memberPage.getByRole('dialog', { name: 'المزيد' })).toBeVisible()
+  await expect(memberPage.getByText('التقارير')).toBeVisible()
+  await expect(memberPage.getByText('إدارة الرحلة')).toHaveCount(0)
+  await memberPage.getByRole('button', { name: 'إغلاق المزيد' }).click()
+  await expect(memberPage.getByRole('dialog', { name: 'المزيد' })).toHaveCount(0)
 
   // ── المسؤول، من جلسة أخرى تماماً، يعيّنه منظّماً عبر تبويب الأعضاء ────────
   const adminContext = await browser.newContext()

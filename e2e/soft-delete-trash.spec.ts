@@ -4,7 +4,7 @@
 // في التنبيه، وسلة المهملات لاحقاً لو لم يُستخدم "تراجع" في وقته.
 import { test, expect } from '@playwright/test'
 import { seedTrip } from './utils/seed'
-import { openTripAsAdmin, addTraveler, addExpense, expenseCard } from './utils/flows'
+import { openTripAsAdmin, addTraveler, addExpense, expenseCard, openFromMoreMenu } from './utils/flows'
 
 const CREDS = {
   tripId: 'e2e-soft-delete',
@@ -48,12 +48,16 @@ test('حذف مصروف ثم التراجع الفوري يعيده، وحذفه
   await page.getByRole('button', { name: 'نعم، احذف' }).click()
   await expect(expenseCard(page, 'تذاكر متحف')).not.toBeVisible()
 
-  await page.getByRole('button', { name: 'سلة المهملات' }).click()
-  await expect(page.getByRole('button', { name: /المصاريف المحذوفة \(1\)/ })).toBeVisible()
-  await expect(page.getByText('تذاكر متحف')).toBeVisible()
+  await openFromMoreMenu(page, 'سلة المهملات')
+  // ⚠️ نطاق النافذة لا الصفحة كلها: بند «سلة المهملات» في ورقة «المزيد» يحمل
+  // وصفاً فيه كلمة «استعادة»، فمُحدِّد بالاسم على مستوى الصفحة كان يطابقه
+  // وزرّ «استعادة» الحقيقي معاً أثناء حركة خروج الورقة (strict mode violation).
+  const trash = page.getByRole('dialog', { name: 'سلة المهملات' })
+  await expect(trash.getByRole('button', { name: /المصاريف المحذوفة \(1\)/ })).toBeVisible()
+  await expect(trash.getByText('تذاكر متحف')).toBeVisible()
 
-  await page.getByRole('button', { name: 'استعادة' }).click()
-  await expect(page.getByRole('button', { name: /المصاريف المحذوفة \(0\)/ })).toBeVisible()
+  await trash.getByRole('button', { name: 'استعادة', exact: true }).click()
+  await expect(trash.getByRole('button', { name: /المصاريف المحذوفة \(0\)/ })).toBeVisible()
 
   await page.getByRole('button', { name: 'إغلاق سلة المهملات' }).click()
   await expect(expenseCard(page, 'تذاكر متحف')).toBeVisible()

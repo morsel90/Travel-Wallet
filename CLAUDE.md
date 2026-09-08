@@ -29,6 +29,7 @@
 - 🆕 Per-user profile (`users/{uid}`: name + bank details) auto-fills bank details on trip creation, editable per trip afterward
 - Real-time Firestore listeners with optimistic updates
 - Offline-first: `persistentLocalCache` + `persistentMultipleTabManager`
+- 🆕 Main screen is three sections only — Expenses → Balances (who-pays-whom) → Travelers; everything else (reports, charts, itinerary, monthly cycle, trip admin, backup, trash) lives behind a "More" bottom sheet opened by **tapping the trip name** in the header (no separate ⋯ button; WhatsApp/Slack pattern) (see *Design Decisions*)
 - Smart input bar for quick expense entry (bottom-fixed)
 - 160+ currencies with live exchange rates (open.er-api.com)
 - Category-based spending breakdown (HTML/CSS charts — no Recharts)
@@ -89,17 +90,19 @@
 │  └─────────────┘  └──────────────┘  └────────────────┘ │
 │  ┌────────────────────────────────────────────────────┐ │
 │  │  <main> (PullToRefresh wrapper)                    │ │
-│  │  ┌──────────────┐ ┌───────────┐ ┌────────────────┐ │ │
-│  │  │ NextSegment  │ │ TravelerSec│ │ ChartsSection │ │ │
-│  │  │ (next trip   │ │ (cards +   │ │ (stats)       │ │ │
-│  │  │  leg)        │ │  add form) │ │               │ │ │
-│  │  └──────────────┘ └───────────┘ └────────────────┘ │ │
+│  │  🆕 ثلاثة أقسام لا أكثر — بهذا الترتيب:            │ │
 │  │  ┌────────────────────────────────────────────────┐│ │
-│  │  │ ExpenseSection (form + virtual list + search)  ││ │
+│  │  │ ExpensesPanel  (search + sort + virtual list)  ││ │
+│  │  ├────────────────────────────────────────────────┤│ │
+│  │  │ SettlementsPanel  «الأرصدة — من يدفع لمن»      ││ │
+│  │  ├────────────────────────────────────────────────┤│ │
+│  │  │ TravelersPanel   (cards + add form)            ││ │
 │  │  └────────────────────────────────────────────────┘│ │
 │  └────────────────────────────────────────────────────┘ │
 │  ┌──────────────┐ ┌───────────┐ ┌──────────────┐       │
 │  │ ModalManager │ │ AuthFlow  │ │    Toast     │       │
+│  │ (+ MoreMenu: │ │ (lazy     │ │              │       │
+│  │  اسم الرحلة) │ │  admin)   │ │              │       │
 │  │ (lazy, from  │ │ (lazy     │ │              │       │
 │  │  useModals)  │ │  admin)   │ │              │       │
 │  └──────────────┘ └───────────┘ └──────────────┘       │
@@ -126,7 +129,7 @@
 
 🆕 `HAS_EXPLICIT_TRIP_ID` (same module) records whether the URL actually named a trip. Opening the app *bare* means no trip was intended, so the "my trips" picker is shown instead of the default trip.
 
-**Modal state:** all general modals (reports, trash bin, delete traveler, deposit, deposit history) live in a single discriminated union (`ModalState` in `useModals.ts`) so only one can be open at a time, and are rendered by `ModalManager.tsx`. Two modals are deliberately *outside* this union because they belong to their own domain state: expense delete confirmation (in `useExpenseActions`) and admin sign-in (in `useAdminAuth` + `AuthFlow.tsx`).
+**Modal state:** all general modals (reports, trash bin, delete traveler, deposit, deposit history, 🆕 charts, itinerary, monthly cycle) live in a single discriminated union (`ModalState` in `useModals.ts`) so only one can be open at a time, and are rendered by `ModalManager.tsx`. Two modals are deliberately *outside* this union because they belong to their own domain state: expense delete confirmation (in `useExpenseActions`) and admin sign-in (in `useAdminAuth` + `AuthFlow.tsx`). 🆕 The "More" (⋯) sheet itself is a third exception — it owns only its own open/closed state and opens no data, so it lives in `MoreMenu.tsx`; every destination it points at goes through the union above.
 
 ---
 

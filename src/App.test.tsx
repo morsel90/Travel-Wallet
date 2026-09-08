@@ -62,7 +62,15 @@ const formState = {
   participants: [] as number[], category: 'أخرى', splitMode: 'equal', shares: {},
 }
 
-vi.mock('./hooks', () => ({
+// ⚠️ useModals **حقيقي** لا مُزيَّف: منذ أن انتقلت التقارير/الإحصائيات/المسار/
+// الشهر المحاسبي خلف زرّ «المزيد»، صار فتحُ أيٍّ منها يمرّ بحالة المودال
+// فعلياً — ومودالٌ مُزيَّف بـ`modal: { type: 'none' }` ثابتة كان يعني أن كل
+// اختبار يضغط بنداً في القائمة لا يرى شيئاً يُفتح. يُستورد من ملفه مباشرة
+// (لا عبر ./hooks) كي لا يُسحب معه أي خطّاف يلمس Firebase.
+vi.mock('./hooks', async () => {
+  const { useModals } = await vi.importActual<typeof import('./hooks/useModals')>('./hooks/useModals')
+  return {
+  useModals,
   useAuth: () => h.auth,
   useOnlineStatus: () => h.isOnline,
   useMyTrips: () => ({ trips: h.myTrips, loading: false, error: null }),
@@ -98,11 +106,6 @@ vi.mock('./hooks', () => ({
   // صراحةً في الاختبارات التي تحتاجها تحديداً.
   useMyTripRole: () => h.isOrganizer,
   useBalances: () => ({ balances: [], totalSpent: 0, totalDeposited: 0, totalRemaining: 0 }),
-  useModals: () => ({
-    modal: { type: 'none' }, openReports: noop, openTrashBin: noop,
-    openDeleteTraveler: noop, openDeposit: noop, openDepositHistory: noop, openUserProfile: noop, closeModal: noop,
-    openMonthlyRollover: noop, openExitTraveler: noop,
-  }),
   // 🆕 بروفايل المستخدم العام (اسم/بنك) — لا يُستهلك في تجميعات هذا الاختبار
   // بخلاف تمريره كخاصية، فكائن ثابت يكفي.
   useUserProfile: () => ({
@@ -152,7 +155,8 @@ vi.mock('./hooks', () => ({
     isClosingMonth: false, isExitingTraveler: false,
     closeMonth: async () => null, exitTraveler: async () => false,
   }),
-}))
+  }
+})
 
 vi.mock('./hooks/useFilteredExpenses', () => ({
   useFilteredExpenses: () => ({
@@ -286,6 +290,12 @@ describe('App — رحلة منتهية أو مؤرشفة', () => {
 
 // ─── الحالات الفارغة ──────────────────────────────────────────────────────────
 
+// 🆕 كل ما ليس من الأقسام الثلاثة الرئيسية (المصاريف/الأرصدة/المسافرون) صار
+// خلف ورقة «المزيد» — التي يفتحها **اسم الرحلة نفسه** في الهيدر لا زرّ ⋯
+// منفصل. الوصول في الاختبار يمرّ بفتحها أولاً، تماماً كما يمرّ به المستخدم.
+// انظر Header.tsx وMoreMenu.tsx.
+const openMoreMenu = () => fireEvent.click(screen.getByRole('button', { name: 'قائمة الرحلة' }))
+
 describe('App — الحالات الفارغة', () => {
   it('بلا مسافرين: حالة فارغة توضّح الخطوة التالية', async () => {
     render(<App />)
@@ -302,7 +312,11 @@ describe('App — الحالات الفارغة', () => {
     h.auth = { ...h.auth, isAdmin: true }
     render(<App />)
     expect(await screen.findByText('إضافة أول مسافر')).toBeInTheDocument()
+    // 🆕 السلة انتقلت من ذيل سجلّ المصاريف إلى «المزيد» — موضع لا يعتمد على
+    // حالة القائمة، فيُرى في كل الحالات لا في حالة القائمة وحدها (القاعدة ١٧).
+    openMoreMenu()
     expect(screen.getByText('سلة المهملات')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'إغلاق المزيد' }))
     // 🆕 «إدارة الرحلات» دُمجت في «رحلاتي» (AccountMenu، الهيدر) — لا زرّ
     // لوحة إدارة منفصل بعد الآن. انظر AccountMenu.tsx وdocs/DECISIONS.md.
     fireEvent.click(screen.getByRole('button', { name: 'حسابي' }))
@@ -313,8 +327,13 @@ describe('App — الحالات الفارغة', () => {
   it('غير المسؤول لا يرى أزرار الإدارة', async () => {
     render(<App />)
     await screen.findByText('أرصدة المسافرين')
-    expect(screen.queryByText('سلة المهملات')).not.toBeInTheDocument()
+    // «المزيد» متاح لكل عضو، لكن بنوده الإدارية ليست كذلك: التقارير نعم،
+    // السلة/إدارة الرحلة/النسخة الاحتياطية لا (غياب الخاصية هو التعطيل).
+    openMoreMenu()
     expect(screen.getByText('التقارير')).toBeInTheDocument()
+    expect(screen.queryByText('سلة المهملات')).not.toBeInTheDocument()
+    expect(screen.queryByText('نسخة احتياطية')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'إغلاق المزيد' }))
     fireEvent.click(screen.getByRole('button', { name: 'حسابي' }))
     expect(screen.queryByText('لوحة الإدارة')).not.toBeInTheDocument()
     expect(screen.queryByText('إدارة الرحلة')).not.toBeInTheDocument()
@@ -357,7 +376,11 @@ describe('App — الرحلات طويلة المدى', () => {
     h.isOrganizer = true   // حتى مع أعلى صلاحية ممكنة في الرحلة
     render(<App />)
 
-    await screen.findByText('أرصدة المسافرين')
+    // ⚠️ الانتظار على السطر الموجز في الهيدر لا على عنوان قسم: العناوين تُرسم
+    // قبل وصول البيانات، ففتح «المزيد» عندها كان سيمرّ بلا longTerm أصلاً —
+    // نجاح زائف. الصيغة بلا كلمة «دورة» هي بالضبط ما يُثبت أنها رحلة قياسية.
+    await screen.findByText(/^المتبقي /)
+    openMoreMenu()
     expect(screen.queryByText('الشهر المحاسبي')).not.toBeInTheDocument()
     expect(screen.queryByText(/إغلاق أغسطس 2026/)).not.toBeInTheDocument()
   })
@@ -366,8 +389,12 @@ describe('App — الرحلات طويلة المدى', () => {
     h.tripType = 'long_term'
     render(<App />)
 
-    expect(await screen.findByText('الشهر المحاسبي')).toBeInTheDocument()
-    expect(screen.getByText('أغسطس 2026')).toBeInTheDocument()
+    // السطر الموجز بصيغة الدورة (`دورة أغسطس 2026 · ...`) دليلٌ على أن
+    // longTerm وصل فعلاً — وهو شرط ظهور البند في «المزيد».
+    await screen.findByText(/دورة أغسطس 2026/)
+    openMoreMenu()
+    fireEvent.click(screen.getByText('الشهر المحاسبي'))
+    expect(await screen.findByText('أغسطس 2026')).toBeInTheDocument()
     // لم يُغلق شهر بعد — تُعرض الحقيقة كما هي لا شهرٌ مُفترض.
     expect(screen.getByText('لم يُغلق شهر بعد')).toBeInTheDocument()
   })
@@ -376,13 +403,18 @@ describe('App — الرحلات طويلة المدى', () => {
     h.tripType = 'long_term'
     h.isOrganizer = false
     const { unmount } = render(<App />)
-    await screen.findByText('الشهر المحاسبي')
+    await screen.findByText(/دورة أغسطس 2026/)
+    openMoreMenu()
+    fireEvent.click(screen.getByText('الشهر المحاسبي'))
+    await screen.findByText('لم يُغلق شهر بعد')
     expect(screen.queryByRole('button', { name: /إغلاق أغسطس 2026/ })).not.toBeInTheDocument()
     unmount()
 
     h.isOrganizer = true
     render(<App />)
-    await screen.findByText('الشهر المحاسبي')
-    expect(screen.getByRole('button', { name: /إغلاق أغسطس 2026/ })).toBeInTheDocument()
+    await screen.findByText(/دورة أغسطس 2026/)
+    openMoreMenu()
+    fireEvent.click(screen.getByText('الشهر المحاسبي'))
+    expect(await screen.findByRole('button', { name: /إغلاق أغسطس 2026/ })).toBeInTheDocument()
   })
 })

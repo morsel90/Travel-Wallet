@@ -18,7 +18,6 @@ import { formatPeriodLabel, listPeriods } from '../utils/period'
 import { planRollover, describeExitBlock, filterCycleExpenses, calculateCycleWallet } from '../utils/longTerm'
 import { describeWriteError, writeErrorCode } from '../utils/writeErrors'
 import { onIdle, preloadAll } from '../utils/preload'
-import { chartsImporters } from '../components/ChartsPanel'
 import { modalImporters } from '../components/ModalManager'
 import { authImporters } from '../components/AuthFlow'
 import { tripPickerImporters } from '../components/TripPicker'
@@ -39,7 +38,10 @@ import { tripPickerImporters } from '../components/TripPicker'
 
 // 🆕 كل الأجزاء المؤجّلة في التطبيق، للتحميل المسبق الهادئ بعد أول عرض.
 // كل مالك جزء مؤجّل يُصدّر مستورداته بنفسه، فمن يضيف جزءاً يضيفه في ملفه.
-const LAZY_IMPORTERS = [...chartsImporters, ...modalImporters, ...authImporters, ...tripPickerImporters]
+// 🆕 لا chartsImporters منفصلة بعد الآن: ChartsSection انتقل خلف زرّ «المزيد»
+// داخل ChartsModal، وهذا الأخير من modalImporters — فيظلّ مغطّى بالتحميل
+// المسبق بلا قائمة ثانية (انظر ModalManager.tsx وutils/preload.ts).
+const LAZY_IMPORTERS = [...modalImporters, ...authImporters, ...tripPickerImporters]
 
 export function useAppCoordinator() {
   // 🆕 علم مستقل لكل مستمع بدل علم واحد مشترك بينهما. المشترك كان يكذب: كلاهما

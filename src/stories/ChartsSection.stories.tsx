@@ -11,7 +11,8 @@ const meta = {
     docs: {
       description: {
         component:
-          'ثلاثة تبويبات مرسومة بـ HTML/CSS فقط بلا مكتبة رسوم. الأرقام هنا مشتقّة ' +
+          'تبويبان مرسومان بـ HTML/CSS فقط بلا مكتبة رسوم (التسويات صارت قسماً مستقلاً — ' +
+          'SettlementsPanel). الأرقام هنا مشتقّة ' +
           'من نفس المصاريف في src/fixtures، فما تراه متسق مع بعضه.',
       },
     },
@@ -23,7 +24,6 @@ type Story = StoryObj<typeof meta>
 
 export const افتراضي: Story = {
   args: {
-    settlements: fx.settlements,
     categoryTotals: fx.categoryTotals,
     spendingTrend: fx.spendingTrend,
   },
@@ -35,7 +35,6 @@ export const افتراضي: Story = {
  */
 export const بلا_تسويات: Story = {
   args: {
-    settlements: fx.noSettlements,
     categoryTotals: fx.categoryTotals,
     spendingTrend: fx.spendingTrend,
   },
@@ -47,7 +46,6 @@ export const بلا_تسويات: Story = {
  */
 export const فئة_مهيمنة: Story = {
   args: {
-    settlements: fx.settlements,
     categoryTotals: [
       { category: 'سكن', total: 9500 },
       { category: 'مطاعم', total: 300 },
@@ -62,7 +60,6 @@ export const فئة_مهيمنة: Story = {
  */
 export const يوم_واحد: Story = {
   args: {
-    settlements: fx.noSettlements,
     categoryTotals: [{ category: 'مطاعم', total: 480 }],
     spendingTrend: [{ date: '2026-07-21', total: 480, cumulative: 480 }],
   },

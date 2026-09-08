@@ -16,8 +16,14 @@ export type ModalState =
   | { type: 'deposit';         traveler: Traveler }
   | { type: 'depositHistory';  traveler: Traveler }
   | { type: 'userProfile' } // 🆕 بروفايل المستخدم العام (اسم/بنك) — مستقل عن أي رحلة
-  /** 🆕 تعديل الرحلة المفتوحة حالياً — يُفتح من اسمها في الهيدر. */
+  /** 🆕 تعديل الرحلة المفتوحة حالياً — يُفتح من اسمها في الهيدر أو من «المزيد». */
   | { type: 'editTrip' }
+  // 🆕 ثلاثة أقسام كانت في تدفّق الشاشة الرئيسية وانتقلت خلف زرّ «المزيد»
+  // (MoreMenu) — الشاشة صارت المصاريف/الأرصدة/المسافرون لا أكثر. كونها في
+  // هذا الاتحاد يعني أن فتح أيّها يُغلق ما قبله تلقائياً بلا شرط إضافي.
+  | { type: 'charts' }
+  | { type: 'itinerary' }
+  | { type: 'longTermPanel' }
   // 🆕 الرحلات طويلة المدى — لا تُفتح إطلاقاً في رحلة قياسية (App.tsx لا يعرض
   // القسم الذي يفتحهما أصلاً). التسجيل هنا لأن القاعدة ٧ تفرض أن كل مودال عام
   // يعيش في هذا الاتحاد لا في حالة منفصلة تسمح بمودالين مفتوحين معاً.
@@ -32,6 +38,9 @@ type ModalAction =
   | { type: 'OPEN_DEPOSIT_HISTORY';  traveler: Traveler }
   | { type: 'OPEN_USER_PROFILE' }
   | { type: 'OPEN_EDIT_TRIP' }
+  | { type: 'OPEN_CHARTS' }
+  | { type: 'OPEN_ITINERARY' }
+  | { type: 'OPEN_LONG_TERM_PANEL' }
   | { type: 'OPEN_MONTHLY_ROLLOVER' }
   | { type: 'OPEN_EXIT_TRAVELER';    traveler: TravelerBalance }
   | { type: 'CLOSE' }
@@ -47,6 +56,9 @@ function modalReducer(state: ModalState, action: ModalAction): ModalState {
     case 'OPEN_DEPOSIT_HISTORY': return { type: 'depositHistory', traveler: action.traveler }
     case 'OPEN_USER_PROFILE':    return { type: 'userProfile' }
     case 'OPEN_EDIT_TRIP':       return { type: 'editTrip' }
+    case 'OPEN_CHARTS':          return { type: 'charts' }
+    case 'OPEN_ITINERARY':       return { type: 'itinerary' }
+    case 'OPEN_LONG_TERM_PANEL': return { type: 'longTermPanel' }
     case 'OPEN_MONTHLY_ROLLOVER': return { type: 'monthlyRollover' }
     case 'OPEN_EXIT_TRAVELER':   return { type: 'exitTraveler', traveler: action.traveler }
     case 'CLOSE':                return CLOSED
@@ -64,6 +76,9 @@ export function useModals() {
   const openDepositHistory = useCallback((traveler: Traveler) => dispatch({ type: 'OPEN_DEPOSIT_HISTORY', traveler }), [])
   const openUserProfile    = useCallback(() => dispatch({ type: 'OPEN_USER_PROFILE' }), [])
   const openEditTrip       = useCallback(() => dispatch({ type: 'OPEN_EDIT_TRIP' }), [])
+  const openCharts         = useCallback(() => dispatch({ type: 'OPEN_CHARTS' }), [])
+  const openItinerary      = useCallback(() => dispatch({ type: 'OPEN_ITINERARY' }), [])
+  const openLongTermPanel  = useCallback(() => dispatch({ type: 'OPEN_LONG_TERM_PANEL' }), [])
   const openMonthlyRollover = useCallback(() => dispatch({ type: 'OPEN_MONTHLY_ROLLOVER' }), [])
   const openExitTraveler   = useCallback((traveler: TravelerBalance) => dispatch({ type: 'OPEN_EXIT_TRAVELER', traveler }), [])
   const closeModal         = useCallback(() => dispatch({ type: 'CLOSE' }), [])
@@ -77,6 +92,9 @@ export function useModals() {
     openDepositHistory,
     openUserProfile,
     openEditTrip,
+    openCharts,
+    openItinerary,
+    openLongTermPanel,
     openMonthlyRollover,
     openExitTraveler,
     closeModal,

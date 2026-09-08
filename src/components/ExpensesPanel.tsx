@@ -6,12 +6,10 @@ import EmptyState from './EmptyState'
 import { ExpenseListItem } from './ExpenseSection'
 import { ExpenseListItemSkeleton } from './Skeleton'
 import { ExpenseListErrorFallback } from './AppErrorFallback'
-import { haptic } from '../utils/haptics'
-import { Receipt, Search, Plus, BarChart3, Trash2 } from '../icons'
+import { Receipt, Search, Plus } from '../icons'
 
 interface ExpensesPanelProps {
   isInitialLoading: boolean
-  isAdmin: boolean
   /** هل تقبل الرحلة مصاريف جديدة؟ يغيّر نص الحالة الفارغة وزرّها. */
   canAddExpenses: boolean
   activeExpenses: Expense[]
@@ -20,9 +18,19 @@ interface ExpensesPanelProps {
   setSearchQuery: (value: string) => void
   sortOrder: SortOrder
   setSortOrder: (value: SortOrder) => void
-  onOpenReports: () => void
-  onOpenTrashBin: () => void
   onOpenExpenseForm: () => void
+  /**
+   * 🆕 عدّاد يتغيّر مع كل مصروف يُسجَّل بنجاح (expenseAddedSignal) — تغيّره
+   * يُمرِّر الصفحة إلى هذا القسم.
+   *
+   * ⚠️ لماذا صار لازماً: سجلّ المصاريف هو **أول** أقسام الشاشة الآن، وشريط
+   * الإدخال السريع ثابت أسفلها — أي أن المستخدم غالباً ممرَّر لأسفل حين
+   * يسجّل مصروفاً، فيُضاف المصروف في رأس قائمة *خارج نطاق رؤيته تماماً*.
+   * التنبيه (Toast) يقول «تم» لكنه لا يُري النتيجة. وقائمة react-virtuoso لا
+   * تكتفي بإخفاء الصفّ بل لا تُركّبه أصلاً وهو خارج النطاق — فلا شيء يظهر
+   * حتى بالتمرير اليدوي البطيء إن أُعيد القياس متأخراً.
+   */
+  scrollToSignal?: number
 }
 
 // ─── سجل المصاريف ─────────────────────────────────────────────────────────────
@@ -36,13 +44,22 @@ interface ExpensesPanelProps {
 // 🆕 لا زرّ «إدارة الرحلة/الرحلات» هنا بعد الآن — كان مكرَّراً مع AccountMenu
 // (الهيدر)، الذي وُسِّع ليخدم isOrganizer أيضاً لا isAdmin فقط. نقطة الوصول
 // الوحيدة الآن للوحة الإدارة. انظر AccountMenu.tsx وdocs/DECISIONS.md.
+//
+// 🆕 ولا زرّ «التقارير» ولا «سلة المهملات» — كلاهما انتقل إلى زرّ «المزيد» (⋯)
+// في الهيدر مع بقية ما ليس من الأقسام الثلاثة الرئيسية. ما بقي في هذا القسم هو
+// ما يخدم قراءة السجلّ نفسه لا غير: البحث والترتيب.
+//
+// ⚠️ نقل السلة لا يعيد المشكلة التي وثّقها التعليق السابق (اختفاء طريق التراجع
+// بعد حذف آخر مصروف): موضعها الجديد ثابت في الهيدر، لا يعتمد على حالة القائمة
+// إطلاقاً — أي أنه يُرى في *كل* الحالات لا في حالة القائمة وحدها. القاعدة ١٧.
 export const ExpensesPanel = ({
-  isInitialLoading, isAdmin, canAddExpenses,
+  isInitialLoading, canAddExpenses,
   activeExpenses, filteredExpenses,
   searchQuery, setSearchQuery, sortOrder, setSortOrder,
-  onOpenReports, onOpenTrashBin, onOpenExpenseForm,
+  onOpenExpenseForm, scrollToSignal,
 }: ExpensesPanelProps) => {
   const virtuosoRef = useRef<VirtuosoHandle>(null)
+  const sectionRef = useRef<HTMLElement>(null)
   const isShowingList = !isInitialLoading && activeExpenses.length > 0 && filteredExpenses.length > 0
   // ⚠️ رُصد أن Virtuoso (useWindowScroll) قد يقيس نطاق النافذة خطأً — إما عند
   // أول تركيب له (انتقال من EmptyState إليه، إن سبقه تسلسل نوافذ/تنقّلات
@@ -61,20 +78,69 @@ export const ExpensesPanel = ({
     return () => cancelAnimationFrame(id)
   }, [isShowingList, filteredExpenses.length])
 
+
+  // 🆕 التمرير إلى السجلّ بعد كل تسجيل ناجح — انظر scrollToSignal أعلاه.
+  //
+  // ⚠️ الحارس على القيمة صفر/غياب: التمرير عند أول تركيب يقفز بالصفحة بلا سبب.
+  //
+  // ⚠️ **تمرير صريح على النافذة بإحداثية محسوبة** — لا `scrollIntoView` ولا
+  // `Virtuoso.scrollToIndex`. جُرّب كلاهما وقيسا تحت حمل متوازٍ:
+  //   • `scrollToIndex` لا يتحرّك أصلاً أحياناً — يقارن بحالته الداخلية عن
+  //     موضع القائمة، وهي حالة قديمة في لحظة إضافة صفّ في الرأس.
+  //   • `scrollIntoView` يتحرّك ثم **يرتدّ**: react-virtuoso (useWindowScroll)
+  //     يعوّض إزاحة المحتوى الناتجة عن الصفّ الجديد بتحريك تمرير النافذة بنفسه
+  //     بعد جزء من الثانية.
+  // الإحداثية المحسوبة لا تلتبس، والنداء الثاني بعد استقرار التعويض يُعيد
+  // الموضع إن ارتدّ — وإن لم يرتدّ فهو تمرير إلى المكان نفسه، بلا أثر مرئي.
+  //
+  // الإزاحة 96px تقريباً بقدر الهيدر الملتصق، وإلا وقف عنوان القسم خلفه.
+  useEffect(() => {
+    if (!scrollToSignal) return
+    const scrollToSection = () => {
+      const el = sectionRef.current
+      if (!el) return
+      const top = el.getBoundingClientRect().top + window.scrollY - 96
+      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+    }
+    scrollToSection()
+
+    // ⚠️ والنداء الثاني **يتنازل للمستخدم**: لو مرّر بإصبعه أو عجلته أو لوحة
+    // مفاتيحه خلال هذه المهلة فقد قرّر وجهته بنفسه، ويُلغى. بلا هذا الإلغاء
+    // كان مَن يضيف مصروفاً ثم يمرّر فوراً يُجذب إلى الأعلى بعد جزء من الثانية
+    // بلا سبب مفهوم — رُصد فعلياً أثناء المعاينة.
+    //
+    // ولماذا wheel/touchstart/keydown/mousedown لا حدث scroll: تعويض
+    // react-virtuoso نفسه *ينتج* حدث scroll، فالإلغاء عليه كان سيُلغي النداء
+    // الثاني في الحالة التي وُجد من أجلها بالضبط. هذه الأربعة لا يُنتجها إلا
+    // إنسان (mousedown يغطّي سحب شريط التمرير على سطح المكتب).
+    const settleTimer = window.setTimeout(scrollToSection, 400)
+    const cancel = () => window.clearTimeout(settleTimer)
+    const opts = { passive: true, once: true } as const
+    window.addEventListener('wheel', cancel, opts)
+    window.addEventListener('touchstart', cancel, opts)
+    window.addEventListener('keydown', cancel, { once: true })
+    window.addEventListener('mousedown', cancel, { once: true })
+
+    return () => {
+      window.clearTimeout(settleTimer)
+      window.removeEventListener('wheel', cancel)
+      window.removeEventListener('touchstart', cancel)
+      window.removeEventListener('keydown', cancel)
+      window.removeEventListener('mousedown', cancel)
+    }
+  }, [scrollToSignal])
+
   return (
-  <section id="expenses-section" className="scroll-mt-24">
+  <section ref={sectionRef} id="expenses-section" className="scroll-mt-24">
     <div className="flex flex-wrap justify-between items-center gap-3 mb-4 px-1">
       <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
         <Receipt className="w-5 h-5 text-slate-500" /> سجل المصاريف
+        {!isInitialLoading && activeExpenses.length > 0 && (
+          <span className="text-[11px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full tabular-nums">
+            {activeExpenses.length}
+          </span>
+        )}
       </h2>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => { haptic.light(); onOpenReports() }}
-          className="flex items-center gap-1.5 text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-sm"
-        >
-          <BarChart3 className="w-3.5 h-3.5" /> التقارير
-        </button>
-      </div>
     </div>
 
     <div className="flex gap-2 mb-3">
@@ -144,24 +210,6 @@ export const ExpensesPanel = ({
       </p>
     )}
 
-    {/* 🆕 سلة المهملات في نهاية السجلّ لا في شريطه العلوي — نمط «المحذوفات آخر
-        القائمة» المتعارف عليه (بريد جوجل، صور iOS). الشريط العلوي مساحة أولى،
-        والسلة أندر ما كان فيه.
-        ⚠️ **وهي شقيقة لكتلة العرض لا داخل أي فرع منها.** وضعها في تذييل
-        Virtuoso (أو داخل فرع القائمة) كان يُخفيها في الحالة التي تُطلب فيها
-        أكثر من غيرها: مسؤول حذف **آخر** مصروف فظهرت شاشة «لا توجد مصاريف بعد»
-        بدل القائمة — أي أن طريق التراجع يختفي في اللحظة التي وقع فيها الخطأ.
-        (القاعدة ١٧: اسأل من يستبعده هذا الشرط قبل شحنه.) */}
-    {isAdmin && !isInitialLoading && (
-      <div className="mt-4 pt-3 border-t border-slate-200/70 flex justify-center">
-        <button
-          onClick={() => { haptic.light(); onOpenTrashBin() }}
-          className="flex items-center gap-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 px-3 py-2 rounded-xl text-xs font-bold transition-colors min-h-[44px]"
-        >
-          <Trash2 className="w-3.5 h-3.5" /> سلة المهملات
-        </button>
-      </div>
-    )}
   </section>
   )
 }

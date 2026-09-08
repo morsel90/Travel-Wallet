@@ -3,7 +3,7 @@
 // ظهور الرصيد والتسوية بشكل صحيح، ثم فتح التقرير وتصديره.
 import { test, expect } from '@playwright/test'
 import { seedTrip } from './utils/seed'
-import { openTripAsAdmin, addTraveler, addExpense, editExpenseAmount, expenseCard } from './utils/flows'
+import { openTripAsAdmin, addTraveler, addExpense, editExpenseAmount, expenseCard, openFromMoreMenu } from './utils/flows'
 
 const CREDS = {
   tripId: 'e2e-critical-flow',
@@ -38,7 +38,9 @@ test('التدفق الحرج الكامل: تسجيل الدخول → مساف
   await expect(saraCard.getByText('-100.00', { exact: true })).toBeVisible()  // 100 - 200
 
   // ── التسوية: سارة مدينة لأحمد بمقدار 100 ────────────────────────────────
-  const settlementsPanel = page.locator('section', { hasText: 'ملخص وإحصائيات الرحلة' })
+  // 🆕 «الأرصدة» قسم رئيسي مستقلّ في الشاشة الآن (#settlements-section)، لا
+  // تبويب داخل بطاقة الإحصائيات — انظر SettlementsPanel.tsx.
+  const settlementsPanel = page.locator('#settlements-section')
   await expect(settlementsPanel).toContainText('أحمد')
   await expect(settlementsPanel).toContainText('سارة')
   await expect(settlementsPanel).toContainText('100.00')
@@ -52,7 +54,7 @@ test('التدفق الحرج الكامل: تسجيل الدخول → مساف
   await expect(settlementsPanel).toContainText('200.00')
 
   // ── التقرير ──────────────────────────────────────────────────────────────
-  await page.getByRole('button', { name: 'التقارير' }).click()
+  await openFromMoreMenu(page, 'التقارير')
   await expect(page.getByRole('heading', { name: 'تقارير الرحلة' })).toBeVisible()
 
   // ── التصدير (Excel) — تنزيل حقيقي عبر Blob + <a download> ──────────────

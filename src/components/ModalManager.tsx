@@ -31,6 +31,13 @@ const importEditTripModal       = () => import('./modals/EditTripModal')
 // قياسية لأن ما يفتحهما (LongTermPanel) لا يُعرض فيها أصلاً.
 const importMonthlyRolloverModal = () => import('./modals/MonthlyRolloverModal')
 const importExitTravelerModal    = () => import('./modals/ExitTravelerModal')
+// 🆕 الثلاثة الآتية كانت أقساماً في تدفّق الشاشة الرئيسية وانتقلت خلف زرّ
+// «المزيد» (MoreMenu.tsx). ChartsModal يستورد ChartsSection استيراداً ثابتاً
+// فيسافران معاً في حزمة واحدة — وهذا ما يُبقي التحميل المسبق (chartsImporters
+// سابقاً، modalImporters الآن) مغطّياً للحالة التي عالجها utils/preload.ts.
+const importChartsModal    = () => import('./modals/ChartsModal')
+const importItineraryModal = () => import('./modals/ItineraryModal')
+const importLongTermModal  = () => import('./modals/LongTermModal')
 
 const ReportsView         = lazy(importReportsView)
 const DepositModal        = lazy(importDepositModal)
@@ -39,6 +46,9 @@ const DepositHistoryModal = lazy(importDepositHistoryModal)
 const EditTripModal       = lazy(importEditTripModal)
 const MonthlyRolloverModal = lazy(importMonthlyRolloverModal)
 const ExitTravelerModal    = lazy(importExitTravelerModal)
+const ChartsModal          = lazy(importChartsModal)
+const ItineraryModal       = lazy(importItineraryModal)
+const LongTermModal        = lazy(importLongTermModal)
 
 /**
  * 🆕 أجزاء المودالات للتحميل المسبق الهادئ — تُستهلك من App.tsx.
@@ -58,6 +68,9 @@ export const modalImporters = [
   importEditTripModal,
   importMonthlyRolloverModal,
   importExitTravelerModal,
+  importChartsModal,
+  importItineraryModal,
+  importLongTermModal,
 ]
 
 interface ModalManagerProps {
@@ -78,6 +91,10 @@ interface ModalManagerProps {
   /** 🆕 تعديل الرحلة المفتوحة حالياً — undefined لمن لا يملك صلاحيته (لا مسؤول ولا منظّم)،
    * فالمودال لا يُبنى أصلاً له حتى لو تسلّلت حالة modal.type === 'editTrip' بطريقة ما. */
   editTrip?: Omit<ComponentProps<typeof EditTripModal>, 'onClose'>
+  /** 🆕 «الإحصائيات» — قسم سابق في الشاشة، صار نافذة خلف زرّ «المزيد». */
+  charts: Omit<ComponentProps<typeof ChartsModal>, 'onClose'>
+  /** 🆕 «مسار الرحلة» — يجمع المقطع القادم وقائمة المقاطع الكاملة. */
+  itinerary: Omit<ComponentProps<typeof ItineraryModal>, 'onClose'>
   /**
    * 🆕 الرحلات طويلة المدى — **اختياري عمداً**: الرحلة القياسية لا تمرّره
    * إطلاقاً، فلا يمكن أن يُفتح أي من مودالَي الترحيل/الخروج فيها ولو تسلّلت
@@ -93,10 +110,13 @@ interface ModalManagerProps {
     onConfirmRollover: () => void
     onConfirmExit: (travelerId: number, settle: boolean) => void
   }
+  /** 🆕 «الشهر المحاسبي» كنافذة — نفس شرط `longTerm` أعلاه: غيابه هو التعطيل. */
+  longTermPanel?: Omit<ComponentProps<typeof LongTermModal>, 'onClose'>
 }
 
 export default function ModalManager({
-  modal, closeModal, confirmDeleteTraveler, reports, deposit, closeDeposit, trash, editTrip, longTerm,
+  modal, closeModal, confirmDeleteTraveler, reports, deposit, closeDeposit, trash, editTrip,
+  charts, itinerary, longTerm, longTermPanel,
 }: ModalManagerProps) {
   // اشتقاق الحمولة من الحالة كثوابت محلية — يضمن حفظ التضييق (narrowing) داخل الإغلاقات
   const deleteTarget    = modal.type === 'deleteTraveler'  ? modal.traveler : null
@@ -158,6 +178,30 @@ export default function ModalManager({
         {editTrip && modal.type === 'editTrip' && (
           <Suspense key="edit-trip" fallback={<ModalFallback />}>
             <EditTripModal {...editTrip} onClose={closeModal} />
+          </Suspense>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {modal.type === 'charts' && (
+          <Suspense key="charts" fallback={<ModalFallback />}>
+            <ChartsModal {...charts} onClose={closeModal} />
+          </Suspense>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {modal.type === 'itinerary' && (
+          <Suspense key="itinerary" fallback={<ModalFallback />}>
+            <ItineraryModal {...itinerary} onClose={closeModal} />
+          </Suspense>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {longTermPanel && modal.type === 'longTermPanel' && (
+          <Suspense key="long-term-panel" fallback={<ModalFallback />}>
+            <LongTermModal {...longTermPanel} onClose={closeModal} />
           </Suspense>
         )}
       </AnimatePresence>

@@ -19,14 +19,19 @@ const baseProps = {
   isAdmin: false,
   isOrganizer: false,
   tripName: 'رحلة بولندا 2026',
-  canEditTrip: false,
-  onEditTrip: noop,
   stats: { totalDeposited: 1000, totalSpent: 400, totalRemaining: 600 },
   displayName: 'أحمد الغامدي',
   email: 'ahmad@example.com',
   onShowProfile: noop,
   onAdminSignIn: noop,
   onSignOut: noop,
+  // 🆕 أفعال ورقة «المزيد» — الأفعال الثلاثة غير الاختيارية وحدها؛ البنود
+  // المشروطة بالصلاحية تُمرَّر في اختبارها الخاص أدناه.
+  more: {
+    onOpenReports: noop,
+    onOpenCharts: noop,
+    onOpenItinerary: noop,
+  },
 }
 
 describe('Header — عنوان الرحلة', () => {
@@ -87,5 +92,55 @@ describe('Header — السطر الموجز (رقم واحد بدل حبّات 
   it('بلا onStatClick — السطر نصّ بحت لا زرّاً', () => {
     render(<Header {...baseProps} />)
     expect(screen.getByText('المتبقي 600.00 ﷼').closest('button')).toBeNull()
+  })
+})
+
+// ─── اسم الرحلة = زرّ فتح «المزيد» ───────────────────────────────────────────
+// 🆕 دُمج زرّ ⋯ المنفصل في اسم الرحلة/الشعار: القائمة تحوي الإعدادات وإدارة
+// الرحلة، فمكانها الطبيعي خلف هوية الرحلة (نمط واتساب/Slack).
+describe('Header — اسم الرحلة يفتح ورقة «المزيد»', () => {
+  beforeEach(() => {
+    mockIsCollapsed.mockReturnValue(false)
+  })
+
+  it('الضغط على اسم الرحلة يفتح الورقة', async () => {
+    render(<Header {...baseProps} />)
+    expect(screen.queryByRole('dialog', { name: 'المزيد' })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'قائمة الرحلة' }))
+    expect(screen.getByRole('dialog', { name: 'المزيد' })).toBeInTheDocument()
+    expect(screen.getByText('التقارير')).toBeInTheDocument()
+  })
+
+  // ⚠️ **جوهر الدمج**: الزرّ كان مشروطاً بـcanEditTrip، أي أن اسم الرحلة كان
+  // عنصراً ميّتاً لأغلب الأعضاء. التقارير والإحصائيات والمسار حقٌّ لكل عضو.
+  // (القاعدة ١٧: اسأل من يستبعده هذا الشرط قبل شحنه.)
+  it('متاح للعضو العادي أيضاً — لا شرط صلاحية على الزرّ نفسه', async () => {
+    render(<Header {...baseProps} isAdmin={false} isOrganizer={false} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'قائمة الرحلة' }))
+    expect(screen.getByText('التقارير')).toBeInTheDocument()
+    // ...لكن «إدارة الرحلة» ليست من حقّه: الحارس داخل الورقة لا على الزرّ.
+    expect(screen.queryByText('إدارة الرحلة')).not.toBeInTheDocument()
+  })
+
+  it('«إدارة الرحلة» تظهر داخل الورقة لمن يملك صلاحيتها', async () => {
+    const onOpenTripAdmin = vi.fn()
+    render(<Header {...baseProps} more={{ ...baseProps.more, onOpenTripAdmin }} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'قائمة الرحلة' }))
+    await userEvent.click(screen.getByText('إدارة الرحلة'))
+    expect(onOpenTripAdmin).toHaveBeenCalledTimes(1)
+  })
+
+  // ⚠️ اسم الرحلة يختفي حين يتقلّص الهيدر، فالشعار وحده يبقى — ولو كان الفتح
+  // مربوطاً بالاسم وحده لضاعت القائمة كلها أثناء تصفّح سجلّ طويل.
+  it('يبقى متاحاً والهيدر متقلّص (الشعار وحده الظاهر)', async () => {
+    mockIsCollapsed.mockReturnValue(true)
+    render(<Header {...baseProps} />)
+
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'قائمة الرحلة' }))
+    expect(screen.getByRole('dialog', { name: 'المزيد' })).toBeInTheDocument()
   })
 })

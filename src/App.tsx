@@ -10,7 +10,6 @@ import Toast                from './components/Toast'
 import { ConfirmModal }     from './components/Modal'
 import { ExpenseForm }      from './components/ExpenseSection'
 import { BankDetailsCard }  from './components/Misc'
-import { NextSegmentWidget } from './components/NextSegmentWidget'
 import UpdatePrompt         from './components/UpdatePrompt'
 import OnboardingBanner     from './components/OnboardingBanner'
 import AuthGate             from './components/AuthGate'
@@ -26,9 +25,8 @@ import { TripStoreProvider } from './store/TripStoreProvider'
 import { AppErrorFallback } from './components/AppErrorFallback'
 import { StatusBanners }    from './components/StatusBanners'
 import { TravelersPanel }   from './components/TravelersPanel'
-import { ChartsPanel }      from './components/ChartsPanel'
+import { SettlementsPanel } from './components/SettlementsPanel'
 import { ExpensesPanel }    from './components/ExpensesPanel'
-import { LongTermPanel }    from './components/longterm/LongTermPanel'
 
 // 🆕 بروفايل المستخدم العام — يُعرض هنا لا داخل ModalManager عمداً: مستقل عن
 // أي رحلة، ويجب أن يبقى متاحاً حتى في شاشات لا يصل إليها ModalManager (مثل
@@ -139,15 +137,19 @@ export default function App() {
         toggleAllParticipants={expense.toggleAllParticipants}
       >
         <ErrorBoundary fallback={<AppErrorFallback />}>
-          <div className="min-h-screen pb-20 md:pb-8">
+          {/* ⚠️ pb-24 في كل العروض — لا `md:pb-8`. شريط الإدخال السريع
+              (SmartInputBar) ثابت أسفل الشاشة عند *كل* عرض، لكن الحشو كان
+              ينكمش إلى 32px عند md فيختفي آخر محتوى الصفحة خلفه. قِيس فعلياً
+              على 768×1024: تداخل 22 بكسل (آخر بطاقة مسافر تحت الشريط). القيمة
+              96px تُغطّي ارتفاع الشريط (~60px) وإزاحته السفلية
+              (max(1rem, safe-area)) بهامش واضح. */}
+          <div className="min-h-screen pb-24">
             <Header
               isSyncing={status.isSyncing} isAdmin={session.isAdmin} isOrganizer={session.isOrganizer}
-              // 🆕 اسم الرحلة يحلّ محلّ «مصاريف السفر» الثابت في العنوان.
+              // 🆕 اسم الرحلة يحلّ محلّ «مصاريف السفر» الثابت في العنوان —
+              // وهو نفسه زرّ فتح ورقة «المزيد» (انظر Header.tsx/MoreMenu.tsx).
+              // «إدارة الرحلة» صارت بنداً داخلها لا زرّاً منفصلاً هنا.
               tripName={trip.name}
-              // 🆕 اسم الرحلة قابل للضغط لمن يملك صلاحية تعديلها — يفتح
-              // EditTripModal (انظر tripEdit في useAppCoordinator.ts).
-              canEditTrip={tripEdit.canEdit}
-              onEditTrip={modals.openEditTrip}
               displayName={profile.displayName || session.user?.displayName || null}
               email={session.user?.email ?? null}
               stats={ledger.isInitialLoading ? null : {
@@ -173,12 +175,29 @@ export default function App() {
               onShowProfile={modals.openUserProfile}
               onAdminSignIn={admin.openAdminSignIn}
               onSignOut={admin.handleAdminSignOut}
+              // 🆕 كل ما ليس من الأقسام الثلاثة الرئيسية. اختيارية كل بند هي
+              // حارس صلاحيته/سياقه — لا شرط `isAdmin` داخل MoreMenu نفسه.
+              more={{
+                onOpenReports:   modals.openReports,
+                onOpenCharts:    modals.openCharts,
+                onOpenItinerary: modals.openItinerary,
+                onOpenLongTerm:  longTerm ? modals.openLongTermPanel : undefined,
+                onOpenTripAdmin: tripEdit.canEdit ? modals.openEditTrip : undefined,
+                // المسؤول العالمي وحده — نفس حارس القسم داخل TripDetailPanel،
+                // فلا يظهر بند لمنظّم سيصطدم بمنع من القواعد بعد ضغطه.
+                onExportBackup: session.isAdmin
+                  ? () => { void tripEdit.onExportBackup(tripEdit.trip) }
+                  : undefined,
+                onOpenTrashBin: session.isAdmin ? modals.openTrashBin : undefined,
+              }}
               onStatClick={(stat) => {
                 haptic.light()
                 const id =
                   stat === 'deposited' ? 'travelers-section' :
                   stat === 'spent'     ? 'expenses-section'  :
-                                         'charts-section'
+                  // 🆕 «المتبقي» يقود إلى «الأرصدة» — قسم الشاشة الذي يجيب عن
+                  // «ولمن أُحوِّل؟». كان يقود إلى الإحصائيات، وهي خلف «المزيد» الآن.
+                                         'settlements-section'
                 document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
               }}
             />
@@ -187,11 +206,7 @@ export default function App() {
               <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
   
                 <OnboardingBanner />
-  
-                {!ledger.isInitialLoading && (
-                  <NextSegmentWidget itinerary={trip.itinerary} />
-                )}
-  
+
                 {/* 🆕 رحلة منتهية أو مؤرشفة: نشرح سبب اختفاء أزرار الإدخال بدل
                     تركها تختفي بلا تفسير. القواعد هي التي تمنع فعلاً، وهذا إعلام. */}
                 <StatusBanners
@@ -199,7 +214,54 @@ export default function App() {
                   isOnline={session.isOnline}
                   syncError={status.syncError}
                 />
-  
+
+                {/* ─── الشاشة الرئيسية: ثلاثة أقسام لا أكثر ───────────────────
+                    المصاريف ← الأرصدة ← المسافرون، بهذا الترتيب تحديداً: ما
+                    يُفعل يومياً، ثم ما يُسأل عنه عند التصفية، ثم من يخصّهم.
+                    ⚠️ كل ما عداها خلف زرّ «المزيد» (⋯) في الهيدر — المقطع
+                    القادم والمسار، والإحصائيات، والشهر المحاسبي، والتقارير،
+                    وسلة المهملات، وإدارة الرحلة والنسخة الاحتياطية. طلب صاحب
+                    الحساب صراحةً تقليل الحمل البصري؛ انظر MoreMenu.tsx
+                    وdocs/DECISIONS.md. */}
+
+                {/* نموذج المصروف يختفي كلياً في الرحلة المنتهية/المؤرشفة.
+                    🆕 Modal (Bottom Sheet) لا قسم داخل تدفّق الصفحة —
+                    انظر تعليق ExpenseForm في ExpenseSection.tsx وdocs/DECISIONS.md.
+                    الشرط الخارجي (isAddingExpense) صريح هنا لا داخل ExpenseForm
+                    وحدها: AnimatePresence يحتاج التبديل عند نقطة العرض الشرطي
+                    نفسها ليكتشف الإزالة ويُشغّل حركة الخروج — نفس نمط ModalManager.tsx. */}
+                {trip.canAddExpenses && (
+                  <AnimatePresence>
+                    {expense.isAddingExpense && <ExpenseForm />}
+                  </AnimatePresence>
+                )}
+
+                <ExpensesPanel
+                  isInitialLoading={ledger.isInitialLoading}
+                  canAddExpenses={trip.canAddExpenses}
+                  activeExpenses={ledger.activeExpenses}
+                  filteredExpenses={filter.filteredExpenses}
+                  searchQuery={filter.searchQuery}
+                  setSearchQuery={filter.setSearchQuery}
+                  sortOrder={filter.sortOrder}
+                  setSortOrder={filter.setSortOrder}
+                  onOpenExpenseForm={expense.openExpenseForm}
+                  // 🆕 يُمرِّر الصفحة إلى السجلّ بعد كل تسجيل ناجح — نفس
+                  // الإشارة التي تُفرِّغ شريط الإدخال السريع. انظر ExpensesPanel.tsx.
+                  scrollToSignal={expense.expenseAddedSignal}
+                />
+
+                <SettlementsPanel
+                  isInitialLoading={ledger.isInitialLoading}
+                  settlements={ledger.settlements}
+                  travelers={ledger.activeTravelers}
+                  hasExpenses={ledger.activeExpenses.length > 0}
+                />
+
+                {/* 🆕 تفاصيل حساب المنظّم مباشرة تحت «الأرصدة» لا في عمود جانبي
+                    منفصل: هي الخطوة التالية حرفياً بعد قراءة «كم أدين ولمن». */}
+                <BankDetailsCard bankDetails={organizerBank.bankDetails} isLoading={organizerBank.loading} />
+
                 <TravelersPanel
                   isInitialLoading={ledger.isInitialLoading}
                   isAdmin={session.isAdmin}
@@ -219,65 +281,6 @@ export default function App() {
                   cycleWallets={longTerm?.cycleWallets}
                   periods={longTerm?.periods}
                 />
-  
-                <ChartsPanel
-                  isInitialLoading={ledger.isInitialLoading}
-                  hasExpenses={ledger.activeExpenses.length > 0}
-                  hasTravelers={ledger.activeTravelers.length > 0}
-                  settlements={ledger.settlements}
-                  categoryTotals={ledger.categoryTotals}
-                  spendingTrend={ledger.spendingTrend}
-                />
-  
-                {/* 🆕 الرحلات طويلة المدى — شرط واحد لا أكثر، ومكوّن مستقل
-                    تماماً. `longTerm` هي null في الرحلة القياسية (انظر
-                    useAppCoordinator.ts)، فلا يُقيَّم شيء من هذه الميزة فيها. */}
-                {longTerm && (
-                  <LongTermPanel
-                    period={longTerm.period}
-                    lastClosedPeriod={longTerm.lastClosedPeriod}
-                    periodTotal={longTerm.periodTotal}
-                    periodCount={longTerm.periodCount}
-                    canManage={longTerm.canManage}
-                    isBusy={longTerm.isClosingMonth || longTerm.isExitingTraveler}
-                    hasActiveTravelers={ledger.activeTravelers.length > 0}
-                    onCloseMonth={longTerm.openRollover}
-                  />
-                )}
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div className="space-y-6 lg:col-span-1">
-                    {/* نموذج المصروف يختفي كلياً في الرحلة المنتهية/المؤرشفة.
-                        🆕 Modal (Bottom Sheet) لا قسم داخل تدفّق الصفحة بعد الآن —
-                        انظر تعليق ExpenseForm في ExpenseSection.tsx وdocs/DECISIONS.md.
-                        الشرط الخارجي (isAddingExpense) صريح هنا لا داخل ExpenseForm
-                        وحدها: AnimatePresence يحتاج التبديل عند نقطة العرض الشرطي
-                        نفسها ليكتشف الإزالة ويُشغّل حركة الخروج — نفس نمط ModalManager.tsx. */}
-                    {trip.canAddExpenses && (
-                      <AnimatePresence>
-                        {expense.isAddingExpense && <ExpenseForm />}
-                      </AnimatePresence>
-                    )}
-                    <BankDetailsCard bankDetails={organizerBank.bankDetails} isLoading={organizerBank.loading} />
-                  </div>
-  
-                  <div className="lg:col-span-2">
-                    <ExpensesPanel
-                      isInitialLoading={ledger.isInitialLoading}
-                      isAdmin={session.isAdmin}
-                      canAddExpenses={trip.canAddExpenses}
-                      activeExpenses={ledger.activeExpenses}
-                      filteredExpenses={filter.filteredExpenses}
-                      searchQuery={filter.searchQuery}
-                      setSearchQuery={filter.setSearchQuery}
-                      sortOrder={filter.sortOrder}
-                      setSortOrder={filter.setSortOrder}
-                      onOpenReports={modals.openReports}
-                      onOpenTrashBin={modals.openTrashBin}
-                      onOpenExpenseForm={expense.openExpenseForm}
-                    />
-                  </div>
-                </div>
               </main>
             </PullToRefresh>
   
@@ -308,6 +311,26 @@ export default function App() {
                 reason: deposit.depositReason, setReason: deposit.setDepositReason,
                 onSubmit: deposit.handleAddDeposit,
               }}
+              // 🆕 أقسام انتقلت من تدفّق الشاشة إلى نوافذ خلف «المزيد».
+              charts={{
+                categoryTotals: ledger.categoryTotals,
+                spendingTrend: ledger.spendingTrend,
+                hasExpenses: ledger.activeExpenses.length > 0,
+              }}
+              itinerary={{
+                itinerary: trip.itinerary,
+                onEditItinerary: tripEdit.canEdit ? modals.openEditTrip : undefined,
+              }}
+              longTermPanel={longTerm ? {
+                period: longTerm.period,
+                lastClosedPeriod: longTerm.lastClosedPeriod,
+                periodTotal: longTerm.periodTotal,
+                periodCount: longTerm.periodCount,
+                canManage: longTerm.canManage,
+                isBusy: longTerm.isClosingMonth || longTerm.isExitingTraveler,
+                hasActiveTravelers: ledger.activeTravelers.length > 0,
+                onCloseMonth: longTerm.openRollover,
+              } : undefined}
               trash={{
                 deletedExpenses: ledger.deletedExpenses,
                 deletedTravelers: ledger.deletedTravelers,
