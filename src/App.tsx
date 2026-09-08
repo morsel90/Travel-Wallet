@@ -146,12 +146,10 @@ export default function App() {
           <div className="min-h-screen pb-24">
             <Header
               isSyncing={status.isSyncing} isAdmin={session.isAdmin} isOrganizer={session.isOrganizer}
-              // 🆕 اسم الرحلة يحلّ محلّ «مصاريف السفر» الثابت في العنوان.
+              // 🆕 اسم الرحلة يحلّ محلّ «مصاريف السفر» الثابت في العنوان —
+              // وهو نفسه زرّ فتح ورقة «المزيد» (انظر Header.tsx/MoreMenu.tsx).
+              // «إدارة الرحلة» صارت بنداً داخلها لا زرّاً منفصلاً هنا.
               tripName={trip.name}
-              // 🆕 اسم الرحلة قابل للضغط لمن يملك صلاحية تعديلها — يفتح
-              // EditTripModal (انظر tripEdit في useAppCoordinator.ts).
-              canEditTrip={tripEdit.canEdit}
-              onEditTrip={modals.openEditTrip}
               displayName={profile.displayName || session.user?.displayName || null}
               email={session.user?.email ?? null}
               stats={ledger.isInitialLoading ? null : {

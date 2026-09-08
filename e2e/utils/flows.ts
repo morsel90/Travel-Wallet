@@ -87,18 +87,33 @@ export function tripRowInPicker(page: Page, tripId: string) {
  * — لتعديل رحلة أخرى افتحها أولاً من «رحلاتي». انظر docs/DECISIONS.md.
  */
 export async function openTripDetailFromHeader(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'تعديل الرحلة' }).click()
+  // 🆕 لم يعد زرّاً مباشراً: «إدارة الرحلة» صارت بنداً داخل ورقة «المزيد»،
+  // التي يفتحها اسم الرحلة نفسه. الدالة تبقى بنفس الاسم لأن ما تعنيه لم
+  // يتغيّر — «افتح تفاصيل الرحلة من الهيدر».
+  await openFromMoreMenu(page, 'إدارة الرحلة')
 }
 
 /**
- * 🆕 يفتح ورقة «المزيد» (⋯) في الهيدر ويضغط بنداً فيها.
+ * 🆕 يفتح ورقة «المزيد» من اسم الرحلة في الهيدر.
+ *
+ * ⚠️ اسم الرحلة (والشعار معه) هو زرّ الفتح — لا زرّ ⋯ منفصل: القائمة تحوي
+ * الإعدادات وإدارة الرحلة، فمكانها خلف هوية الرحلة نفسها (نمط اسم المجموعة
+ * في واتساب). ومتاحة لكل عضو، بخلاف زرّ «تعديل الرحلة» السابق الذي كان
+ * يظهر للمسؤول/المنظّم وحدهما. انظر Header.tsx وMoreMenu.tsx.
+ */
+export async function openTripMenu(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'قائمة الرحلة' }).click()
+}
+
+/**
+ * يفتح ورقة «المزيد» ويضغط بنداً فيها.
  *
  * الشاشة الرئيسية صارت ثلاثة أقسام فقط (المصاريف/الأرصدة/المسافرون)، وكل ما
  * عداها — التقارير، الإحصائيات، مسار الرحلة، الشهر المحاسبي، سلة المهملات،
- * إدارة الرحلة، النسخة الاحتياطية — خلف هذا الزرّ. انظر MoreMenu.tsx.
+ * إدارة الرحلة، النسخة الاحتياطية — خلف هذه الورقة.
  */
 export async function openFromMoreMenu(page: Page, itemName: string): Promise<void> {
-  await page.getByRole('button', { name: 'المزيد', exact: true }).click()
+  await openTripMenu(page)
   const sheet = page.getByRole('dialog', { name: 'المزيد' })
   await sheet.getByRole('button', { name: itemName }).click()
 }

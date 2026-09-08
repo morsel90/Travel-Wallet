@@ -1,5 +1,16 @@
-// 🆕 زرّ «المزيد» (⋯) في الهيدر — نقطة الدخول الوحيدة لكل ما ليس من الأقسام
-// الثلاثة الرئيسية.
+// 🆕 ورقة «المزيد» — نقطة الدخول الوحيدة لكل ما ليس من الأقسام الثلاثة
+// الرئيسية. **وزرّ فتحها هو اسم الرحلة/الشعار في الهيدر، لا زرّ خاص بها.**
+//
+// ⚠️ كانت أوّل صيغة زرّاً مستقلاً (⋯) بجانب «حسابي» — وهو حرفياً العنصر الذي
+// رُفض من قبل حين اقتُرح كأيقونة قلم: «عنصر إضافي يزحم هيدراً مزدحماً أصلاً»
+// (انظر docs/DECISIONS.md). ولاحظ صاحب الحساب أن القائمة تحوي الإعدادات
+// أيضاً، فمكانها الطبيعي خلف اسم الرحلة نفسه — نمط اسم المجموعة في واتساب
+// واسم القناة في Slack: الضغط على العنوان يفتح «كل ما يخصّ هذا الشيء».
+//
+// ومكسب غير متوقّع: اسم الرحلة كان قابلاً للضغط **لمن يملك تعديلها وحده**
+// (`canEditTrip`)، أي أنه عنصر ميّت لأغلب الأعضاء. صار الآن مفيداً للجميع —
+// والتقارير والإحصائيات والمسار حقٌّ لكل عضو، بينما «إدارة الرحلة» تبقى بنداً
+// مشروطاً بالصلاحية داخل الورقة.
 //
 // ⚠️ **السبب**: الشاشة الرئيسية كانت تعرض سبعة أقسام في تدفّق واحد (المقطع
 // القادم، أرصدة المسافرين، الإحصائيات، الشهر المحاسبي، نموذج المصروف، الحساب
@@ -15,12 +26,10 @@
 // الرحلة في الهيدر لأنه المُشير الطبيعي إليها، أما التقارير/الإحصائيات/المسار/
 // السلة فلا وجود لها في أي مكان آخر بعد اليوم — نفس المبدأ الذي أزال «تصدير
 // Excel» و«إدارة الرحلات» من مواضعهما المكرَّرة (انظر ExpensesPanel.tsx).
-import { AnimatePresence } from 'framer-motion'
-import { useState } from 'react'
 import { Modal } from './Modal'
 import { haptic } from '../utils/haptics'
 import {
-  MoreHorizontal, BarChart3, PieChart, Route, CalendarClock,
+  BarChart3, PieChart, Route, CalendarClock,
   Settings, Download, Trash2, X,
 } from '../icons'
 
@@ -46,15 +55,18 @@ type Item = {
   action: () => void
 }
 
-export default function MoreMenu(actions: MoreMenuActions) {
-  const [isOpen, setIsOpen] = useState(false)
+interface MoreMenuSheetProps extends MoreMenuActions {
+  onClose: () => void
+}
 
-  const close = () => setIsOpen(false)
+// ⚠️ الورقة **متحكَّم بها من الخارج** (`onClose`) ولا تملك حالة فتح خاصة:
+// زرّ الفتح صار في الهيدر (اسم الرحلة/الشعار)، فحالة الفتح تعيش معه هناك.
+export default function MoreMenuSheet({ onClose, ...actions }: MoreMenuSheetProps) {
   const run = (action: () => void) => () => {
     haptic.light()
     // الإغلاق أولاً: النافذة المطلوبة تحلّ محلّ هذه الورقة، ولا يجوز أن
     // تكونا مفتوحتين معاً (نفس عقد ModalState الموحّد في useModals.ts).
-    setIsOpen(false)
+    onClose()
     action()
   }
 
@@ -78,55 +90,37 @@ export default function MoreMenu(actions: MoreMenuActions) {
   ]
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => { haptic.light(); setIsOpen(true) }}
-        aria-haspopup="dialog"
-        aria-expanded={isOpen}
-        aria-label="المزيد"
-        title="المزيد"
-        className="flex items-center justify-center bg-teal-800/50 hover:bg-teal-800 text-teal-50 hover:text-white transition-all duration-200 rounded-xl border border-teal-500/30 backdrop-blur-sm shrink-0 min-h-[44px] min-w-[44px]"
-      >
-        <MoreHorizontal className="w-5 h-5" />
-      </button>
+    <Modal onClose={onClose} label="المزيد" maxWidth="max-w-md">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h2 className="text-lg font-bold text-slate-800">المزيد</h2>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="إغلاق المزيد"
+          className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl p-2 transition-colors"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
 
-      <AnimatePresence>
-        {isOpen && (
-          <Modal key="more-menu" onClose={close} label="المزيد" maxWidth="max-w-md">
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <h2 className="text-lg font-bold text-slate-800">المزيد</h2>
-              <button
-                type="button"
-                onClick={close}
-                aria-label="إغلاق المزيد"
-                className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl p-2 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="space-y-1.5">
-              {items.map(({ key, label, hint, Icon, action }) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={run(action)}
-                  className="w-full flex items-center gap-3 p-3 rounded-2xl text-right hover:bg-slate-50 active:bg-slate-100 transition-colors min-h-[44px]"
-                >
-                  <span className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
-                    <Icon className="w-5 h-5" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-bold text-slate-800">{label}</span>
-                    <span className="block text-[11px] text-slate-400 truncate">{hint}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </Modal>
-        )}
-      </AnimatePresence>
-    </>
+      <div className="space-y-1.5">
+        {items.map(({ key, label, hint, Icon, action }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={run(action)}
+            className="w-full flex items-center gap-3 p-3 rounded-2xl text-right hover:bg-slate-50 active:bg-slate-100 transition-colors min-h-[44px]"
+          >
+            <span className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+              <Icon className="w-5 h-5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-bold text-slate-800">{label}</span>
+              <span className="block text-[11px] text-slate-400 truncate">{hint}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </Modal>
   )
 }

@@ -1,7 +1,10 @@
-import { PieChart, Loader2 } from '../icons'
+import { useState } from 'react'
+import { AnimatePresence } from 'framer-motion'
+import { PieChart, Loader2, ChevronDown } from '../icons'
 import { useHeaderCollapse } from '../hooks/useHeaderCollapse'
+import { haptic } from '../utils/haptics'
 import AccountMenu from './AccountMenu'
-import MoreMenu, { type MoreMenuActions } from './MoreMenu'
+import MoreMenuSheet, { type MoreMenuActions } from './MoreMenu'
 
 export interface HeaderStats {
   totalDeposited: number
@@ -31,17 +34,6 @@ interface HeaderProps {
    * تأكيد الرحلة المفتوحة *قبل* تسجيل مصروف فيها معلومةً مالية لا ترفاً بصرياً.
    */
   tripName: string
-  /**
-   * 🆕 شعار التطبيق (أيقونة الرسم الدائري) — واسم الرحلة معه حين لا يكون
-   * الهيدر متقلّصاً — يصبحان زرّ تعديل الرحلة لمن يملك صلاحيتها (مسؤول أو
-   * منظّم هذه الرحلة تحديداً)، بلا أي شارة أو أيقونة إضافية تزحم الهيدر. الشعار
-   * وحده هو الزرّ في وضع التقلّص (اسم الرحلة يختفي عندها ويستبدله السطر
-   * الموجز)، فربط التعديل بالاسم وحده كان يفقد القدرة على التعديل أثناء
-   * تصفّح سجلّ طويل. لتعديل رحلة أخرى: تُفتح أولاً من «رحلاتي» ثم تُعدَّل من
-   * هنا بعد أن تصبح هي المفتوحة.
-   */
-  canEditTrip: boolean
-  onEditTrip: () => void
   /** 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يمرَّر إلى AccountMenu لإخفاء
    * زرّ «تسجيل الدخول كمسؤول» عمّن لا يحتاجه أصلاً. */
   isOrganizer: boolean
@@ -62,9 +54,10 @@ interface HeaderProps {
   onAdminSignIn: () => void
   onSignOut: () => void
   /**
-   * 🆕 أفعال زرّ «المزيد» (⋯) — كل ما ليس من الأقسام الثلاثة الرئيسية
+   * 🆕 أفعال ورقة «المزيد» — كل ما ليس من الأقسام الثلاثة الرئيسية
    * (المصاريف/الأرصدة/المسافرون). تُمرَّر ككتلة واحدة لأنها تُستهلك ككتلة
-   * واحدة في MoreMenu، وكل بند فيها اختياريّته هي حارس صلاحيته.
+   * واحدة في MoreMenuSheet، وكل بند فيها اختياريّته هي حارس صلاحيته —
+   * ومنها «إدارة الرحلة»، التي حلّت محلّ زرّ «تعديل الرحلة» المنفصل.
    */
   more: MoreMenuActions
 }
@@ -89,8 +82,6 @@ const Header = ({
   isSyncing,
   isAdmin,
   tripName,
-  canEditTrip,
-  onEditTrip,
   isOrganizer,
   stats,
   cycleStats,
@@ -105,6 +96,8 @@ const Header = ({
   more,
 }: HeaderProps) => {
   const isCollapsed = useHeaderCollapse()
+  const [isMoreOpen, setIsMoreOpen] = useState(false)
+  const openMore = () => { haptic.light(); setIsMoreOpen(true) }
 
   // 🆕 سطر موجز واحد بدل ثلاث حبّات ملوّنة وشارة/زرّ تبديل دورة منفصلَين —
   // طلب صاحب الحساب صراحةً إزالتهما ("الشارة والتبديل زادا الزحمة")، بنمط
@@ -157,57 +150,66 @@ const Header = ({
         }`}
       >
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          {/* 🆕 لا شارة/زرّ إضافي — الشعار (دائماً ظاهر)، واسم الرحلة (حين لا
-              يكون الهيدر متقلّصاً) كلاهما يفتح تعديل الرحلة مباشرة لمن يملك
-              صلاحيتها. عنصر واحد قابل للضغط بهذا الاسم الوصولي دائماً (لا
-              اثنان بنفس التسمية معاً) — السطر الموجز تحته زرّ منفصل تماماً
-              (لا مُتداخل داخل زرّ التعديل) بوظيفته الخاصة، فلا تعارض نقر. */}
+          {/* 🆕 **اسم الرحلة/الشعار هو زرّ فتح ورقة «المزيد»** — لا زرّ ⋯
+              منفصل. لاحظ صاحب الحساب أن القائمة تحوي الإعدادات وإدارة الرحلة
+              أيضاً، فمكانها الطبيعي خلف هوية الرحلة نفسها (نمط اسم المجموعة في
+              واتساب واسم القناة في Slack). انظر MoreMenu.tsx وdocs/DECISIONS.md.
+
+              ⚠️ **بلا شرط صلاحية**: الزرّ كان يظهر لمن يملك تعديل الرحلة وحده
+              (`canEditTrip`)، أي أن اسم الرحلة كان عنصراً ميّتاً لأغلب
+              الأعضاء. التقارير والإحصائيات والمسار حقٌّ لكل عضو، و«إدارة
+              الرحلة» تبقى بنداً مشروطاً *داخل* الورقة. (القاعدة ١٧: اسأل من
+              يستبعده هذا الشرط.)
+
+              ⚠️ والشعار داخل الزرّ في الحالتين: اسم الرحلة يختفي حين يتقلّص
+              الهيدر، فربط الفتح بالاسم وحده كان يُفقد الوصول للقائمة كلها
+              أثناء تصفّح سجلّ طويل. */}
           {isCollapsed ? (
             <>
-              {canEditTrip ? (
-                <button
-                  type="button"
-                  onClick={onEditTrip}
-                  aria-label="تعديل الرحلة"
-                  title="تعديل الرحلة"
-                  className="shrink-0"
-                >
-                  <Logo isCollapsed={isCollapsed} isOnline={isOnline} />
-                </button>
-              ) : <Logo isCollapsed={isCollapsed} isOnline={isOnline} />}
+              <button
+                type="button"
+                onClick={openMore}
+                aria-haspopup="dialog"
+                aria-expanded={isMoreOpen}
+                aria-label="قائمة الرحلة"
+                title="قائمة الرحلة"
+                className="flex items-center gap-1 shrink-0"
+              >
+                <Logo isCollapsed={isCollapsed} isOnline={isOnline} />
+                <ChevronDown className="w-3.5 h-3.5 text-teal-100/80" />
+              </button>
               <div className="min-w-0 flex-1" aria-live="polite" aria-atomic="true">
                 {renderSummary(true)}
               </div>
             </>
           ) : (
             <div className="min-w-0 flex-1 flex flex-col gap-0.5">
-              {canEditTrip ? (
-                <button
-                  type="button"
-                  onClick={onEditTrip}
-                  aria-label="تعديل الرحلة"
-                  title="تعديل الرحلة"
-                  className="flex items-center gap-2.5 min-w-0 text-right"
-                >
-                  <Logo isCollapsed={isCollapsed} isOnline={isOnline} />
-                  {/* 🆕 line-clamp-2 لا truncate: اسم يخلط عربية بمقطع لاتيني
-                      يتقطّع مع truncate بترتيب بصري مُضلِّل (قصور معروف في
-                      تفاعل text-overflow:ellipsis مع bidi — جرّبنا dir="ltr"
-                      فزاد الأمر سوءاً). الالتفاف لسطرين يعرض الاسم كاملاً دوماً؛
-                      bdi يعزل اتجاهه عن سياق RTL المحيط عند الالتفاف. */}
-                  <h1 className="font-bold tracking-wide line-clamp-2 text-xl"><bdi>{tripName}</bdi></h1>
-                </button>
-              ) : (
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <Logo isCollapsed={isCollapsed} isOnline={isOnline} />
-                  {/* 🆕 line-clamp-2 لا truncate: اسم يخلط عربية بمقطع لاتيني
-                      يتقطّع مع truncate بترتيب بصري مُضلِّل (قصور معروف في
-                      تفاعل text-overflow:ellipsis مع bidi — جرّبنا dir="ltr"
-                      فزاد الأمر سوءاً). الالتفاف لسطرين يعرض الاسم كاملاً دوماً؛
-                      bdi يعزل اتجاهه عن سياق RTL المحيط عند الالتفاف. */}
-                  <h1 className="font-bold tracking-wide line-clamp-2 text-xl"><bdi>{tripName}</bdi></h1>
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={openMore}
+                aria-haspopup="dialog"
+                aria-expanded={isMoreOpen}
+                aria-label="قائمة الرحلة"
+                title="قائمة الرحلة"
+                className="flex items-center gap-2.5 min-w-0 self-start max-w-full text-right"
+              >
+                <Logo isCollapsed={isCollapsed} isOnline={isOnline} />
+                {/* 🆕 line-clamp-2 لا truncate: اسم يخلط عربية بمقطع لاتيني
+                    يتقطّع مع truncate بترتيب بصري مُضلِّل (قصور معروف في
+                    تفاعل text-overflow:ellipsis مع bidi — جرّبنا dir="ltr"
+                    فزاد الأمر سوءاً). الالتفاف لسطرين يعرض الاسم كاملاً دوماً؛
+                    bdi يعزل اتجاهه عن سياق RTL المحيط عند الالتفاف. */}
+                {/* ⚠️ السهم **داخل** العنوان لا شقيقاً له في الـflex: الاسم
+                    يلتفّ لسطرين ويشغل العرض كاملاً، فسهمٌ شقيق يُدفع إلى أقصى
+                    اليسار ملاصقاً لقائمة الحساب فيُقرأ كأنه جزء منها. inline
+                    داخل h1 يجعله يتبع آخر كلمة أينما وقعت. وهو وحده ما يوحي
+                    بأن العنوان قائمة — بلا شيء يوحي بذلك تصبح القائمة صحيحة
+                    وغير قابلة للاكتشاف في آنٍ واحد. */}
+                <h1 className="font-bold tracking-wide line-clamp-2 text-xl">
+                  <bdi>{tripName}</bdi>
+                  <ChevronDown className="inline-block align-middle w-4 h-4 me-1.5 ms-1 text-teal-100/80" />
+                </h1>
+              </button>
 
               <div className="flex items-center gap-2 min-w-0 ps-9" aria-live="polite" aria-atomic="true">
                 {renderSummary(false)}
@@ -226,10 +228,6 @@ const Header = ({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* 🆕 «المزيد» قبل قائمة الحساب: بنوده تخصّ الرحلة المفتوحة (تقارير،
-              إحصائيات، مسار، إدارة) بينما AccountMenu يخصّ الحساب نفسه — الأقرب
-              للمحتوى أولاً في اتجاه القراءة. */}
-          <MoreMenu {...more} />
           <AccountMenu
             displayName={displayName}
             email={email}
@@ -242,6 +240,12 @@ const Header = ({
           />
         </div>
       </div>
+
+      {/* ⚠️ داخل <header> لكن خارج شريطه: Modal يرسم عبر portal إلى body على
+          أي حال، فموضعها في الشجرة لا يؤثّر في تموضعها البصري. */}
+      <AnimatePresence>
+        {isMoreOpen && <MoreMenuSheet {...more} onClose={() => setIsMoreOpen(false)} />}
+      </AnimatePresence>
     </header>
   )
 }

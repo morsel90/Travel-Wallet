@@ -103,8 +103,31 @@ export const ExpensesPanel = ({
       window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
     }
     scrollToSection()
+
+    // ⚠️ والنداء الثاني **يتنازل للمستخدم**: لو مرّر بإصبعه أو عجلته أو لوحة
+    // مفاتيحه خلال هذه المهلة فقد قرّر وجهته بنفسه، ويُلغى. بلا هذا الإلغاء
+    // كان مَن يضيف مصروفاً ثم يمرّر فوراً يُجذب إلى الأعلى بعد جزء من الثانية
+    // بلا سبب مفهوم — رُصد فعلياً أثناء المعاينة.
+    //
+    // ولماذا wheel/touchstart/keydown/mousedown لا حدث scroll: تعويض
+    // react-virtuoso نفسه *ينتج* حدث scroll، فالإلغاء عليه كان سيُلغي النداء
+    // الثاني في الحالة التي وُجد من أجلها بالضبط. هذه الأربعة لا يُنتجها إلا
+    // إنسان (mousedown يغطّي سحب شريط التمرير على سطح المكتب).
     const settleTimer = window.setTimeout(scrollToSection, 400)
-    return () => window.clearTimeout(settleTimer)
+    const cancel = () => window.clearTimeout(settleTimer)
+    const opts = { passive: true, once: true } as const
+    window.addEventListener('wheel', cancel, opts)
+    window.addEventListener('touchstart', cancel, opts)
+    window.addEventListener('keydown', cancel, { once: true })
+    window.addEventListener('mousedown', cancel, { once: true })
+
+    return () => {
+      window.clearTimeout(settleTimer)
+      window.removeEventListener('wheel', cancel)
+      window.removeEventListener('touchstart', cancel)
+      window.removeEventListener('keydown', cancel)
+      window.removeEventListener('mousedown', cancel)
+    }
   }, [scrollToSignal])
 
   return (

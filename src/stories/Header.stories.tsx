@@ -26,8 +26,6 @@ export const رحلة_قياسية: Story = {
     isAdmin: false,
     isOrganizer: false,
     tripName: 'رحلة بولندا 2026',
-    canEditTrip: true,
-    onEditTrip: noop,
     stats: { totalDeposited: 1000, totalSpent: 400, totalRemaining: 600 },
     displayName: 'أحمد الغامدي',
     email: 'ahmad@example.com',

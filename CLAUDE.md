@@ -29,7 +29,7 @@
 - 🆕 Per-user profile (`users/{uid}`: name + bank details) auto-fills bank details on trip creation, editable per trip afterward
 - Real-time Firestore listeners with optimistic updates
 - Offline-first: `persistentLocalCache` + `persistentMultipleTabManager`
-- 🆕 Main screen is three sections only — Expenses → Balances (who-pays-whom) → Travelers; everything else (reports, charts, itinerary, monthly cycle, trip admin, backup, trash) lives behind a "More" (⋯) bottom sheet in the header (see *Design Decisions*)
+- 🆕 Main screen is three sections only — Expenses → Balances (who-pays-whom) → Travelers; everything else (reports, charts, itinerary, monthly cycle, trip admin, backup, trash) lives behind a "More" bottom sheet opened by **tapping the trip name** in the header (no separate ⋯ button; WhatsApp/Slack pattern) (see *Design Decisions*)
 - Smart input bar for quick expense entry (bottom-fixed)
 - 160+ currencies with live exchange rates (open.er-api.com)
 - Category-based spending breakdown (HTML/CSS charts — no Recharts)
@@ -102,7 +102,7 @@
 │  ┌──────────────┐ ┌───────────┐ ┌──────────────┐       │
 │  │ ModalManager │ │ AuthFlow  │ │    Toast     │       │
 │  │ (+ MoreMenu: │ │ (lazy     │ │              │       │
-│  │  ⋯ في الهيدر)│ │  admin)   │ │              │       │
+│  │  اسم الرحلة) │ │  admin)   │ │              │       │
 │  │ (lazy, from  │ │ (lazy     │ │              │       │
 │  │  useModals)  │ │  admin)   │ │              │       │
 │  └──────────────┘ └───────────┘ └──────────────┘       │
