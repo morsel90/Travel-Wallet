@@ -7,6 +7,12 @@ import type { ItinerarySegment } from '../types'
 interface ItinerarySectionProps {
   // يُمرَّر من ReportsView (المصدر: useTripConfig في App) بدل الاشتراك المكرر داخل المكوّن
   itinerary?: ItinerarySegment[]
+  /**
+   * 🆕 بلا بطاقة بيضاء خارجية ولا عنوان — للعرض داخل نافذة توفّر الاثنين
+   * أصلاً (ItineraryModal). الافتراضي false فلا يتغيّر شيء في ReportsView،
+   * حيث القائمة قسمٌ بين أقسام أخرى وتحتاج بطاقتها وعنوانها.
+   */
+  bare?: boolean
 }
 
 // تنسيق واضح للمسافر: تقويم ميلادي + أرقام لاتينية + وقت 24 ساعة (بلا ص/م المربكة)،
@@ -17,7 +23,7 @@ const fmtDate = (iso: string): string =>
 const fmtTime = (iso: string): string =>
   new Date(iso).toLocaleTimeString(DT_LOCALE, { hour: '2-digit', minute: '2-digit', hour12: false })
 
-export const ItinerarySection = ({ itinerary }: ItinerarySectionProps) => {
+export const ItinerarySection = ({ itinerary, bare = false }: ItinerarySectionProps) => {
   if (!itinerary || itinerary.length === 0) return null
 
   const getTransportIcon = (mode: ItinerarySegment['mode']) => {
@@ -30,11 +36,15 @@ export const ItinerarySection = ({ itinerary }: ItinerarySectionProps) => {
     }
   }
 
+  const Wrapper = bare ? 'div' : 'section'
+
   return (
-    <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
-      <h2 className="text-base font-bold text-slate-800 flex items-center gap-2 mb-4">
-        <Route className="w-5 h-5 text-teal-600" /> مسار الرحلة
-      </h2>
+    <Wrapper className={bare ? '' : 'bg-white rounded-2xl shadow-sm border border-slate-200 p-5'}>
+      {!bare && (
+        <h2 className="text-base font-bold text-slate-800 flex items-center gap-2 mb-4">
+          <Route className="w-5 h-5 text-teal-600" /> مسار الرحلة
+        </h2>
+      )}
 
       <div className="space-y-3">
         {itinerary.map(segment => {
@@ -94,6 +104,6 @@ export const ItinerarySection = ({ itinerary }: ItinerarySectionProps) => {
           )
         })}
       </div>
-    </section>
+    </Wrapper>
   )
 }

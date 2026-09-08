@@ -44,7 +44,7 @@ test('حساب الأرصدة والتسوية صحيح عبر عدة مصاري
   await expect(faisalCard.getByText('-100.00', { exact: true })).toBeVisible()
 
   // التسوية: فيصل (أكبر مدين) يدفع لمنى (أكبر دائن) 100 بالضبط
-  const settlementsPanel = page.locator('section', { hasText: 'ملخص وإحصائيات الرحلة' })
+  const settlementsPanel = page.locator('#settlements-section')
   await expect(settlementsPanel).toContainText('فيصل')
   await expect(settlementsPanel).toContainText('منى')
   await expect(settlementsPanel).toContainText('100.00')

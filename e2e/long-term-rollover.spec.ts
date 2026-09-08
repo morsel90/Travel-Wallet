@@ -12,7 +12,7 @@
 // إيداع، مقابل إيداع ثم مصروف).
 import { test, expect } from '@playwright/test'
 import { seedTrip, adminFirestore } from './utils/seed'
-import { openTripAsAdmin } from './utils/flows'
+import { openTripAsAdmin, openFromMoreMenu } from './utils/flows'
 
 // ⚠️ **تسلسلي لا متوازٍ.** الاختباران يتشاركان *دفتراً واحداً*، وحالة الدفتر
 // هي موضوع الاختبار نفسه: الثاني يُخرج خالد من الرحلة بينما الأول يتحقّق من
@@ -91,52 +91,73 @@ test.beforeAll(async () => {
 const travelerCard = (page: import('@playwright/test').Page, name: string) =>
   page.locator('#travelers-section div.bg-white.rounded-xl').filter({ hasText: name })
 
+// 🆕 «الشهر المحاسبي» صار نافذة خلف زرّ «المزيد» (⋯) لا قسماً في تدفّق الشاشة
+// — الشاشة الرئيسية ثلاثة أقسام فقط الآن (المصاريف/الأرصدة/المسافرون). انظر
+// MoreMenu.tsx. الفتح يمرّ بالقائمة تماماً كما يمرّ به المستخدم.
+const openMonthPanel = async (page: import('@playwright/test').Page) => {
+  await openFromMoreMenu(page, 'الشهر المحاسبي')
+  const panel = page.locator('#long-term-section')
+  await expect(panel).toBeVisible()
+  return panel
+}
+
+const closeMonthPanel = async (page: import('@playwright/test').Page) => {
+  await page.getByRole('button', { name: 'إغلاق الشهر المحاسبي' }).click()
+  await expect(page.locator('#long-term-section')).toHaveCount(0)
+}
+
 test('إغلاق الشهر يُرحّل الأرصدة دون أن يغيّر صافي رصيد أي عضو', async ({ page }) => {
   await openTripAsAdmin(page, CREDS)
 
-  const panel = page.locator('#long-term-section')
-  await expect(panel).toBeVisible()
+  const panel = await openMonthPanel(page)
   // ⚠️ `exact: true` ليس تفصيلاً: «أغسطس 2026» يظهر مرتين في هذا القسم
   // (شارة الشهر المفتوح، وعنوان «مصاريف أغسطس 2026»). المطابقة التامة تعزل
   // الشارة وحدها — وهي المقصودة هنا.
   await expect(panel.getByText('أغسطس 2026', { exact: true })).toBeVisible()
   await expect(panel.getByText('لم يُغلق شهر بعد')).toBeVisible()
+  await closeMonthPanel(page)
   await expect(travelerCard(page, SAAD.name).getByText(SAAD_BALANCE.toFixed(2), { exact: true })).toBeVisible()
   await expect(travelerCard(page, KHALED.name).getByText(KHALED_BALANCE.toFixed(2), { exact: true })).toBeVisible()
 
   // ── المعاينة قبل التنفيذ: الاتجاهان معاً ────────────────────────────────
-  await panel.getByRole('button', { name: /إغلاق أغسطس 2026/ }).click()
+  // فتح النافذة ثم الضغط على الإغلاق — الضغط يُبدّلها بنافذة التأكيد (لا
+  // نافذتان معاً، انظر LongTermModal.tsx).
+  const panelAgain = await openMonthPanel(page)
+  await panelAgain.getByRole('button', { name: /إغلاق أغسطس 2026/ }).click()
   await expect(page.getByText(/يُرحَّل له 800\.00 ريال/)).toBeVisible()
   await expect(page.getByText(/يُرحَّل عليه 200\.00 ريال/)).toBeVisible()
 
   await page.getByRole('button', { name: 'تأكيد الإغلاق' }).click()
   await expect(page.getByText(/تم إغلاق أغسطس 2026/)).toBeVisible({ timeout: 15_000 })
 
-  // ── الشهر تقدّم، والشهر المُغلق صار مذكوراً بوصفه كذلك ──────────────────
-  await expect(panel.getByText(NEXT_PERIOD_LABEL, { exact: true })).toBeVisible()
-  // وأغسطس صار «آخر شهر أُغلق» — المطابقة التامة تلتقطه وحده الآن، فعنوان
-  // المصاريف صار يحمل اسم سبتمبر.
-  await expect(panel.getByText('أغسطس 2026', { exact: true })).toBeVisible()
-
   // ⚠️ **جوهر الاختبار كله**: نفس الرصيدين بالضبط بعد الترحيل، معروضين على
   // بطاقتي سعد وخالد. لو كتب الإغلاق حركة واحدة من الاثنتين (تصفير بلا
   // افتتاح، أو العكس) لتغيّر الرقم هنا — وهذا هو الشكل الذي يظهر به «اختفاء
-  // مال من الدفتر» في هذا التطبيق.
+  // مال من الدفتر» في هذا التطبيق. (نافذة الشهر مغلقة هنا — البطاقات على
+  // الشاشة الرئيسية مباشرة، لا خلف طبقة.)
   await expect(travelerCard(page, SAAD.name).getByText(SAAD_BALANCE.toFixed(2), { exact: true })).toBeVisible()
   await expect(travelerCard(page, KHALED.name).getByText(KHALED_BALANCE.toFixed(2), { exact: true })).toBeVisible()
+
+  // ── الشهر تقدّم، والشهر المُغلق صار مذكوراً بوصفه كذلك ──────────────────
+  const panelAfter = await openMonthPanel(page)
+  await expect(panelAfter.getByText(NEXT_PERIOD_LABEL, { exact: true })).toBeVisible()
+  // وأغسطس صار «آخر شهر أُغلق» — المطابقة التامة تلتقطه وحده الآن، فعنوان
+  // المصاريف صار يحمل اسم سبتمبر.
+  await expect(panelAfter.getByText('أغسطس 2026', { exact: true })).toBeVisible()
 
   // ── الحالة السالبة: إعادة إغلاق نفس الشهر مرفوضة ────────────────────────
   // (القاعدة ١٨) الترحيل المزدوج يضاعف رصيد كل عضو، فلا يكفي أن ينجح المسار
   // السعيد — يجب أن يُرصد رفض التكرار فعلياً. الشهر المفتوح صار سبتمبر، فزرّ
   // الإغلاق يحمل اسمه الآن؛ ما نتحقق منه هو أن أغسطس لم يعد قابلاً للإغلاق.
-  await expect(panel.getByRole('button', { name: /إغلاق أغسطس 2026/ })).toHaveCount(0)
-  await expect(panel.getByRole('button', { name: new RegExp(`إغلاق ${NEXT_PERIOD_LABEL}`) })).toBeVisible()
+  await expect(panelAfter.getByRole('button', { name: /إغلاق أغسطس 2026/ })).toHaveCount(0)
+  await expect(panelAfter.getByRole('button', { name: new RegExp(`إغلاق ${NEXT_PERIOD_LABEL}`) })).toBeVisible()
+  await closeMonthPanel(page)
 
   // ── مُصفّي الدورة في التقارير: يعتمد على ما كتبه closeMonth الحقيقي فعلاً ──
   // لا معاينة عميلية — القيم هنا من الخادم (نفس الاختبار السابق)، فتحقّقها هنا
   // يُثبت أن boundaryRolloverAmount/periodOpeningBalance تقرآن مصروف الترحيل
   // الحقيقي الذي كتبه closeMonth بصيغته الفعلية، لا افتراضاً محلياً عنه.
-  await page.getByRole('button', { name: 'التقارير' }).click()
+  await openFromMoreMenu(page, 'التقارير')
   // ⚠️ نطاق كل ما يلي #root لا الصفحة كلها: #print-root (بوابة الطباعة
   // المخفيّة بصرياً فقط عبر CSS) يحمل نسخة مطابقة من كل نص، فيقع strict-mode
   // violation بلا هذا التضييق.
@@ -179,7 +200,7 @@ test('ملف المسافر في رحلة طويلة يفتح نافذة الخ�
   // الحذف يبقى على البطاقة نفسها). منى برصيد صفر (لم تنفق شيئاً)، فزرّها
   // يحمل نصّ «إخراج من الرحلة» لا «تسوية وخروج من الرحلة».
   await openTripAsAdmin(page, CREDS)
-  await expect(page.locator('#long-term-section')).toBeVisible()
+  await expect(page.locator('#travelers-section')).toBeVisible()
 
   await travelerCard(page, MONA.name).getByText(MONA.name, { exact: true }).click()
   await expect(page.getByRole('heading', { name: MONA.name, exact: true })).toBeVisible()
@@ -197,7 +218,7 @@ test('ملف المسافر في رحلة طويلة يفتح نافذة الخ�
 
 test('خروج منتدَب: يُمنع برصيد غير مسوّى، ويمرّ عبر «تسوية وخروج»', async ({ page }) => {
   await openTripAsAdmin(page, CREDS)
-  await expect(page.locator('#long-term-section')).toBeVisible()
+  await expect(page.locator('#travelers-section')).toBeVisible()
 
   await travelerCard(page, KHALED.name).getByText(KHALED.name, { exact: true }).click()
   await expect(page.getByRole('heading', { name: KHALED.name, exact: true })).toBeVisible()

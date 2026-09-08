@@ -76,3 +76,21 @@ export function ChartsSectionSkeleton() {
     </div>
   )
 }
+
+// 🆕 هيكل قسم «الأرصدة» (SettlementsPanel) — بطاقتا تسوية بنفس أبعاد الحقيقيتين
+// (سطر أسماء + زرّ «تحديد كمُحوَّل»)، فلا تقفز الشاشة عند وصول البيانات.
+export function SettlementsPanelSkeleton() {
+  return (
+    <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+      {Array.from({ length: 2 }, (_, i) => (
+        <div key={i} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className={`${pulse} h-8 w-32 rounded-full`} />
+            <div className={`${pulse} h-7 w-20 rounded-xl`} />
+          </div>
+          <div className={`${pulse} h-8 w-full rounded-xl`} />
+        </div>
+      ))}
+    </div>
+  )
+}

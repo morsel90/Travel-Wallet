@@ -1,6 +1,7 @@
 import { PieChart, Loader2 } from '../icons'
 import { useHeaderCollapse } from '../hooks/useHeaderCollapse'
 import AccountMenu from './AccountMenu'
+import MoreMenu, { type MoreMenuActions } from './MoreMenu'
 
 export interface HeaderStats {
   totalDeposited: number
@@ -60,6 +61,12 @@ interface HeaderProps {
   onShowProfile: () => void
   onAdminSignIn: () => void
   onSignOut: () => void
+  /**
+   * 🆕 أفعال زرّ «المزيد» (⋯) — كل ما ليس من الأقسام الثلاثة الرئيسية
+   * (المصاريف/الأرصدة/المسافرون). تُمرَّر ككتلة واحدة لأنها تُستهلك ككتلة
+   * واحدة في MoreMenu، وكل بند فيها اختياريّته هي حارس صلاحيته.
+   */
+  more: MoreMenuActions
 }
 
 // 🆕 الشعار + نقطة "غير متصل" — بلا أي شارة تعديل: الشعار نفسه (ووسم الرحلة
@@ -95,6 +102,7 @@ const Header = ({
   onShowProfile,
   onAdminSignIn,
   onSignOut,
+  more,
 }: HeaderProps) => {
   const isCollapsed = useHeaderCollapse()
 
@@ -217,16 +225,22 @@ const Header = ({
           )}
         </div>
 
-        <AccountMenu
-          displayName={displayName}
-          email={email}
-          isAdmin={isAdmin}
-          isOrganizer={isOrganizer}
-          onShowMyTrips={onShowMyTrips}
-          onShowProfile={onShowProfile}
-          onAdminSignIn={onAdminSignIn}
-          onSignOut={onSignOut}
-        />
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* 🆕 «المزيد» قبل قائمة الحساب: بنوده تخصّ الرحلة المفتوحة (تقارير،
+              إحصائيات، مسار، إدارة) بينما AccountMenu يخصّ الحساب نفسه — الأقرب
+              للمحتوى أولاً في اتجاه القراءة. */}
+          <MoreMenu {...more} />
+          <AccountMenu
+            displayName={displayName}
+            email={email}
+            isAdmin={isAdmin}
+            isOrganizer={isOrganizer}
+            onShowMyTrips={onShowMyTrips}
+            onShowProfile={onShowProfile}
+            onAdminSignIn={onAdminSignIn}
+            onSignOut={onSignOut}
+          />
+        </div>
       </div>
     </header>
   )

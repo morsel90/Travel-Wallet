@@ -27,6 +27,13 @@ const baseProps = {
   onShowProfile: noop,
   onAdminSignIn: noop,
   onSignOut: noop,
+  // 🆕 زرّ «المزيد» (⋯) — الأفعال الثلاثة غير الاختيارية وحدها؛ البنود
+  // المشروطة بالصلاحية تُمرَّر في اختبارها الخاص أدناه.
+  more: {
+    onOpenReports: noop,
+    onOpenCharts: noop,
+    onOpenItinerary: noop,
+  },
 }
 
 describe('Header — عنوان الرحلة', () => {

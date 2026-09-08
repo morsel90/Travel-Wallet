@@ -85,7 +85,14 @@ export function useDialogA11y(
       document.removeEventListener('keydown', onKeyDown)
       // ⚠️ الفحص لازم: قد يكون العنصر أُزيل من الشجرة بينما كانت النافذة مفتوحة
       // (حُذف مسافر مثلاً)، فاستدعاء focus() على عنصر يتيم يرمي في بعض المتصفحات.
-      if (previouslyFocused?.isConnected) previouslyFocused.focus()
+      //
+      // ⚠️ 🆕 preventScroll: إعادة التركيز واجبٌ وصولي (يعود المستخدم إلى حيث
+      // كان في ترتيب التنقّل)، أما تحريك الصفحة فليس جزءاً منه — والمتصفح
+      // يفعله افتراضياً. رُصد الأثر فعلياً: زرّ فتح نموذج المصروف يقع في شريط
+      // الإدخال الثابت أسفل الشاشة، فإعادة التركيز إليه بعد الحفظ كانت تجرّ
+      // الصفحة إلى الأسفل وتُلغي تمريرها إلى سجلّ المصاريف (الذي صار أول
+      // أقسام الشاشة) — فيُسجَّل المصروف ولا يراه صاحبه.
+      if (previouslyFocused?.isConnected) previouslyFocused.focus({ preventScroll: true })
     }
   }, [containerRef, onClose])
 }

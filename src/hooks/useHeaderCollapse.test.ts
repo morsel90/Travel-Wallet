@@ -64,4 +64,57 @@ describe('useHeaderCollapse', () => {
     unmount()
     expect(() => scrollTo(500)).not.toThrow()
   })
+
+  // ─── حارس القاع ─────────────────────────────────────────────────────────────
+  // 🆕 حلقة تغذية راجعة حقيقية رُصدت أثناء معاينة إعادة تصميم الشاشة الرئيسية:
+  // الهيدر `sticky` أي داخل تدفّق الصفحة، فتقلّصه يُنقص ارتفاع المستند نحو ٣٠
+  // بكسل. وحين يكون المستخدم ملتصقاً بالقاع تماماً يقلّل المتصفح scrollY بنفس
+  // المقدار، فيصل ذلك كتمرير «لأعلى» يتجاوز العتبة → يتمدّد الهيدر → يزيد
+  // الارتفاع → … بلا نهاية. قِيس على 390×844: تبدّل بين 68px و98px خمساً
+  // وثلاثين مرة في ثانيتين، حتى إن Playwright رفض النقر على زرّ «المزيد» في
+  // الهيدر بحجّة «element is not stable».
+  //
+  // ⚠️ الاختبارات أعلاه لا تلتقط هذا: jsdom يترك scrollHeight صفراً فلا يُفعَّل
+  // الحارس فيها أصلاً (maxScrollY سالب) — ولهذا بقيت خضراء قبل الإصلاح وبعده.
+  // الاختباران التاليان يضبطان الهندسة صراحةً ليقعا في نطاق الحارس فعلاً.
+  const setGeometry = (scrollHeight: number, innerHeight = 800) => {
+    Object.defineProperty(document.documentElement, 'scrollHeight', {
+      value: scrollHeight, writable: true, configurable: true,
+    })
+    Object.defineProperty(window, 'innerHeight', {
+      value: innerHeight, writable: true, configurable: true,
+    })
+  }
+
+  it('لا يتبدّل عند الالتصاق بالقاع ولو انكمش المستند فتراجع scrollY', () => {
+    setGeometry(3000)
+    const { result } = renderHook(() => useHeaderCollapse())
+
+    scrollTo(1000)            // تمرير لأسفل عادي → تقلّص
+    expect(result.current).toBe(true)
+
+    scrollTo(2200)            // أقصى تمرير: 3000 − 800 = 2200 (ملتصق بالقاع)
+    expect(result.current).toBe(true)
+
+    // ⚠️ **جوهر الاختبار**: انكماش المستند بمقدار تقلّص الهيدر يجرّ scrollY إلى
+    // 2170 — «تمرير لأعلى» بـ30 بكسل يتجاوز العتبة. بلا الحارس تنقلب الحالة هنا،
+    // ومن هذه النقطة بالضبط تبدأ الحلقة.
+    setGeometry(2970)
+    scrollTo(2170)
+    expect(result.current).toBe(true)
+  })
+
+  it('الحارس لا يُجمّد الهيدر: تمرير حقيقي لأعلى بعيداً عن القاع يفتحه', () => {
+    setGeometry(3000)
+    const { result } = renderHook(() => useHeaderCollapse())
+
+    scrollTo(1000)            // تقلّص عادي أولاً
+    expect(result.current).toBe(true)
+
+    scrollTo(2200)            // ملتصق بالقاع — الحالة كما هي
+    expect(result.current).toBe(true)
+
+    scrollTo(1800)            // ابتعد عن القاع فعلاً → السلوك المعتاد يعود
+    expect(result.current).toBe(false)
+  })
 })

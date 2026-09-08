@@ -90,6 +90,19 @@ export async function openTripDetailFromHeader(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'تعديل الرحلة' }).click()
 }
 
+/**
+ * 🆕 يفتح ورقة «المزيد» (⋯) في الهيدر ويضغط بنداً فيها.
+ *
+ * الشاشة الرئيسية صارت ثلاثة أقسام فقط (المصاريف/الأرصدة/المسافرون)، وكل ما
+ * عداها — التقارير، الإحصائيات، مسار الرحلة، الشهر المحاسبي، سلة المهملات،
+ * إدارة الرحلة، النسخة الاحتياطية — خلف هذا الزرّ. انظر MoreMenu.tsx.
+ */
+export async function openFromMoreMenu(page: Page, itemName: string): Promise<void> {
+  await page.getByRole('button', { name: 'المزيد', exact: true }).click()
+  const sheet = page.getByRole('dialog', { name: 'المزيد' })
+  await sheet.getByRole('button', { name: itemName }).click()
+}
+
 /** يضيف مسافراً عبر النموذج — يتطلب وضع المسؤول مفعّلاً مسبقاً (openTripAsAdmin). */
 export async function addTraveler(page: Page, name: string, deposit?: string): Promise<void> {
   await page.getByRole('button', { name: /إضافة (أول مسافر|مسافر جديد)/ }).click()

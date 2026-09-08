@@ -1,57 +1,36 @@
+// 🆕 **لا تبويب «من يدفع لمن» هنا بعد الآن** — التسويات صارت قسماً رئيسياً
+// مستقلاً في الشاشة (SettlementsPanel.tsx). كانت أكثر ما يُفتح في هذا المكوّن
+// وأقلّ ما يُرى فيه: مدفونةً خلف تبويب داخل بطاقة أسفل الصفحة. ما بقي هنا
+// رسمان يُنظر إليهما مرة أو مرتين في الرحلة كلها، ولهذا انتقل المكوّن كاملاً
+// خلف زرّ «المزيد» (ChartsModal). انظر docs/DECISIONS.md.
 import { memo, useState } from 'react'
-import { PieChart, TrendingUp, ArrowRightLeft } from '../../icons'
-import { useTripData } from '../../store/tripStore'
-import { cn } from '../../utils/cn'
-import { haptic } from '../../utils/haptics'
-import type { Settlement, CategoryTotal, SpendingTrendPoint } from '../../types'
+import { PieChart, TrendingUp } from '../../icons'
+import type { CategoryTotal, SpendingTrendPoint } from '../../types'
 
 interface ChartsSectionProps {
-  settlements: Settlement[]
   categoryTotals: CategoryTotal[]
   spendingTrend: SpendingTrendPoint[]
 }
 
-type ChartTab = 'settlements' | 'categories' | 'trend'
+type ChartTab = 'categories' | 'trend'
 
 const TABS: Array<{ key: ChartTab; label: string; icon: typeof PieChart }> = [
-  { key: 'settlements', label: 'من يدفع لمن',        icon: ArrowRightLeft },
   { key: 'categories',  label: 'حسب الفئة',          icon: PieChart },
   { key: 'trend',       label: 'التطور الزمني',      icon: TrendingUp },
 ]
 
-function ChartsSection({ settlements, categoryTotals, spendingTrend }: ChartsSectionProps) {
-  const [activeTab, setActiveTab] = useState<ChartTab>('settlements')
-  const { travelers } = useTripData()
-
-  // المشاركون قد يُخزَّنون كمعرّف رقمي (الصيغة الحالية) أو كاسم مختصر نصي
-  // (مصاريف قديمة) — نفس اتحاد الأنواع المستخدم في Expense['participants'].
-  const getShortName = (idOrName: number | string) => {
-    const traveler = travelers.find(t => t.id === Number(idOrName) || t.name === String(idOrName))
-    return traveler ? traveler.shortName : String(idOrName)
-  }
+function ChartsSection({ categoryTotals, spendingTrend }: ChartsSectionProps) {
+  const [activeTab, setActiveTab] = useState<ChartTab>('categories')
 
   const totalCategoriesAmount = categoryTotals.reduce((sum, item) => sum + item.total, 0)
 
-  // 🆕 تتبّع محلي للتسويات التي "تم تحويلها" (لتظليلها بعد إتمام الدفع). هذه حالة
-  // واجهة بحتة غير محفوظة في Firestore — تُصفَّر عند إعادة تحميل الصفحة.
-  const [paidSettlements, setPaidSettlements] = useState<Set<string>>(new Set())
-  const settlementKey = (s: Settlement) => `${s.fromName}→${s.toName}`
-  const togglePaid = (key: string) => {
-    haptic.light()
-    setPaidSettlements(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key); else next.add(key)
-      return next
-    })
-  }
-
+  // ⚠️ بلا بطاقة بيضاء خارجية ولا عنوان: المكوّن يُعرض الآن داخل ChartsModal
+  // الذي يوفّر الاثنين (Modal بيضاء أصلاً — بطاقة داخل بطاقة كانت ستُنتج
+  // إطارَين متداخلَين، نفس الملاحظة الموثّقة في ExpensesPanel.tsx).
   return (
-    <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-b border-slate-100 bg-slate-50/50">
-        <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-          <PieChart className="w-5 h-5 text-teal-600" /> ملخص وإحصائيات الرحلة
-        </h2>
-        <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+    <div>
+      <div className="mb-4">
+        <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
           {TABS.map(tab => {
             const Icon = tab.icon
             const isActive = activeTab === tab.key
@@ -72,68 +51,9 @@ function ChartsSection({ settlements, categoryTotals, spendingTrend }: ChartsSec
         </div>
       </div>
 
-      <div className="p-5">
+      <div>
         
-        {/* 1. تبويب التسويات الذكية (من يدفع لمن) */}
-        {activeTab === 'settlements' && (
-          <div className="space-y-3">
-            {settlements.length === 0 ? (
-              <div className="text-center py-6 text-slate-400 font-medium text-sm">
-                🎉 جميع الحسابات مصفّاة والأرصدة متساوية تماماً!
-              </div>
-            ) : (
-              <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-2">
-                {settlements.map((s, idx) => {
-                  const key = settlementKey(s)
-                  const isPaid = paidSettlements.has(key)
-                  return (
-                    <div
-                      key={idx}
-                      className={cn(
-                        'flex flex-col gap-3 border rounded-2xl p-4 transition-all shadow-sm',
-                        isPaid ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-slate-200 hover:border-slate-300'
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          {/* ✅ استخدام s.fromName و s.toName لمطابقة نوع Settlement */}
-                          <span className="w-8 h-8 rounded-full bg-rose-50 text-rose-700 flex items-center justify-center font-bold text-sm shrink-0">
-                            {getShortName(s.fromName).charAt(0)}
-                          </span>
-                          <span className="font-bold text-slate-800 text-sm truncate">{getShortName(s.fromName)}</span>
-                          <span className="text-slate-300 font-medium px-1 shrink-0">←</span>
-                          <span className="w-8 h-8 rounded-full bg-teal-50 text-teal-700 flex items-center justify-center font-bold text-sm shrink-0">
-                            {getShortName(s.toName).charAt(0)}
-                          </span>
-                          <span className="font-bold text-slate-800 text-sm truncate">{getShortName(s.toName)}</span>
-                        </div>
-
-                        <span className="font-black text-rose-600 bg-rose-50 px-3 py-1 rounded-xl text-sm tracking-tight tabular-nums border border-rose-100 shrink-0">
-                          {s.amount.toFixed(2)} <span className="text-xs font-bold opacity-80">﷼</span>
-                        </span>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => togglePaid(key)}
-                        className={cn(
-                          'w-full py-2 rounded-xl text-xs font-bold transition-all active:scale-95',
-                          isPaid
-                            ? 'bg-slate-200 text-slate-500 hover:bg-slate-300'
-                            : 'bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-100'
-                        )}
-                      >
-                        {isPaid ? 'تم التحويل ✓ (تراجع)' : 'تحديد كمُحوَّل'}
-                      </button>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 2. تبويب التوزيع حسب الفئة */}
+        {/* 1. تبويب التوزيع حسب الفئة */}
         {activeTab === 'categories' && (
           <div className="space-y-4">
             <div className="flex justify-between items-center mb-2 px-1">
@@ -165,7 +85,7 @@ function ChartsSection({ settlements, categoryTotals, spendingTrend }: ChartsSec
           </div>
         )}
 
-        {/* 3. تبويب التطور الزمني */}
+        {/* 2. تبويب التطور الزمني */}
         {activeTab === 'trend' && (
           <div className="relative border-r-2 border-slate-100 ms-3 space-y-5 py-2">
             {spendingTrend.length === 0 ? (
@@ -193,7 +113,7 @@ function ChartsSection({ settlements, categoryTotals, spendingTrend }: ChartsSec
         )}
 
       </div>
-    </section>
+    </div>
   )
 }
 

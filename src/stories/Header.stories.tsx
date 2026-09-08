@@ -35,6 +35,7 @@ export const رحلة_قياسية: Story = {
     onAdminSignIn: noop,
     onSignOut: noop,
     onStatClick: noop,
+    more: { onOpenReports: noop, onOpenCharts: noop, onOpenItinerary: noop },
   },
 }
 

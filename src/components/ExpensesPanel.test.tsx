@@ -1,9 +1,9 @@
-// 🆕 اختبار موضع «سلة المهملات» بعد نقلها إلى نهاية سجلّ المصاريف.
+// 🆕 سجلّ المصاريف بعد أن صار القسم الأول في الشاشة الرئيسية.
 //
-// ⚠️ ما يُختبر هنا ليس الشكل بل **الحالة التي كان النقل سيكسرها**: مسؤول حذف
-// آخر مصروف في الرحلة، فحلّت شاشة «لا توجد مصاريف بعد» محلّ القائمة. لو كانت
-// السلة داخل القائمة (أو في تذييل Virtuoso) لاختفى طريق التراجع في اللحظة التي
-// وقع فيها الخطأ بالضبط. القاعدة ١٧.
+// ⚠️ الضمانة التي كان يحرسها هذا الملف (بقاء «سلة المهملات» ظاهرة حين يحذف
+// المسؤول آخر مصروف) انتقلت مع السلة نفسها إلى MoreMenu.test.tsx — موضعها
+// الجديد في الهيدر لا يعتمد على حالة القائمة إطلاقاً. ما يُختبر هنا الآن هو
+// الوجه الآخر من النقل: ألّا تعود نقطة دخول مكرَّرة إلى هذا القسم بصمت.
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -12,7 +12,6 @@ import { ExpensesPanel } from './ExpensesPanel'
 const noop = () => {}
 const baseProps = {
   isInitialLoading: false,
-  isAdmin: true,
   canAddExpenses: true,
   activeExpenses: [],
   filteredExpenses: [],
@@ -20,30 +19,28 @@ const baseProps = {
   setSearchQuery: noop,
   sortOrder: 'date_desc' as const,
   setSortOrder: noop,
-  onOpenReports: noop,
-  onOpenTrashBin: noop,
   onOpenExpenseForm: noop,
 }
 
-describe('ExpensesPanel — سلة المهملات', () => {
-  it('تبقى ظاهرة حين لا يوجد أي مصروف نشِط — حالة «حُذف آخر مصروف»', async () => {
-    const onOpenTrashBin = vi.fn()
-    render(<ExpensesPanel {...baseProps} onOpenTrashBin={onOpenTrashBin} />)
+describe('ExpensesPanel — نقاط الدخول', () => {
+  it('لا زرّ تقارير ولا سلة مهملات هنا — كلاهما خلف «المزيد» في الهيدر', () => {
+    render(<ExpensesPanel {...baseProps} />)
+    expect(screen.queryByRole('button', { name: 'التقارير' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'سلة المهملات' })).not.toBeInTheDocument()
+  })
 
-    // الشاشة الفارغة معروضة فعلاً — أي أننا في الحالة المقصودة لا في قائمة.
+  it('الحالة الفارغة تقود إلى تسجيل أول مصروف — الفعل الوحيد الباقي في القسم', async () => {
+    const onOpenExpenseForm = vi.fn()
+    render(<ExpensesPanel {...baseProps} onOpenExpenseForm={onOpenExpenseForm} />)
+
     expect(screen.getByText('لا توجد مصاريف بعد')).toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('button', { name: 'سلة المهملات' }))
-    expect(onOpenTrashBin).toHaveBeenCalledTimes(1)
+    await userEvent.click(screen.getByRole('button', { name: /سجّل أول مصروف/ }))
+    expect(onOpenExpenseForm).toHaveBeenCalledTimes(1)
   })
 
-  it('لا تظهر لغير المسؤول — الاستعادة محكومة بـ isAdmin في القواعد', () => {
-    render(<ExpensesPanel {...baseProps} isAdmin={false} />)
-    expect(screen.queryByRole('button', { name: 'سلة المهملات' })).not.toBeInTheDocument()
-  })
-
-  it('لا تظهر أثناء التحميل الأولي — لا سجلّ بعد ليُستعاد منه', () => {
-    render(<ExpensesPanel {...baseProps} isInitialLoading />)
-    expect(screen.queryByRole('button', { name: 'سلة المهملات' })).not.toBeInTheDocument()
+  it('رحلة مغلقة: لا زرّ تسجيل — النص يشرح أنها أُغلقت لا أنها لم تبدأ', () => {
+    render(<ExpensesPanel {...baseProps} canAddExpenses={false} />)
+    expect(screen.getByText('لا توجد مصاريف في هذه الرحلة')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /سجّل أول مصروف/ })).not.toBeInTheDocument()
   })
 })
