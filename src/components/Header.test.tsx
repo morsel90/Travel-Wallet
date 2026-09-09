@@ -65,19 +65,23 @@ describe('Header — السطر الموجز (رقم واحد بدل حبّات 
     mockIsCollapsed.mockReturnValue(false)
   })
 
-  const cycleStats = { periodLabel: 'أغسطس 2026', totalDeposited: 300, totalSpent: 50, totalRemaining: 700 }
+  const cycleStats = { totalDeposited: 300, totalSpent: 50, totalRemaining: 700 }
 
-  it('رحلة قياسية — سطر «المتبقي» وحده، بلا اسم دورة', () => {
+  it('رحلة قياسية — سطر «المتبقي» وحده', () => {
     render(<Header {...baseProps} />)
     expect(screen.getByText('المتبقي 600.00 ﷼')).toBeInTheDocument()
-    expect(screen.queryByText(/دورة/)).not.toBeInTheDocument()
   })
 
-  it('رحلة طويلة — اسم الدورة + متبقي الدورة (لا الإجمالي التراكمي)، بلا زرّ تبديل', () => {
+  // 🆕 الفرق بين الحالتين **كلمتان لا مفهوم**: لا كلمة «دورة» ولا اسم شهر ولا
+  // زرّ تبديل. اسم الشهر الصريح مكانه التقارير والطباعة حيث تُقرأ الأرقام بعد
+  // شهور وخارج التطبيق، لا الشاشة الرئيسية حيث «هذا الشهر» بديهي.
+  it('رحلة طويلة — «المتبقي هذا الشهر» بالرقم الشهري لا التراكمي', () => {
     render(<Header {...baseProps} cycleStats={cycleStats} />)
-    expect(screen.getByText('دورة أغسطس 2026 · المتبقي 700.00 ﷼')).toBeInTheDocument()
-    // 600.00 (stats.totalRemaining التراكمي) لا يظهر — الدورة فقط، ولا خيار لعرضه.
+    expect(screen.getByText('المتبقي هذا الشهر 700.00 ﷼')).toBeInTheDocument()
+    // 600.00 (stats.totalRemaining التراكمي) لا يظهر — الشهر فقط، ولا خيار لعرضه.
     expect(screen.queryByText(/600\.00/)).not.toBeInTheDocument()
+    // ولا اصطلاح داخلي مسرَّب: لا «دورة» ولا اسم شهر على الشاشة الرئيسية.
+    expect(screen.queryByText(/دورة|أغسطس/)).not.toBeInTheDocument()
   })
 
   it('الضغط على السطر يستدعي onStatClick بمفتاح remaining', async () => {

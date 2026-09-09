@@ -31,17 +31,20 @@ export default function MonthlyRolloverModal({
         <CalendarCheck className="w-4 h-4 text-indigo-600" />
         إغلاق {formatPeriodLabel(period)}
       </h3>
+      {/* 🆕 جملة واحدة تصف الأثر، لا فقرة تشرح الآلية. النسخة السابقة كانت
+          تُعلّم المستخدمَ ثلاثة اصطلاحات دفعة واحدة (تصفير، رصيد افتتاحي، رصيد
+          صافٍ) ليفهم عملية نتيجتها سطر واحد: يبدأ الشهر الجديد بما لديه الآن.
+          التفصيل — من له كم ومن عليه كم — يقرؤه في القائمة أسفلُه بالأرقام. */}
       <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-        سيُصفَّر رصيد كل عضو في {formatPeriodLabel(period)}، ويُفتح {formatPeriodLabel(opening)} بنفس
-        القيمة رصيداً افتتاحياً. <span className="font-bold text-slate-600">الرصيد الصافي لأي عضو لا يتغيّر</span> —
-        الإغلاق يرسم خطاً بين الشهرين لا أكثر.
+        يبدأ كل عضو {formatPeriodLabel(opening)} برصيده الحالي نفسه.{' '}
+        <span className="font-bold text-slate-600">لا شيء يضيع ولا شيء يُضاف.</span>
       </p>
 
       {affected === 0 ? (
         <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <p className="text-xs text-amber-800 leading-relaxed">
-            كل الأرصدة مسوّاة — لن تُكتب أي حركة مالية. الإغلاق سيمضي بالشهر إلى {formatPeriodLabel(opening)} فقط.
+            كل الأرصدة صفر — لن تُكتب أي حركة مالية. الإغلاق سيمضي بالشهر إلى {formatPeriodLabel(opening)} فقط.
           </p>
         </div>
       ) : (
@@ -50,12 +53,17 @@ export default function MonthlyRolloverModal({
             {movements.map(m => (
               <li key={m.travelerId} className="flex items-center justify-between gap-2 px-3 py-2">
                 <span className="font-bold text-slate-700 truncate">{m.travelerName}</span>
+                {/* 🆕 الرقم بإشارته بدل «يُرحَّل له / يُرحَّل عليه». الاتجاه
+                    نفسه محفوظ (الإشارة + اللون)، لكن بلا فعلٍ اصطلاحيٍّ يلزم
+                    المستخدمَ بمعرفة معنى «الترحيل» ليقرأ رقماً. */}
                 {m.direction === 'settled' ? (
-                  <span className="text-slate-400 shrink-0">مسوّى — بلا حركة</span>
+                  <span className="text-slate-400 shrink-0">يبدأ من الصفر</span>
                 ) : (
-                  <span className={`shrink-0 tabular-nums ${m.direction === 'credit' ? 'text-teal-700' : 'text-rose-600'}`}>
-                    {m.direction === 'credit' ? 'يُرحَّل له ' : 'يُرحَّل عليه '}
-                    {Math.abs(m.remaining).toFixed(2)} ريال
+                  <span
+                    dir="ltr"
+                    className={`shrink-0 tabular-nums font-bold ${m.direction === 'credit' ? 'text-teal-700' : 'text-rose-600'}`}
+                  >
+                    {m.direction === 'credit' ? '+' : '−'}{Math.abs(m.remaining).toFixed(2)}
                   </span>
                 )}
               </li>

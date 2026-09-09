@@ -1,4 +1,4 @@
-// 🆕 «الشهر المحاسبي» كنافذة لا كقسم في الشاشة الرئيسية.
+// 🆕 «هذا الشهر» كنافذة لا كقسم في الشاشة الرئيسية.
 //
 // LongTermPanel نفسه لم يتغيّر بحرف — يُغلَّف هنا فقط. سبب الغلاف بدل نقل
 // محتواه: القسم يبقى صالحاً كما هو لو أُعيد يوماً إلى الشاشة، والميزة كلها
@@ -14,12 +14,12 @@ interface LongTermModalProps extends ComponentProps<typeof LongTermPanel> {
 
 export default function LongTermModal({ onClose, ...panel }: LongTermModalProps) {
   return (
-    <Modal onClose={onClose} label="الشهر المحاسبي" maxWidth="max-w-lg">
+    <Modal onClose={onClose} label="هذا الشهر" maxWidth="max-w-lg">
       <div className="flex items-center justify-end mb-1">
         <button
           type="button"
           onClick={onClose}
-          aria-label="إغلاق الشهر المحاسبي"
+          aria-label="إغلاق نافذة هذا الشهر"
           className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl p-2 transition-colors"
         >
           <X className="w-5 h-5" />

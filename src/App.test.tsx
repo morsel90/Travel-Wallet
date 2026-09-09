@@ -63,7 +63,7 @@ const formState = {
 }
 
 // ⚠️ useModals **حقيقي** لا مُزيَّف: منذ أن انتقلت التقارير/الإحصائيات/المسار/
-// الشهر المحاسبي خلف زرّ «المزيد»، صار فتحُ أيٍّ منها يمرّ بحالة المودال
+// «هذا الشهر» خلف زرّ «المزيد»، صار فتحُ أيٍّ منها يمرّ بحالة المودال
 // فعلياً — ومودالٌ مُزيَّف بـ`modal: { type: 'none' }` ثابتة كان يعني أن كل
 // اختبار يضغط بنداً في القائمة لا يرى شيئاً يُفتح. يُستورد من ملفه مباشرة
 // (لا عبر ./hooks) كي لا يُسحب معه أي خطّاف يلمس Firebase.
@@ -274,8 +274,8 @@ describe('App — رحلة منتهية أو مؤرشفة', () => {
   })
 
   it.each([
-    ['completed', /^هذه الرحلة منتهية/],
-    ['archived', /^هذه الرحلة مؤرشفة/],
+    ['completed', /^انتهت الرحلة/],
+    ['archived', /^رحلة قديمة/],
   ])('رحلة %s: يرفض App عرض المدخلات ولو كان النموذج مفتوحاً، ويشرح السبب', async (status, notice) => {
     h.tripStatus = status
     h.isAddingExpense = true
@@ -378,22 +378,23 @@ describe('App — الرحلات طويلة المدى', () => {
 
     // ⚠️ الانتظار على السطر الموجز في الهيدر لا على عنوان قسم: العناوين تُرسم
     // قبل وصول البيانات، ففتح «المزيد» عندها كان سيمرّ بلا longTerm أصلاً —
-    // نجاح زائف. الصيغة بلا كلمة «دورة» هي بالضبط ما يُثبت أنها رحلة قياسية.
-    await screen.findByText(/^المتبقي /)
+    // نجاح زائف. والرقم مباشرةً بعد «المتبقي» هو ما يُثبت أنها رحلة قياسية:
+    // الطويلة تقحم «هذا الشهر» بينهما (انظر Header.tsx).
+    await screen.findByText(/^المتبقي \d/)
     openMoreMenu()
-    expect(screen.queryByText('الشهر المحاسبي')).not.toBeInTheDocument()
+    expect(screen.queryByText('هذا الشهر')).not.toBeInTheDocument()
     expect(screen.queryByText(/إغلاق أغسطس 2026/)).not.toBeInTheDocument()
   })
 
-  it('يظهر قسم الشهر المحاسبي في الرحلة طويلة المدى', async () => {
+  it('يظهر قسم «هذا الشهر» في الرحلة طويلة المدى', async () => {
     h.tripType = 'long_term'
     render(<App />)
 
-    // السطر الموجز بصيغة الدورة (`دورة أغسطس 2026 · ...`) دليلٌ على أن
-    // longTerm وصل فعلاً — وهو شرط ظهور البند في «المزيد».
-    await screen.findByText(/دورة أغسطس 2026/)
+    // السطر الموجز بصيغة الشهر (`المتبقي هذا الشهر …`) دليلٌ على أن longTerm
+    // وصل فعلاً — وهو شرط ظهور البند في «المزيد».
+    await screen.findByText(/^المتبقي هذا الشهر /)
     openMoreMenu()
-    fireEvent.click(screen.getByText('الشهر المحاسبي'))
+    fireEvent.click(screen.getByText('هذا الشهر'))
     expect(await screen.findByText('أغسطس 2026')).toBeInTheDocument()
     // لم يُغلق شهر بعد — تُعرض الحقيقة كما هي لا شهرٌ مُفترض.
     expect(screen.getByText('لم يُغلق شهر بعد')).toBeInTheDocument()
@@ -403,18 +404,18 @@ describe('App — الرحلات طويلة المدى', () => {
     h.tripType = 'long_term'
     h.isOrganizer = false
     const { unmount } = render(<App />)
-    await screen.findByText(/دورة أغسطس 2026/)
+    await screen.findByText(/^المتبقي هذا الشهر /)
     openMoreMenu()
-    fireEvent.click(screen.getByText('الشهر المحاسبي'))
+    fireEvent.click(screen.getByText('هذا الشهر'))
     await screen.findByText('لم يُغلق شهر بعد')
     expect(screen.queryByRole('button', { name: /إغلاق أغسطس 2026/ })).not.toBeInTheDocument()
     unmount()
 
     h.isOrganizer = true
     render(<App />)
-    await screen.findByText(/دورة أغسطس 2026/)
+    await screen.findByText(/^المتبقي هذا الشهر /)
     openMoreMenu()
-    fireEvent.click(screen.getByText('الشهر المحاسبي'))
+    fireEvent.click(screen.getByText('هذا الشهر'))
     expect(await screen.findByRole('button', { name: /إغلاق أغسطس 2026/ })).toBeInTheDocument()
   })
 })

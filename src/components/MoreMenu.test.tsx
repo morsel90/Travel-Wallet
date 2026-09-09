@@ -63,8 +63,8 @@ describe('MoreMenuSheet — ورقة «المزيد»', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it('«الشهر المحاسبي» لا يظهر إلا في رحلة طويلة المدى', () => {
+  it('«هذا الشهر» لا يظهر إلا في رحلة طويلة المدى', () => {
     render(<MoreMenuSheet {...memberActions} onOpenLongTerm={vi.fn()} />)
-    expect(screen.getByText('الشهر المحاسبي')).toBeInTheDocument()
+    expect(screen.getByText('هذا الشهر')).toBeInTheDocument()
   })
 })

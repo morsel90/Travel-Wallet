@@ -1,4 +1,4 @@
-// 🔴 الرحلات طويلة المدى: إغلاق الشهر وترحيل الأرصدة، وخروج منتدَب بحساب مسوّى.
+// 🔴 الرحلات طويلة المدى: إغلاق الشهر وانتقال الأرصدة، وخروج منتدَب بحساب مسوّى.
 //
 // ⚠️ **هذه الطبقة تحديداً هي الوحيدة التي تُثبت الميزة فعلاً**، وليس ذلك
 // شعاراً: منطق الترحيل كلّه يعيش في closeMonth (Cloud Function بصلاحيات Admin
@@ -84,25 +84,25 @@ test.beforeAll(async () => {
   })
 })
 
-// 🆕 «الشهر المحاسبي» لا يعرض أرصدة المسافرين بعد الآن (كانت تكرّر حرفياً ما
+// 🆕 «هذا الشهر» لا يعرض أرصدة المسافرين بعد الآن (كانت تكرّر حرفياً ما
 // تعرضه «أرصدة المسافرين» فوقها) — بطاقة كل مسافر في #travelers-section هي
 // مصدر رصيده المعروض. زرّ الخروج انتقل لاحقاً إلى ملف المسافر نفسه (أسفل
 // «الخلاصة والتسويات») — انظر longTermExit في TravelerProfileModal.tsx.
 const travelerCard = (page: import('@playwright/test').Page, name: string) =>
   page.locator('#travelers-section div.bg-white.rounded-xl').filter({ hasText: name })
 
-// 🆕 «الشهر المحاسبي» صار نافذة خلف زرّ «المزيد» (⋯) لا قسماً في تدفّق الشاشة
+// 🆕 «هذا الشهر» صار نافذة خلف زرّ «المزيد» (⋯) لا قسماً في تدفّق الشاشة
 // — الشاشة الرئيسية ثلاثة أقسام فقط الآن (المصاريف/الأرصدة/المسافرون). انظر
 // MoreMenu.tsx. الفتح يمرّ بالقائمة تماماً كما يمرّ به المستخدم.
 const openMonthPanel = async (page: import('@playwright/test').Page) => {
-  await openFromMoreMenu(page, 'الشهر المحاسبي')
+  await openFromMoreMenu(page, 'هذا الشهر')
   const panel = page.locator('#long-term-section')
   await expect(panel).toBeVisible()
   return panel
 }
 
 const closeMonthPanel = async (page: import('@playwright/test').Page) => {
-  await page.getByRole('button', { name: 'إغلاق الشهر المحاسبي' }).click()
+  await page.getByRole('button', { name: 'إغلاق نافذة هذا الشهر' }).click()
   await expect(page.locator('#long-term-section')).toHaveCount(0)
 }
 
@@ -124,8 +124,10 @@ test('إغلاق الشهر يُرحّل الأرصدة دون أن يغيّر �
   // نافذتان معاً، انظر LongTermModal.tsx).
   const panelAgain = await openMonthPanel(page)
   await panelAgain.getByRole('button', { name: /إغلاق أغسطس 2026/ }).click()
-  await expect(page.getByText(/يُرحَّل له 800\.00 ريال/)).toBeVisible()
-  await expect(page.getByText(/يُرحَّل عليه 200\.00 ريال/)).toBeVisible()
+  // 🆕 الرقم بإشارته بدل «يُرحَّل له/عليه» — الاتجاه محفوظ في الإشارة واللون،
+  // بلا إلزام المستخدم بمعرفة معنى «الترحيل» ليقرأ رقماً.
+  await expect(page.getByText('+800.00', { exact: true })).toBeVisible()
+  await expect(page.getByText('−200.00', { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'تأكيد الإغلاق' }).click()
   await expect(page.getByText(/تم إغلاق أغسطس 2026/)).toBeVisible({ timeout: 15_000 })
@@ -153,7 +155,7 @@ test('إغلاق الشهر يُرحّل الأرصدة دون أن يغيّر �
   await expect(panelAfter.getByRole('button', { name: new RegExp(`إغلاق ${NEXT_PERIOD_LABEL}`) })).toBeVisible()
   await closeMonthPanel(page)
 
-  // ── مُصفّي الدورة في التقارير: يعتمد على ما كتبه closeMonth الحقيقي فعلاً ──
+  // ── أرقام الشهر في التقارير: تعتمد على ما كتبه closeMonth الحقيقي فعلاً ──
   // لا معاينة عميلية — القيم هنا من الخادم (نفس الاختبار السابق)، فتحقّقها هنا
   // يُثبت أن boundaryRolloverAmount/periodOpeningBalance تقرآن مصروف الترحيل
   // الحقيقي الذي كتبه closeMonth بصيغته الفعلية، لا افتراضاً محلياً عنه.
@@ -165,28 +167,29 @@ test('إغلاق الشهر يُرحّل الأرصدة دون أن يغيّر �
   const reportsHeader = screen.getByRole('banner').filter({ hasText: 'تقارير الرحلة' })
   await expect(reportsHeader).toBeVisible()
 
-  // ⚠️ لا مُصفّي دورة يدوي بعد الآن (PeriodSelect حُذف) — تبويب «ملخص الفترة
-  // الحالية» هو الافتراضي دوماً في رحلة طويلة المدى، ويعرض دورة سبتمبر
-  // (الحالية، بلا نشاط حقيقي بعد) مباشرةً بلا أي اختيار.
+  // ⚠️ لا مُصفّي دورة يدوي بعد الآن (PeriodSelect حُذف) — التبويب الأول هو
+  // الافتراضي دوماً في رحلة طويلة المدى، **وعنوانه اسم الشهر الجاري نفسه**
+  // (سبتمبر، الحالي بلا نشاط حقيقي بعد) لا «ملخص الفترة الحالية»: التقرير
+  // يُصدَّر ويُطبع ويُقرأ بعد شهور، فـ«الحالية» تفقد معناها هناك.
   //
   // المودَع المُجمَّع هنا يعتمد على ما كتبه closeMonth الحقيقي فعلاً — لا
   // معاينة عميلية: سعد دائن 800 + خالد مدين 200 (سالب) + منى 0 = 600.00، نفس
   // الرصيدين المتحقَّق منهما أعلاه على بطاقتي المسافرين، مُجمَّعين هنا في التقرير.
-  await expect(screen.getByText('ملخص الفترة الحالية')).toBeVisible()
-  // ⚠️ `exact: true` ليس تفصيلاً: هيدر التطبيق (خلف التقرير في الصفحة) يحمل
-  // زرّاً بنصّ "دورة سبتمبر 2026 · المتبقي ..." أيضاً — المطابقة التامة لنصّ
-  // وصف التقرير الكامل («... · N مصروف · N مسافر · N يوم») تعزله وحده.
-  await expect(screen.getByText(`دورة ${NEXT_PERIOD_LABEL} · 0 مصروف · 3 مسافر · 0 يوم`, { exact: true })).toBeVisible()
+  await expect(screen.getByRole('button', { name: NEXT_PERIOD_LABEL, exact: true })).toBeVisible()
+  // ⚠️ `exact: true` ليس تفصيلاً: اسم الشهر يتكرّر في الصفحة (عنوان التبويب
+  // نفسه أعلاه مثلاً) — المطابقة التامة لنصّ وصف التقرير الكامل
+  // («... · N مصروف · N مسافر · N يوم») تعزله وحده.
+  await expect(screen.getByText(`${NEXT_PERIOD_LABEL} · 0 مصروف · 3 مسافر · 0 يوم`, { exact: true })).toBeVisible()
   const currentDepositCard = screen.locator('div.p-3.text-center', { hasText: 'المودَع' })
   await expect(currentDepositCard.getByText('600.00', { exact: true })).toBeVisible()
 
-  // ── تفصيل كامل الرحلة: دورة أغسطس (المُغلقة) في جدول «ملخص الفترة» —
+  // ── «كل الرحلة»: شهر أغسطس (المُغلق) في جدول «الأشهر» —
   // 400.00 ريال مصروف حقيقي فقط، لا أثر لمصروفَي الترحيل (تصفير رصيد سعد +
   // فتح عجز خالد) رغم وقوع أحدهما تاريخياً داخل أغسطس.
   // ⚠️ `.grid-cols-3` تحديداً لا `.grid` وحدها — الصفحة خلف التقرير (LongTermPanel،
   // تخطيط الأعمدة الرئيسي) تحمل عناصر `div.grid` أخرى كثيرة، وأحدها («آخر شهر
   // أُغلق: أغسطس») يحوي نفس النص أيضاً فيكسر التفرّد بلا هذا التضييق.
-  await screen.getByRole('button', { name: 'تفصيل كامل الرحلة' }).click()
+  await screen.getByRole('button', { name: 'كل الرحلة' }).click()
   const augustRow = screen.locator('div.grid-cols-3', { hasText: 'أغسطس 2026' })
   await expect(augustRow).toBeVisible()
   await expect(augustRow.getByText('400.00', { exact: true })).toBeVisible()

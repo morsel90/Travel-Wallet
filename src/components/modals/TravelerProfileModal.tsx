@@ -216,10 +216,11 @@ export default function TravelerProfileModal({
             <KpiCard Icon={Receipt} label="نصيبه" value={fmt(periodPocketAndShare.totalShare)} tone="rose" />
             <KpiCard Icon={Scale} label="المتبقي" value={fmt(balance.remaining)} tone={balance.remaining < 0 ? 'rose' : 'teal'} />
           </div>
-          {/* 🆕 توضيح أن الأرقام أعلاه للدورة الحالية تحديداً — بلا مُصفّي يدوي بعد
-              الآن، هذه القراءة الوحيدة لمعرفة الدورة المقصودة. */}
+          {/* 🆕 توضيح أن الأرقام أعلاه للشهر الجاري تحديداً — بلا مُصفّي يدوي بعد
+              الآن، هذه القراءة الوحيدة لمعرفة الشهر المقصود. اسم الشهر صريح هنا
+              لا «هذا الشهر»: النافذة تُطبَع وتُصوَّر وتُرسَل لصاحبها. */}
           {hasPeriods && (
-            <p className="text-[11px] text-slate-400 font-bold text-center -mt-3">أرقام دورة {formatPeriodLabel(currentPeriod!)}</p>
+            <p className="text-[11px] text-slate-400 font-bold text-center -mt-3">أرقام {formatPeriodLabel(currentPeriod!)}</p>
           )}
 
           {/* أزرار التبديل */}
@@ -457,7 +458,10 @@ function timelineRowView(row: TimelineRow): TimelineRowView {
     return {
       Icon: RefreshCw, dot: 'bg-indigo-500', amountColor: 'text-indigo-600',
       displayAmount: `−${fmt(row.amount)}`, title: row.description,
-      subtitle: `${formatRowDate(row.date)} · ${row.category}`, badge: 'ترحيل شهري',
+      // 🆕 «من الشهر السابق» لا «ترحيل شهري»: هذا السطر يقع في «كشف الحساب
+      // التفصيلي» — أي في *مكان التفصيل عند الطلب*، حيث يبحث المستخدم عن مصدر
+      // رقمٍ رآه مختصراً. فليقل له من أين جاء، لا اسم العملية التي أنتجته.
+      subtitle: `${formatRowDate(row.date)} · ${row.category}`, badge: 'من الشهر السابق',
     }
   }
   if (row.kind === 'paidByPocket') {

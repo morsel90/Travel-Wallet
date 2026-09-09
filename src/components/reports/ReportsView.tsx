@@ -45,13 +45,17 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
   // currentPeriod دوماً ولو بلا مصروف واحد بعد).
   const currentPeriod: PeriodKey | null = hasPeriods ? periods![periods!.length - 1] : null
 
-  // 🆕 تبويبان فقط دائماً — لا ثلاثة: «ملخص الفترة الحالية» و«تفصيل كامل
-  // الرحلة» في الرحلة الطويلة (periods)، أو «ملخص الرحلة» و«الملخص اليومي»
-  // في الرحلة القياسية كما كانا قبل ميزة الفترات تماماً.
+  // 🆕 تبويبان فقط دائماً — لا ثلاثة: «أغسطس 2026» و«كل الرحلة» في الرحلة
+  // الطويلة (periods)، أو «ملخص الرحلة» و«الملخص اليومي» في الرحلة القياسية
+  // كما كانا قبل ميزة الأشهر تماماً.
   const TABS: Array<{ key: ReportTab; label: string; Icon: typeof BarChart3 }> = hasPeriods
     ? [
-        { key: 'current', label: 'ملخص الفترة الحالية', Icon: CalendarRange },
-        { key: 'full',    label: 'تفصيل كامل الرحلة',   Icon: BarChart3 },
+        // 🆕 اسم الشهر نفسه عنواناً للتبويب، لا «ملخص الفترة الحالية»: التقرير
+        // يُقرأ ويُصدَّر ويُطبَع بعد شهور وخارج التطبيق، فـ«الحالية» تفقد معناها
+        // هناك بينما «أغسطس 2026» لا يفقده. (الشاشة الرئيسية عكسه — «هذا الشهر»
+        // كافٍ فيها، انظر Header.tsx.)
+        { key: 'current', label: formatPeriodLabel(currentPeriod!), Icon: CalendarRange },
+        { key: 'full',    label: 'كل الرحلة',            Icon: BarChart3 },
       ]
     : [
         { key: 'full',  label: 'ملخص الرحلة',    Icon: BarChart3 },
@@ -197,7 +201,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
             deposited={currentTotals.deposited}
             spent={currentTotals.spent}
             remaining={currentTotals.remaining}
-            caption={`دورة ${formatPeriodLabel(currentPeriod!)} · ${currentPeriodExpenses.length} مصروف · ${travelers.length} مسافر · ${currentTotals.days} يوم`}
+            caption={`${formatPeriodLabel(currentPeriod!)} · ${currentPeriodExpenses.length} مصروف · ${travelers.length} مسافر · ${currentTotals.days} يوم`}
             settlements={currentSettlements}
             categoryTotals={currentCategoryTotals}
           />
@@ -211,8 +215,10 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
                 `itinerary` ما زال يُمرَّر إلى PrintableTripReport أدناه عن قصد:
                 التقرير المصدَّر يُقرأ خارج التطبيق حيث لا وجود لتلك الصفحة، وجدول
                 المسار مرجع المسافر فيه. انظر docs/DECISIONS.md. */}
+            {/* depositLabel: نفس تسمية تبويب الشهر — التبويب المفتوح هو ما
+                يحدّد المدى، لا كلمة «إجمالي» ملصقةً على البطاقة. */}
             <SummaryBody
-              depositLabel="إجمالي المودَع"
+              depositLabel="المودَع"
               remainingLabel="المتبقي"
               deposited={fullTotals.deposited}
               spent={fullTotals.spent}
@@ -226,7 +232,9 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
               <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="flex items-center gap-2 px-4 sm:px-5 py-3 border-b border-slate-100 bg-slate-50/50">
                   <CalendarRange className="w-4 h-4 text-teal-600" />
-                  <h2 className="text-sm font-bold text-slate-800">ملخص الفترة</h2>
+                  {/* «الأشهر» لا «ملخص الفترة» — الجدول أدناه صفٌّ لكل شهر
+                      باسمه، فالعنوان يسمّي ما تراه العين لا اصطلاحاً فوقه. */}
+                  <h2 className="text-sm font-bold text-slate-800">الأشهر</h2>
                 </div>
                 <div className="divide-y divide-slate-100">
                   {/* 🆕 بلا عمود تراكمي عمداً — الرصيد يُرحَّل فعلياً بين الدورات
@@ -234,9 +242,9 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
                       أحد يتابعه في رحلة طويلة المدى؛ ما يهمّ هو صرف *هذه*
                       الدورة وحدها. انظر تعليق buildPeriodOverview في reportData.ts. */}
                   <div className="grid grid-cols-3 gap-2 px-4 py-2.5 bg-slate-50/50 text-[11px] font-bold text-slate-400">
-                    <span>الدورة</span>
+                    <span>الشهر</span>
                     <span className="text-center">العدد</span>
-                    <span className="text-left">إجمالي الدورة</span>
+                    <span className="text-left">الإجمالي</span>
                   </div>
                   {periodOverview.map(row => {
                     const isCurrent = row.period === currentPeriod

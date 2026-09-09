@@ -101,7 +101,7 @@ describe('TravelerProfileModal — الدورة الحالية للخلاصة، 
   it('عنصر تحكّم تصفية الدورة غائب تماماً — تسمية نصية فقط تُبيّن الدورة المقصودة', () => {
     renderModal({ expenses: twoPeriodExpenses, periods })
     expect(screen.queryByLabelText('تصفية الدورة')).not.toBeInTheDocument()
-    expect(screen.getByText('أرقام دورة أغسطس 2026')).toBeInTheDocument()
+    expect(screen.getByText('أرقام أغسطس 2026')).toBeInTheDocument()
   })
 
   // 🆕 استعلامات مقصورة على <main> عمداً: المودال يُخرج دائماً مستند طباعة

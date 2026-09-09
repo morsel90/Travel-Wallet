@@ -158,9 +158,10 @@ export default function App() {
                 totalSpent: ledger.totalSpent,
                 totalRemaining: ledger.totalRemaining,
               }}
-              // 🆕 أرقام الدورة الحالية — الرحلة الطويلة فقط (longTerm غير null).
+              // 🆕 أرقام الشهر الجاري — الرحلة الطويلة فقط (longTerm غير null).
+              // بلا periodLabel: السطر الموجز يقول «هذا الشهر» لا اسم الشهر،
+              // انظر HeaderCycleStats في Header.tsx.
               cycleStats={ledger.isInitialLoading || !longTerm ? null : {
-                periodLabel: longTerm.periodLabel,
                 totalDeposited: longTerm.cycleWallet,
                 totalSpent: longTerm.periodTotal,
                 totalRemaining: ledger.totalRemaining,
