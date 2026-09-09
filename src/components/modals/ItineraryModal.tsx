@@ -4,6 +4,10 @@
 // أعلى الشاشة الرئيسية) وقائمة المسار الكاملة (ItinerarySection، كانت داخل
 // التقارير فقط). المقطع القادم أولاً لأنه الجواب المطلوب في ٩٩٪ من الفتحات.
 //
+// 🆕 وهذه النافذة **المستدعي الوحيد** لـItinerarySection الآن: أُزيلت القائمة من
+// شاشة التقارير لأنها صارت تكراراً بصرياً. جدول المسار في تقرير الطباعة
+// (PrintableTripReport) شيء آخر يرسمه التقرير بنفسه، وباقٍ عن قصد.
+//
 // ⚠️ عرض فقط — التحرير يبقى في «إدارة الرحلة» (TripDetailPanel داخل
 // EditTripModal) ولا يُكرَّر هنا: نقطة دخول واحدة لكل فعل، نفس المبدأ الذي
 // أزال «تصدير Excel» و«إدارة الرحلات» من مواضعهما المكرَّرة.
@@ -44,7 +48,7 @@ export default function ItineraryModal({ itinerary, onEditItinerary, onClose }: 
         <div className="space-y-4">
           {/* يعيد null من تلقائه حين تكون كل المقاطع في الماضي — لا شرط هنا. */}
           <NextSegmentWidget itinerary={itinerary} />
-          <ItinerarySection itinerary={itinerary} bare />
+          <ItinerarySection itinerary={itinerary} />
         </div>
       ) : (
         <EmptyState
