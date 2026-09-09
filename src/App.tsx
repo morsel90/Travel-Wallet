@@ -27,6 +27,7 @@ import { StatusBanners }    from './components/StatusBanners'
 import { TravelersPanel }   from './components/TravelersPanel'
 import { SettlementsPanel } from './components/SettlementsPanel'
 import { ExpensesPanel }    from './components/ExpensesPanel'
+import { NextSegmentStrip } from './components/NextSegmentWidget'
 
 // 🆕 بروفايل المستخدم العام — يُعرض هنا لا داخل ModalManager عمداً: مستقل عن
 // أي رحلة، ويجب أن يبقى متاحاً حتى في شاشات لا يصل إليها ModalManager (مثل
@@ -218,11 +219,13 @@ export default function App() {
                 {/* ─── الشاشة الرئيسية: ثلاثة أقسام لا أكثر ───────────────────
                     المصاريف ← الأرصدة ← المسافرون، بهذا الترتيب تحديداً: ما
                     يُفعل يومياً، ثم ما يُسأل عنه عند التصفية، ثم من يخصّهم.
-                    ⚠️ كل ما عداها خلف زرّ «المزيد» (⋯) في الهيدر — المقطع
-                    القادم والمسار، والإحصائيات، والشهر المحاسبي، والتقارير،
-                    وسلة المهملات، وإدارة الرحلة والنسخة الاحتياطية. طلب صاحب
+                    ⚠️ كل ما عداها خلف اسم الرحلة في الهيدر («المزيد») — المسار
+                    كاملاً، والإحصائيات، والشهر المحاسبي، والتقارير، وسلة
+                    المهملات، وإدارة الرحلة والنسخة الاحتياطية. طلب صاحب
                     الحساب صراحةً تقليل الحمل البصري؛ انظر MoreMenu.tsx
-                    وdocs/DECISIONS.md. */}
+                    وdocs/DECISIONS.md.
+                    🆕 والاستثناء الوحيد شريطُ المقطع القادم أدناه: سطرٌ واحد
+                    لا قسم، ولا يفتح شيئاً إلا صفحة المسار نفسها. */}
 
                 {/* نموذج المصروف يختفي كلياً في الرحلة المنتهية/المؤرشفة.
                     🆕 Modal (Bottom Sheet) لا قسم داخل تدفّق الصفحة —
@@ -235,6 +238,15 @@ export default function App() {
                     {expense.isAddingExpense && <ExpenseForm />}
                   </AnimatePresence>
                 )}
+
+                {/* 🆕 الاستثناء الوحيد لقاعدة «ثلاثة أقسام لا أكثر»: سطر واحد
+                    لا قسم. غرضه المحدَّد — أن يُعرف كم تبقّى وإلى أين بنظرة
+                    عابرة أثناء تسجيل مصروف — لا يتحقّق خلف نقرتين في «المزيد»،
+                    وكل ما عداه (وقت الانطلاق، رقم الرحلة، PNR، بقية المقاطع)
+                    يبقى في صفحة المسار التي يفتحها الضغط عليه. طلب صاحب الحساب
+                    ذلك صراحةً بعد نقل المسار كاملاً خلف «المزيد» — انظر
+                    docs/DECISIONS.md وNextSegmentWidget.tsx. */}
+                <NextSegmentStrip itinerary={trip.itinerary} onOpen={modals.openItinerary} />
 
                 <ExpensesPanel
                   isInitialLoading={ledger.isInitialLoading}

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { ItinerarySection } from '../components/ItinerarySection'
-import { NextSegmentWidget } from '../components/NextSegmentWidget'
+import { NextSegmentWidget, NextSegmentStrip } from '../components/NextSegmentWidget'
 import * as fx from '../fixtures'
 import type { ItinerarySegment } from '../types'
 
@@ -81,6 +81,30 @@ export const المقطع_القادم_منتهٍ: Story = {
     <div className="text-xs text-slate-400">
       (الويدجت مخفي عمداً — كل المقاطع في الماضي)
       <NextSegmentWidget itinerary={fx.itinerary} />
+    </div>
+  ),
+}
+
+/**
+ * 🆕 الشريط الرفيع في الشاشة الرئيسية — سطر واحد فوق «المصاريف»: الوجهة
+ * والعدّ التنازلي فقط، والضغط عليه يفتح صفحة المسار. قارنه بالبطاقة أعلاه:
+ * لا وقت انطلاق ولا رقم حجز هنا عمداً — غرضه أن يُقرأ بنظرة أثناء المرور.
+ */
+export const شريط_المقطع_القادم: Story = {
+  args: { itinerary: fx.itinerary },
+  render: () => (
+    <div className="space-y-2 max-w-md">
+      <NextSegmentStrip itinerary={[segmentAt(5 * 24 * 60)]} onOpen={() => {}} />
+      <NextSegmentStrip itinerary={[segmentAt(24 * 60)]} onOpen={() => {}} />
+      <NextSegmentStrip itinerary={[segmentAt(25)]} onOpen={() => {}} />
+      {/* اسم وجهة طويل: يُقصّ بـtruncate ولا يدفع العدّ التنازلي خارج السطر. */}
+      <NextSegmentStrip
+        itinerary={[{
+          ...segmentAt(3 * 24 * 60),
+          arrival: { location: 'مطار وارسو شوبان الدولي — المبنى الرئيسي', time: '' },
+        }]}
+        onOpen={() => {}}
+      />
     </div>
   ),
 }
