@@ -4,6 +4,21 @@ import { NextSegmentWidget, NextSegmentStrip } from '../components/NextSegmentWi
 import * as fx from '../fixtures'
 import type { ItinerarySegment } from '../types'
 
+// 🆕 `ItinerarySection` قائمة عارية بلا بطاقة ولا عنوان — تلك مسؤولية
+// `ItineraryModal`، مستدعيه الوحيد. فيُغلَّف هنا بما يحاكي إطار النافذة حتى
+// تُقرأ قصصه كما تُرى فعلاً، والغلاف لا يمثّل شيئاً من المكوّن نفسه.
+//
+// ⚠️ الغلاف على القصص الثلاث الأولى وحدها لا على `meta`: قصص الشريط والبطاقة
+// في آخر الملف تعيش في تدفّق الشاشة الرئيسية على أرضيتها الرمادية، فبطاقة
+// بيضاء حولها تكذب على القارئ بدل أن تساعده.
+const inModal = [
+  (Story: () => JSX.Element) => (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 max-w-2xl">
+      <Story />
+    </div>
+  ),
+]
+
 const meta = {
   title: 'المسار/قائمة المسار',
   component: ItinerarySection,
@@ -13,16 +28,19 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const مسار_كامل: Story = {
+  decorators: inModal,
   args: { itinerary: fx.itinerary },
 }
 
 /** مقطع واحد بلا رقم حجز — تختفي شارة PNR بدل أن تُعرض فارغة. */
 export const بلا_رقم_حجز: Story = {
+  decorators: inModal,
   args: { itinerary: [fx.itinerary[2]] },
 }
 
 /** قائمة فارغة: المكوّن يُرجع null ولا يعرض إطاراً فارغاً. */
 export const فارغ: Story = {
+  decorators: inModal,
   args: { itinerary: fx.noItinerary },
 }
 
