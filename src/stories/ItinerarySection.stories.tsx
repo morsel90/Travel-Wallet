@@ -1,38 +1,46 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { ItinerarySection } from '../components/ItinerarySection'
-import { NextSegmentWidget } from '../components/NextSegmentWidget'
+import { NextSegmentWidget, NextSegmentStrip } from '../components/NextSegmentWidget'
 import * as fx from '../fixtures'
 import type { ItinerarySegment } from '../types'
 
-// 🆕 المكوّن قائمة عارية بلا بطاقة ولا عنوان — تلك مسؤولية `ItineraryModal`،
-// مستدعيه الوحيد. الغلاف هنا يحاكي إطار النافذة حتى تُقرأ القصص كما تُرى فعلاً،
-// ولا يمثّل شيئاً من المكوّن نفسه.
+// 🆕 `ItinerarySection` قائمة عارية بلا بطاقة ولا عنوان — تلك مسؤولية
+// `ItineraryModal`، مستدعيه الوحيد. فيُغلَّف هنا بما يحاكي إطار النافذة حتى
+// تُقرأ قصصه كما تُرى فعلاً، والغلاف لا يمثّل شيئاً من المكوّن نفسه.
+//
+// ⚠️ الغلاف على القصص الثلاث الأولى وحدها لا على `meta`: قصص الشريط والبطاقة
+// في آخر الملف تعيش في تدفّق الشاشة الرئيسية على أرضيتها الرمادية، فبطاقة
+// بيضاء حولها تكذب على القارئ بدل أن تساعده.
+const inModal = [
+  (Story: () => JSX.Element) => (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 max-w-2xl">
+      <Story />
+    </div>
+  ),
+]
+
 const meta = {
   title: 'المسار/قائمة المسار',
   component: ItinerarySection,
-  decorators: [
-    (Story: () => JSX.Element) => (
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 max-w-2xl">
-        <Story />
-      </div>
-    ),
-  ],
 } satisfies Meta<typeof ItinerarySection>
 
 export default meta
 type Story = StoryObj<typeof meta>
 
 export const مسار_كامل: Story = {
+  decorators: inModal,
   args: { itinerary: fx.itinerary },
 }
 
 /** مقطع واحد بلا رقم حجز — تختفي شارة PNR بدل أن تُعرض فارغة. */
 export const بلا_رقم_حجز: Story = {
+  decorators: inModal,
   args: { itinerary: [fx.itinerary[2]] },
 }
 
 /** قائمة فارغة: المكوّن يُرجع null ولا يعرض إطاراً فارغاً. */
 export const فارغ: Story = {
+  decorators: inModal,
   args: { itinerary: fx.noItinerary },
 }
 
@@ -91,6 +99,30 @@ export const المقطع_القادم_منتهٍ: Story = {
     <div className="text-xs text-slate-400">
       (الويدجت مخفي عمداً — كل المقاطع في الماضي)
       <NextSegmentWidget itinerary={fx.itinerary} />
+    </div>
+  ),
+}
+
+/**
+ * 🆕 الشريط الرفيع في الشاشة الرئيسية — سطر واحد فوق «المصاريف»: الوجهة
+ * والعدّ التنازلي فقط، والضغط عليه يفتح صفحة المسار. قارنه بالبطاقة أعلاه:
+ * لا وقت انطلاق ولا رقم حجز هنا عمداً — غرضه أن يُقرأ بنظرة أثناء المرور.
+ */
+export const شريط_المقطع_القادم: Story = {
+  args: { itinerary: fx.itinerary },
+  render: () => (
+    <div className="space-y-2 max-w-md">
+      <NextSegmentStrip itinerary={[segmentAt(5 * 24 * 60)]} onOpen={() => {}} />
+      <NextSegmentStrip itinerary={[segmentAt(24 * 60)]} onOpen={() => {}} />
+      <NextSegmentStrip itinerary={[segmentAt(25)]} onOpen={() => {}} />
+      {/* اسم وجهة طويل: يُقصّ بـtruncate ولا يدفع العدّ التنازلي خارج السطر. */}
+      <NextSegmentStrip
+        itinerary={[{
+          ...segmentAt(3 * 24 * 60),
+          arrival: { location: 'مطار وارسو شوبان الدولي — المبنى الرئيسي', time: '' },
+        }]}
+        onOpen={() => {}}
+      />
     </div>
   ),
 }
