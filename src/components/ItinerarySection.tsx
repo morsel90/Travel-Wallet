@@ -1,18 +1,12 @@
-import { Plane, Car, Train, Bus, Route } from '../icons'
+import { Plane, Car, Train, Bus } from '../icons'
 // التسميات مشتركة مع محرّر المسار في واجهة الإدارة — مصدر واحد يمنع اختلاف
 // التسمية بين شاشة العرض وشاشة التحرير.
 import { TRANSPORT_LABEL } from '../utils/itinerary'
 import type { ItinerarySegment } from '../types'
 
 interface ItinerarySectionProps {
-  // يُمرَّر من ReportsView (المصدر: useTripConfig في App) بدل الاشتراك المكرر داخل المكوّن
+  // يُمرَّر من ItineraryModal (المصدر: useTripConfig في App) بدل الاشتراك المكرر داخل المكوّن
   itinerary?: ItinerarySegment[]
-  /**
-   * 🆕 بلا بطاقة بيضاء خارجية ولا عنوان — للعرض داخل نافذة توفّر الاثنين
-   * أصلاً (ItineraryModal). الافتراضي false فلا يتغيّر شيء في ReportsView،
-   * حيث القائمة قسمٌ بين أقسام أخرى وتحتاج بطاقتها وعنوانها.
-   */
-  bare?: boolean
 }
 
 // تنسيق واضح للمسافر: تقويم ميلادي + أرقام لاتينية + وقت 24 ساعة (بلا ص/م المربكة)،
@@ -23,7 +17,16 @@ const fmtDate = (iso: string): string =>
 const fmtTime = (iso: string): string =>
   new Date(iso).toLocaleTimeString(DT_LOCALE, { hour: '2-digit', minute: '2-digit', hour12: false })
 
-export const ItinerarySection = ({ itinerary, bare = false }: ItinerarySectionProps) => {
+/**
+ * ⚠️ **قائمة عارية بلا بطاقة ولا عنوان** — لأن مستدعيها الوحيد `ItineraryModal`
+ * يوفّر الاثنين أصلاً. كانت هنا خاصية `bare` تخدم مستدعياً ثانياً: قائمة المسار
+ * داخل «التقارير» على الشاشة، وقد أُزيلت لأنها صارت تكراراً بصرياً بعد أن استقلّ
+ * المسار بصفحته. لا تُعِد الغلاف والعنوان لمستدعٍ جديد قبل التأكد أنه لا يوفّرهما.
+ *
+ * ولا يشمل ذلك تقرير الطباعة: `PrintableTripReport` يرسم جدول المسار بنفسه
+ * بأسلوب التقرير الموحّد، ولم يستعمل هذا المكوّن قط.
+ */
+export const ItinerarySection = ({ itinerary }: ItinerarySectionProps) => {
   if (!itinerary || itinerary.length === 0) return null
 
   const getTransportIcon = (mode: ItinerarySegment['mode']) => {
@@ -36,74 +39,64 @@ export const ItinerarySection = ({ itinerary, bare = false }: ItinerarySectionPr
     }
   }
 
-  const Wrapper = bare ? 'div' : 'section'
-
   return (
-    <Wrapper className={bare ? '' : 'bg-white rounded-2xl shadow-sm border border-slate-200 p-5'}>
-      {!bare && (
-        <h2 className="text-base font-bold text-slate-800 flex items-center gap-2 mb-4">
-          <Route className="w-5 h-5 text-teal-600" /> مسار الرحلة
-        </h2>
-      )}
-
-      <div className="space-y-3">
-        {itinerary.map(segment => {
-          // 🆕 identifier اختياري الآن (النموذج المبسّط لا يجمعه لمقطع جديد) —
-          // العنوان يسقط لـnotes ثم لاسم وسيلة التنقل بدل عرض سطر فارغ.
-          const title = segment.identifier || segment.notes || TRANSPORT_LABEL[segment.mode]
-          return (
-          <div key={segment.id} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span className="flex items-center justify-center w-9 h-9 rounded-full bg-teal-100 text-teal-700 shrink-0">
-                  {getTransportIcon(segment.mode)}
-                </span>
-                <div className="min-w-0">
-                  <p className="text-[11px] font-bold text-slate-400">{TRANSPORT_LABEL[segment.mode]}</p>
-                  <p className="text-sm font-bold text-slate-800 truncate">{title}</p>
-                </div>
-              </div>
-              {segment.reference && (
-                <span
-                  dir="ltr"
-                  className="text-[11px] font-bold text-slate-600 bg-white border border-slate-200 px-2 py-1 rounded-lg shrink-0 tabular-nums"
-                >
-                  {segment.mode === 'flight' ? 'PNR' : 'Ref'} {segment.reference}
-                </span>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-white rounded-lg border border-slate-100 p-2.5 min-w-0">
-                <p className="text-[11px] font-bold text-slate-400 mb-0.5">الانطلاق من</p>
-                <p className="text-sm font-bold text-slate-700 truncate">{segment.departure.location}</p>
-                <div className="mt-1.5 flex items-center justify-between gap-2">
-                  <span className="text-[11px] text-slate-500">{fmtDate(segment.departure.time)}</span>
-                  <span dir="ltr" className="text-sm font-black text-slate-800 tabular-nums">{fmtTime(segment.departure.time)}</span>
-                </div>
-              </div>
-              <div className="bg-white rounded-lg border border-slate-100 p-2.5 min-w-0">
-                <p className="text-[11px] font-bold text-slate-400 mb-0.5">الوصول إلى</p>
-                <p className="text-sm font-bold text-slate-700 truncate">{segment.arrival.location}</p>
-                {/* 🆕 وقت الوصول اختياري الآن — لا يُعرض سطر الوقت إطلاقاً حين يغيب بدل "Invalid Date". */}
-                {segment.arrival.time && (
-                  <div className="mt-1.5 flex items-center justify-between gap-2">
-                    <span className="text-[11px] text-slate-500">{fmtDate(segment.arrival.time)}</span>
-                    <span dir="ltr" className="text-sm font-black text-slate-800 tabular-nums">{fmtTime(segment.arrival.time)}</span>
-                  </div>
-                )}
+    <div className="space-y-3">
+      {itinerary.map(segment => {
+        // 🆕 identifier اختياري الآن (النموذج المبسّط لا يجمعه لمقطع جديد) —
+        // العنوان يسقط لـnotes ثم لاسم وسيلة التنقل بدل عرض سطر فارغ.
+        const title = segment.identifier || segment.notes || TRANSPORT_LABEL[segment.mode]
+        return (
+        <div key={segment.id} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="flex items-center justify-center w-9 h-9 rounded-full bg-teal-100 text-teal-700 shrink-0">
+                {getTransportIcon(segment.mode)}
+              </span>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold text-slate-400">{TRANSPORT_LABEL[segment.mode]}</p>
+                <p className="text-sm font-bold text-slate-800 truncate">{title}</p>
               </div>
             </div>
-
-            {segment.notes && segment.notes !== title && (
-              <p className="text-[11px] text-slate-500 mt-2.5 bg-white border border-slate-100 rounded-lg p-2 leading-relaxed">
-                {segment.notes}
-              </p>
+            {segment.reference && (
+              <span
+                dir="ltr"
+                className="text-[11px] font-bold text-slate-600 bg-white border border-slate-200 px-2 py-1 rounded-lg shrink-0 tabular-nums"
+              >
+                {segment.mode === 'flight' ? 'PNR' : 'Ref'} {segment.reference}
+              </span>
             )}
           </div>
-          )
-        })}
-      </div>
-    </Wrapper>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-white rounded-lg border border-slate-100 p-2.5 min-w-0">
+              <p className="text-[11px] font-bold text-slate-400 mb-0.5">الانطلاق من</p>
+              <p className="text-sm font-bold text-slate-700 truncate">{segment.departure.location}</p>
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-slate-500">{fmtDate(segment.departure.time)}</span>
+                <span dir="ltr" className="text-sm font-black text-slate-800 tabular-nums">{fmtTime(segment.departure.time)}</span>
+              </div>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-100 p-2.5 min-w-0">
+              <p className="text-[11px] font-bold text-slate-400 mb-0.5">الوصول إلى</p>
+              <p className="text-sm font-bold text-slate-700 truncate">{segment.arrival.location}</p>
+              {/* 🆕 وقت الوصول اختياري الآن — لا يُعرض سطر الوقت إطلاقاً حين يغيب بدل "Invalid Date". */}
+              {segment.arrival.time && (
+                <div className="mt-1.5 flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-slate-500">{fmtDate(segment.arrival.time)}</span>
+                  <span dir="ltr" className="text-sm font-black text-slate-800 tabular-nums">{fmtTime(segment.arrival.time)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {segment.notes && segment.notes !== title && (
+            <p className="text-[11px] text-slate-500 mt-2.5 bg-white border border-slate-100 rounded-lg p-2 leading-relaxed">
+              {segment.notes}
+            </p>
+          )}
+        </div>
+        )
+      })}
+    </div>
   )
 }

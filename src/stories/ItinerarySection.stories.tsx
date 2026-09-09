@@ -4,9 +4,19 @@ import { NextSegmentWidget } from '../components/NextSegmentWidget'
 import * as fx from '../fixtures'
 import type { ItinerarySegment } from '../types'
 
+// 🆕 المكوّن قائمة عارية بلا بطاقة ولا عنوان — تلك مسؤولية `ItineraryModal`،
+// مستدعيه الوحيد. الغلاف هنا يحاكي إطار النافذة حتى تُقرأ القصص كما تُرى فعلاً،
+// ولا يمثّل شيئاً من المكوّن نفسه.
 const meta = {
   title: 'المسار/قائمة المسار',
   component: ItinerarySection,
+  decorators: [
+    (Story: () => JSX.Element) => (
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 max-w-2xl">
+        <Story />
+      </div>
+    ),
+  ],
 } satisfies Meta<typeof ItinerarySection>
 
 export default meta

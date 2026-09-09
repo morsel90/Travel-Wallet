@@ -10,7 +10,6 @@ import { calculateSettlements, calculateCategoryTotals } from '../../utils/calcu
 import { filterCycleExpenses } from '../../utils/longTerm'
 import { formatPeriodLabel } from '../../utils/period'
 import { PrintableTripReport } from './PrintDocs'
-import { ItinerarySection } from '../ItinerarySection'
 
 interface ReportsViewProps {
   travelers: Traveler[]
@@ -206,10 +205,12 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
 
         {activeTab === 'full' && (
           <div className="space-y-5">
-            {/* قسم مسار الرحلة التفصيلي على الشاشة (بطاقة) — عنصر رحلة كاملة
-                لا دورة واحدة، فمكانه هنا في التفصيل الكامل تحديداً. */}
-            <ItinerarySection itinerary={itinerary} />
-
+            {/* 🆕 لا قائمة مسار على الشاشة هنا: لها مكان واحد الآن هو «مسار
+                الرحلة» خلف «المزيد». كانت تُعرض في الموضعين معاً فصارت تكراراً
+                بصرياً بعد أن استقلّ المسار بصفحته. **وهذا لا يشمل الطباعة** —
+                `itinerary` ما زال يُمرَّر إلى PrintableTripReport أدناه عن قصد:
+                التقرير المصدَّر يُقرأ خارج التطبيق حيث لا وجود لتلك الصفحة، وجدول
+                المسار مرجع المسافر فيه. انظر docs/DECISIONS.md. */}
             <SummaryBody
               depositLabel="إجمالي المودَع"
               remainingLabel="المتبقي"
