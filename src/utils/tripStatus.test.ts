@@ -49,15 +49,23 @@ describe('closedTripNotice', () => {
     expect(closedTripNotice('active')).toBeNull()
   })
 
-  it('رسالة المنتهية تذكر أن التقارير وتعديل الأرصدة تبقى متاحة', () => {
+  // 🆕 الرسالتان تصفان *الأثر* ولا تسمّيان الحالة: اسم الحالة اصطلاح داخلي
+  // (والفرق بينهما محفوظ كاملاً في الكود وفي firestore.rules)، أما المستخدم
+  // فيسأل «ماذا أستطيع الآن؟». التأكيد هنا على غياب الاسم بقدر حضور الأثر —
+  // وإلا عادت الكلمتان بأول تحرير نصّي بلا أن ينبّه أحد.
+  it('رسالة المنتهية تصف الأثر ولا تسمّي الحالة — وتذكر أن التقارير تبقى متاحة', () => {
     const notice = closedTripNotice('completed')
-    expect(notice).toContain('منتهية')
+    expect(notice).toContain('انتهت الرحلة')
     expect(notice).toContain('التقارير')
+    expect(notice).not.toContain('منتهية')
   })
 
-  it('رسالة المؤرشفة تذكر أنها للاطّلاع فقط', () => {
+  // «مؤرشفة» تحديداً مضلّلة: المألوف عنها (أرشيف واتساب) أنها مكان تخزين
+  // يُخرَج منه، لا إقفال نهائي للعمليات المالية.
+  it('رسالة المؤرشفة تصف الحدّ ولا تستعمل كلمة «مؤرشفة»', () => {
     const notice = closedTripNotice('archived')
-    expect(notice).toContain('مؤرشفة')
+    expect(notice).toContain('للاطّلاع')
+    expect(notice).not.toContain('مؤرشفة')
   })
 })
 

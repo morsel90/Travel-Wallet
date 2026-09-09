@@ -100,11 +100,16 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
                 )}
               </span>
               <span className="text-xs text-slate-500 truncate min-w-0 leading-tight">
-                {/* 🆕 محفظة الدورة (مرحّل + مصاريف هذه الدورة) لا إجمالي المودَع
-                    التراكمي — ذاك يتضخّم مع كل ترحيل شهري ويوهم بأن رصيداً
+                {/* 🆕 محفظة الشهر (رصيد أول الشهر + أي إيداع خلاله) لا إجمالي
+                    المودَع التراكمي — ذاك يتضخّم مع كل إغلاق شهر ويوهم بأن رصيداً
                     ضخماً «مودَع الآن» بينما هو مجموع كل الأشهر منذ بداية
-                    الرحلة. cycleWallet غائبة تماماً في الرحلة القياسية. */}
-                {cycleWallet !== undefined ? 'ميزانية الدورة' : 'المودع'}:{' '}
+                    الرحلة. cycleWallet غائبة تماماً في الرحلة القياسية.
+
+                    ⚠️ **التسمية واحدة في الحالتين عمداً.** كانت «ميزانية الدورة»
+                    مقابل «المودع»، فيرى المستخدم مصطلحاً لا يعرفه لمجرّد أن رحلته
+                    طويلة. ما اختلف هو *مصدر* الرقم لا معناه: كم لديه الآن. اختلافُ
+                    الحساب تعقيدٌ داخلي، وإظهاره في التسمية يجعله تعقيداً ظاهراً. */}
+                المودع:{' '}
                 <span className="font-bold text-slate-700">
                   {cycleWallet !== undefined ? cycleWallet.toFixed(2) : traveler.deposited} ﷼
                 </span>
@@ -116,8 +121,9 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
               بدل خلفية محايدة + حدّ، ونصّ داكن اللون فوقها. نمط Fintech حديث: يوصل
               حالة الرصيد بوضوح دون أن يقرأه المستخدم كرسالة خطأ/تنبيه حرج. */}
           <div className={`text-left shrink-0 px-3 py-1.5 rounded-2xl ${isNegative ? 'bg-rose-50' : 'bg-teal-50'}`}>
+            {/* اسم واحد في الحالتين — انظر تعليق «المودع» أعلاه. */}
             <div className="text-[10px] sm:text-xs font-medium text-slate-400 mb-0.5 text-center">
-              {cycleWallet !== undefined ? 'متبقي الدورة' : 'المتبقي'}
+              المتبقي
             </div>
             <div className={`text-sm sm:text-base font-black tabular-nums text-center leading-none ${isNegative ? 'text-rose-700' : 'text-teal-700'}`} dir="ltr">
               {traveler.remaining.toFixed(2)}

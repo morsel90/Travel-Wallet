@@ -207,9 +207,9 @@ export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses
           <table className="w-full border-collapse">
             <thead>
               <tr>
-                <th className={th}>الدورة</th>
+                <th className={th}>الشهر</th>
                 <th className={th}>العدد</th>
-                <th className={th}>إجمالي الدورة</th>
+                <th className={th}>الإجمالي</th>
               </tr>
             </thead>
             <tbody>

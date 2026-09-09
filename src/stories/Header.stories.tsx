@@ -37,12 +37,13 @@ export const رحلة_قياسية: Story = {
   },
 }
 
-/** 🆕 رحلة طويلة المدى: السطر الموجز يحمل اسم الدورة المفتوحة قبل «المتبقي» — دورة حالية فقط، بلا زرّ تبديل. */
+/** 🆕 رحلة طويلة المدى: السطر الموجز يقول «المتبقي هذا الشهر» — بلا اسم شهر
+ *  ولا كلمة «دورة» ولا زرّ تبديل. الفرق عن الرحلة القياسية كلمتان لا مفهوم. */
 export const رحلة_طويلة_المدى: Story = {
   args: {
     ...رحلة_قياسية.args,
     tripName: 'انتداب الرياض',
-    cycleStats: { periodLabel: 'سبتمبر 2026', totalDeposited: 300, totalSpent: 50, totalRemaining: 700 },
+    cycleStats: { totalDeposited: 300, totalSpent: 50, totalRemaining: 700 },
   },
 }
 

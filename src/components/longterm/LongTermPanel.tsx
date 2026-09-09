@@ -16,7 +16,7 @@
 // TravelerSection.tsx)، وbقي هنا فقط ما لا يُعرض في مكان آخر: إحصائيات الشهر
 // وزرّ إغلاقه.
 import type { PeriodKey } from '../../types'
-import { formatPeriodLabel } from '../../utils/period'
+import { formatPeriodLabel, nextPeriod } from '../../utils/period'
 import { CalendarClock, CalendarCheck, Loader2, Receipt } from '../../icons'
 
 interface LongTermPanelProps {
@@ -43,8 +43,11 @@ export function LongTermPanel({
   return (
     <section id="long-term-section" className="scroll-mt-24">
       <div className="flex justify-between items-center mb-4 px-1">
+        {/* 🆕 «هذا الشهر» لا «الشهر المحاسبي»: الثاني اصطلاح محاسبي يفرض على
+            المستخدم أن يسأل *ما* الشهر المحاسبي قبل أن يعرف ماذا يفعل هنا.
+            الاسم الصريح للشهر يبقى في الشارة إلى جانبه — معلومة لا مفهوم. */}
         <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-          <CalendarClock className="w-5 h-5 text-slate-500" /> الشهر المحاسبي
+          <CalendarClock className="w-5 h-5 text-slate-500" /> هذا الشهر
           <span className="text-[11px] font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">
             {formatPeriodLabel(period)}
           </span>
@@ -55,7 +58,7 @@ export function LongTermPanel({
         <div className="grid grid-cols-2 divide-x divide-x-reverse divide-slate-100 border-b border-slate-100">
           <div className="p-4">
             <p className="text-[11px] text-slate-500 mb-1 flex items-center gap-1">
-              <Receipt className="w-3 h-3" /> مصاريف {formatPeriodLabel(period)}
+              <Receipt className="w-3 h-3" /> مصاريف هذا الشهر
             </p>
             <p className="font-bold text-slate-800 tabular-nums">{money(periodTotal)}</p>
             <p className="text-[11px] text-slate-400 tabular-nums">{periodCount} عملية</p>
@@ -95,13 +98,15 @@ export function LongTermPanel({
               disabled={isBusy || !hasActiveTravelers}
               className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors"
             >
+              {/* 🆕 «وبدء سبتمبر 2026» لا «وترحيل الأرصدة»: كلمة «ترحيل» تسمية
+                  العملية داخلياً، والزرّ يجب أن يقول *ماذا سيحدث* لا اسم ما
+                  سيُنفَّذ. الشهران معاً يجعلان الأثر مقروءاً بلا شرح تحته. */}
               {isBusy
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> جارٍ الإغلاق…</>
-                : <><CalendarCheck className="w-4 h-4" /> إغلاق {formatPeriodLabel(period)} وترحيل الأرصدة</>}
+                : <><CalendarCheck className="w-4 h-4" /> إغلاق {formatPeriodLabel(period)} وبدء {formatPeriodLabel(nextPeriod(period))}</>}
             </button>
             <p className="text-[11px] text-slate-500 mt-2 text-center leading-relaxed">
-              يُصفَّر رصيد كل عضو في الشهر المنتهي، ويُفتح الشهر التالي بنفس القيمة رصيداً افتتاحياً.
-              الرصيد الصافي لا يتغيّر.
+              يبدأ كل عضو الشهر الجديد برصيده الحالي نفسه — لا شيء يضيع ولا شيء يُضاف.
             </p>
           </div>
         )}

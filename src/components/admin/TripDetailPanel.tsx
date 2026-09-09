@@ -485,7 +485,7 @@ export default function TripDetailPanel({
                 <CalendarClock className="w-4 h-4 text-teal-600" /> نوع الرحلة
               </h3>
               <p className="text-xs text-slate-500 mb-3">
-                طويلة المدى — تظهر لها واجهة "الشهر المحاسبي" لإغلاق الأرصدة شهرياً. رُقّيت
+                طويلة المدى — تظهر لها واجهة "هذا الشهر" لإغلاق الأرصدة شهرياً. رُقّيت
                 تلقائياً لتجاوز مسارها {LONG_TERM_THRESHOLD_DAYS} يوماً، أو حُوِّلت يدوياً سابقاً.
               </p>
 
