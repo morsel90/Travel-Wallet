@@ -5,6 +5,7 @@ import { setDoc, updateDoc, doc, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase'
 import { expensesCol, expenseDoc, rateLimitDoc } from '../firestore'
 import { EXPENSE_CATEGORIES } from '../constants'
+import { guessCategory, FALLBACK_CATEGORY } from '../utils/categoryGuess'
 import { toIds } from '../utils/participants'
 import { haptic } from '../utils/haptics'
 import { describeWriteError } from '../utils/writeErrors'
@@ -90,7 +91,10 @@ export function useExpenseActions({
     currency: 'SAR',
     exchangeRate: '1',
     participants: activeTravelers.map(t => t.id),
-    category: EXPENSE_CATEGORIES[0],
+    // 🆕 "أخرى" لا EXPENSE_CATEGORIES[0] ("مواصلات") — نموذج فارغ بلا وصف لا
+    // يعرف فئته، والادّعاء بأنها "مواصلات" تخمين بلا سند يُكتب كما هو إن لم
+    // يلحظه المستخدم. الفئة تُشتقّ من الوصف فور كتابته (guessCategory).
+    category: FALLBACK_CATEGORY,
     splitMode: 'equal',
     shares: {},
     paidBy: 'fund',
@@ -252,7 +256,11 @@ export function useExpenseActions({
       currency:       'SAR',
       exchangeRate:   1,
       participants:   activeTravelers.map(t => t.id),
-      category:       EXPENSE_CATEGORIES[EXPENSE_CATEGORIES.length - 1],
+      // 🆕 الفئة مشتقّة من الوصف لا ثابتة "أخرى" — المسار السريع لا يسأل عن
+      // الفئة (وهذا مقصود: خطوتان فقط)، لكن كتابة "أخرى" لكل مصروف كانت تُفرغ
+      // الرسم البياني لتوزيع الفئات من معناه. من كتب "عشاء" قال الفئة أصلاً؛
+      // وما لا يُعرف يبقى "أخرى" كما كان. انظر utils/categoryGuess.ts.
+      category:       guessCategory(trimmedDescription),
       createdAt:      now,
       createdByUid:   user?.uid,
     }
@@ -362,6 +370,10 @@ export function useExpenseActions({
       ...emptyExpenseForm(),
       description: initialDesc,
       amount: initialAmount,
+      // 🆕 الوصف يصل هنا جاهزاً من الشريط السريع بلا أن يمرّ بمعالِج الكتابة في
+      // ExpenseForm، فلو لم نشتقّ الفئة هنا لبقيت على افتراضي النموذج الفارغ رغم
+      // وجود وصف يقولها. انظر utils/categoryGuess.ts.
+      category: guessCategory(initialDesc),
     })
     setIsAddingExpense(true)
     // 🆕 نافذتا التأكيد بالحذف ونموذج المصروف مستقلّتان بنيوياً (كلتاهما Modal
