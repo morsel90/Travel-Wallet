@@ -11,6 +11,25 @@
 import { test, expect } from '@playwright/test'
 import { seedTrip } from './utils/seed'
 import { openTripAsAdmin, addTraveler } from './utils/flows'
+import type { Page } from '@playwright/test'
+
+// 🆕 **لا نافذة «سجل التعديلات» بعد اليوم.** كانت نافذة مستقلّة تفتحها أيقونة
+// في صفّ لا يظهر إلا بالتحويم على بطاقة المسافر — أي لا يظهر على الجوال
+// إطلاقاً — وكانت تعرض بيانات معروضة أصلاً في مكان آخر: `buildMergedTimeline`
+// يدمج نفس `depositLogs` في «كشف الحساب التفصيلي» داخل ملف المسافر، وبنفس
+// حارس الصلاحية. حُذفت النافذة، وبقي المصدر الواحد. المسار الآن هو مسار
+// المستخدم الفعلي: اضغط البطاقة، ثم افتح كشف الحساب.
+// ⚠️ يُعيد نطاق **الشاشة** (`#traveler-profile`) لا الصفحة كلها: النافذة
+// تُخرج معها دائماً مستند طباعة مخفياً (`#print-root`) يحمل نفس النصوص، فأي
+// استعلام غير مقيَّد يطابق النسختين ويسقط بـstrict mode violation.
+function openStatement(page: Page, travelerName: string) {
+  return (async () => {
+    await page.getByText(travelerName, { exact: true }).first().click()
+    await expect(page.getByRole('heading', { name: travelerName, exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'كشف الحساب التفصيلي' }).click()
+    return page.locator('#traveler-profile')
+  })()
+}
 
 const baseCreds = {
   memberEmail: 'member-initial-deposit@example.com', // غير مستخدَم في هذا السيناريو، لكن seedTrip يتطلبه
@@ -22,7 +41,7 @@ const baseCreds = {
 // ⚠️ رحلة منفصلة لكل اختبار لا رحلة مشتركة: seedTrip يهيّئ مستند الرحلة فقط،
 // ولا يمسح المسافرين المُضافين في اختبار سابق على نفس المعرّف. رحلة مشتركة
 // كانت ستُبقي "نورة السالم" (سطر تدقيقها الحقيقي) ظاهرة أمام الاختبار الثاني،
-// فيلتقط getByTitle('سجل التعديلات').first() سجلّها هي لا سجلّ "بدر الحارثي".
+// فيفتح الاختبار الثاني ملفّها هي لا ملفّ "بدر الحارثي".
 const creds1 = { ...baseCreds, tripId: 'e2e-initial-deposit-1' }
 const creds2 = { ...baseCreds, tripId: 'e2e-initial-deposit-2' }
 
@@ -42,10 +61,9 @@ test('الرصيد الابتدائي يظهر في سجلّ التعديلات 
   await expect(page.getByText('3000', { exact: false }).first()).toBeVisible()
 
   // وسطر التدقيق موجود: هذا ما لم يكن يوجد قبل C1
-  await page.getByTitle('سجل التعديلات').first().click()
-  await expect(page.getByText(/سجل تعديلات رصيد/)).toBeVisible()
-  await expect(page.getByText(/رصيد ابتدائي/)).toBeVisible()
-  await expect(page.getByText('3000', { exact: false }).first()).toBeVisible()
+  const profile = await openStatement(page, 'نورة السالم')
+  await expect(profile.getByText(/رصيد ابتدائي/)).toBeVisible()
+  await expect(profile.getByText('3000', { exact: false }).first()).toBeVisible()
 })
 
 test('مسافر بلا رصيد ابتدائي لا يُنشئ سطراً — لا حركة، لا سجلّ', async ({ page }) => {
@@ -53,9 +71,8 @@ test('مسافر بلا رصيد ابتدائي لا يُنشئ سطراً — �
 
   await addTraveler(page, 'بدر الحارثي')
 
-  await page.getByTitle('سجل التعديلات').first().click()
-  await expect(page.getByText(/سجل تعديلات رصيد/)).toBeVisible()
+  const profile = await openStatement(page, 'بدر الحارثي')
   // ⚠️ الغياب هو المقصود: السطر يوثّق حركة، ولا حركة هنا. سطرٌ بصفر كان
   // سيملأ السجلّ بضجيج يُخفي الحركات الحقيقية.
-  await expect(page.getByText(/رصيد ابتدائي/)).toHaveCount(0)
+  await expect(profile.getByText(/رصيد ابتدائي/)).toHaveCount(0)
 })

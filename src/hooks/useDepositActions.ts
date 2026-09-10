@@ -1,8 +1,20 @@
-// 🆕 منطق/عمليات الإيداع كاملاً — استُخرج من App.tsx (على غرار useExpenseActions).
-// يملك حقول نموذج الإيداع + الإرسال (تحديث الرصيد وتسجيل السجل) + إغلاق المودال مع تصفير النموذج.
-// المسافر المستهدَف (depositTraveler) يُمرَّر من App مشتقّاً من حالة المودال (useModals).
-import { useState, useCallback } from 'react'
-import type { Dispatch, SetStateAction, FormEvent } from 'react'
+// 🆕 عملية تعديل رصيد مسافر — **فعلٌ واحد بلا أي حالة نموذج**.
+//
+// ⚠️ كان هذا الـ hook يملك حقول النموذج نفسها (`depositAmount`/`depositMode`/
+// `depositReason`) ويمرّرها عبر سلسلة كاملة: useAppCoordinator → App.tsx →
+// ModalManager → DepositModal. صارت الحقول تعيش في `DepositEditor` داخل
+// TravelerProfileModal مباشرةً — حيث تُكتب وتُقرأ ولا مكان غيره — فسقطت
+// السلسلة كلها، وسقط معها مودال `DepositModal` وحالته في `useModals`.
+//
+// وهذا هو تطبيق القاعدة ١٦ حرفياً (الحقل يعيش حيث تقول تقلّبيته لا حيث يقول
+// موضوعه): قيمة تتغيّر مع كل ضغطة مفتاح كانت تعيش في منسّق التطبيق، وكل تغيّر
+// فيها يمرّ بـApp.tsx. الآن لا يعرف عنها أحد خارج الحقل الذي يكتبها.
+//
+// ما بقي هنا هو ما يلمس Firestore وحده: الدفعة الذرّية التي تُحدّث الرصيد
+// وتكتب سجلّ التدقيق معاً. مرجعها ثابت (useCallback بلا اعتماد متقلّب)، فمكانها
+// شريحة `actions` في المتجر لا `data` — انظر store/tripStore.ts.
+import { useCallback } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import type { User } from 'firebase/auth'
 import { doc, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase'
@@ -12,57 +24,47 @@ import { applyDepositMode } from '../utils/deposits'
 import type { Traveler, DepositMode, ToastMessage } from '../types'
 
 interface UseDepositActionsParams {
-  depositTraveler: Traveler | null
   user: User | null
   setTravelers: Dispatch<SetStateAction<Traveler[]>>
   showToast: (msg: ToastMessage, durationMs?: number) => void
   handleFirestoreError: (err: unknown, fallback: string) => void
-  closeModal: () => void
+}
+
+/** ما يُدخله المستخدم في `DepositEditor` — لا أكثر. */
+export interface DepositSubmission {
+  mode: DepositMode
+  /** المبلغ **مُحوَّلاً ومُتحقَّقاً منه في الحقل نفسه**؛ هنا يُرفض غير المنتهي فقط (القاعدة ١٩). */
+  amount: number
+  reason: string
 }
 
 export interface UseDepositActionsResult {
-  depositAmount: string
-  setDepositAmount: Dispatch<SetStateAction<string>>
-  depositMode: DepositMode
-  setDepositMode: Dispatch<SetStateAction<DepositMode>>
-  depositReason: string
-  setDepositReason: Dispatch<SetStateAction<string>>
-  handleAddDeposit: (e: FormEvent<HTMLFormElement>) => void
-  closeDeposit: () => void
+  /** يعيد true حين قُبل الإدخال وأُرسل — false حين رُفض المبلغ، فيبقى الحقل مفتوحاً. */
+  submitDeposit: (traveler: Traveler, submission: DepositSubmission) => boolean
 }
 
 export function useDepositActions({
-  depositTraveler, user, setTravelers, showToast, handleFirestoreError, closeModal,
+  user, setTravelers, showToast, handleFirestoreError,
 }: UseDepositActionsParams): UseDepositActionsResult {
-  const [depositAmount, setDepositAmount] = useState('')
-  const [depositMode,   setDepositMode]   = useState<DepositMode>('add')
-  const [depositReason, setDepositReason] = useState('')
+  const submitDeposit = useCallback((traveler: Traveler, { mode, amount, reason }: DepositSubmission) => {
+    // القاعدة ١٩: لا مال يدخل التطبيق بلا تحقّق. نفس الشروط السابقة حرفياً —
+    // «تحديد القيمة» يقبل الصفر (تصفير رصيد)، و«إضافة»/«خصم» لا تقبلان صفراً.
+    if (!Number.isFinite(amount)) return false
+    if (mode !== 'set' && amount <= 0) return false
+    if (mode === 'set' && amount < 0) return false
 
-  // إغلاق مودال الإيداع مع تصفير حقول نموذجه
-  const closeDeposit = useCallback(() => {
-    closeModal()
-    setDepositAmount(''); setDepositMode('add'); setDepositReason('')
-  }, [closeModal])
-
-  const handleAddDeposit = useCallback((e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (!depositTraveler) return
-    const amt = parseFloat(depositAmount)
-    if (isNaN(amt) || (depositMode !== 'set' && amt <= 0) || (depositMode === 'set' && amt < 0)) return
-
-    const previousDeposited = depositTraveler.deposited
-    const travelerId = depositTraveler.id
+    const previousDeposited = traveler.deposited
+    const travelerId = traveler.id
     // 🆕 المنطق نفسه، مستخرَجاً إلى دالة نقية يشاركها مسار الرصيد الابتدائي —
     // وهو ما يجعل «الرصيد = مجموع الحركات الموثّقة» قابلاً للاختبار أصلاً.
-    const newAmount = applyDepositMode(previousDeposited, depositMode, amt)
+    const newAmount = applyDepositMode(previousDeposited, mode, amount)
 
-    closeDeposit()
     showToast({ text: 'تم تحديث الرصيد', type: 'success' })
     haptic.success()
 
     if (!user) {
       setTravelers(prev => prev.map(t => t.id === travelerId ? { ...t, deposited: newAmount } : t))
-      return
+      return true
     }
 
     const batch = writeBatch(db)
@@ -72,19 +74,15 @@ export function useDepositActions({
       previousDeposited,
       newDeposited:   newAmount,
       delta:          newAmount - previousDeposited,
-      mode:           depositMode,
-      reason:         depositReason.trim() || null,
+      mode,
+      reason:         reason.trim() || null,
       changedByEmail: user.email ?? '',
       changedByUid:   user.uid,
       createdAt:      Date.now(),
     })
     batch.commit().catch(err => handleFirestoreError(err, 'تعذر تحديث الرصيد.'))
-  }, [depositAmount, depositMode, depositTraveler, depositReason, user, setTravelers, showToast, handleFirestoreError, closeDeposit])
+    return true
+  }, [user, setTravelers, showToast, handleFirestoreError])
 
-  return {
-    depositAmount, setDepositAmount,
-    depositMode, setDepositMode,
-    depositReason, setDepositReason,
-    handleAddDeposit, closeDeposit,
-  }
+  return { submitDeposit }
 }

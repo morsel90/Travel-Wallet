@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useModals } from './useModals'
-import type { Traveler } from '../types'
-
-const traveler: Traveler = { id: 1, name: 'أحمد الغامدي', shortName: 'أحمد', deposited: 1000, deletedAt: null }
 
 describe('useModals', () => {
   it('يبدأ مغلقاً (type: none)', () => {
@@ -23,22 +20,16 @@ describe('useModals', () => {
     expect(result.current.modal).toEqual({ type: 'trashBin' })
   })
 
-  it('يفتح مودال حذف مسافر مع بيانات المسافر', () => {
+  // ⚠️ **حارس نفي**: ثلاث حالات غادرت الاتحاد (تأكيد حذف المسافر، الإيداع،
+  // سجل الإيداعات) — انظر أسبابها في رأس useModals.ts. هذا التأكيد هو ما
+  // يمنع عودة أيّها بصمت كنافذة مستقلّة في أول تحرير لاحق: بلا اختبار على
+  // *غياب* شيء، لا يسقط شيء حين يعود.
+  it('لا يعرف فتّاحات للنوافذ الثلاث المحذوفة', () => {
     const { result } = renderHook(() => useModals())
-    act(() => result.current.openDeleteTraveler(traveler))
-    expect(result.current.modal).toEqual({ type: 'deleteTraveler', traveler })
-  })
-
-  it('يفتح مودال الإيداع مع بيانات المسافر', () => {
-    const { result } = renderHook(() => useModals())
-    act(() => result.current.openDeposit(traveler))
-    expect(result.current.modal).toEqual({ type: 'deposit', traveler })
-  })
-
-  it('يفتح مودال سجل الإيداعات مع بيانات المسافر', () => {
-    const { result } = renderHook(() => useModals())
-    act(() => result.current.openDepositHistory(traveler))
-    expect(result.current.modal).toEqual({ type: 'depositHistory', traveler })
+    const openers = Object.keys(result.current)
+    expect(openers).not.toContain('openDeleteTraveler')
+    expect(openers).not.toContain('openDeposit')
+    expect(openers).not.toContain('openDepositHistory')
   })
 
   it('يغلق أي مودال مفتوح عند closeModal', () => {

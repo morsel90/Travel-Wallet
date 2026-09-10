@@ -2,11 +2,13 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { X, Wallet, Receipt, Scale, Download, Printer, HandCoins, DoorOpen, RefreshCw, Landmark } from '../../icons'
-import type { Expense, Traveler, TravelerBalance, Settlement, PeriodKey } from '../../types'
+import { X, Wallet, Receipt, Scale, Download, Printer, HandCoins, DoorOpen, RefreshCw, Landmark, Pencil, Plus, Minus, Target, Check } from '../../icons'
+import type { Expense, Traveler, TravelerBalance, Settlement, PeriodKey, DepositMode } from '../../types'
 import type { TimelineRow } from '../../utils/reportData'
 import { buildTravelerReport, buildAccountStatement, buildMergedTimeline } from '../../utils/reportData'
 import { useDepositLogs } from '../../hooks/useDepositLogs'
+import { sanitizeAmountInput } from '../../utils/numerals'
+import type { DepositSubmission } from '../../hooks/useDepositActions'
 import { exportTravelerToExcel } from '../../utils/reports'
 import { settlementDirection, filterCycleExpenses, ROLLOVER_CATEGORY } from '../../utils/longTerm'
 import { formatPeriodLabel } from '../../utils/period'
@@ -41,6 +43,16 @@ interface TravelerProfileModalProps {
   /** 🆕 التبويب الذي تُفتح عليه النافذة — 'statement' لزر "كشف حسابي" على بطاقة المستخدم نفسه (TravelerSection.tsx)، افتراضياً 'summary' لبقية نقاط الفتح. */
   initialTab?: TabType
   longTermExit?: LongTermExitProps
+  /**
+   * 🆕 تعديل رصيد هذا المسافر — **غيابها هو التعطيل**، كـ`longTermExit` أعلاه
+   * و`onEditItinerary` في ItineraryModal: من لا يملك الصلاحية لا يستقبلها،
+   * فلا يُبنى المحرّر له أصلاً بدل شرط عرضٍ يسهل نسيانه.
+   *
+   * تُمرَّر من TravelerSection (المستدعي الوحيد) لأن هذه النافذة تستقبل كل
+   * شيء كخصائص ولا تقرأ المتجر بنفسها — عقدها منذ كُتبت، وهو ما يُبقيها
+   * قابلة للعرض في Storybook وللاختبار بلا مزوّد.
+   */
+  onSubmitDeposit?: (submission: DepositSubmission) => boolean
   /** 🆕 الفترات المتاحة (تصاعدياً) — الرحلة الطويلة فقط. آخر عنصر هو الدورة
    *  الحالية دوماً (انظر currentPeriod أدناه)، وهي الوحيدة المعروضة الآن —
    *  لا مُصفّي يدوي بعد الآن، انظر ReportsView.tsx لعرض دورة سابقة بعينها. */
@@ -50,6 +62,14 @@ interface TravelerProfileModalProps {
 type TabType = 'summary' | 'statement'
 
 const MODE_LABELS: Record<string, string> = { add: 'إضافة', subtract: 'خصم', set: 'تحديد قيمة' }
+
+/** أوضاع تعديل الرصيد الثلاثة — نفس مفاتيح MODE_LABELS أعلاه (تلك تسمّي الوضع
+ *  في السجلّ المعروض، وهذه تبنيه في الحقل). */
+const DEPOSIT_MODES: { key: DepositMode; label: string; Icon: typeof Plus }[] = [
+  { key: 'add',      label: 'إضافة',        Icon: Plus   },
+  { key: 'subtract', label: 'خصم',           Icon: Minus  },
+  { key: 'set',      label: 'تحديد القيمة', Icon: Target },
+]
 const fmt = (n: number): string => n.toFixed(2)
 
 export default function TravelerProfileModal({
@@ -64,6 +84,7 @@ export default function TravelerProfileModal({
   onClose,
   initialTab = 'summary',
   longTermExit,
+  onSubmitDeposit,
   periods,
 }: TravelerProfileModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab)
@@ -204,7 +225,11 @@ export default function TravelerProfileModal({
           </div>
         </header>
 
-        <main className="max-w-4xl mx-auto px-4 py-6 space-y-6 pb-24">
+        {/* 🆕 `id` مرساة للاختبارات لا للتنسيق: هذه النافذة تُخرج دائماً مستند
+            طباعة مخفياً (#print-root) يحمل نفس النصوص، فأي استعلام على مستوى
+            الصفحة يطابق النسختين معاً (strict mode violation في Playwright).
+            نفس نمط `#travelers-section` المستعمل في بقية الاختبارات. */}
+        <main id="traveler-profile" className="max-w-4xl mx-auto px-4 py-6 space-y-6 pb-24">
           {/* المؤشرات العلوية الأساسية — دورة حالية دوماً (لا مُصفّي يدوي).
               "المودَع" = المتاح له هذه الدورة (مُرحَّل + إيداعات أُضيفت خلالها)،
               و"المتبقي" = balance.remaining الحيّ — كلاهما بلا حاجة لمعرفة رصيد
@@ -242,6 +267,13 @@ export default function TravelerProfileModal({
           {/* محتوى: الخلاصة والتسويات */}
           {activeTab === 'summary' && (
             <div className="space-y-5">
+              {/* 🆕 تعديل الرصيد — **قسم مضمّن هنا لا نافذة فوق نافذة.** كان
+                  أيقونةَ قلم في صفّ يظهر بالتحويم على بطاقة المسافر (أي: لا
+                  يظهر على الجوال أصلاً) تفتح `DepositModal`. الآن يقع حيث
+                  يُقرأ الرقم الذي سيُغيَّر — تحت «المودَع» و«المتبقي» مباشرةً —
+                  ومطويّ افتراضياً فلا يزاحم القراءة، وهي الحالة الغالبة. */}
+              {onSubmitDeposit && <DepositEditor onSubmit={onSubmitDeposit} />}
+
               {(pays.length > 0 || receives.length > 0) && (
                 <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-2">
                   {pays.map((s, i) => (
@@ -395,6 +427,114 @@ export default function TravelerProfileModal({
         document.body
       )}
     </>
+  )
+}
+
+// ─── تعديل الرصيد — مضمّن داخل ملف المسافر ───────────────────────────────────
+// 🆕 ما كان `DepositModal`: نافذة مستقلّة، حالتها في `useModals`، وحقولها
+// (المبلغ/الوضع/السبب) تعيش في `useAppCoordinator` وتُمرَّر عبر App.tsx ثم
+// ModalManager. الآن **الحقول هنا وحدها** — حيث تُكتب وتُقرأ ولا مكان غيره
+// (القاعدة ١٦) — ولم يبقَ عابراً للتطبيق إلا `submitDeposit`، وهي دالة واحدة
+// ثابتة المرجع في شريحة `actions`.
+//
+// ⚠️ **مطويّ افتراضياً، ولا يُفتح إلا بطلب.** القراءة هي الحالة الغالبة لهذه
+// النافذة (كم لديه؟ ماذا صرف؟)، والتعديل استثناء نادر يفعله مسؤول. نموذج
+// مفتوح دائماً هنا كان سيضع ثلاثة حقول بين المستخدم وبين ما جاء يقرأه.
+function DepositEditor({ onSubmit }: { onSubmit: (submission: DepositSubmission) => boolean }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [mode, setMode] = useState<DepositMode>('add')
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+
+  const close = () => {
+    setIsOpen(false)
+    setMode('add'); setAmount(''); setReason('')
+  }
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    // القاعدة ١٩: `parseFloat('')` هو NaN، و`submitDeposit` ترفض غير المنتهي —
+    // فلا يُغلق النموذج إلا حين قُبل الإدخال فعلاً، ويبقى مفتوحاً بما كتبه.
+    if (onSubmit({ mode, amount: parseFloat(amount), reason })) close()
+  }
+
+  if (!isOpen) {
+    return (
+      <button
+        type="button"
+        onClick={() => setIsOpen(true)}
+        className="w-full flex items-center justify-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 font-bold text-xs py-2.5 rounded-2xl shadow-sm transition-colors"
+      >
+        <Pencil className="w-3.5 h-3.5" /> تعديل الرصيد
+      </button>
+    )
+  }
+
+  return (
+    <section className="bg-white rounded-2xl shadow-sm border border-teal-200 p-4">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h3 className="text-sm font-bold text-slate-800">تعديل الرصيد</h3>
+        <button
+          type="button"
+          onClick={close}
+          aria-label="إلغاء تعديل الرصيد"
+          className="text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg p-1.5 transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="flex gap-2 mb-3">
+        {DEPOSIT_MODES.map(({ key, label, Icon }) => (
+          <button
+            key={key} type="button" onClick={() => setMode(key)}
+            aria-pressed={mode === key}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-colors ${
+              mode === key ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-500'
+            }`}
+          >
+            <Icon className="w-3.5 h-3.5" /> {label}
+          </button>
+        ))}
+      </div>
+
+      <form onSubmit={handleSubmit}>
+        {/* text-base لا text-xs: أي حجم أصغر من 16px يجعل iOS Safari يُقرّب
+            الصفحة تلقائياً عند التركيز على الحقل. */}
+        <input
+          type="text"
+          inputMode="decimal"
+          required
+          autoFocus
+          value={amount}
+          onChange={(e) => setAmount(sanitizeAmountInput(e.target.value))}
+          placeholder={mode === 'set' ? 'الرصيد الجديد (ريال)' : 'المبلغ (ريال)'}
+          aria-label={mode === 'set' ? 'الرصيد الجديد' : 'مبلغ التعديل'}
+          className="w-full border border-slate-200 rounded-xl p-3 mb-2.5 text-base focus:ring-2 focus:ring-teal-500 outline-none font-bold"
+        />
+        <input
+          type="text"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="سبب التعديل (اختياري) — مثال: دفع نقدي إضافي"
+          aria-label="سبب التعديل"
+          maxLength={300}
+          className="w-full border border-slate-200 rounded-xl p-3 mb-3 text-base focus:ring-2 focus:ring-teal-500 outline-none"
+        />
+        <button
+          type="submit"
+          className="w-full flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white py-2.5 rounded-xl font-bold text-sm transition-colors"
+        >
+          <Check className="w-4 h-4" /> حفظ
+        </button>
+        {/* 🆕 يُقال هنا لا في نافذة منفصلة: التعديل مُوثَّق، وسجلّه معروض في
+            «كشف الحساب التفصيلي» على بُعد تبويب واحد — وهو ما كان يفتحه زرّ
+            «سجل التعديلات» المحذوف من البطاقة. */}
+        <p className="text-[11px] text-slate-400 mt-2 text-center leading-relaxed">
+          يُسجَّل كل تعديل باسمك وتاريخه في «كشف الحساب التفصيلي».
+        </p>
+      </form>
+    </section>
   )
 }
 

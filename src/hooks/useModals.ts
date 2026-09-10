@@ -3,18 +3,25 @@
 // بنوع اتحاد مميّز (discriminated union). هذا يضمن فتح مودال واحد فقط في كل مرة،
 // ويجمّع منطق الفتح/الإغلاق في مكان واحد، ويمهّد لاستخراج مكوّن ModalManager لاحقاً.
 //
-// ملاحظة نطاق: تأكيد حذف المصروف يبقى ضمن useExpenseActions، وتسجيل دخول المسؤول ضمن
-// useAdminAuth — لأن لكلٍّ منهما حالته الخاصة المرتبطة بنطاقه؛ هذا الـ hook يوحّد بقية المودالات.
+// ملاحظة نطاق: تسجيل دخول المسؤول يبقى ضمن useAdminAuth لأن حالته مرتبطة بنطاقه؛
+// هذا الـ hook يوحّد بقية المودالات.
+//
+// 🆕 **ثلاث حالات غادرت هذا الاتحاد ولم تُستبدل بأخرى** — وهي أهمّ ما يُقرأ هنا:
+//   • `deleteTraveler` — نافذة تأكيد حُذفت: الحذف ليّن ويحمل تنبيهُه «تراجع»،
+//     والمسافر يبقى في سلة المهملات. انظر `confirmDeleteTraveler`.
+//   • `deposit` — «تعديل الرصيد» صار قسماً مضمّناً (inline) داخل ملف المسافر،
+//     لا نافذةً تُفتح فوق نافذة. انظر `DepositEditor` في TravelerProfileModal.
+//   • `depositHistory` — سجلّ التعديلات كان **نسخة ثانية أضعف** من بيانات
+//     معروضة أصلاً: `buildMergedTimeline` يدمج نفس `depositLogs` في كشف الحساب
+//     التفصيلي داخل الملف نفسه، وبنفس حارس الصلاحية (isAdmin||isOrganizer||isSelf).
+// لا تُعِد أيّاً منها كنافذة مستقلّة قبل قراءة docs/DECISIONS.md.
 import { useReducer, useCallback } from 'react'
-import type { Traveler, TravelerBalance } from '../types'
+import type { TravelerBalance } from '../types'
 
 export type ModalState =
   | { type: 'none' }
   | { type: 'reports' }
   | { type: 'trashBin' }
-  | { type: 'deleteTraveler';  traveler: Traveler }
-  | { type: 'deposit';         traveler: Traveler }
-  | { type: 'depositHistory';  traveler: Traveler }
   | { type: 'userProfile' } // 🆕 بروفايل المستخدم العام (اسم/بنك) — مستقل عن أي رحلة
   /** 🆕 تعديل الرحلة المفتوحة حالياً — يُفتح من اسمها في الهيدر أو من «المزيد». */
   | { type: 'editTrip' }
@@ -33,9 +40,6 @@ export type ModalState =
 type ModalAction =
   | { type: 'OPEN_REPORTS' }
   | { type: 'OPEN_TRASH_BIN' }
-  | { type: 'OPEN_DELETE_TRAVELER';  traveler: Traveler }
-  | { type: 'OPEN_DEPOSIT';          traveler: Traveler }
-  | { type: 'OPEN_DEPOSIT_HISTORY';  traveler: Traveler }
   | { type: 'OPEN_USER_PROFILE' }
   | { type: 'OPEN_EDIT_TRIP' }
   | { type: 'OPEN_CHARTS' }
@@ -51,9 +55,6 @@ function modalReducer(state: ModalState, action: ModalAction): ModalState {
   switch (action.type) {
     case 'OPEN_REPORTS':         return { type: 'reports' }
     case 'OPEN_TRASH_BIN':       return { type: 'trashBin' }
-    case 'OPEN_DELETE_TRAVELER': return { type: 'deleteTraveler', traveler: action.traveler }
-    case 'OPEN_DEPOSIT':         return { type: 'deposit', traveler: action.traveler }
-    case 'OPEN_DEPOSIT_HISTORY': return { type: 'depositHistory', traveler: action.traveler }
     case 'OPEN_USER_PROFILE':    return { type: 'userProfile' }
     case 'OPEN_EDIT_TRIP':       return { type: 'editTrip' }
     case 'OPEN_CHARTS':          return { type: 'charts' }
@@ -71,9 +72,6 @@ export function useModals() {
 
   const openReports        = useCallback(() => dispatch({ type: 'OPEN_REPORTS' }), [])
   const openTrashBin       = useCallback(() => dispatch({ type: 'OPEN_TRASH_BIN' }), [])
-  const openDeleteTraveler = useCallback((traveler: Traveler) => dispatch({ type: 'OPEN_DELETE_TRAVELER', traveler }), [])
-  const openDeposit        = useCallback((traveler: Traveler) => dispatch({ type: 'OPEN_DEPOSIT', traveler }), [])
-  const openDepositHistory = useCallback((traveler: Traveler) => dispatch({ type: 'OPEN_DEPOSIT_HISTORY', traveler }), [])
   const openUserProfile    = useCallback(() => dispatch({ type: 'OPEN_USER_PROFILE' }), [])
   const openEditTrip       = useCallback(() => dispatch({ type: 'OPEN_EDIT_TRIP' }), [])
   const openCharts         = useCallback(() => dispatch({ type: 'OPEN_CHARTS' }), [])
@@ -87,9 +85,6 @@ export function useModals() {
     modal,
     openReports,
     openTrashBin,
-    openDeleteTraveler,
-    openDeposit,
-    openDepositHistory,
     openUserProfile,
     openEditTrip,
     openCharts,

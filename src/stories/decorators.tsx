@@ -40,9 +40,8 @@ export const baseUIActions: TripActionsSlice = {
   cancelExpenseForm: log('cancelExpenseForm'),
   startEditExpense: log('startEditExpense'),
   requestDeleteExpense: log('requestDeleteExpense'),
-  openDeposit: log('openDeposit'),
   requestDeleteTraveler: log('requestDeleteTraveler'),
-  openDepositHistory: log('openDepositHistory'),
+  submitDeposit: (traveler, submission) => { log('submitDeposit')(traveler, submission); return true },
 }
 
 export const baseUIForm: TripFormSlice = {

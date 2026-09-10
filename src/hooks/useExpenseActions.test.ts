@@ -229,13 +229,11 @@ describe('useExpenseActions — الإضافة المحلية (بلا مستخد
     expect(setExpenses).toHaveBeenCalledTimes(1)
   })
 
-  it('confirmDelete المحلي يحذف من القائمة ويعرض تنبيهاً بزر تراجع', () => {
+  // ⚠️ **لا نافذة تأكيد بين الطلب والحذف** — `requestDeleteExpense` تحذف فوراً.
+  // «تراجع» في التنبيه هو الحارس، ومعه سلة المهملات بلا مهلة. انظر useModals.ts.
+  it('requestDeleteExpense المحلي يحذف فوراً من القائمة ويعرض تنبيهاً بزر تراجع', () => {
     const { result, setExpenses, showToast } = setup()
     act(() => result.current.requestDeleteExpense('e1'))
-    expect(result.current.expenseToDelete).toBe('e1')
-
-    act(() => result.current.confirmDelete('e1'))
-    expect(result.current.expenseToDelete).toBeNull()
     const next = setExpenses.mock.calls[0][0]([{ id: 'e1' }, { id: 'e2' }])
     expect(next).toEqual([{ id: 'e2' }])
     expect(showToast).toHaveBeenCalledWith(
@@ -320,7 +318,7 @@ describe('useExpenseActions — الكتابة عبر Firestore (مستخدم م
 
   it('حذف عبر Firestore يستدعي updateDoc بـ deletedAt، والاستعادة تعيده لـ null', () => {
     const { result } = setup({ user: fakeUser })
-    act(() => result.current.confirmDelete('e1'))
+    act(() => result.current.requestDeleteExpense('e1'))
     expect(mocks.updateDoc).toHaveBeenCalledWith({ __expenseDoc: 'e1' }, { deletedAt: expect.any(Number) })
 
     act(() => result.current.handleRestoreExpense('e1'))
@@ -331,7 +329,7 @@ describe('useExpenseActions — الكتابة عبر Firestore (مستخدم م
     mocks.updateDoc.mockRejectedValueOnce(new Error('boom'))
     const { result, handleFirestoreError } = setup({ user: fakeUser })
     await act(async () => {
-      result.current.confirmDelete('e1')
+      result.current.requestDeleteExpense('e1')
       await flushMicrotasks()
     })
     expect(handleFirestoreError).toHaveBeenCalledWith(expect.any(Error), 'تعذر حذف المصروف.')

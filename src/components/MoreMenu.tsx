@@ -109,6 +109,11 @@ export default function MoreMenuSheet({ onClose, ...actions }: MoreMenuSheetProp
             key={key}
             type="button"
             onClick={run(action)}
+            // 🆕 الاسم الوصولي هو التسمية وحدها. بدونه يُحسَب من نصّ الزرّ
+            // كاملاً، فيسمع قارئ الشاشة «التقاريرملخص، كشوف، تصدير Excel
+            // وطباعة» جملةً واحدة ملتصقة — الوصف مفيد للعين، ومُربِك حين
+            // يُقرأ كاسمٍ للبند.
+            aria-label={label}
             className="w-full flex items-center gap-3 p-3 rounded-2xl text-right hover:bg-slate-50 active:bg-slate-100 transition-colors min-h-[44px]"
           >
             <span className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">

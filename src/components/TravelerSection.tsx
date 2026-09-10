@@ -1,8 +1,9 @@
 import { memo, useCallback, useState } from 'react'
-import { Pencil, Trash2, Plus, X, History, Loader2, UserCheck, FileText } from '../icons'
+import { Trash2, Plus, X, Loader2, UserCheck, FileText } from '../icons'
 import type { Traveler, TravelerBalance, PeriodKey } from '../types'
 import { useTripData, useTripActions } from '../store/tripStore'
 import { matchesTraveler } from '../utils/participants'
+import { sanitizeAmountInput } from '../utils/numerals'
 // تأكد من مسار استيراد النافذة الجديدة بناءً على مكان حفظك لها
 import TravelerProfileModal from './modals/TravelerProfileModal'
 
@@ -26,12 +27,6 @@ interface TravelerCardProps {
   periods?: PeriodKey[]
 }
 
-// دالة تحويل الأرقام الهندية/الشرقية (١٢٣) إلى أرقام غربية (123) لمنع خطأ الـ NaN
-const convertArabicNumerals = (str: string): string => {
-  const map: Record<string, string> = { '٠':'0','١':'1','٢':'2','٣':'3','٤':'4','٥':'5','٦':'6','٧':'7','٨':'8','٩':'9' };
-  return str.replace(/[٠-٩]/g, ch => map[ch] ?? ch);
-};
-
 // مكوّن عرض بطاقة رصيد المسافر المنفرد (Traveler Card)
 export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods }: TravelerCardProps) => {
   // جلبنا settlements و travelers لدعم بيانات النافذة المنبثقة
@@ -41,7 +36,11 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
   // مربوط لا يرى الشارة على أي بطاقة، وهذا صحيح ومقصود.
   const isMine = !!(traveler.uid && user && traveler.uid === user.uid)
   // إجراءات فقط — البطاقة تتكرر لكل مسافر، فلا يجوز أن تشترك في حالة نموذج متقلبة
-  const { openDeposit, requestDeleteTraveler, openDepositHistory } = useTripActions()
+  // ⚠️ **زرّان غادرا هذه البطاقة**: «تعديل الرصيد» و«سجل التعديلات». كلاهما
+  // كان يفتح نافذته الخاصة من صفّ أيقونات لا يظهر إلا بالتحويم — أي ثلاث
+  // وجهات مختلفة من بطاقة واحدة، ولا تحويم على الجوال أصلاً. صارا قسمين
+  // داخل ملف المسافر الذي تفتحه الضغطة على البطاقة نفسها. انظر useModals.ts.
+  const { requestDeleteTraveler, submitDeposit } = useTripActions()
   
   // حالة التحكم في ظهور نافذة ملف المسافر + التبويب الذي تُفتح عليه — الفتح
   // بالضغط على البطاقة نفسها يبدأ من "الخلاصة" كالمعتاد، أما زر "كشف حسابي"
@@ -157,23 +156,6 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
 
         {isAdmin && (
           <div className="flex items-center justify-end gap-1.5 mt-1 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 transition-opacity">
-            <button 
-              type="button"
-              onClick={(e) => { e.stopPropagation(); openDeposit(traveler); }} 
-              title="تعديل الرصيد" 
-              className="p-1.5 bg-slate-50 hover:bg-teal-50 text-slate-500 hover:text-teal-600 rounded-lg transition-colors"
-            >
-              <Pencil className="w-4 h-4" />
-            </button>
-            <button 
-              type="button"
-              onClick={(e) => { e.stopPropagation(); openDepositHistory(traveler); }} 
-              title="سجل التعديلات" 
-              className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded-lg transition-colors"
-            >
-              <History className="w-4 h-4" />
-            </button>
-            
             {hasExpenses ? (
               <span
                 onClick={(e) => e.stopPropagation()}
@@ -209,6 +191,8 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
           isSelf={isMine}
           initialTab={profileInitialTab}
           onClose={() => setShowProfile(false)}
+          // غيابها لغير المسؤول هو التعطيل — لا شرط عرض داخل النافذة نفسها.
+          onSubmitDeposit={isAdmin ? (submission => submitDeposit(baseTraveler, submission)) : undefined}
           longTermExit={longTermExit ? {
             canManage: longTermExit.canManage,
             isBusy: longTermExit.isBusy,
@@ -240,11 +224,7 @@ export const AddTravelerForm = memo(({
 }: AddTravelerFormProps) => {
   
   const handleDepositChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const converted = convertArabicNumerals(e.target.value);
-    const sanitized = converted.replace(/[^0-9.]/g, '');
-    const parts = sanitized.split('.');
-    const finalValue = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : sanitized;
-    setNewTravelerDeposit(finalValue);
+    setNewTravelerDeposit(sanitizeAmountInput(e.target.value))
   }, [setNewTravelerDeposit]);
 
   return (

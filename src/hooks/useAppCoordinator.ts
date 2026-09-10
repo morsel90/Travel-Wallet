@@ -206,7 +206,6 @@ export function useAppCoordinator() {
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
   const modals = useModals()
-  const depositTraveler = modals.modal.type === 'deposit' ? modals.modal.traveler : null
 
   const showToast = useCallback((msg: ToastMessage, durationMs = 2500) => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current)
@@ -280,10 +279,7 @@ export function useAppCoordinator() {
     describeExitBlockFor,
   })
 
-  const deposit = useDepositActions({
-    depositTraveler, user, setTravelers, showToast, handleFirestoreError,
-    closeModal: modals.closeModal,
-  })
+  const deposit = useDepositActions({ user, setTravelers, showToast, handleFirestoreError })
 
   // إدارة الرحلات — لا نشترك في قائمة الرحلات إلا للمسؤول: استعلام القائمة على
   // trips/ يرضيه isAdmin() وحده، فطلبه لعضو عادي مجرّد خطأ صلاحيات في الكونسول.
@@ -330,10 +326,21 @@ export function useAppCoordinator() {
    * الآن نفس البطاقة تفتح نافذة «تسوية وخروج» مباشرةً في الرحلة الطويلة. وحارس
    * describeExitBlockFor يبقى في useTravelerActions كشبكة أمان لأي مسار آخر
    * يستدعي confirmDeleteTraveler — لم يُحذف، لأنه لم يكن خطأً، بل ناقصاً.
+   *
+   * 🆕 وما كان في الرحلة القياسية نافذة تأكيد صار حذفاً مباشراً — الفرق الوحيد
+   * في هذه الدالة منذ كُتبت. التفرّع نفسه لم يتغيّر: القياسية تحذف، والطويلة
+   * تفتح نافذة الخروج (تسوية مالية حقيقية لا تراجع عنها بتنبيه).
    */
+  // ⚠️ مُفكَّكة لا `traveler.confirmDeleteTraveler`: مرجع هذه الدالة وحده ثابت
+  // (useCallback)، بينما كائن `traveler` يُعاد بناؤه كل رسمة — ووضعه في قائمة
+  // الاعتماديات كان يُفقد `requestDeleteTraveler` ثباتها، وهي تعيش في شريحة
+  // `actions` من المتجر حيث الثبات هو الشرط (القاعدة ١٦).
+  const { confirmDeleteTraveler } = traveler
   const requestDeleteTraveler = useCallback((target: Traveler) => {
     if (!isLongTermTrip) {
-      modals.openDeleteTraveler(target)
+      // 🆕 حذف مباشر بلا نافذة تأكيد: ليّن، ويحمل تنبيهُه «تراجع»، ويبقى في
+      // سلة المهملات بعدها — انظر confirmDeleteTraveler في useTravelerActions.
+      confirmDeleteTraveler(target.id)
       return
     }
     // الرصيد لازم لنافذة الخروج (تعرض المبلغ والاتجاه). غيابه من balances
@@ -341,7 +348,7 @@ export function useAppCoordinator() {
     // والخادم يبقى الحكم الفعلي على أي حال.
     const withBalance = balances.find(b => b.id === target.id)
     modals.openExitTraveler(withBalance ?? { ...target, totalExpenses: 0, remaining: 0 })
-  }, [isLongTermTrip, balances, modals])
+  }, [isLongTermTrip, balances, modals, confirmDeleteTraveler])
 
   const confirmExitTraveler = useCallback(async (travelerId: number, settle: boolean) => {
     const ok = await longTermActions.exitTraveler(TRIP_ID, travelerId, settle)
@@ -405,12 +412,15 @@ export function useAppCoordinator() {
       traveler.newTravelerName.trim() !== '' ||
       traveler.newTravelerDeposit !== ''
     )
-    const hasDepositData = depositTraveler !== null && deposit.depositAmount !== ''
-    return hasExpenseData || hasTravelerData || hasDepositData
+    // ⚠️ **لا فرع ثالث لتعديل الرصيد بعد الآن، وهذا ليس سهواً.** كان حقل
+    // المبلغ يعيش هنا فيُقاس، وصار يعيش في `DepositEditor` داخل ملف المسافر
+    // (انظر useDepositActions.ts). ومسوّدة نصف مكتوبة في حقل *مضمَّن* داخل
+    // نافذة مفتوحة لا تُقارَن بنموذج قائم بذاته: تحديث التطبيق سيُغلق النافذة
+    // بأكملها على أي حال. المقياس هنا لنماذج الإدخال المستقلّة وحدها.
+    return hasExpenseData || hasTravelerData
   }, [
     expense.isAddingExpense, expense.newExpense,
     traveler.isAddingTraveler, traveler.newTravelerName, traveler.newTravelerDeposit,
-    depositTraveler, deposit.depositAmount,
   ])
 
   // 🆕 سحب الأجزاء المؤجّلة بهدوء بعد أن يصبح التطبيق تفاعلياً، حتى تكون حاضرة
@@ -436,7 +446,7 @@ export function useAppCoordinator() {
       // 🆕 لا PIN بعد الآن — تسجيل الدخول (AuthGate) هو الحارس الوحيد المتبقي.
       signInError, isSigningIn, signInWithGoogle, signInWithEmail,
       // 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يُستهلك في canManageLongTerm
-      // أدناه، وفي AccountMenu لإخفاء زرّ «تسجيل الدخول كمسؤول» عمّن لا يحتاجه
+      // أدناه، وفي AccountMenu لإخفاء زرّ «الدخول بحساب آخر» عمّن لا يحتاجه
       // أصلاً (منظّم يدير رحلته من «رحلاتي» مباشرة، لا من حساب مسؤول منفصل).
       isOrganizer,
     },
@@ -540,8 +550,8 @@ export function useAppCoordinator() {
     filter,
     modals,
     /**
-     * 🆕 يُمرَّر إلى TripStoreProvider بدل modals.openDeleteTraveler مباشرةً —
-     * انظر تعليق الدالة أعلاه. الرحلة القياسية تصل لنفس المودال السابق حرفياً.
+     * 🆕 يُمرَّر إلى TripStoreProvider — انظر تعليق الدالة أعلاه. الرحلة
+     * القياسية تحذف مباشرةً (تنبيه «تراجع»)، والطويلة تفتح نافذة الخروج.
      */
     requestDeleteTraveler,
     expense,
