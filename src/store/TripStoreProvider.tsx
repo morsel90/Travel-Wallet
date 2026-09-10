@@ -3,7 +3,7 @@ import type { ReactNode, Dispatch, FormEvent, SetStateAction } from 'react'
 import type { User } from 'firebase/auth'
 import type { Traveler, Expense, ExpenseFormData, CurrencyMap } from '../types'
 import { createTripStore, TripStoreContext } from './tripStore'
-import type { TripStore } from './tripStore'
+import type { TripStore, TripActionsSlice } from './tripStore'
 
 // ─── مزوّد مخزن الرحلة (Zustand) ───────────────────────────────────────────────
 //
@@ -49,9 +49,8 @@ interface TripStoreProviderProps {
   cancelExpenseForm: () => void
   startEditExpense: (expense: Expense) => void
   requestDeleteExpense: (id: string) => void
-  openDeposit: (traveler: Traveler) => void
+  submitDeposit: TripActionsSlice['submitDeposit']
   requestDeleteTraveler: (traveler: Traveler) => void
-  openDepositHistory: (traveler: Traveler) => void
 
   // — form
   expenseForm: ExpenseFormData
@@ -68,7 +67,7 @@ interface TripStoreProviderProps {
 export function TripStoreProvider({
   travelers, expenses, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt,
   cancelExpenseForm, startEditExpense, requestDeleteExpense,
-  openDeposit, requestDeleteTraveler, openDepositHistory,
+  submitDeposit, requestDeleteTraveler,
   expenseForm, setExpenseForm, isExpenseFormOpen, isEditingExpense,
   submitExpense, toggleParticipant, toggleAllParticipants,
   children,
@@ -78,7 +77,7 @@ export function TripStoreProvider({
     data: { travelers, expenses, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt },
     actions: {
       cancelExpenseForm, startEditExpense, requestDeleteExpense,
-      openDeposit, requestDeleteTraveler, openDepositHistory,
+      submitDeposit, requestDeleteTraveler,
     },
     form: {
       expenseForm, setExpenseForm, isExpenseFormOpen, isEditingExpense,
@@ -100,10 +99,10 @@ export function TripStoreProvider({
     store.setState({
       actions: {
         cancelExpenseForm, startEditExpense, requestDeleteExpense,
-        openDeposit, requestDeleteTraveler, openDepositHistory,
+        submitDeposit, requestDeleteTraveler,
       },
     })
-  }, [store, cancelExpenseForm, startEditExpense, requestDeleteExpense, openDeposit, requestDeleteTraveler, openDepositHistory])
+  }, [store, cancelExpenseForm, startEditExpense, requestDeleteExpense, submitDeposit, requestDeleteTraveler])
 
   // وهذه تتغير مع كل حرف يُكتب في نموذج المصروف — وهذا صحيح ومقصود: مستهلكها
   // الوحيد ExpenseForm، وهو نسخة واحدة يجب أن تعكس ما يُكتب فيها فوراً.

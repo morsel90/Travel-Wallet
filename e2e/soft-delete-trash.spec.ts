@@ -29,8 +29,11 @@ test('حذف مصروف ثم التراجع الفوري يعيده، وحذفه
   // ── الحذف الأول + التراجع الفوري ─────────────────────────────────────────
   await card.hover()
   await card.getByRole('button', { name: 'حذف المصروف' }).click()
-  await expect(page.getByRole('heading', { name: 'تأكيد الحذف?' })).toBeVisible()
-  await page.getByRole('button', { name: 'نعم، احذف' }).click()
+  // ⚠️ **لا نافذة تأكيد بعد اليوم** — الحذف ليّن، و«تراجع» في التنبيه هو
+  // الحارس (ثم سلة المهملات بلا مهلة). الغياب مؤكَّد صراحةً لا مفترضاً:
+  // بلا هذا السطر، عودة النافذة لا تُسقط شيئاً — الخطوات التالية ستنتظرها
+  // وتفشل بمهلة غامضة بدل رسالة تقول ما تغيّر.
+  await expect(page.getByRole('button', { name: 'نعم، احذف' })).toHaveCount(0)
 
   await expect(page.getByText('تم نقل المصروف إلى سلة المهملات')).toBeVisible()
   await expect(expenseCard(page, 'تذاكر متحف')).not.toBeVisible()
@@ -45,7 +48,6 @@ test('حذف مصروف ثم التراجع الفوري يعيده، وحذفه
   const cardAgain = expenseCard(page, 'تذاكر متحف')
   await cardAgain.hover()
   await cardAgain.getByRole('button', { name: 'حذف المصروف' }).click()
-  await page.getByRole('button', { name: 'نعم، احذف' }).click()
   await expect(expenseCard(page, 'تذاكر متحف')).not.toBeVisible()
 
   await openFromMoreMenu(page, 'سلة المهملات')

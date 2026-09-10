@@ -1,18 +1,20 @@
 // 🆕 مُجمِّع عرض المودالات — استُخرج من App.tsx.
 // يستهلك حالة المودال الموحّدة (modal من useModals) ويعرض المودالات العامة
-// المرتبطة بالرحلة المفتوحة: التقارير، حذف مسافر، الإيداع، سجل الإيداع، سلة
-// المهملات، تعديل الرحلة. مكوّن عرضي بحت: كل البيانات والمعالجات تُمرَّر إليه
-// من App (حيث تعيش لأنها تلمس Firestore/الـ contexts).
+// المرتبطة بالرحلة المفتوحة: التقارير، سلة المهملات، تعديل الرحلة، الإحصائيات،
+// المسار، والرحلات طويلة المدى. مكوّن عرضي بحت: كل البيانات والمعالجات تُمرَّر
+// إليه من App (حيث تعيش لأنها تلمس Firestore/الـ contexts).
 //
-// خارج النطاق عمداً: تأكيد حذف المصروف (ضمن useExpenseActions) وتسجيل دخول
-// المسؤول (AuthFlow) — كلاهما يبقى في App لأنهما مملوكان لنطاقيهما ولا يمرّان
-// عبر useModals. 🆕 وبروفايل المستخدم العام أيضاً — يُعرض من App.tsx مباشرة لا
+// 🆕 **ثلاث نوافذ غادرت هذا الملف**: تأكيد حذف المسافر، تعديل الرصيد، وسجل
+// تعديلات الرصيد — انظر أسباب كلٍّ منها في رأس `hooks/useModals.ts`. ولم يعد
+// هنا أي `ConfirmModal`: كلا الحذفين (مصروف ومسافر) ليّن ويحمل «تراجع».
+//
+// خارج النطاق عمداً: تسجيل دخول المسؤول (AuthFlow) — يبقى في App لأنه مملوك
+// لنطاقه ولا يمرّ عبر useModals. 🆕 وبروفايل المستخدم العام أيضاً — يُعرض من App.tsx مباشرة لا
 // من هنا، لأنه مستقل عن أي رحلة ويجب أن يبقى متاحاً حتى في شاشات لا تصل إليها
 // هذه المكوّنة (مثل TripPicker لعضو بلا أي رحلة بعد — انظر App.tsx).
 import { lazy, Suspense } from 'react'
 import type { ComponentProps } from 'react'
 import { AnimatePresence } from 'framer-motion'
-import { ConfirmModal } from './Modal'
 import ModalFallback from './modals/ModalFallback'
 import type { ModalState } from '../hooks/useModals'
 
@@ -20,9 +22,7 @@ import type { ModalState } from '../hooks/useModals'
 // التحميل المسبق يجب أن يستورد *نفس* المُعرّف حرفياً وإلا سحب وحدة أخرى وبقي
 // الجزء الحقيقي بلا تحميل (انظر preloadAll في utils/preload.ts).
 const importReportsView         = () => import('./reports/ReportsView')
-const importDepositModal        = () => import('./modals/DepositModal')
 const importTrashBinModal       = () => import('./modals/TrashBinModal')
-const importDepositHistoryModal = () => import('./modals/DepositHistoryModal')
 // 🆕 تعديل الرحلة — يُفتح من اسمها في الهيدر، لا من «رحلاتي». تحمل TripDetailPanel
 // معها مباشرة (تكوين ما كانت TripAdminView.tsx تفعله، حُذفت)، فلا حاجة لجزء
 // كسول إضافي منفصل لها.
@@ -40,9 +40,7 @@ const importItineraryModal = () => import('./modals/ItineraryModal')
 const importLongTermModal  = () => import('./modals/LongTermModal')
 
 const ReportsView         = lazy(importReportsView)
-const DepositModal        = lazy(importDepositModal)
 const TrashBinModal       = lazy(importTrashBinModal)
-const DepositHistoryModal = lazy(importDepositHistoryModal)
 const EditTripModal       = lazy(importEditTripModal)
 const MonthlyRolloverModal = lazy(importMonthlyRolloverModal)
 const ExitTravelerModal    = lazy(importExitTravelerModal)
@@ -62,9 +60,7 @@ const LongTermModal        = lazy(importLongTermModal)
 // eslint-disable-next-line react-refresh/only-export-components
 export const modalImporters = [
   importReportsView,
-  importDepositModal,
   importTrashBinModal,
-  importDepositHistoryModal,
   importEditTripModal,
   importMonthlyRolloverModal,
   importExitTravelerModal,
@@ -76,15 +72,9 @@ export const modalImporters = [
 interface ModalManagerProps {
   modal: ModalState
   closeModal: () => void
-  // حذف مسافر (التأكيد)
-  confirmDeleteTraveler: (id: number) => void
   // التقارير — بيانات العرض فقط (onClose يُدار داخلياً)
   reports: Pick<ComponentProps<typeof ReportsView>,
     'travelers' | 'expenses' | 'balances' | 'settlements' | 'categoryTotals' | 'itinerary' | 'periods'>
-  // الإيداع — حقول النموذج + الإرسال (traveler/onClose يُدارَان داخلياً)
-  deposit: Pick<ComponentProps<typeof DepositModal>,
-    'amount' | 'setAmount' | 'mode' | 'setMode' | 'reason' | 'setReason' | 'onSubmit'>
-  closeDeposit: () => void
   // سلة المهملات
   trash: Pick<ComponentProps<typeof TrashBinModal>,
     'deletedExpenses' | 'deletedTravelers' | 'onRestoreExpense' | 'onRestoreTraveler'>
@@ -115,14 +105,11 @@ interface ModalManagerProps {
 }
 
 export default function ModalManager({
-  modal, closeModal, confirmDeleteTraveler, reports, deposit, closeDeposit, trash, editTrip,
+  modal, closeModal, reports, trash, editTrip,
   charts, itinerary, longTerm, longTermPanel,
 }: ModalManagerProps) {
-  // اشتقاق الحمولة من الحالة كثوابت محلية — يضمن حفظ التضييق (narrowing) داخل الإغلاقات
-  const deleteTarget    = modal.type === 'deleteTraveler'  ? modal.traveler : null
-  const depositTraveler = modal.type === 'deposit'         ? modal.traveler : null
-  const historyTraveler = modal.type === 'depositHistory'  ? modal.traveler : null
-  const exitTarget      = modal.type === 'exitTraveler'    ? modal.traveler : null
+  // اشتقاق الحمولة من الحالة كثابت محلي — يضمن حفظ التضييق (narrowing) داخل الإغلاقات
+  const exitTarget = modal.type === 'exitTraveler' ? modal.traveler : null
 
   return (
     <>
@@ -130,38 +117,6 @@ export default function ModalManager({
         {modal.type === 'reports' && (
           <Suspense key="reports" fallback={<ModalFallback />}>
             <ReportsView {...reports} onClose={closeModal} />
-          </Suspense>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {deleteTarget && (
-          <ConfirmModal
-            key="confirm-delete-traveler"
-            title={`حذف ${deleteTarget.name}؟`}
-            message="سيتم نقل هذا المسافر إلى سلة المحذوفات لحماية سجل مصاريفه وحساباته السابقة."
-            onConfirm={() => confirmDeleteTraveler(deleteTarget.id)}
-            onCancel={closeModal}
-          />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {depositTraveler && (
-          <Suspense key="deposit" fallback={<ModalFallback />}>
-            <DepositModal traveler={depositTraveler} {...deposit} onClose={closeDeposit} />
-          </Suspense>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {historyTraveler && (
-          <Suspense key="deposit-history" fallback={<ModalFallback />}>
-            <DepositHistoryModal
-              travelerId={historyTraveler.id}
-              travelerName={historyTraveler.name}
-              onClose={closeModal}
-            />
           </Suspense>
         )}
       </AnimatePresence>

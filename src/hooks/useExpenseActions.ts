@@ -29,10 +29,8 @@ export interface UseExpenseActionsResult {
   setNewExpense: Dispatch<SetStateAction<ExpenseFormData>>
   isAddingExpense: boolean
   editingExpense: Expense | null
-  expenseToDelete: string | null
   // 🆕 انظر تعليق التعريف في الحالة الداخلية أعلاه — SmartInputBar تربط عليه
   expenseAddedSignal: number
-  setExpenseToDelete: Dispatch<SetStateAction<string | null>>
   // تم التعديل هنا لتقبل الدالة النصوص الممررة من الشريط السريع
   openExpenseForm: (initialDesc?: string, initialAmount?: string) => void
   cancelExpenseForm: () => void
@@ -40,7 +38,6 @@ export interface UseExpenseActionsResult {
   handleQuickAddExpense: (description: string, amount: number) => string | null
   startEditExpense: (exp: Expense) => void
   requestDeleteExpense: (id: string) => void
-  confirmDelete: (id: string) => void
   handleRestoreExpense: (id: string) => void
   toggleParticipant: (id: number) => void
   toggleAllParticipants: () => void
@@ -51,7 +48,6 @@ export function useExpenseActions({
 }: UseExpenseActionsParams): UseExpenseActionsResult {
   const [isAddingExpense, setIsAddingExpense] = useState(false)
   const [editingExpense,  setEditingExpense]  = useState<Expense | null>(null)
-  const [expenseToDelete, setExpenseToDelete] = useState<string | null>(null)
   // 🆕 يتزايد فقط عند نجاح إضافة مصروف جديد فعلياً (لا عند التعديل ولا الإلغاء)
   // — SmartInputBar تراقبه لتفريغ حقولها بعد إرسال ناجح عبر نموذج التفاصيل
   // الكامل، دون أن تفقد مسودتها إن ألغى المستخدم النموذج بدل إرساله.
@@ -329,8 +325,6 @@ export function useExpenseActions({
       paidBy:       exp.paidBy ?? 'fund',
     })
     setIsAddingExpense(true)
-    // 🆕 انظر تعليق openExpenseForm أعلاه — نفس السبب.
-    setExpenseToDelete(null)
   }, [activeTravelers])
 
   const cancelExpenseForm = useCallback(() => {
@@ -346,8 +340,14 @@ export function useExpenseActions({
       .catch(err => handleFirestoreError(err, 'تعذر استعادة المصروف.'))
   }, [user, showToast, handleFirestoreError])
 
-  const confirmDelete = useCallback((id: string) => {
-    setExpenseToDelete(null)
+  // ⚠️ **لا نافذة تأكيد قبل هذا الفعل، عن قصد.** الحذف ليّن (`deletedAt`) ولا
+  // شيء يُفقد: التنبيه أدناه يحمل «تراجع» لخمس ثوانٍ، والمصروف يبقى في سلة
+  // المهملات بلا مهلة بعدها. نافذة التأكيد كانت تحرس فعلاً محروساً مرّتين
+  // أصلاً — وكانت تُنتج باغاً حقيقياً: خلفيتها وهي في حركة الخروج تبتلع
+  // الضغطة على «تراجع» (انظر docs/DECISIONS.md، فقرة تعارض z-index بين
+  // Modal وToast). راجع أيضاً `confirmDeleteTraveler` في useTravelerActions:
+  // نفس المبدأ حرفياً.
+  const requestDeleteExpense = useCallback((id: string) => {
     haptic.medium()
     showToast(
       { text: 'تم نقل المصروف إلى سلة المهملات', type: 'success', onUndo: () => handleRestoreExpense(id) },
@@ -360,8 +360,6 @@ export function useExpenseActions({
     updateDoc(expenseDoc(id), { deletedAt: Date.now() })
       .catch(err => handleFirestoreError(err, 'تعذر حذف المصروف.'))
   }, [user, setExpenses, handleFirestoreError, showToast, handleRestoreExpense])
-
-  const requestDeleteExpense = useCallback((id: string) => setExpenseToDelete(id), [])
 
   // تم التعديل هنا لاستقبال البيانات ونقلها للنموذج الكامل
   const openExpenseForm = useCallback((initialDesc = '', initialAmount = '') => {
@@ -376,11 +374,6 @@ export function useExpenseActions({
       category: guessCategory(initialDesc),
     })
     setIsAddingExpense(true)
-    // 🆕 نافذتا التأكيد بالحذف ونموذج المصروف مستقلّتان بنيوياً (كلتاهما Modal
-    // بملء الشاشة، z-[9999]) بلا أي إقصاء متبادل — فتح إحداهما بينما الأخرى ما
-    // زالت في حركة الخروج (AnimatePresence exit) يُبقيهما مرسومتين معاً متراكبتين
-    // فوق بعضهما بصرياً. إغلاقها هنا صريحاً يمنع ذلك بصرف النظر عن توقيت الحركة.
-    setExpenseToDelete(null)
   }, [emptyExpenseForm])
 
   const toggleParticipant = useCallback((id: number) => {
@@ -414,9 +407,9 @@ export function useExpenseActions({
   }, [newExpense, activeTravelers])
 
   return {
-    newExpense, setNewExpense, isAddingExpense, editingExpense, expenseToDelete, setExpenseToDelete,
+    newExpense, setNewExpense, isAddingExpense, editingExpense,
     expenseAddedSignal,
     openExpenseForm, cancelExpenseForm, handleAddExpense, handleQuickAddExpense, startEditExpense, requestDeleteExpense,
-    confirmDelete, handleRestoreExpense, toggleParticipant, toggleAllParticipants,
+    handleRestoreExpense, toggleParticipant, toggleAllParticipants,
   }
 }

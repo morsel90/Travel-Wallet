@@ -30,7 +30,7 @@ function renderItem(expense: Expense) {
       travelers={travelers} expenses={[expense]} user={null} isAdmin={false} isOrganizer={false}
       currencies={{}} ratesUpdatedAt={null}
       cancelExpenseForm={() => {}} startEditExpense={() => {}} requestDeleteExpense={() => {}}
-      openDeposit={() => {}} requestDeleteTraveler={() => {}} openDepositHistory={() => {}}
+      requestDeleteTraveler={() => {}} submitDeposit={() => true}
       expenseForm={baseExpenseForm} setExpenseForm={() => {}}
       isExpenseFormOpen={false} isEditingExpense={false}
       submitExpense={() => {}} toggleParticipant={() => {}} toggleAllParticipants={() => {}}

@@ -64,7 +64,7 @@ function Harness({ initial = emptyForm, isEditing = false, user = null, people =
       travelers={people} expenses={expenses} user={user as never} isAdmin={false} isOrganizer={false}
       currencies={currencies} ratesUpdatedAt={null}
       cancelExpenseForm={noop} startEditExpense={noop} requestDeleteExpense={noop}
-      openDeposit={noop} requestDeleteTraveler={noop} openDepositHistory={noop}
+      requestDeleteTraveler={noop} submitDeposit={() => true}
       expenseForm={expenseForm} setExpenseForm={setExpenseForm}
       isExpenseFormOpen isEditingExpense={isEditing}
       submitExpense={submitExpense}

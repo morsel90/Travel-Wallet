@@ -70,14 +70,13 @@ test('مسؤول يحذف مصروفاً ونفسه من مسافري رحلة �
   await addExpense(page, { amount: '50', description: 'طماطم' })
   const card = expenseCard(page, 'طماطم')
   await card.hover()
+  // 🆕 حذف بضغطة واحدة — لا نافذة تأكيد بينهما (التنبيه يحمل «تراجع»).
   await card.getByRole('button', { name: 'حذف المصروف' }).click()
-  await page.getByRole('button', { name: 'نعم، احذف' }).click()
   await expect(expenseCard(page, 'طماطم')).not.toBeVisible()
 
   // ── يحذف نفسه من قائمة المسافرين — حذفاً ليّناً، الوحيد المتاح له ─────────
   await page.getByRole('button', { name: 'حذف المسافر' }).click()
-  await expect(page.getByRole('heading', { name: /حذف .+؟/ })).toBeVisible()
-  await page.getByRole('button', { name: 'نعم، احذف' }).click()
+  await expect(page.getByText('تم نقل المسافر إلى سلة المهملات')).toBeVisible()
 
   // ── إعادة المحاولة: لا مسافر نشِط ولا مصروف نشِط ولا سجلّ إيداع بعد الآن —
   // يجب أن تنجح، رغم بقاء المصروف والمسافر كمستندين في سلة المهملات. ────────

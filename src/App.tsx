@@ -7,7 +7,6 @@ import { useAppCoordinator } from './hooks/useAppCoordinator'
 import ErrorBoundary        from './components/ErrorBoundary'
 import Header               from './components/Header'
 import Toast                from './components/Toast'
-import { ConfirmModal }     from './components/Modal'
 import { ExpenseForm }      from './components/ExpenseSection'
 import { BankDetailsCard }  from './components/Misc'
 import UpdatePrompt         from './components/UpdatePrompt'
@@ -47,10 +46,6 @@ export default function App() {
     session, ledger, trip, rates, status, picker, tripEdit, filter, modals, expense, traveler, deposit, admin, invite,
     profile, isSavingProfile, saveProfile, organizerBank, longTerm, requestDeleteTraveler,
   } = useAppCoordinator()
-
-  // نسخة محلية ليضيّق TypeScript نوعها: الوصول عبر `expense.expenseToDelete`
-  // لا يُضيَّق عبر حدّ JSX، فكان سيتطلّب تأكيداً بـ `!` بلا داعٍ.
-  const { expenseToDelete } = expense
 
   // 🆕 لا رمز رحلة/PIN بعد الآن — تسجيل الدخول (Google/بريد) هو الحارس الوحيد
   // المتبقي، ويسبق كل توجيه آخر بما فيه شاشة رابط الدعوة (انظر docs/DECISIONS.md).
@@ -126,9 +121,8 @@ export default function App() {
         cancelExpenseForm={expense.cancelExpenseForm}
         startEditExpense={expense.startEditExpense}
         requestDeleteExpense={expense.requestDeleteExpense}
-        openDeposit={modals.openDeposit}
+        submitDeposit={deposit.submitDeposit}
         requestDeleteTraveler={requestDeleteTraveler}
-        openDepositHistory={modals.openDepositHistory}
         expenseForm={expense.newExpense}
         setExpenseForm={expense.setNewExpense}
         isExpenseFormOpen={expense.isAddingExpense}
@@ -307,8 +301,6 @@ export default function App() {
             <ModalManager
               modal={modals.modal}
               closeModal={modals.closeModal}
-              closeDeposit={deposit.closeDeposit}
-              confirmDeleteTraveler={traveler.confirmDeleteTraveler}
               reports={{
                 travelers: ledger.activeTravelers,
                 expenses: ledger.activeExpenses,
@@ -317,12 +309,6 @@ export default function App() {
                 categoryTotals: ledger.categoryTotals,
                 itinerary: trip.itinerary,
                 periods: longTerm?.periods,
-              }}
-              deposit={{
-                amount: deposit.depositAmount, setAmount: deposit.setDepositAmount,
-                mode: deposit.depositMode, setMode: deposit.setDepositMode,
-                reason: deposit.depositReason, setReason: deposit.setDepositReason,
-                onSubmit: deposit.handleAddDeposit,
               }}
               // 🆕 أقسام انتقلت من تدفّق الشاشة إلى نوافذ خلف «المزيد».
               charts={{
@@ -385,16 +371,6 @@ export default function App() {
               } : undefined}
             />
   
-            <AnimatePresence>
-              {expenseToDelete !== null && (
-                <ConfirmModal
-                  key="confirm-delete-expense"
-                  title="تأكيد الحذف?"
-                  onConfirm={() => expense.confirmDelete(expenseToDelete)}
-                  onCancel={() => expense.setExpenseToDelete(null)}
-                />
-              )}
-            </AnimatePresence>
             <AuthFlow open={admin.showAdminSignIn} modalProps={admin.adminModalProps} />
   
             <UpdatePrompt hasUnsavedData={status.hasUnsavedData} />

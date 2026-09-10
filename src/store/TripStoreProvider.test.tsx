@@ -28,7 +28,7 @@ function baseProps(overrides: Partial<Parameters<typeof TripStoreProvider>[0]> =
     travelers: [], expenses: [], user: null, isAdmin: false, isOrganizer: false,
     currencies: {}, ratesUpdatedAt: null,
     cancelExpenseForm: () => {}, startEditExpense: () => {}, requestDeleteExpense: () => {},
-    openDeposit: () => {}, requestDeleteTraveler: () => {}, openDepositHistory: () => {},
+    requestDeleteTraveler: () => {}, submitDeposit: () => true,
     expenseForm: baseExpenseForm, setExpenseForm: () => {},
     isExpenseFormOpen: false, isEditingExpense: false,
     submitExpense: () => {}, toggleParticipant: () => {}, toggleAllParticipants: () => {},

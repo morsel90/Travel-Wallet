@@ -9,7 +9,7 @@ const initial: TripStoreState = {
   },
   actions: {
     cancelExpenseForm: () => {}, startEditExpense: () => {}, requestDeleteExpense: () => {},
-    openDeposit: () => {}, requestDeleteTraveler: () => {}, openDepositHistory: () => {},
+    requestDeleteTraveler: () => {}, submitDeposit: () => true,
   },
   form: {
     expenseForm: {

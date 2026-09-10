@@ -4,6 +4,7 @@ import { useStore } from 'zustand'
 import type { Dispatch, SetStateAction, FormEvent } from 'react'
 import type { User } from 'firebase/auth'
 import type { Traveler, Expense, ExpenseFormData, CurrencyMap } from '../types'
+import type { DepositSubmission } from '../hooks/useDepositActions'
 
 // ─── مخزن Zustand بدل ثلاث React Contexts ────────────────────────────────────
 //
@@ -38,9 +39,10 @@ export interface TripActionsSlice {
   cancelExpenseForm: () => void
   startEditExpense: (expense: Expense) => void
   requestDeleteExpense: (id: string) => void
-  openDeposit: (traveler: Traveler) => void
   requestDeleteTraveler: (traveler: Traveler) => void
-  openDepositHistory: (traveler: Traveler) => void
+  /** 🆕 تعديل رصيد مسافر — فعلٌ واحد يُستدعى من `DepositEditor` المضمَّن داخل
+   *  ملف المسافر، لا فتحُ نافذة. يعيد false حين يرفض المبلغ. */
+  submitDeposit: (traveler: Traveler, submission: DepositSubmission) => boolean
 }
 
 export interface TripFormSlice {

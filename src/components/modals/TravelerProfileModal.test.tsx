@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, fireEvent } from '@testing-library/react'
 import TravelerProfileModal from './TravelerProfileModal'
 import type { DepositLogEntry, Expense, Traveler, TravelerBalance } from '../../types'
 import { useDepositLogs } from '../../hooks/useDepositLogs'
@@ -145,5 +145,79 @@ describe('TravelerProfileModal — الدورة الحالية للخلاصة، 
     expect(main.getByText('58.93')).toBeInTheDocument()
     expect(main.getByText('8.33')).toBeInTheDocument()
     expect(main.getByText('50.60')).toBeInTheDocument()
+  })
+})
+
+// ─── تعديل الرصيد مضمّناً داخل الملف، لا نافذةً فوق نافذة ────────────────────
+// 🆕 كان `DepositModal`: نافذة مستقلّة تفتحها أيقونة قلم في صفّ يظهر بالتحويم
+// على بطاقة المسافر — أي لا يظهر على الجوال إطلاقاً. الاختبارات هنا تحرس
+// الأمرين معاً: أن المحرّر موجود ويعمل، وأنه **لا يظهر لمن لا يملك الصلاحية**.
+describe('TravelerProfileModal — محرّر الرصيد المضمّن', () => {
+  it('بلا onSubmitDeposit (لا صلاحية): لا زرّ تعديل رصيد إطلاقاً', () => {
+    renderModal({ initialTab: 'summary' })
+    expect(screen.queryByRole('button', { name: 'تعديل الرصيد' })).not.toBeInTheDocument()
+  })
+
+  it('مطويّ افتراضياً: زرّ واحد لا نموذج مفتوح يزاحم القراءة', () => {
+    renderModal({ initialTab: 'summary', onSubmitDeposit: () => true })
+    expect(screen.getByRole('button', { name: 'تعديل الرصيد' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('مبلغ التعديل')).not.toBeInTheDocument()
+  })
+
+  it('الضغط يفتح النموذج **في مكانه** — لا نافذة ثانية فوق الملف', () => {
+    renderModal({ initialTab: 'summary', onSubmitDeposit: () => true })
+    fireEvent.click(screen.getByRole('button', { name: 'تعديل الرصيد' }))
+    // ⚠️ **الحارس الفعلي للادّعاء «مضمّن»**: الحقل سليلٌ لـ<main> الملف نفسه.
+    // أي عودة إلى `Modal` تجعله ينتقل عبر portal إلى document.body خارجه —
+    // فيسقط هذا التأكيد، وهو ما لا يفعله مجرّد `getByLabelText`.
+    const main = screen.getByRole('main')
+    expect(main).toContainElement(screen.getByLabelText('مبلغ التعديل'))
+    // ولا حوار ثانٍ فوق الملف: `Modal` يرسم role="dialog"، وهذا يصفر دوماً هنا.
+    expect(screen.queryAllByRole('dialog')).toHaveLength(0)
+  })
+
+  it('يُرسل الوضع والمبلغ والسبب كما أُدخلت، ثم يُغلق ويُصفّر عند القبول', () => {
+    const onSubmitDeposit = vi.fn(() => true)
+    renderModal({ initialTab: 'summary', onSubmitDeposit })
+    fireEvent.click(screen.getByRole('button', { name: 'تعديل الرصيد' }))
+    fireEvent.click(screen.getByRole('button', { name: /خصم/ }))
+    fireEvent.change(screen.getByLabelText('مبلغ التعديل'), { target: { value: '250' } })
+    fireEvent.change(screen.getByLabelText('سبب التعديل'), { target: { value: 'تصحيح خطأ' } })
+    fireEvent.click(screen.getByRole('button', { name: /حفظ/ }))
+
+    expect(onSubmitDeposit).toHaveBeenCalledWith({ mode: 'subtract', amount: 250, reason: 'تصحيح خطأ' })
+    // طُوي بعد القبول، وعودته تبدأ من نموذج فارغ.
+    expect(screen.queryByLabelText('مبلغ التعديل')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'تعديل الرصيد' }))
+    expect(screen.getByLabelText('مبلغ التعديل')).toHaveValue('')
+  })
+
+  it('الأرقام العربية تُقرأ كأرقام — «٢٥٠» تصل 250 لا NaN', () => {
+    const onSubmitDeposit = vi.fn(() => true)
+    renderModal({ initialTab: 'summary', onSubmitDeposit })
+    fireEvent.click(screen.getByRole('button', { name: 'تعديل الرصيد' }))
+    fireEvent.change(screen.getByLabelText('مبلغ التعديل'), { target: { value: '٢٥٠' } })
+    fireEvent.click(screen.getByRole('button', { name: /حفظ/ }))
+    expect(onSubmitDeposit).toHaveBeenCalledWith(expect.objectContaining({ amount: 250 }))
+  })
+
+  // ⚠️ القاعدة ١٨: الرفض يُختبَر بحدوثه فعلاً لا بوجود الشرط في الكود. لو
+  // أُغلق النموذج على رفض، ابتُلع ما كتبه المستخدم بلا أي رسالة.
+  it('عند رفض المبلغ يبقى النموذج مفتوحاً بما كُتب فيه — لا ابتلاع صامت', () => {
+    renderModal({ initialTab: 'summary', onSubmitDeposit: () => false })
+    fireEvent.click(screen.getByRole('button', { name: 'تعديل الرصيد' }))
+    fireEvent.change(screen.getByLabelText('مبلغ التعديل'), { target: { value: '250' } })
+    fireEvent.click(screen.getByRole('button', { name: /حفظ/ }))
+    expect(screen.getByLabelText('مبلغ التعديل')).toHaveValue('250')
+  })
+
+  it('«إلغاء» يطوي المحرّر ويُصفّره بلا أي إرسال', () => {
+    const onSubmitDeposit = vi.fn(() => true)
+    renderModal({ initialTab: 'summary', onSubmitDeposit })
+    fireEvent.click(screen.getByRole('button', { name: 'تعديل الرصيد' }))
+    fireEvent.change(screen.getByLabelText('مبلغ التعديل'), { target: { value: '99' } })
+    fireEvent.click(screen.getByRole('button', { name: 'إلغاء تعديل الرصيد' }))
+    expect(onSubmitDeposit).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'تعديل الرصيد' })).toBeInTheDocument()
   })
 })
