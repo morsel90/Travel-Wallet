@@ -44,7 +44,7 @@ const UserProfileModal = lazy(() => import('./components/modals/UserProfileModal
 export default function App() {
   const {
     session, ledger, trip, rates, status, picker, tripEdit, filter, modals, expense, traveler, deposit, admin, invite,
-    profile, isSavingProfile, saveProfile, organizerBank, longTerm, requestDeleteTraveler,
+    profile, isSavingProfile, saveProfile, organizerBank, longTerm, requestDeleteTraveler, passwordReset,
   } = useAppCoordinator()
 
   // 🆕 لا رمز رحلة/PIN بعد الآن — تسجيل الدخول (Google/بريد) هو الحارس الوحيد
@@ -68,6 +68,7 @@ export default function App() {
         signInError={session.signInError}
         onSignInGoogle={session.signInWithGoogle}
         onSignInEmail={session.signInWithEmail}
+        passwordReset={passwordReset}
       />
     )
   } else if (invite.status === 'joining' || invite.status === 'needsName') {

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Loader2, LogIn, Mail } from '../icons'
 import { INVITE_TOKEN } from '../utils/tripId'
+import type { UsePasswordResetResult } from '../hooks/usePasswordReset'
 
 // ─── شعار Google ──────────────────────────────────────────────────────────────
 // 🆕 ليس من lucide-react (أيقونات عامة لا شعارات علامات تجارية) — علامة Google
@@ -22,22 +23,40 @@ interface AuthGateProps {
   signInError: string | null
   onSignInGoogle: () => void
   onSignInEmail: (email: string, password: string, mode: 'signIn' | 'signUp') => void
+  /**
+   * 🆕 استرداد كلمة المرور — **هنا مكانه الطبيعي، وهذه الشاشة هي المكان
+   * الوحيد الذي يقف فيه من نسي كلمة مروره.** كان رابطه الوحيد داخل
+   * `AdminSignInModal`، أي خلف تسجيل دخول ناجح: متاحٌ لمن لا يحتاجه،
+   * محجوبٌ عمّن يحتاجه. انظر hooks/usePasswordReset.ts.
+   */
+  passwordReset: UsePasswordResetResult
 }
 
 // ─── AuthGate ─────────────────────────────────────────────────────────────────
 // 🆕 حلّت محل TripGate (رمز الرحلة/PIN، مُلغى — انظر docs/DECISIONS.md). تُعرض
 // كلّما لم يكن هناك مستخدم مسجَّل دخوله — تغطي دخول رابط دعوة (?invite=TOKEN)
 // ورابط رحلة عادي (?trip=X) معاً بشاشة واحدة، فلا مسار انضمام ذاتي آخر متبقٍ.
-export default function AuthGate({ loading, isSigningIn, signInError, onSignInGoogle, onSignInEmail }: AuthGateProps) {
+export default function AuthGate({
+  loading, isSigningIn, signInError, onSignInGoogle, onSignInEmail, passwordReset,
+}: AuthGateProps) {
   const [showEmailForm, setShowEmailForm] = useState(false)
   const [emailMode, setEmailMode] = useState<'signIn' | 'signUp'>('signIn')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  // خطأ محلي للحقل الفارغ وحده — نجاح الإرسال يُعلَن بتوست موحّد من الخطّاف.
+  const [resetError, setResetError] = useState<string | null>(null)
 
   const handleEmailSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!email.trim() || !password || isSigningIn) return
     onSignInEmail(email.trim(), password, emailMode)
+  }
+
+  const handleForgotPassword = async () => {
+    const outcome = await passwordReset.requestReset(email)
+    setResetError(outcome === 'missing-email'
+      ? 'أدخل بريدك الإلكتروني بالحقل أعلاه أولاً.'
+      : null)
   }
 
   return (
@@ -118,9 +137,33 @@ export default function AuthGate({ loading, isSigningIn, signInError, onSignInGo
                     {isSigningIn && <Loader2 className="w-4 h-4 animate-spin" />}
                     {emailMode === 'signUp' ? 'إنشاء حساب' : 'تسجيل الدخول'}
                   </button>
+                  {/* ⚠️ في وضع «تسجيل الدخول» وحده: «نسيت كلمة المرور؟» بلا
+                      معنى وأنت تُنشئ حساباً جديداً — لا كلمة مرور بعد تُنسى. */}
+                  {emailMode === 'signIn' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void handleForgotPassword()}
+                        disabled={passwordReset.isSendingReset || passwordReset.resetCooldownSeconds > 0}
+                        className="w-full flex items-center justify-center gap-1.5 text-[11px] font-bold text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {passwordReset.isSendingReset ? (
+                          <><Loader2 className="w-3 h-3 animate-spin" /> جارٍ الإرسال...</>
+                        ) : passwordReset.resetCooldownSeconds > 0 ? (
+                          `أعد المحاولة خلال ${passwordReset.resetCooldownSeconds} ثانية`
+                        ) : (
+                          'نسيت كلمة المرور؟'
+                        )}
+                      </button>
+                      {resetError && (
+                        <p className="text-[11px] text-rose-500 font-bold text-center">{resetError}</p>
+                      )}
+                    </>
+                  )}
+
                   <button
                     type="button"
-                    onClick={() => setEmailMode(m => m === 'signUp' ? 'signIn' : 'signUp')}
+                    onClick={() => { setEmailMode(m => m === 'signUp' ? 'signIn' : 'signUp'); setResetError(null) }}
                     className="w-full text-[11px] font-bold text-teal-600 hover:text-teal-700 transition-colors"
                   >
                     {emailMode === 'signUp' ? 'لديك حساب؟ سجّل الدخول' : 'حساب جديد؟ أنشئ حساباً'}

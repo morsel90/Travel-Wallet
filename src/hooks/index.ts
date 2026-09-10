@@ -10,6 +10,7 @@ export { useFilteredExpenses } from './useFilteredExpenses' // ★ تمت إضا
 export { useDebounce }         from './useDebounce' // 🆕 أداة عامة لتأخير أي قيمة متغيّرة بسرعة (بحث، فلاتر...)
 export { useOnlineStatus }     from './useOnlineStatus' // 🆕 حالة اتصال الشبكة (online/offline) — لبانر التنبيه العام
 export { useCountdown }        from './useCountdown' // 🆕 عدّ تنازلي عام بالثواني (مثال: مهلة إعادة إرسال رابط استرداد كلمة المرور)
+export { usePasswordReset }    from './usePasswordReset' // 🆕 استرداد كلمة المرور — يشاركه AuthGate (قبل الدخول) وAdminSignInModal (بعده)
 export { useExpenseActions }   from './useExpenseActions' // 🆕 منطق نموذج/عمليات المصروف كاملاً — استُخرج من App.tsx لتقليل حجمه
 export { useTravelerActions }  from './useTravelerActions' // 🆕 منطق نموذج/عمليات المسافر كاملاً — استُخرج من App.tsx
 export { useDepositActions }   from './useDepositActions'  // 🆕 منطق نموذج/عمليات الإيداع كاملاً — استُخرج من App.tsx
