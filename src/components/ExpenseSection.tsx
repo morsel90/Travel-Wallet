@@ -7,6 +7,7 @@ import { useTripData, useTripActions, useTripFormState } from '../store/tripStor
 import { toDisplayNames } from '../utils/participants'
 import { EXPENSE_CATEGORIES } from '../constants'
 import { splitByShares } from '../utils/calculations'
+import { guessCategory } from '../utils/categoryGuess'
 
 // دالة تحويل الأرقام الهندية/الشرقية (١٢٣) إلى أرقام غربية (123) تلقائياً
 const convertArabicNumerals = (str: string): string => {
@@ -21,7 +22,7 @@ const PINNED_CURRENCIES = ['SAR', 'USD', 'EUR', 'AED', 'GBP']
 
 // 1️⃣ مكوّن نموذج تفاصيل المصروف الكامل (Fintech Style)
 export const ExpenseForm = memo(() => {
-  const { travelers, currencies, ratesUpdatedAt, expenses } = useTripData()
+  const { travelers, currencies, ratesUpdatedAt, expenses, user } = useTripData()
 
   // هذا المكوّن وحده يستهلك مفتاح النموذج المتقلب — وهو نسخة واحدة، فإعادة رسمه
   // مع كل حرف صحيحة ومطلوبة. أما زر الإلغاء فإجراء ثابت يأتي من مفتاح آخر.
@@ -32,6 +33,17 @@ export const ExpenseForm = memo(() => {
     toggleParticipant, toggleAllParticipants,
   } = useTripFormState()
   const { cancelExpenseForm } = useTripActions()
+
+  // 🆕 الفئة تُشتقّ من الوصف (utils/categoryGuess.ts) ما لم يغيّرها المستخدم يدوياً
+  // ولو مرة — عندها يتوقف الاشتقاق لبقية عمر النموذج فلا يُلغي اختياره الصريح مع
+  // أول حرف تالٍ في الوصف. عند تعديل مصروف قائم نبدأ "ملموسة" أصلاً: فئته
+  // المحفوظة قرار سابق، لا فراغ يُملأ بالتخمين.
+  const [categoryTouched, setCategoryTouched] = useState(isEditingExpense)
+
+  // 🆕 العملة خيار متقدم: مطوية ما دام المصروف بالريال (الحالة الساحقة)، ومكشوفة
+  // تلقائياً حين تكون العملة أجنبية أصلاً — أي عند تعديل مصروف أجنبي سابق، أو بعد
+  // أن يختار المستخدم عملة أخرى في هذه الجلسة.
+  const [isCurrencyOpen, setIsCurrencyOpen] = useState(() => expenseForm.currency !== 'SAR')
 
   // 🆕 منطق فصل العملات لقائمة منسدلة لا تُزدحم مهما بلغ عددها:
   //   • "الشائعة": العملات المثبّتة (PINNED، بترتيب ثابت) + العملات المستخدمة فعلياً
@@ -98,21 +110,41 @@ export const ExpenseForm = memo(() => {
   }, [setExpenseForm, currencies]);
 
   const handleDescriptionChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setExpenseForm(prev => ({ ...prev, description: e.target.value }));
-  }, [setExpenseForm]);
+    const description = e.target.value;
+    setExpenseForm(prev => ({
+      ...prev,
+      description,
+      // الاشتقاق داخل معالِج التغيير لا داخل useEffect: مشتقّ مباشر من نفس الحدث،
+      // بلا دورة رسم إضافية ولا احتمال حلقة تحديث بين الحقلين.
+      ...(categoryTouched ? {} : { category: guessCategory(description) }),
+    }));
+  }, [setExpenseForm, categoryTouched]);
 
   const handleDateChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setExpenseForm(prev => ({ ...prev, date: e.target.value }));
   }, [setExpenseForm]);
 
   const handleCategoryChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setCategoryTouched(true);
     setExpenseForm(prev => ({ ...prev, category: e.target.value }));
   }, [setExpenseForm]);
 
-  const handlePaidByChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value;
-    setExpenseForm(prev => ({ ...prev, paidBy: value === 'fund' ? 'fund' : Number(value) }));
+  const handleSelectPayer = useCallback((value: 'fund' | number) => {
+    setExpenseForm(prev => ({ ...prev, paidBy: value }));
   }, [setExpenseForm]);
+
+  // 🆕 ترتيب كبسولات "من دفع؟": ملفّ المستخدم الحالي أولاً (إن كان حسابه مربوطاً
+  // بمسافر في هذه الرحلة) — فهو أكثر إجابة متوقّعة لمن يسجّل مصروفاً دفعه بنفسه،
+  // ووجودها أولاً يوفّر بحثاً بصرياً في رحلة من أربعة عشر مسافراً. الترتيب وحده
+  // يتغيّر؛ الافتراضي يبقى "الصندوق المشترك" كما كان (انظر emptyExpenseForm).
+  const myTravelerId = useMemo(
+    () => (user ? travelers.find(t => t.uid === user.uid)?.id : undefined),
+    [travelers, user],
+  )
+  const payerOptions = useMemo(() => {
+    if (myTravelerId === undefined) return travelers
+    return [...travelers].sort((a, b) => (a.id === myTravelerId ? -1 : b.id === myTravelerId ? 1 : 0))
+  }, [travelers, myTravelerId])
 
   const handleToggleSplitMode = useCallback(() => {
     setExpenseForm(prev => {
@@ -132,12 +164,13 @@ export const ExpenseForm = memo(() => {
     return splitByShares(previewTotal, expenseForm.participants, expenseForm.shares);
   }, [amountSAR, expenseForm.participants, expenseForm.shares]);
 
-  // 🆕 إفصاح تدريجي (Progressive Disclosure): قسم التقسيم وقسم التاريخ/طريقة
-  // الدفع مطويّان افتراضياً، ويظهر بدلاً منهما سطر ملخّص قابل للنقر. التقسيم
-  // وحده يبدأ موسَّعاً حين يكون بالفعل غير افتراضي (تعديل مصروف باستثناءات أو
-  // تقسيم مخصّص سابق) — "افتراضي ذكي" يُظهر التفاصيل المهمة فوراً بدل إخفائها
-  // خلف نقرة إضافية. التاريخ وطريقة الدفع يبدآن مطويَّين دائماً: سطر الملخّص
-  // يعرض قيمتهما الفعليّة أياً كانت، فلا حاجة لتوسيعهما تلقائياً ليكونا صادقين.
+  // 🆕 إفصاح تدريجي (Progressive Disclosure): قسم التقسيم والتاريخ مطويّان
+  // افتراضياً، ويظهر بدلاً منهما سطر ملخّص قابل للنقر. التقسيم وحده يبدأ
+  // موسَّعاً حين يكون بالفعل غير افتراضي (تعديل مصروف باستثناءات أو تقسيم
+  // مخصّص سابق) — "افتراضي ذكي" يُظهر التفاصيل المهمة فوراً بدل إخفائها خلف
+  // نقرة إضافية. التاريخ يبدأ مطويّاً دائماً: سطر الملخّص يعرض قيمته الفعليّة
+  // أياً كانت، فلا حاجة لتوسيعه تلقائياً ليكون صادقاً. أما "من دفع؟" فلم يعد
+  // مطويّاً إطلاقاً — انظر تعليق كبسولاته في الـJSX أدناه.
   //
   // ⚠️ الشرط مقصور على isEditingExpense — لا يُقيَّم عبر participants/travelers
   // وحدها. عند إضافة مصروف جديد (لا تعديل)، expenseForm.participants يأتي من
@@ -151,7 +184,7 @@ export const ExpenseForm = memo(() => {
   const [isSplitExpanded, setIsSplitExpanded] = useState(
     () => isEditingExpense && (expenseForm.splitMode === 'custom' || expenseForm.participants.length !== travelers.length)
   )
-  const [isDefaultsExpanded, setIsDefaultsExpanded] = useState(false)
+  const [isDateExpanded, setIsDateExpanded] = useState(false)
 
   // ⚠️ الخروج المبكر يجب أن يأتي بعد كل الـ hooks (useMemo/useCallback/useState أعلاه)
   // وليس قبلها — وإلا اختلف عدد الـ hooks بين فتح النموذج وإغلاقه فيرمي React خطأ
@@ -166,9 +199,6 @@ export const ExpenseForm = memo(() => {
 
   const todayStr = new Date().toISOString().slice(0, 10)
   const dateSummary = expenseForm.date === todayStr ? 'اليوم' : expenseForm.date
-  const payerSummary = expenseForm.paidBy === 'fund'
-    ? 'الصندوق المشترك'
-    : `دفعها: ${travelers.find(t => t.id === expenseForm.paidBy)?.shortName ?? '—'}`
 
   // 🆕 Modal بدل <div> عادية — كان هذا النموذج الوحيد في التطبيق يُرسَم داخل
   // تدفّق الصفحة (App.tsx) بدل نافذة/Bottom Sheet ثابتة، فيظهر خارج نطاق
@@ -212,6 +242,18 @@ export const ExpenseForm = memo(() => {
             aria-label="المبلغ"
           />
 
+          {/* 🆕 العملة خيار متقدم لا خطوة في المسار: تحت المبلغ كان يجلس محدِّد
+              دائم الحضور في كل مصروف، بينما الساحق منها بالريال. الآن سطر باهت
+              واحد يذكر العملة الحالية، ونقرة واحدة تكشف المحدِّد لمن يحتاجه. */}
+          {!isCurrencyOpen ? (
+            <button
+              type="button"
+              onClick={() => setIsCurrencyOpen(true)}
+              className="mt-1 text-xs font-bold text-slate-300 hover:text-slate-500 transition-colors px-2 py-1"
+            >
+              بالريال · عملة أخرى؟
+            </button>
+          ) : (
           <div className="mt-2 flex items-center justify-center">
             <div className="relative inline-flex">
               <select
@@ -238,6 +280,7 @@ export const ExpenseForm = memo(() => {
               <ChevronDown className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
             </div>
           </div>
+          )}
 
           {/* سعر الصرف — يظهر فقط لعملة أجنبية، بشكل هادئ لا يُنافس المبلغ على الاهتمام */}
           {expenseForm.currency !== 'SAR' && (
@@ -268,7 +311,11 @@ export const ExpenseForm = memo(() => {
         {/* 🆕 الوصف والفئة (Inline Grouping) — حقل الوصف بلا إطار، يظهر خط
             سفلي فقط عند التركيز داخل الصفّ (focus-within)؛ الفئة محدِّد مدمَج
             مضغوط بجانبه بدل حقل منفصل كامل العرض. */}
-        <div className="flex items-center gap-2 border-b-2 border-transparent focus-within:border-teal-200 transition-colors pb-1.5">
+        {/* ⚠️ الخط السفلي دائم لا شفّاف (border-slate-200 لا border-transparent):
+            حين كانت كبسولة الفئة تجاوره دائماً كان للصفّ كتلة بصرية تدلّ على أنه
+            حقل إدخال. وبعد أن صارت الفئة لا تظهر قبل الوصف، بقي نصّ عائم بلا أي
+            حدّ — يبدو عنواناً باهتاً لا حقلاً يُكتب فيه. */}
+        <div className="flex items-center gap-2 border-b-2 border-slate-200 focus-within:border-teal-300 transition-colors pb-1.5">
           <input
             type="text"
             required
@@ -278,12 +325,17 @@ export const ExpenseForm = memo(() => {
             className="flex-1 min-w-0 bg-transparent border-none outline-none focus:ring-0 text-base font-bold text-slate-800 placeholder:text-slate-300 placeholder:font-normal py-1.5"
             aria-label="الوصف"
           />
+          {/* 🆕 الفئة تُشتقّ من الوصف ولا تظهر قبله: قبل أن يُكتب "ماذا كان؟" لا
+              معنى لسؤال "أي فئة؟"، وبعده تكون الإجابة معروفة أصلاً. ما يظهر هنا
+              هو الفئة المشتقّة معروضةً كتأكيد — قابلة للتغيير بنقرة، وأول تغيير
+              يدوي يوقف الاشتقاق. */}
+          {expenseForm.description.trim() !== '' && (
           <div className="relative shrink-0 flex items-center">
             <Tag className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
             <select
               value={expenseForm.category}
               onChange={handleCategoryChange}
-              className="appearance-none bg-slate-50 hover:bg-slate-100 text-slate-500 text-xs font-bold pl-6 pr-7 py-1.5 rounded-full outline-none focus:ring-2 focus:ring-teal-200 cursor-pointer max-w-[110px]"
+              className="appearance-none bg-slate-50 hover:bg-slate-100 text-slate-500 text-xs font-bold pl-6 pr-7 py-1.5 rounded-full outline-none focus:ring-2 focus:ring-teal-200 cursor-pointer max-w-[150px]"
               aria-label="الفئة"
             >
               {EXPENSE_CATEGORIES.map(cat => (
@@ -291,6 +343,54 @@ export const ExpenseForm = memo(() => {
               ))}
             </select>
             <ChevronDown className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
+          </div>
+          )}
+        </div>
+
+        {/* 🆕 «من دفع؟» — خطوة أصيلة في المسار، لا تفصيلاً مطويّاً.
+            كانت مدفونة مع التاريخ خلف سطر رمادي واحد يقرأه المستخدم كنصّ لا كزرّ،
+            فكان أهم قرار في المصروف (من له، ومن عليه — أي كل الأرصدة والتسويات)
+            يُحسم بالافتراضي صمتاً. كبسولات ظاهرة: القيمة الحالية مرئية دائماً
+            وتغييرها نقرة واحدة، بلا فتح ولا طيّ. */}
+        <div>
+          <p className="text-xs font-bold text-slate-800 mb-2">من دفع؟</p>
+          <div className="flex flex-wrap gap-2">
+            {/* ⚠️ aria-label مميّز عمداً ("دفع من ..." / "دفعها ...") — أسماء
+                المسافرين تظهر أيضاً كأزرار في قسم التقسيم أدناه، ولولا تمييز
+                الاسم المتاح لصار تحديد أيّهما في الاختبارات (وفي قارئ الشاشة)
+                ملتبساً بين زرّين بالنص نفسه. */}
+            <button
+              type="button"
+              onClick={() => handleSelectPayer('fund')}
+              aria-pressed={expenseForm.paidBy === 'fund'}
+              aria-label="دفع من الصندوق المشترك"
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                expenseForm.paidBy === 'fund'
+                  ? 'bg-teal-600 text-white border border-teal-600 shadow-sm'
+                  : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              الصندوق المشترك
+            </button>
+            {payerOptions.map(t => {
+              const isSelected = expenseForm.paidBy === t.id
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => handleSelectPayer(t.id)}
+                  aria-pressed={isSelected}
+                  aria-label={`دفعها ${t.shortName}`}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                    isSelected
+                      ? 'bg-teal-600 text-white border border-teal-600 shadow-sm'
+                      : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {t.id === myTravelerId ? `${t.shortName} (أنا)` : t.shortName}
+                </button>
+              )
+            })}
           </div>
         </div>
 
@@ -410,33 +510,34 @@ export const ExpenseForm = memo(() => {
           </div>
         )}
 
-        {/* 🆕 الافتراضيات الهادئة — التاريخ وطريقة الدفع مدموجان في سطر واحد
-            باهت، لا حقلين ضخمين. النقر عليه يكشف الحقلين الفعليين للتعديل. */}
-        {!isDefaultsExpanded ? (
+        {/* 🆕 التاريخ وحده هنا — "من دفع؟" خرج من هذه الكتلة إلى خطوة ظاهرة أعلاه.
+            التاريخ يبقى هادئاً بحق: مصروف يُسجَّل لحظة حدوثه، و"اليوم" صحيح في
+            الغالبية الساحقة، فسطر باهت واحد يكفي حتى يحتاجه من يسجّل بأثر رجعي. */}
+        {!isDateExpanded ? (
           <button
             type="button"
-            onClick={() => setIsDefaultsExpanded(true)}
+            onClick={() => setIsDateExpanded(true)}
             className="w-full text-center text-sm text-slate-400 hover:text-slate-600 font-bold py-1 transition-colors"
           >
-            {dateSummary} • {payerSummary}
+            {dateSummary}
           </button>
         ) : (
           <div className="space-y-2">
             <button
               type="button"
-              onClick={() => setIsDefaultsExpanded(false)}
+              onClick={() => setIsDateExpanded(false)}
               className="text-sm text-slate-400 hover:text-slate-600 font-bold"
             >
-              {dateSummary} • {payerSummary}
+              {dateSummary}
             </button>
-            {/* ⚠️ عمود واحد (لا grid-cols-2) — حقل <input type="date"> يفرض
-                عرضاً أدنى أصلياً في المتصفح لا يمكن تضييقه عبر CSS (عنصر تحكّم
-                أصلي، لا نص عادي)، وعلى شاشة جوال ضيقة يتجاوز هذا العرض الأدنى
-                نصف عمود شبكي بجانب محدِّد "طريقة الدفع"، فيتراكب معه بصرياً —
-                بلاغ مستخدم فعلي على آيفون حقيقي، لم يظهر في اختبارات E2E
-                (Chromium على شاشة سطح مكتب افتراضياً). عمود واحد كامل العرض
-                لكل حقل يتجنّب المشكلة جذرياً بصرف النظر عن العرض الأدنى الفعلي
-                لأي عنصر تحكّم أصلي، حالياً أو مستقبلاً. */}
+            {/* ⚠️ عمود واحد كامل العرض، ولا شيء بجانبه — حقل <input type="date">
+                يفرض عرضاً أدنى أصلياً في المتصفح لا يمكن تضييقه عبر CSS (عنصر
+                تحكّم أصلي، لا نص عادي). حين كان يقاسم صفّه محدِّد "طريقة الدفع"
+                في عمودين، تجاوز هذا العرضُ الأدنى نصفَه على شاشة جوال ضيقة
+                فتراكبا بصرياً — بلاغ مستخدم فعلي على آيفون حقيقي لم يظهر في
+                اختبارات E2E (Chromium على شاشة سطح مكتب). المحدِّد انتقل الآن
+                إلى كبسولات "من دفع؟" أعلاه، لكن القاعدة تبقى: لا تضع هذا الحقل
+                في عمود شبكي بجانب عنصر تحكّم أصلي آخر. */}
             <div className="space-y-2 w-full">
               {/* ⚠️ حقل <input type="date"> نفسه مخفيّ بصرياً (sr-only، لا
                   display:none) داخل <label> مصمَّم بالكامل — بلاغ مستخدم فعلي
@@ -465,25 +566,6 @@ export const ExpenseForm = memo(() => {
                   aria-label="التاريخ"
                 />
               </label>
-              {/* ⚠️ appearance-none + سهم مخصَّص (لا مظهر <select> الافتراضي) —
-                  بدونها يرسم Safari/iOS أيقونته الأصلية (سهمان لأعلى/أسفل)
-                  فيكسر تطابق التصميم المسطّح مع بقية النموذج؛ لا يظهر هذا في
-                  Chromium (المستخدَم في اختبارات E2E) فلم يُكتشَف إلا على جهاز
-                  حقيقي. نفس المعالجة المطبَّقة على محدِّدَي العملة والفئة أعلاه. */}
-              <div className="relative">
-                <select
-                  value={String(expenseForm.paidBy)}
-                  onChange={handlePaidByChange}
-                  className="appearance-none w-full min-h-[40px] bg-slate-50 border border-slate-200 rounded-lg pr-2.5 pl-7 py-2 text-sm text-slate-700 font-bold focus:border-teal-500 focus:ring-1 focus:ring-teal-100 outline-none"
-                  aria-label="طريقة الدفع"
-                >
-                  <option value="fund">الصندوق المشترك</option>
-                  {travelers.map(t => (
-                    <option key={t.id} value={t.id}>دفعها: {t.shortName}</option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-              </div>
             </div>
           </div>
         )}

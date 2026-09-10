@@ -160,12 +160,21 @@ describe('useExpenseActions — الإضافة المحلية (بلا مستخد
     expect(result.current.handleQuickAddExpense('قهوة', 20)).toBe('أضف مسافراً واحداً على الأقل قبل تسجيل مصروف.')
   })
 
-  it('handleQuickAddExpense المحلي يضيف مصروفاً بفئة "أخرى" ومشاركة الجميع', () => {
+  // 🆕 الفئة تُشتقّ من الوصف بدل ثابت "أخرى" — المسار السريع يبقى خطوتين (مبلغ
+  // + وصف) لكن الرسم البياني لتوزيع الفئات لم يعد يمتلئ بـ"أخرى" لكل مصروف.
+  it('handleQuickAddExpense المحلي يشتقّ الفئة من الوصف ويُشرك الجميع', () => {
     const { result, setExpenses } = setup()
     const error = result.current.handleQuickAddExpense('قهوة', 20)
     expect(error).toBeNull()
     const next = setExpenses.mock.calls[0][0]([])
-    expect(next[0]).toMatchObject({ description: 'قهوة', amount: 20, category: 'أخرى', participants: [1, 2] })
+    expect(next[0]).toMatchObject({ description: 'قهوة', amount: 20, category: 'طعام وشراب', participants: [1, 2] })
+  })
+
+  it('handleQuickAddExpense يُبقي الفئة "أخرى" حين لا يدلّ الوصف على شيء', () => {
+    const { result, setExpenses } = setup()
+    expect(result.current.handleQuickAddExpense('حاجة غريبة', 20)).toBeNull()
+    const next = setExpenses.mock.calls[0][0]([])
+    expect(next[0]).toMatchObject({ description: 'حاجة غريبة', category: 'أخرى' })
   })
 
   // 🆕 حارس القيم غير المنتهية عند حدود الإدخال — «قاعدة ٤» في
