@@ -141,10 +141,49 @@ export const ExpenseForm = memo(() => {
     () => (user ? travelers.find(t => t.uid === user.uid)?.id : undefined),
     [travelers, user],
   )
-  const payerOptions = useMemo(() => {
-    if (myTravelerId === undefined) return travelers
-    return [...travelers].sort((a, b) => (a.id === myTravelerId ? -1 : b.id === myTravelerId ? 1 : 0))
-  }, [travelers, myTravelerId])
+
+  // 🆕 ترتيب كبسولات "من دفع؟": ملفّي أولاً، ثم الأحدث دفعاً فعلياً في هذه
+  // الرحلة، ثم بقية الدفتر بترتيبه. مشتقّ من المصاريف الموجودة أصلاً — لا سؤال
+  // إضافي ولا إعداد.
+  const orderedPayers = useMemo(() => {
+    const lastPaidAt = new Map<number, number>()
+    expenses.forEach(exp => {
+      if (typeof exp.paidBy !== 'number') return
+      lastPaidAt.set(exp.paidBy, Math.max(lastPaidAt.get(exp.paidBy) ?? 0, exp.createdAt))
+    })
+    return travelers
+      .map((traveler, index) => ({ traveler, index }))
+      .sort((a, b) => {
+        if (a.traveler.id === myTravelerId) return -1
+        if (b.traveler.id === myTravelerId) return 1
+        const diff = (lastPaidAt.get(b.traveler.id) ?? 0) - (lastPaidAt.get(a.traveler.id) ?? 0)
+        return diff !== 0 ? diff : a.index - b.index
+      })
+      .map(entry => entry.traveler)
+  }, [travelers, myTravelerId, expenses])
+
+  // 🆕 في رحلة من أربعة عشر مسافراً (وهي حالة حقيقية لا افتراضية) كان عرض
+  // الجميع دفعةً واحدة يملأ أربعة صفوف من الكبسولات، فيبتلع قسمُ "من دفع؟"
+  // نصفَ الشاشة ويدفع "المشاركون" والتاريخ خارجها — بلاغ مستخدم على آيفون
+  // حقيقي. الظاهر الآن أرجحُ الاحتمالات (ملفّي + آخر من دفعوا)، والبقية خلف
+  // كبسولة واحدة تُطوى وتُفتح. الحدّ يُطبَّق فقط حين يستحقّ: خمسة مسافرين أو
+  // أقلّ يظهرون كلهم كما كانوا (صفّان على الأكثر، ولا فائدة من إخفاء اثنين).
+  const [isAllPayersShown, setIsAllPayersShown] = useState(false)
+  const PAYERS_SHOWN_COLLAPSED = 3
+
+  const visiblePayers = useMemo(() => {
+    if (isAllPayersShown || orderedPayers.length <= 5) return orderedPayers
+    const shown = orderedPayers.slice(0, PAYERS_SHOWN_COLLAPSED)
+    // ⚠️ الدافع المختار يظهر دائماً مهما كان ترتيبه — سطرٌ يخفي قيمته الحالية
+    // يكذب على قارئه، وهو ما يحدث عند تعديل مصروف قديم دفعه من لم يدفع منذها.
+    if (typeof expenseForm.paidBy === 'number' && !shown.some(t => t.id === expenseForm.paidBy)) {
+      const selected = orderedPayers.find(t => t.id === expenseForm.paidBy)
+      if (selected) shown.push(selected)
+    }
+    return shown
+  }, [orderedPayers, isAllPayersShown, expenseForm.paidBy])
+
+  const hiddenPayersCount = orderedPayers.length - visiblePayers.length
 
   const handleToggleSplitMode = useCallback(() => {
     setExpenseForm(prev => {
@@ -210,7 +249,7 @@ export const ExpenseForm = memo(() => {
   // docs/DECISIONS.md.
   return (
     <Modal onClose={cancelExpenseForm} label={isEditingExpense ? 'تعديل المصروف' : 'تفاصيل المصروف'} maxWidth="max-w-md">
-      <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
+      <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
         <h3 className="font-bold text-lg text-slate-800">
           {isEditingExpense ? 'تعديل المصروف' : 'تفاصيل المصروف'}
         </h3>
@@ -224,7 +263,7 @@ export const ExpenseForm = memo(() => {
         </button>
       </div>
 
-      <form onSubmit={submitExpense} className="space-y-5">
+      <form onSubmit={submitExpense} className="space-y-4">
 
         {/* 🆕 منطقة المبلغ (Hero Area) — بلا عناوين صريحة، الحقل نفسه هو بطل
             الشاشة. العملة أصبحت زراً صغيراً (Pill) تحته، لا حقلاً موازياً له
@@ -372,7 +411,7 @@ export const ExpenseForm = memo(() => {
             >
               الصندوق المشترك
             </button>
-            {payerOptions.map(t => {
+            {visiblePayers.map(t => {
               const isSelected = expenseForm.paidBy === t.id
               return (
                 <button
@@ -391,6 +430,15 @@ export const ExpenseForm = memo(() => {
                 </button>
               )
             })}
+            {(hiddenPayersCount > 0 || isAllPayersShown) && orderedPayers.length > 5 && (
+              <button
+                type="button"
+                onClick={() => setIsAllPayersShown(prev => !prev)}
+                className="px-4 py-2 rounded-xl text-sm font-bold text-slate-500 bg-slate-50 border border-dashed border-slate-300 hover:bg-slate-100 transition-colors"
+              >
+                {isAllPayersShown ? 'أقلّ' : `غيرهم (${hiddenPayersCount})`}
+              </button>
+            )}
           </div>
         </div>
 

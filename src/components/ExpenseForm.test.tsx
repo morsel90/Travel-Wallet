@@ -7,7 +7,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { TripStoreProvider } from '../store/TripStoreProvider'
 import { ExpenseForm } from './ExpenseSection'
-import type { Traveler, ExpenseFormData, CurrencyMap } from '../types'
+import type { Traveler, Expense, ExpenseFormData, CurrencyMap } from '../types'
 
 const travelers: Traveler[] = [
   { id: 1, name: 'محمد', shortName: 'محمد', deposited: 0 },
@@ -18,6 +18,21 @@ const currencies: CurrencyMap = {
   SAR: { label: 'ريال سعودي (SAR)', rate: 1 },
   USD: { label: 'دولار أمريكي (USD)', rate: 3.75 },
 }
+
+// رحلة من أربعة عشر مسافراً — الحالة التي بلّغ عنها صاحب الحساب على آيفون
+// حقيقي: أربعة صفوف من الكبسولات تبتلع الشاشة.
+const manyTravelers: Traveler[] = Array.from({ length: 14 }, (_, i) => ({
+  id: i + 1,
+  name: `مسافر ${i + 1}`,
+  shortName: `م${i + 1}`,
+  deposited: 0,
+  ...(i === 0 ? { uid: 'uid-me' } : {}),
+}))
+
+const paidExpenses: Expense[] = [
+  { id: 'x1', date: '2026-09-08', description: 'وقود', amount: 10, originalAmount: 10, currency: 'SAR', exchangeRate: 1, participants: [1], paidBy: 9, createdAt: 100 },
+  { id: 'x2', date: '2026-09-09', description: 'قهوة', amount: 10, originalAmount: 10, currency: 'SAR', exchangeRate: 1, participants: [1], paidBy: 12, createdAt: 200 },
+]
 
 const emptyForm: ExpenseFormData = {
   date: new Date().toISOString().slice(0, 10),
@@ -36,15 +51,17 @@ const submitExpense = (e: { preventDefault: () => void }) => e.preventDefault()
 
 // حالة حقيقية لا setExpenseForm فارغة: الاشتقاق التلقائي للفئة يقرأ ما كُتب
 // فعلاً في النموذج، فمزوّد بلا حالة يجعل الاختبار يمرّ دون أن يفحص شيئاً.
-function Harness({ initial = emptyForm, isEditing = false, user = null }: {
+function Harness({ initial = emptyForm, isEditing = false, user = null, people = travelers, expenses = [] }: {
   initial?: ExpenseFormData
   isEditing?: boolean
   user?: { uid: string } | null
+  people?: Traveler[]
+  expenses?: Expense[]
 }) {
   const [expenseForm, setExpenseForm] = useState<ExpenseFormData>(initial)
   return (
     <TripStoreProvider
-      travelers={travelers} expenses={[]} user={user as never} isAdmin={false} isOrganizer={false}
+      travelers={people} expenses={expenses} user={user as never} isAdmin={false} isOrganizer={false}
       currencies={currencies} ratesUpdatedAt={null}
       cancelExpenseForm={noop} startEditExpense={noop} requestDeleteExpense={noop}
       openDeposit={noop} requestDeleteTraveler={noop} openDepositHistory={noop}
@@ -79,6 +96,54 @@ describe('ExpenseForm — «من دفع؟» خطوة ظاهرة', () => {
     const payers = screen.getAllByRole('button', { name: /^دفعها / })
     expect(payers[0]).toHaveTextContent('سعد (أنا)')
     expect(payers[1]).toHaveTextContent('محمد')
+  })
+})
+
+describe('ExpenseForm — قسم الدافع لا يبتلع الشاشة في رحلة كبيرة', () => {
+  const payerChips = () => screen.getAllByRole('button', { name: /^دفعها / })
+
+  it('يعرض كل المسافرين بلا كبسولة "غيرهم" حين يكونون خمسة أو أقلّ', () => {
+    render(<Harness />)
+    expect(payerChips()).toHaveLength(travelers.length)
+    expect(screen.queryByRole('button', { name: /غيرهم/ })).not.toBeInTheDocument()
+  })
+
+  it('يقصر الظاهر على ثلاثة ويُخفي البقية خلف كبسولة واحدة حين يكبر الدفتر', () => {
+    render(<Harness people={manyTravelers} user={{ uid: 'uid-me' }} />)
+    expect(payerChips()).toHaveLength(3)
+    expect(screen.getByRole('button', { name: 'غيرهم (11)' })).toBeInTheDocument()
+  })
+
+  it('يكشف البقية بنقرة ويعيد طيّها بأخرى', async () => {
+    const user = userEvent.setup()
+    render(<Harness people={manyTravelers} user={{ uid: 'uid-me' }} />)
+    await user.click(screen.getByRole('button', { name: 'غيرهم (11)' }))
+    expect(payerChips()).toHaveLength(14)
+    await user.click(screen.getByRole('button', { name: 'أقلّ' }))
+    expect(payerChips()).toHaveLength(3)
+  })
+
+  it('يقدّم ملفّي ثم الأحدث دفعاً فعلياً في هذه الرحلة', () => {
+    render(<Harness people={manyTravelers} user={{ uid: 'uid-me' }} expenses={paidExpenses} />)
+    // م١ (أنا)، ثم م١٢ (أحدث دفعة)، ثم م٩
+    expect(payerChips().map(b => b.getAttribute('aria-label'))).toEqual(['دفعها م1', 'دفعها م12', 'دفعها م9'])
+  })
+
+  // ⚠️ سطرٌ يخفي قيمته الحالية يكذب على قارئه: عند تعديل مصروف قديم دفعه من لم
+  // يدفع منذها، يجب أن تبقى كبسولته ظاهرة محدَّدة بلا أن يفتح المستخدم "غيرهم".
+  it('يُبقي الدافع المختار ظاهراً ولو كان خارج الثلاثة', () => {
+    render(
+      <Harness
+        isEditing
+        people={manyTravelers}
+        user={{ uid: 'uid-me' }}
+        expenses={paidExpenses}
+        initial={{ ...emptyForm, participants: manyTravelers.map(t => t.id), paidBy: 14 }}
+      />,
+    )
+    const selected = screen.getByRole('button', { name: 'دفعها م14' })
+    expect(selected).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'غيرهم (10)' })).toBeInTheDocument()
   })
 })
 
