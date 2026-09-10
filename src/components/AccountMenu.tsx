@@ -2,7 +2,7 @@
 // بروفايلي، تبديل وضع المسؤول) في نقطة دخول واحدة بنمط تطبيقات جوجل: صورة/حرف
 // أول للمستخدم، وقائمة منسدلة عند الضغط. انظر docs/DECISIONS.md للسياق.
 import { useEffect, useRef, useState } from 'react'
-import { Luggage, Lock, LogOut, ChevronDown, ChevronLeft } from '../icons'
+import { Luggage, UserRoundCog, LogOut, ChevronDown, ChevronLeft } from '../icons'
 import { haptic } from '../utils/haptics'
 
 interface AccountMenuProps {
@@ -10,14 +10,27 @@ interface AccountMenuProps {
   email: string | null
   isAdmin: boolean
   /** 🆕 منظّم هذه الرحلة تحديداً (لا مسؤول عالمي) — يُستهلك فقط لإخفاء زرّ
-   * «تسجيل الدخول كمسؤول» عمّن لا يحتاجه (يدير رحلته من «رحلاتي» مباشرة). */
+   * «الدخول بحساب آخر» عمّن لا يحتاجه (يدير رحلته من «رحلاتي» مباشرة). */
   isOrganizer: boolean
   /** 🆕 يُمرَّر حين يكون المستخدم عضواً في أكثر من رحلة، أو مسؤولاً/منظّماً —
    * «رحلاتي» نقطة الدخول الوحيدة الآن لإدارة أي رحلة (بعد دمج «إدارة الرحلات»
    * فيها، انظر docs/DECISIONS.md)، فلم يعد لهما زرّ منفصل هنا. */
   onShowMyTrips?: () => void
   onShowProfile: () => void
-  /** 🆕 تسجيل الدخول بحساب مسؤول منفصل — يظهر فقط لمن لا يملك admin ولا isOrganizer. */
+  /**
+   * 🆕 الدخول بحساب آخر — يظهر فقط لمن لا يملك admin ولا isOrganizer.
+   *
+   * ⚠️ **كان اسمه «تسجيل الدخول كمسؤول»، وكان ذلك وعداً كاذباً.** الشرط أعلاه
+   * يعرضه على غير المسؤول وغير المنظّم حصراً — أي على المسافر العادي بالضبط،
+   * وهو الوحيد الذي *لا يستطيع* أن يصير مسؤولاً بضغطه. ما يفعله الزرّ فعلاً
+   * `signInWithEmailAndPassword` بحساب مختلف: من يملك حساب مسؤول منفصل يدخل
+   * به، ومن لا يملكه يصطدم بـ«البريد الإلكتروني أو كلمة المرور غير صحيحة».
+   * الصلاحية لا تُمنح من هنا إطلاقاً — تُقرأ من claims الحساب الذي دخل.
+   *
+   * الاسم الجديد يصف الأثر لا يَعِد بحالة: تبديل الحساب شيء يستطيعه كل
+   * مستخدم فعلاً، فالبند صار صادقاً لمن يراه بدل أن يكون باباً موصداً عليه
+   * قفلٌ مرسوم. انظر docs/DECISIONS.md.
+   */
   onAdminSignIn: () => void
   onSignOut: () => void
 }
@@ -111,14 +124,18 @@ export default function AccountMenu({
 
             {/* 🆕 لا زرّ «لوحة الإدارة»/«إدارة الرحلة» بعد الآن — دُمجت إدارة
                 الرحلات في «رحلاتي» أعلاه (زرّ «تعديل» على كل رحلة يملك المستخدم
-                صلاحيتها). من ليس مسؤولاً ولا منظّماً وحده يرى تسجيل الدخول هنا. */}
+                صلاحيتها). من ليس مسؤولاً ولا منظّماً وحده يرى هذا البند.
+
+                ⚠️ **وهو الآن «الدخول بحساب آخر» لا «تسجيل الدخول كمسؤول»** —
+                انظر تعليق `onAdminSignIn` أعلاه لسبب أن الاسم القديم كان
+                يَعِد المسافر العادي تحديداً بما لا يستطيعه. */}
             {!isAdmin && !isOrganizer && (
               <button
                 type="button" role="menuitem"
                 onClick={() => runAndClose(onAdminSignIn)}
                 className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
               >
-                <Lock className="w-4 h-4 text-slate-500" /> تسجيل الدخول كمسؤول
+                <UserRoundCog className="w-4 h-4 text-slate-500" /> الدخول بحساب آخر
               </button>
             )}
           </div>

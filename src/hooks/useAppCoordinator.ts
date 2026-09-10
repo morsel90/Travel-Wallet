@@ -446,7 +446,7 @@ export function useAppCoordinator() {
       // 🆕 لا PIN بعد الآن — تسجيل الدخول (AuthGate) هو الحارس الوحيد المتبقي.
       signInError, isSigningIn, signInWithGoogle, signInWithEmail,
       // 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يُستهلك في canManageLongTerm
-      // أدناه، وفي AccountMenu لإخفاء زرّ «تسجيل الدخول كمسؤول» عمّن لا يحتاجه
+      // أدناه، وفي AccountMenu لإخفاء زرّ «الدخول بحساب آخر» عمّن لا يحتاجه
       // أصلاً (منظّم يدير رحلته من «رحلاتي» مباشرة، لا من حساب مسؤول منفصل).
       isOrganizer,
     },

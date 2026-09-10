@@ -38,7 +38,7 @@ interface HeaderProps {
    */
   tripName: string
   /** 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يمرَّر إلى AccountMenu لإخفاء
-   * زرّ «تسجيل الدخول كمسؤول» عمّن لا يحتاجه أصلاً. */
+   * زرّ «الدخول بحساب آخر» عمّن لا يحتاجه أصلاً. */
   isOrganizer: boolean
   stats: HeaderStats | null
   /** 🆕 أرقام الشهر الجاري — الرحلة الطويلة فقط. غيابها (undefined/null)

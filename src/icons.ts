@@ -2,6 +2,9 @@ export {
   PieChart,
   Lock,
   Unlock,
+  // 🆕 «الدخول بحساب آخر» في AccountMenu — قفلٌ كان يوحي بباب موصد يُفتح
+  // بضغطة، وهذا بالضبط ما لا يحدث. أيقونة تبديل الحساب تصف الفعل.
+  UserRoundCog,
   Loader2,
   Users,
   UserMinus,

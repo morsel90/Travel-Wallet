@@ -35,7 +35,10 @@ export default function TrashBinModal({
       {/* عنوان النافذة */}
       <div className="flex items-center gap-2 mb-4">
         <span className="text-xl">🗑️</span>
-        <h3 className="font-bold text-slate-800">سلة المهملات (صلاحية المسؤول)</h3>
+        {/* 🆕 بلا «(صلاحية المسؤول)»: هذه النافذة لا تُفتح إلا للمسؤول أصلاً
+            (بندها في MoreMenu غائب تماماً عن غيره)، فالعبارة تُخبر الوحيد
+            الذي يراها بما يعرفه، ولا يراها من قد تعنيه. */}
+        <h3 className="font-bold text-slate-800">سلة المهملات</h3>
       </div>
 
       {/* أزرار التبويب (Tabs) للتبديل */}

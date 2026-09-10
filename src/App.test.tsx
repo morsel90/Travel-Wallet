@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import App from './App'
 
 // ─── اختبار تثبيت سلوك (Characterization Test) ────────────────────────────────
@@ -324,20 +324,32 @@ describe('App — الحالات الفارغة', () => {
     expect(screen.queryByText('لوحة الإدارة')).not.toBeInTheDocument()
   })
 
-  it('غير المسؤول لا يرى أزرار الإدارة', async () => {
+  // ⚠️ **قائمة مغلقة لا سلسلة نفي.** الصيغة السابقة كانت تنفي البنود التي
+  // خطرت لكاتبها وقتها (السلة، النسخة الاحتياطية، لوحة الإدارة) — فأي بند
+  // إداري *جديد* يُضاف غداً بلا حارس صلاحية يمرّ أمامها بلا أن يسقط شيء،
+  // وهو بالضبط نوع الانحدار المقصود منعه: أن يرى المسافر العادي باباً
+  // موصداً ثم يكتشف أنه ليس له. المساواة على المجموعة كاملةً تُسقط أي
+  // إضافة غير مقصودة فوراً، وتُجبر من يضيف بنداً على أن يقرّر لمن يظهر.
+  it('العضو العادي يرى ما يستطيعه فقط — لا بنداً واحداً زائداً', async () => {
     render(<App />)
     await screen.findByText('أرصدة المسافرين')
-    // «المزيد» متاح لكل عضو، لكن بنوده الإدارية ليست كذلك: التقارير نعم،
-    // السلة/إدارة الرحلة/النسخة الاحتياطية لا (غياب الخاصية هو التعطيل).
+
     openMoreMenu()
-    expect(screen.getByText('التقارير')).toBeInTheDocument()
-    expect(screen.queryByText('سلة المهملات')).not.toBeInTheDocument()
-    expect(screen.queryByText('نسخة احتياطية')).not.toBeInTheDocument()
+    const moreItems = within(screen.getByRole('dialog', { name: 'المزيد' }))
+      .getAllByRole('button')
+      .map(b => b.getAttribute('aria-label') ?? '')
+      .filter(name => name !== '' && !name.startsWith('إغلاق'))
+    // التقارير والإحصائيات والمسار حقٌّ لكل عضو. وما عداها — إدارة الرحلة،
+    // النسخة الاحتياطية، سلة المهملات، «هذا الشهر» — غائب تماماً لا مُعطَّل.
+    expect(moreItems).toEqual(['التقارير', 'الإحصائيات', 'مسار الرحلة'])
+
     fireEvent.click(screen.getByRole('button', { name: 'إغلاق المزيد' }))
     fireEvent.click(screen.getByRole('button', { name: 'حسابي' }))
-    expect(screen.queryByText('لوحة الإدارة')).not.toBeInTheDocument()
-    expect(screen.queryByText('إدارة الرحلة')).not.toBeInTheDocument()
-    expect(screen.getByText('تسجيل الدخول كمسؤول')).toBeInTheDocument()
+    const accountItems = screen.getAllByRole('menuitem').map(b => b.getAttribute('aria-label') ?? b.textContent?.trim())
+    // «رحلاتي» غائبة أيضاً: عضو برحلة واحدة لا شيء يبدّل إليه.
+    // 🆕 و«الدخول بحساب آخر» لا «تسجيل الدخول كمسؤول» — كان البند الوحيد الذي
+    // يَعِد المسافر العادي (وهو تحديداً من يراه) بصلاحية لا يمنحها الضغط عليه.
+    expect(accountItems).toEqual(['بروفايلي', 'الدخول بحساب آخر', 'تسجيل الخروج'])
   })
 
   it('بلا مصاريف: حالة فارغة في السجل ولا قسم إحصائيات', async () => {

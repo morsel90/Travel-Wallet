@@ -25,11 +25,19 @@ const AdminSignInModal = ({
   authError, onSubmit, onClose, onForgotPassword,
   isSendingResetEmail, resetCooldownSeconds,
 }: AdminSignInModalProps) => (
-  <Modal maxWidth="max-w-xs" onClose={onClose} label="تسجيل الدخول للمسؤول">
+  // 🆕 «الدخول بحساب آخر» لا «تسجيل الدخول للمسؤول» — انظر AccountMenu.tsx:
+  // العنوان القديم يَعِد بصلاحية، وهذه النافذة لا تمنح صلاحية إطلاقاً. ما
+  // تفعله تبديل الحساب؛ والصلاحية تُقرأ من claims الحساب الذي دخل، إن حملها.
+  <Modal maxWidth="max-w-xs" onClose={onClose} label="الدخول بحساب آخر">
     <button type="button" onClick={onClose} className="absolute top-4 left-4 text-slate-400 hover:text-slate-600 transition-colors">
       <X className="w-5 h-5" />
     </button>
-    <h3 className="font-bold mb-4 text-teal-600">تسجيل الدخول للمسؤول</h3>
+    <h3 className="font-bold mb-1 text-teal-600">الدخول بحساب آخر</h3>
+    {/* ⚠️ يقول ما يحدث صراحةً: الجلسة الحالية تُستبدل. بلا هذا السطر يبدو
+        النموذج كأنه «يضيف» صلاحية للحساب الحالي، وهو ما لا يفعله. */}
+    <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+      تُستبدل جلستك الحالية بجلسة الحساب الذي تدخل به، وتظهر لك صلاحياته هو.
+    </p>
     <form onSubmit={onSubmit}>
       <input
         type="email" required autoFocus placeholder="البريد الإلكتروني" value={email}
