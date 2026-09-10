@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import * as Sentry from '@sentry/react'
 import type { ToastMessage, Traveler } from '../types'
 import {
-  useAuth, useAdminAuth, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
+  useAuth, useAdminAuth, usePasswordReset, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
   useTripAdminActions, useAllTrips, useMyTrips, useMyTripRole, useInviteJoin, useUserProfile,
   useOrganizerBankDetails, useSyncTravelerNameFromProfile, useLongTermActions,
@@ -220,7 +220,10 @@ export function useAppCoordinator() {
   // والفشل يُنظّف الرابط ويعرض توستاً ثم يُكمل التدفّق المعتاد (رحلاتي/بوابة الرمز).
   const inviteJoin = useInviteJoin(user, showToast)
 
-  const admin = useAdminAuth({ showToast })
+  // 🆕 يُركَّب هنا لا داخل useAdminAuth: `AuthGate` يحتاجه قبل تسجيل الدخول،
+  // وuseAdminAuth لا يُستهلك هناك أصلاً. انظر usePasswordReset.ts.
+  const passwordReset = usePasswordReset({ showToast })
+  const admin = useAdminAuth({ passwordReset })
 
   // 🆕 يعتمد على كود خطأ Firestore لا على البحث في نص الرسالة: النص غير موثوق
   // (يتغيّر بين إصدارات SDK وقد يكون مترجَماً)، والكود ثابت ومحدَّد.
@@ -554,6 +557,8 @@ export function useAppCoordinator() {
      * القياسية تحذف مباشرةً (تنبيه «تراجع»)، والطويلة تفتح نافذة الخروج.
      */
     requestDeleteTraveler,
+    /** 🆕 يُمرَّر إلى AuthGate — استرداد كلمة المرور قبل تسجيل الدخول. */
+    passwordReset,
     expense,
     traveler,
     deposit,

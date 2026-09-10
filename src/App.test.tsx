@@ -122,11 +122,16 @@ vi.mock('./hooks', async () => {
   useAdminAuth: () => ({
     showAdminSignIn: false, openAdminSignIn: noop, handleAdminSignOut: noop, adminModalProps: {},
   }),
+  // 🆕 استرداد كلمة المرور — منطقه في usePasswordReset.test.ts، وبلوغه من
+  // بوابة الدخول في AuthGate.test.tsx. هنا مجرّد بديل صامت.
+  usePasswordReset: () => ({
+    requestReset: async () => 'sent' as const, isSendingReset: false, resetCooldownSeconds: 0,
+  }),
   useExpenseActions: () => ({
     newExpense: formState, setNewExpense: noop, isAddingExpense: h.isAddingExpense, editingExpense: null,
-    expenseToDelete: null, setExpenseToDelete: noop, openExpenseForm: noop, cancelExpenseForm: noop,
+    openExpenseForm: noop, cancelExpenseForm: noop,
     handleAddExpense: noop, handleQuickAddExpense: () => null, startEditExpense: noop,
-    requestDeleteExpense: noop, confirmDelete: noop, handleRestoreExpense: noop,
+    requestDeleteExpense: noop, handleRestoreExpense: noop,
     toggleParticipant: noop, toggleAllParticipants: noop,
   }),
   useTravelerActions: () => ({

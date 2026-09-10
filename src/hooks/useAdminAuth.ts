@@ -1,28 +1,27 @@
 // 🆕 منطق مصادقة المسؤول كاملاً — استُخرج من App.tsx لتقليل حجمه (على غرار useExpenseActions)
 // يملك حالة نافذة دخول المسؤول + معالجات الدخول/الخروج/استرداد كلمة المرور.
-// حالة العدّ التنازلي (resetCooldown) تبقى هنا حتى تظل سارية حتى لو أُغلقت النافذة وأُعيد فتحها.
+// 🆕 استرداد كلمة المرور (وعدّه التنازلي) لم يعد هنا — انظر usePasswordReset.ts.
 import { useState, useCallback } from 'react'
 import type { FormEvent } from 'react'
-import {
-  signInWithEmailAndPassword, signOut, sendPasswordResetEmail,
-} from 'firebase/auth'
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import { auth } from '../firebase'
-import { useCountdown } from './useCountdown'
-import type { ToastMessage } from '../types'
+import type { UsePasswordResetResult } from './usePasswordReset'
 
 interface UseAdminAuthArgs {
-  showToast: (msg: ToastMessage, durationMs?: number) => void
+  /**
+   * 🆕 استرداد كلمة المرور لم يعد يعيش هنا — استُخرج إلى `usePasswordReset`
+   * ويُمرَّر جاهزاً، لأن `AuthGate` (قبل تسجيل الدخول) يحتاجه أيضاً وهذا
+   * الخطّاف لا يُركَّب هناك أصلاً. المهلة والرسالة الموحّدة وابتلاع الخطأ
+   * — كلها هناك الآن، نسخة واحدة لمستدعيَين. انظر تعليق ذلك الملف.
+   */
+  passwordReset: UsePasswordResetResult
 }
 
-export function useAdminAuth({ showToast }: UseAdminAuthArgs) {
+export function useAdminAuth({ passwordReset }: UseAdminAuthArgs) {
   const [showAdminSignIn, setShowAdminSignIn] = useState(false)
   const [adminEmail,      setAdminEmail]      = useState('')
   const [adminPassword,   setAdminPassword]   = useState('')
   const [authError,       setAuthError]       = useState<string | null>(null)
-
-  const [isSendingResetEmail, setIsSendingResetEmail] = useState(false)
-  const [resetCooldownUntil,  setResetCooldownUntil]  = useState<number | null>(null)
-  const resetCooldownSeconds = useCountdown(resetCooldownUntil)
 
   const openAdminSignIn = useCallback(() => setShowAdminSignIn(true), [])
 
@@ -56,24 +55,16 @@ export function useAdminAuth({ showToast }: UseAdminAuthArgs) {
     try { await signOut(auth) } catch (err) { console.error(err) }
   }, [])
 
+  // الحقل الفارغ وحده يُعالَج هنا: رسالته تعتمد على تسمية الحقل في *هذه*
+  // النافذة («بالحقل أعلاه»)، بينما بقية المنطق موحّد في usePasswordReset.
   const handleForgotPassword = useCallback(async () => {
-    if (isSendingResetEmail || resetCooldownSeconds > 0) return
-    if (!adminEmail.trim()) {
+    const outcome = await passwordReset.requestReset(adminEmail)
+    if (outcome === 'missing-email') {
       setAuthError('أدخل بريدك الإلكتروني بالحقل أعلاه أولاً ثم اضغط "نسيت كلمة المرور؟".')
-      return
-    }
-    setIsSendingResetEmail(true)
-    try {
-      await sendPasswordResetEmail(auth, adminEmail.trim())
-    } catch {
-      // نتجاهل الخطأ عمداً حتى لا نكشف ما إذا كان البريد مسجّلاً أم لا (حماية من تعداد الحسابات)
-    } finally {
+    } else if (outcome === 'sent') {
       setAuthError(null)
-      setIsSendingResetEmail(false)
-      setResetCooldownUntil(Date.now() + 60_000)
-      showToast({ text: 'إذا كان البريد صحيحًا ومسجّلاً، فسيصلك رابط إعادة تعيين كلمة المرور خلال دقائق.', type: 'success' })
     }
-  }, [adminEmail, showToast, isSendingResetEmail, resetCooldownSeconds])
+  }, [adminEmail, passwordReset])
 
   return {
     // حالة الفتح + المُبدّلات الإجرائية التي يحتاجها Header
@@ -88,8 +79,8 @@ export function useAdminAuth({ showToast }: UseAdminAuthArgs) {
       onSubmit: handleAdminSignIn,
       onClose: closeAdminSignIn,
       onForgotPassword: handleForgotPassword,
-      isSendingResetEmail,
-      resetCooldownSeconds,
+      isSendingResetEmail: passwordReset.isSendingReset,
+      resetCooldownSeconds: passwordReset.resetCooldownSeconds,
     },
   }
 }
