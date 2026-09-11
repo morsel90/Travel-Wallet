@@ -142,7 +142,7 @@
 ## Development Setup
 
 ```bash
-# Prerequisites: Node.js v18+, Firebase CLI, Vercel CLI
+# Prerequisites: Node.js v22.12+ (أو 24.x/26+ — يفرضها Vitest 5)، Firebase CLI، Vercel CLI
 
 # 1. Install dependencies
 npm install
