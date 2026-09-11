@@ -48,9 +48,10 @@ interface HeaderProps {
   email: string | null
   /**
    * 🆕 يُمرَّر حين يكون المستخدم عضواً في أكثر من رحلة، أو مسؤولاً — أي حين
-   * يوجد ما يُرجَع إليه فعلاً. **زرّ مستقلّ في الهيدر لا بند في قائمة الحساب**:
-   * هو المسار الرئيسي (دخول ← رحلاتي ← الرحلة)، ونقرةٌ واحدة تكفيه — انظر
-   * AccountMenu.tsx وdocs/DECISIONS.md.
+   * يوجد ما يُرجَع إليه فعلاً. **زرّ مستقلّ يتصدّر الهيدر، لا بند في قائمة
+   * الحساب ولا عنصر مجاور لها**: هو المسار الرئيسي (دخول ← رحلاتي ← الرحلة)،
+   * وترتيبه أولاً هو ترتيب زرّ الرجوع في كل شريط عنوان — انظر AccountMenu.tsx
+   * وdocs/DECISIONS.md.
    */
   onShowMyTrips?: () => void
   onShowProfile: () => void
@@ -152,6 +153,26 @@ const Header = ({
           isCollapsed ? 'py-2' : 'py-3'
         }`}
       >
+        {/* 🆕 **الرجوع أولاً، ثم هوية الرحلة، والحساب في الطرف الآخر.**
+            ترتيب شريط العنوان في كل تطبيق محادثة: زرّ الرجوع يتصدّر الصفّ لأنه
+            يسبق ما تنظر إليه — أنت *خارج* من هنا إلى القائمة. وضعُه بجانب
+            الأفاتار كان يُقرأ كأنه من عناصر الحساب، وهو بالضبط الالتباس الذي
+            نُقل من قائمة الحساب ليتخلّص منه.
+
+            لا يظهر إطلاقاً لمن له رحلة واحدة (onShowMyTrips غير مُمرَّرة) —
+            لا شيء يُرجَع إليه، فيبدأ الصفّ بالشعار كما كان قبل هذه الميزة. */}
+        {onShowMyTrips && (
+          <button
+            type="button"
+            onClick={() => { haptic.light(); onShowMyTrips() }}
+            aria-label="رحلاتي"
+            title="رحلاتي"
+            className="flex items-center justify-center bg-teal-800/50 hover:bg-teal-800 text-teal-50 hover:text-white transition-all duration-200 rounded-xl border border-teal-500/30 backdrop-blur-sm shrink-0 min-h-[44px] min-w-[44px]"
+          >
+            <Luggage className="w-[18px] h-[18px]" />
+          </button>
+        )}
+
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           {/* 🆕 **اسم الرحلة/الشعار هو زرّ فتح ورقة «المزيد»** — لا زرّ ⋯
               منفصل. لاحظ صاحب الحساب أن القائمة تحوي الإعدادات وإدارة الرحلة
@@ -230,30 +251,12 @@ const Header = ({
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          {/* 🆕 الرجوع لقائمة الرحلات بنقرة واحدة — كان بنداً داخل قائمة
-              الحساب، فكان المسار الرئيسي يمرّ بـ«حسابي». أيقونة وحدها بلا
-              نصّ: الهيدر ضيّق واسم الرحلة يحتاج عرضه، والأيقونة مع aria-label
-              وtitle كافية لنمط مألوف (الرجوع من المحادثة إلى قائمتها).
-              لا يظهر إطلاقاً لمن له رحلة واحدة — لا شيء يُرجَع إليه. */}
-          {onShowMyTrips && (
-            <button
-              type="button"
-              onClick={() => { haptic.light(); onShowMyTrips() }}
-              aria-label="رحلاتي"
-              title="رحلاتي"
-              className="flex items-center justify-center bg-teal-800/50 hover:bg-teal-800 text-teal-50 hover:text-white transition-all duration-200 rounded-xl border border-teal-500/30 backdrop-blur-sm shrink-0 min-h-[44px] min-w-[44px]"
-            >
-              <Luggage className="w-[18px] h-[18px]" />
-            </button>
-          )}
-          <AccountMenu
-            displayName={displayName}
-            email={email}
-            onShowProfile={onShowProfile}
-            onSignOut={onSignOut}
-          />
-        </div>
+        <AccountMenu
+          displayName={displayName}
+          email={email}
+          onShowProfile={onShowProfile}
+          onSignOut={onSignOut}
+        />
       </div>
 
       {/* ⚠️ داخل <header> لكن خارج شريطه: Modal يرسم عبر portal إلى body على
