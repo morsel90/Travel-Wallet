@@ -62,7 +62,7 @@ export default function AuthGate({
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 w-full max-w-xs text-center">
+      <div className="bg-white rounded-2xl shadow-xs border border-slate-200 p-8 w-full max-w-xs text-center">
         <div className="w-12 h-12 rounded-full bg-teal-50 flex items-center justify-center mx-auto mb-4">
           <LogIn className="w-6 h-6 text-teal-600" />
         </div>
@@ -119,7 +119,7 @@ export default function AuthGate({
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="البريد الإلكتروني"
                     dir="ltr"
-                    className="w-full border border-slate-200 rounded-xl p-2.5 text-sm text-center outline-none focus:ring-2 focus:ring-teal-500"
+                    className="w-full border border-slate-200 rounded-xl p-2.5 text-sm text-center outline-hidden focus:ring-2 focus:ring-teal-500"
                   />
                   <input
                     type="password"
@@ -128,7 +128,7 @@ export default function AuthGate({
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="كلمة المرور"
                     dir="ltr"
-                    className="w-full border border-slate-200 rounded-xl p-2.5 text-sm text-center outline-none focus:ring-2 focus:ring-teal-500"
+                    className="w-full border border-slate-200 rounded-xl p-2.5 text-sm text-center outline-hidden focus:ring-2 focus:ring-teal-500"
                   />
                   <button
                     type="submit"

@@ -44,7 +44,7 @@ const UpdatePrompt = ({ hasUnsavedData }: UpdatePromptProps) => {
     // 🆕 bottom-24 بدل bottom-4 — يفسح مجالاً لزر Quick Add العائم (FAB) الثابت
     // في الزاوية السفلية اليمنى (bottom-6، ارتفاعه 56px) حتى لا تتداخل معه هذه
     // النافذة إن ظهرت الاثنتان معاً (نادر: فقط مباشرةً بعد نشر تحديث جديد)
-    <div className="fixed bottom-24 right-4 left-4 md:left-auto md:w-80 z-[9999] bg-slate-800 text-white rounded-2xl p-4 shadow-2xl flex items-center justify-between gap-3">
+    <div className="fixed bottom-24 right-4 left-4 md:left-auto md:w-80 z-9999 bg-slate-800 text-white rounded-2xl p-4 shadow-2xl flex items-center justify-between gap-3">
       <div>
         <p className="font-bold text-sm">تحديث متاح</p>
         <p className="text-xs text-slate-300 mt-0.5">نسخة جديدة من التطبيق جاهزة</p>

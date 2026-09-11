@@ -12,7 +12,7 @@ interface NotAMemberScreenProps {
 export default function NotAMemberScreen({ onShowMyTrips }: NotAMemberScreenProps) {
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 w-full max-w-xs text-center">
+      <div className="bg-white rounded-2xl shadow-xs border border-slate-200 p-8 w-full max-w-xs text-center">
         <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center mx-auto mb-4">
           <UserX className="w-6 h-6 text-rose-600" />
         </div>

@@ -94,7 +94,7 @@ const SmartInputBar = ({ visible, onQuickAdd, onExpand, clearSignal }: SmartInpu
       <form onSubmit={handleSubmit}>
         <div className="flex items-center gap-1.5">
 
-          <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-teal-500/50 transition-all shadow-sm h-11">
+          <div className="flex-1 flex items-center bg-slate-50 border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-teal-500/50 transition-all shadow-xs h-11">
 
             <input
               ref={amountRef}
@@ -116,7 +116,7 @@ const SmartInputBar = ({ visible, onQuickAdd, onExpand, clearSignal }: SmartInpu
                   descRef.current?.focus()
                 }
               }}
-              className="w-20 sm:w-28 bg-transparent px-3 h-full text-base font-black text-teal-700 outline-none placeholder:text-slate-400 text-center"
+              className="w-20 sm:w-28 bg-transparent px-3 h-full text-base font-black text-teal-700 outline-hidden placeholder:text-slate-400 text-center"
               dir="ltr"
             />
             <div className="w-px h-6 bg-slate-200 shrink-0" />
@@ -127,7 +127,7 @@ const SmartInputBar = ({ visible, onQuickAdd, onExpand, clearSignal }: SmartInpu
               placeholder="عشاء، بنزين..."
               value={desc}
               onChange={e => { setDesc(e.target.value); setError(null) }}
-              className="w-full bg-transparent px-3 h-full text-base font-bold outline-none placeholder:text-slate-400 placeholder:font-normal"
+              className="w-full bg-transparent px-3 h-full text-base font-bold outline-hidden placeholder:text-slate-400 placeholder:font-normal"
             />
           </div>
 
@@ -135,7 +135,7 @@ const SmartInputBar = ({ visible, onQuickAdd, onExpand, clearSignal }: SmartInpu
             type="button"
             onClick={() => { haptic.light(); onExpand(desc, amount) }}
             title="إضافة تفاصيل"
-            className="bg-slate-100 hover:bg-slate-200 text-slate-600 w-11 h-11 flex items-center justify-center rounded-xl transition-colors shrink-0 shadow-sm"
+            className="bg-slate-100 hover:bg-slate-200 text-slate-600 w-11 h-11 flex items-center justify-center rounded-xl transition-colors shrink-0 shadow-xs"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
@@ -145,7 +145,7 @@ const SmartInputBar = ({ visible, onQuickAdd, onExpand, clearSignal }: SmartInpu
           <button
             type="submit"
             disabled={!desc.trim() || !amount}
-            className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white w-11 h-11 flex items-center justify-center rounded-xl transition-colors shrink-0 shadow-sm disabled:shadow-none"
+            className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white w-11 h-11 flex items-center justify-center rounded-xl transition-colors shrink-0 shadow-xs disabled:shadow-none"
           >
             <Plus className="w-5 h-5" />
           </button>

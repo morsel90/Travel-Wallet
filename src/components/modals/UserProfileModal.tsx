@@ -14,7 +14,7 @@ interface UserProfileModalProps {
 }
 
 const inputClass =
-  'w-full border border-slate-200 rounded-xl px-3 py-2 text-base bg-white focus:ring-2 focus:ring-teal-500 outline-none'
+  'w-full border border-slate-200 rounded-xl px-3 py-2 text-base bg-white focus:ring-2 focus:ring-teal-500 outline-hidden'
 const labelClass = 'block text-xs font-bold text-slate-500 mb-1.5'
 
 type PaymentType = 'bank' | 'wallet'
@@ -77,7 +77,7 @@ export default function UserProfileModal({ profile, isSaving, onSave, onClose }:
               type="button"
               onClick={() => setPaymentType('bank')}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs sm:text-sm font-bold rounded-lg transition-colors ${
-                paymentType === 'bank' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'
+                paymentType === 'bank' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500'
               }`}
             >
               <Building2 className="w-3.5 h-3.5" /> حساب بنكي
@@ -86,7 +86,7 @@ export default function UserProfileModal({ profile, isSaving, onSave, onClose }:
               type="button"
               onClick={() => setPaymentType('wallet')}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs sm:text-sm font-bold rounded-lg transition-colors ${
-                paymentType === 'wallet' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'
+                paymentType === 'wallet' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500'
               }`}
             >
               <Smartphone className="w-3.5 h-3.5" /> محفظة رقمية

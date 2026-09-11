@@ -70,9 +70,9 @@ export const NextSegmentWidget = ({ itinerary }: NextSegmentWidgetProps) => {
   const countdown = formatCountdown(nextSegment.departure.time, now)
 
   return (
-    <div className="bg-teal-50 border border-teal-100 rounded-2xl p-4 mb-4 rtl flex items-center justify-between shadow-sm">
+    <div className="bg-teal-50 border border-teal-100 rounded-2xl p-4 mb-4 rtl flex items-center justify-between shadow-xs">
       <div className="flex items-center gap-3">
-        <div className="bg-white p-2.5 rounded-full shadow-sm">
+        <div className="bg-white p-2.5 rounded-full shadow-xs">
           {Icon && <Icon className="w-5 h-5 text-teal-600" />}
         </div>
         <div>
@@ -88,7 +88,7 @@ export const NextSegmentWidget = ({ itinerary }: NextSegmentWidgetProps) => {
         والتاريخ الكامل لكل مقطع معروض أصلاً في «مسار الرحلة» (ItinerarySection).
         يسقط للتاريخ حين يتعذّر العدّ (وقت تالف) كي لا يبقى الصندوق بسطر واحد.
       */}
-      <div className="text-left bg-white px-3 py-1.5 rounded-xl shadow-sm border border-teal-50">
+      <div className="text-left bg-white px-3 py-1.5 rounded-xl shadow-xs border border-teal-50">
         <p className="text-xs font-bold text-teal-700">
           {countdown ? toArabicDigits(countdown) : formattedDate}
         </p>

@@ -33,7 +33,7 @@ export const BankDetailsCard = ({ bankDetails, isLoading = false }: BankDetailsC
 
   if (isLoading) {
     return (
-      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex items-center justify-center gap-2 text-slate-400 min-h-[120px]">
+      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex items-center justify-center gap-2 text-slate-400 min-h-[120px]">
         <Loader2 className="w-4 h-4 animate-spin" />
         <span className="text-xs font-bold">جارٍ جلب بيانات الحساب...</span>
       </section>
@@ -44,7 +44,7 @@ export const BankDetailsCard = ({ bankDetails, isLoading = false }: BankDetailsC
   // حالة فارغة واضحة بدل حقول فارغة صامتة أو إخفاء البطاقة كلياً.
   if (!bankDetails) {
     return (
-      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm text-center">
+      <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs text-center">
         <div className="w-11 h-11 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-3">
           <Building2 className="w-5 h-5 text-slate-400" />
         </div>
@@ -99,7 +99,7 @@ export const BankDetailsCard = ({ bankDetails, isLoading = false }: BankDetailsC
   }
 
   return (
-    <section className="bg-white border border-slate-200 rounded-2xl p-5 text-slate-900 shadow-sm select-none">
+    <section className="bg-white border border-slate-200 rounded-2xl p-5 text-slate-900 shadow-xs select-none">
 
       {/* رأس البطاقة: اسم البنك/المحفظة (عرض فقط) وزر المشاركة */}
       <div className="flex items-center justify-between gap-2 pb-3.5 mb-4 border-b border-slate-200">
@@ -140,7 +140,7 @@ export const BankDetailsCard = ({ bankDetails, isLoading = false }: BankDetailsC
             onClick={() => handleCopy(bankDetails.walletPhone ?? '', 'walletPhone', true)}
             title="نسخ رقم الجوال"
             className={cn(
-              'w-full flex items-center justify-between gap-2 p-3 rounded-xl transition-all duration-150 text-right outline-none',
+              'w-full flex items-center justify-between gap-2 p-3 rounded-xl transition-all duration-150 text-right outline-hidden',
               'border active:scale-[0.98]',
               copiedField === 'walletPhone'
                 ? 'bg-teal-50 border-teal-200 text-teal-700'
@@ -175,7 +175,7 @@ export const BankDetailsCard = ({ bankDetails, isLoading = false }: BankDetailsC
               onClick={() => handleCopy(bankDetails.iban, 'iban', true)}
               title="نسخ الآيبان"
               className={cn(
-                'w-full flex items-center justify-between gap-2 p-3 rounded-xl transition-all duration-150 text-right outline-none',
+                'w-full flex items-center justify-between gap-2 p-3 rounded-xl transition-all duration-150 text-right outline-hidden',
                 'border active:scale-[0.98]',
                 copiedField === 'iban'
                   ? 'bg-teal-50 border-teal-200 text-teal-700'
@@ -209,7 +209,7 @@ export const BankDetailsCard = ({ bankDetails, isLoading = false }: BankDetailsC
               onClick={() => handleCopy(bankDetails.beneficiary, 'beneficiary')}
               title="نسخ اسم المستفيد"
               className={cn(
-                'w-full flex items-center justify-between gap-2 p-3 rounded-xl transition-all duration-150 text-right outline-none',
+                'w-full flex items-center justify-between gap-2 p-3 rounded-xl transition-all duration-150 text-right outline-hidden',
                 'border active:scale-[0.98]',
                 copiedField === 'beneficiary'
                   ? 'bg-teal-50 border-teal-200 text-teal-700'

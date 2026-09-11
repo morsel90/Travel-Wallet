@@ -70,7 +70,7 @@ export const SettlementsPanel = ({
           description="سجّل أول مصروف للرحلة، وسيحسب التطبيق تلقائياً من يدين لمن وبكم — بأقل عدد ممكن من التحويلات."
         />
       ) : settlements.length === 0 ? (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 py-8 text-center text-slate-400 font-medium text-sm">
+        <div className="bg-white rounded-2xl shadow-xs border border-slate-200 py-8 text-center text-slate-400 font-medium text-sm">
           🎉 جميع الحسابات مصفّاة والأرصدة متساوية تماماً!
         </div>
       ) : (
@@ -82,7 +82,7 @@ export const SettlementsPanel = ({
               <div
                 key={idx}
                 className={cn(
-                  'flex flex-col gap-3 border rounded-2xl p-4 transition-all shadow-sm',
+                  'flex flex-col gap-3 border rounded-2xl p-4 transition-all shadow-xs',
                   isPaid ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-slate-200 hover:border-slate-300'
                 )}
               >

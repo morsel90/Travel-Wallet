@@ -23,7 +23,7 @@ type EditTripModalProps = ComponentProps<typeof TripDetailPanel> & { onClose: ()
 export default function EditTripModal({ onClose, ...panelProps }: EditTripModalProps) {
   return (
     <motion.div
-      className="fixed inset-0 z-[9998] bg-slate-50 overflow-y-auto"
+      className="fixed inset-0 z-9998 bg-slate-50 overflow-y-auto"
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 24 }}

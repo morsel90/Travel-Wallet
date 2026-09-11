@@ -19,7 +19,7 @@ interface EmptyStateProps {
 
 export const EmptyState = memo(({ Icon, title, description, actionLabel, onAction, ActionIcon }: EmptyStateProps) => (
   <div className="flex flex-col items-center justify-center text-center px-6 py-12 sm:py-16 animate-fadeIn">
-    <div className="w-16 h-16 rounded-2xl bg-teal-50 text-teal-500 flex items-center justify-center mb-4 shadow-sm ring-1 ring-teal-100">
+    <div className="w-16 h-16 rounded-2xl bg-teal-50 text-teal-500 flex items-center justify-center mb-4 shadow-xs ring-1 ring-teal-100">
       <Icon className="w-8 h-8" />
     </div>
 
@@ -30,7 +30,7 @@ export const EmptyState = memo(({ Icon, title, description, actionLabel, onActio
       <button
         type="button"
         onClick={() => { haptic.light(); onAction() }}
-        className="inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 active:scale-[0.98] text-white font-bold text-sm px-5 py-2.5 rounded-xl transition-all shadow-sm"
+        className="inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 active:scale-[0.98] text-white font-bold text-sm px-5 py-2.5 rounded-xl transition-all shadow-xs"
       >
         {ActionIcon && <ActionIcon className="w-4 h-4" />}
         {actionLabel}

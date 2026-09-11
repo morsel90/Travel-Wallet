@@ -143,11 +143,10 @@
 │
 ├── firestore.rules              # Security rules (multi-trip, admin claims, rate limiting)
 ├── vercel.json                  # 🆕 SPA config only — no rewrites; functions are called via httpsCallable
-├── vite.config.js               # Vite + PWA config (code splitting, Workbox, env substitution)
+├── vite.config.js               # Vite + PWA + Tailwind v4 (code splitting, Workbox, env substitution)
 ├── vitest.config.ts             # Vitest with jsdom + setupFiles (unit tests)
 ├── vitest.rules.config.ts       # 🆕 Separate config for rules tests (node env, needs emulator)
 ├── playwright.config.ts         # 🆕 E2E config — boots `vite --mode e2e` against the emulators
-├── tailwind.config.js           # Tailwind content paths
 └── .github/workflows/ci.yml    # CI: lint → typecheck → test → rules → e2e → build
 ```
 

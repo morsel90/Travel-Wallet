@@ -70,22 +70,22 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
     <>
       <div
         onClick={() => { setProfileInitialTab('summary'); setShowProfile(true) }}
-        // 🆕 لا حدّ افتراضي — بطاقة عائمة تعتمد على shadow-sm/hover:shadow-md وحده
+        // 🆕 لا حدّ افتراضي — بطاقة عائمة تعتمد على shadow-xs/hover:shadow-md وحده
         // للتمايز عن خلفية الصفحة الرمادية، لا خطاً محيطاً. isMine يبقى استثناءً
         // مقصوداً: حدّ تيل واضح تمييزٌ دلالي («بطاقتك أنت»)، لا خط فاصل قائمة.
-        className={`bg-white rounded-xl p-3.5 sm:p-4 shadow-sm flex flex-col gap-2.5 relative group transition-all hover:shadow-md cursor-pointer ${
+        className={`bg-white rounded-xl p-3.5 sm:p-4 shadow-xs flex flex-col gap-2.5 relative group transition-all hover:shadow-md cursor-pointer ${
           isMine ? 'border-2 border-teal-300 hover:border-teal-400' : ''
         }`}
       >
         {traveler._pending && (
-          <div className="absolute -top-1.5 -right-1.5 bg-teal-500 text-white p-1 rounded-full shadow-sm z-10" title="جارٍ المزامنة...">
+          <div className="absolute -top-1.5 -right-1.5 bg-teal-500 text-white p-1 rounded-full shadow-xs z-10" title="جارٍ المزامنة...">
             <Loader2 className="w-3 h-3 animate-spin" />
           </div>
         )}
 
         <div className="flex justify-between items-center gap-3 min-w-0 w-full">
           <div className="flex items-center gap-3 min-w-0 flex-1">
-            <div className="w-9 h-9 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-sm font-bold shrink-0 shadow-sm">
+            <div className="w-9 h-9 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-sm font-bold shrink-0 shadow-xs">
               {traveler.name[0]}
             </div>
             
@@ -135,7 +135,7 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
         <div className="w-full flex items-center gap-2 mt-0.5" dir="ltr" title={`استهلاك ${percentage.toFixed(1)}%`}>
           <div className="flex-1 bg-slate-100 rounded-full h-1 overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${isNegative ? 'bg-rose-400' : 'bg-gradient-to-r from-teal-400 to-teal-600'}`}
+              className={`h-full rounded-full transition-all duration-500 ${isNegative ? 'bg-rose-400' : 'bg-linear-to-r from-teal-400 to-teal-600'}`}
               style={{ width: `${isNegative ? 100 : percentage}%` }}
             />
           </div>
@@ -228,7 +228,7 @@ export const AddTravelerForm = memo(({
   }, [setNewTravelerDeposit]);
 
   return (
-    <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-slate-200 mt-5 animate-fadeIn">
+    <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-xs border border-slate-200 mt-5 animate-fadeIn">
       <div className="flex justify-between items-center mb-5 pb-3.5 border-b border-slate-100">
         <h3 className="font-bold text-base sm:text-lg text-slate-800">إضافة مسافر جديد</h3>
         <button 
@@ -251,7 +251,7 @@ export const AddTravelerForm = memo(({
               autoFocus 
               value={newTravelerName}
               onChange={(e) => setNewTravelerName(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-xl p-3 text-base text-slate-800 font-bold focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all placeholder:text-slate-300 placeholder:font-normal"
+              className="w-full bg-white border border-slate-200 rounded-xl p-3 text-base text-slate-800 font-bold focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-hidden transition-all placeholder:text-slate-300 placeholder:font-normal"
               placeholder="مثال: سعد الغامدي"
             />
           </div>
@@ -264,7 +264,7 @@ export const AddTravelerForm = memo(({
                 inputMode="decimal" 
                 value={newTravelerDeposit}
                 onChange={handleDepositChange}
-                className="w-full bg-white border border-slate-200 rounded-xl p-3 pl-8 text-base text-slate-800 font-bold focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all placeholder:text-slate-300 placeholder:font-normal"
+                className="w-full bg-white border border-slate-200 rounded-xl p-3 pl-8 text-base text-slate-800 font-bold focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-hidden transition-all placeholder:text-slate-300 placeholder:font-normal"
                 placeholder="0.00"
                 dir="ltr"
               />
@@ -275,7 +275,7 @@ export const AddTravelerForm = memo(({
 
         <button
           type="submit"
-          className="w-full bg-teal-600 text-white font-bold py-3.5 rounded-xl hover:bg-teal-700 active:scale-[0.99] transition-all text-base shadow-sm mt-2 flex items-center justify-center gap-1.5"
+          className="w-full bg-teal-600 text-white font-bold py-3.5 rounded-xl hover:bg-teal-700 active:scale-[0.99] transition-all text-base shadow-xs mt-2 flex items-center justify-center gap-1.5"
         >
           <Plus className="w-4 h-4" /> اعتماد المسافر الجديد
         </button>

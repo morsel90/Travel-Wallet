@@ -58,7 +58,7 @@
 | Language | TypeScript | ^5.3.3 |
 | Bundler | Vite (Rolldown) | ^8.3.0 |
 | State | React Context (DataContext + UIActionsContext + UIFormContext) | — |
-| Styling | Tailwind CSS | ^3.4.1 |
+| Styling | Tailwind CSS | ^4.3.3 |
 | Icons | Lucide React | ^1.44.0 |
 | QR encoding | qrcode-generator | ^2.0.4 |
 | Animations | Framer Motion | ^11.2.10 |
@@ -74,6 +74,10 @@
 | Linting | ESLint (flat config) + Prettier | ^10.10.0 |
 | Deployment (frontend) | Vercel SPA | — |
 | Deployment (backend) | Firebase CLI | — |
+
+🆕 **Tailwind v4 sets a browser floor, and that is a product decision, not a build detail.** The generated CSS uses `@property` and unprefixed `oklch()` colors, so the app now requires **Safari 16.4+ / Chrome 111+ / Firefox 128+** — on iPhone that means **iOS 16.4+**, which excludes any device that cannot pass iOS 16 (iPhone 7 and older). Opacity-modified colors (`bg-teal-50/60`) degrade gracefully through `@supports (color: color-mix(…))` with hex fallbacks, but `@property` does not. Check this against who actually uses the app before assuming it is free.
+
+🆕 **Both `tailwind.config.js` and `postcss.config.js` are gone, deliberately.** The first held only `content` + an empty `theme.extend` + no plugins — nothing to translate, since v4 discovers templates itself and the default theme arrives with `@import 'tailwindcss'` in `src/index.css`. The second only loaded tailwind and autoprefixer, and v4 prefixes internally via Lightning CSS (`autoprefixer` and `postcss` were uninstalled with it). Tailwind is wired through `@tailwindcss/vite` in `vite.config.js`; any future theme customization belongs in a `@theme` block in CSS, not a JS config.
 
 **No external charting library** — all charts are pure HTML/CSS. **No external XLSX library** — OOXML generated inline via `src/utils/xlsx.ts`. 🆕 **QR encoding *is* a dependency** — see *Design Decisions* for why that is consistent rather than an exception.
 

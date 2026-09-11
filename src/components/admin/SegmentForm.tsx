@@ -16,7 +16,7 @@ interface SegmentFormProps {
 }
 
 const inputClass =
-  'w-full border border-slate-200 rounded-xl px-3 py-2 text-base bg-white focus:ring-2 focus:ring-teal-500 outline-none'
+  'w-full border border-slate-200 rounded-xl px-3 py-2 text-base bg-white focus:ring-2 focus:ring-teal-500 outline-hidden'
 const labelClass = 'block text-xs font-bold text-slate-500 mb-1.5'
 
 export default function SegmentForm({
@@ -28,7 +28,7 @@ export default function SegmentForm({
   return (
     <form
       onSubmit={e => { e.preventDefault(); onSubmit() }}
-      className="bg-white rounded-2xl shadow-sm border-2 border-teal-200 p-4 space-y-4"
+      className="bg-white rounded-2xl shadow-xs border-2 border-teal-200 p-4 space-y-4"
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-bold text-slate-800">
@@ -117,7 +117,7 @@ export default function SegmentForm({
       <div className="flex gap-2">
         <button
           type="submit"
-          className="flex-1 flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm"
+          className="flex-1 flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-xs"
         >
           <Save className="w-4 h-4" /> {isEditing ? 'حفظ التعديل' : 'إضافة للمسار'}
         </button>

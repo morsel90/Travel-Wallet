@@ -75,7 +75,7 @@ export default function AccountMenu({
         <div
           role="menu"
           aria-label="حسابي"
-          className="absolute left-0 top-full mt-2 w-60 bg-white rounded-2xl shadow-lg border border-slate-200 py-2 z-[110] text-right"
+          className="absolute left-0 top-full mt-2 w-60 bg-white rounded-2xl shadow-lg border border-slate-200 py-2 z-110 text-right"
         >
           {/* 🆕 بطاقة المستخدم نفسها هي زر «بروفايلي» الآن — نمط تطبيقات الجوّال
               الأصلية (إعدادات iOS/Android: بطاقة الحساب العلوية تفتح صفحة الحساب

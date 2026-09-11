@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import react            from '@vitejs/plugin-react'
 import { VitePWA }      from 'vite-plugin-pwa'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
+import tailwindcss     from '@tailwindcss/vite'
 
 export default defineConfig(({ mode }) => {
   // تحميل كافة المتغيرات المضافة في Vercel أو .env
@@ -70,6 +71,16 @@ export default defineConfig(({ mode }) => {
 
     plugins: [
       react(),
+      // 🆕 Tailwind v4 عبر إضافة Vite الرسمية بدل مسار PostCSS.
+      //
+      // زال معها ملفان كاملان: postcss.config.js وtailwind.config.js.
+      //   • الأول لم يكن يفعل شيئاً سوى تحميل tailwind وautoprefixer، وv4
+      //     تتولّى البادئات داخلياً عبر Lightning CSS — فلم يبقَ فيه محتوى.
+      //   • الثاني كان `content` + `theme: { extend: {} }` + `plugins: []`،
+      //     أي بلا أي تخصيص فعلي. v4 تكتشف الملفات تلقائياً، والثيم الافتراضي
+      //     يُستورد مع `@import 'tailwindcss'` في src/index.css — فلا شيء
+      //     يُترجَم. لو احتيج تخصيص لاحقاً فمكانه `@theme` في CSS، لا ملف JS.
+      tailwindcss(),
       VitePWA({
         strategies: 'generateSW',
         registerType: 'autoUpdate',
