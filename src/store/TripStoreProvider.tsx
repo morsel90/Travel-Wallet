@@ -1,9 +1,9 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useState } from 'react'
 import type { ReactNode, Dispatch, FormEvent, SetStateAction } from 'react'
 import type { User } from 'firebase/auth'
 import type { Traveler, Expense, ExpenseFormData, CurrencyMap } from '../types'
 import { createTripStore, TripStoreContext } from './tripStore'
-import type { TripStore, TripActionsSlice } from './tripStore'
+import type { TripActionsSlice } from './tripStore'
 
 // ─── مزوّد مخزن الرحلة (Zustand) ───────────────────────────────────────────────
 //
@@ -19,11 +19,12 @@ import type { TripStore, TripActionsSlice } from './tripStore'
 // القيمة الثلاث تُبنى في هذا الملف وحده، وهذا مقصود — نفس سبب AppProviders.tsx
 // القديم: مقارنة الحقول الثلاثة ممكنة بالعين المجرّدة بدل أن تكون متباعدة.
 //
-// آلية المزامنة: نسخة Zustand واحدة لكل تركيب (useRef، لا Singleton عالمي —
-// انظر docs/DECISIONS.md لسبب ذلك)، مُهيَّأة من أول رسم مباشرة (بلا فليكر
-// فراغ أولي)، ثم ثلاث useLayoutEffect منفصلة (واحدة لكل مفتاح) تُحدّث المخزن
-// فقط حين تتغيّر مدخلات ذلك المفتاح تحديداً — بنفس مصفوفات الاعتماديات التي
-// كانت تستخدمها useMemo الثلاث في AppProviders.tsx القديم.
+// آلية المزامنة: نسخة Zustand واحدة لكل تركيب (مُهيّئ useState الكسول، لا
+// Singleton عالمي — انظر docs/DECISIONS.md لسبب ذلك)، مُهيَّأة من أول رسم
+// مباشرة (بلا فليكر فراغ أولي)، ثم ثلاث useLayoutEffect منفصلة (واحدة لكل
+// مفتاح) تُحدّث المخزن فقط حين تتغيّر مدخلات ذلك المفتاح تحديداً — بنفس
+// مصفوفات الاعتماديات التي كانت تستخدمها useMemo الثلاث في AppProviders.tsx
+// القديم.
 //
 // useLayoutEffect لا setState أثناء الرسم مباشرة: الكتابة إلى مخزن خارجي أثناء
 // الرسم تجعل دالة الرسم غير نقية (ما يكشفه React 18 Strict Mode تحديداً)،
@@ -72,8 +73,13 @@ export function TripStoreProvider({
   submitExpense, toggleParticipant, toggleAllParticipants,
   children,
 }: TripStoreProviderProps) {
-  const storeRef = useRef<TripStore | undefined>(undefined)
-  storeRef.current ??= createTripStore({
+  // 🆕 مُهيّئ useState الكسول لا `useRef.current ??=`. السلوك واحد بالحرف
+  // (المُهيّئ يعمل مرّة واحدة لكل تركيب، والقيمة ثابتة بعدها فلا setter لها)،
+  // لكن النمط السابق كان يقرأ مرجعاً **ويكتب فيه** أثناء الرسم — وهو ما يمنعه
+  // React صراحةً ويرصده `react-hooks/refs`: سبع مخالفات كلها من هذا السطر
+  // وحده. التهيئة الكسولة عبر useState هي البديل الذي يوصي به React لهذا
+  // الغرض بالضبط، فتزول المخالفات بلا أي تغيير في السلوك.
+  const [store] = useState(() => createTripStore({
     data: { travelers, expenses, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt },
     actions: {
       cancelExpenseForm, startEditExpense, requestDeleteExpense,
@@ -83,8 +89,7 @@ export function TripStoreProvider({
       expenseForm, setExpenseForm, isExpenseFormOpen, isEditingExpense,
       submitExpense, toggleParticipant, toggleAllParticipants,
     },
-  })
-  const store = storeRef.current
+  }))
 
   useLayoutEffect(() => {
     store.setState({
