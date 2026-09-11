@@ -114,13 +114,16 @@ describe('removeMember — الرسالة تقول ما حدث فعلاً', () =
     expect(showToast.mock.calls[0][0].text).toContain('حتى ساعة')
   })
 
-  it('إزالة مسؤول تُعلن أن وصوله باقٍ — صلاحيته عامة لا تمرّ بعضوية الرحلة', async () => {
+  it('إزالة من صلاحيته عامة تُعلن أن وصوله باقٍ — لا تمرّ بهذه الرحلة', async () => {
     mocks.callable.mockResolvedValue({ data: { success: true, claimRemoved: true, stillHasAccess: true } })
     const { result } = setup()
     await act(async () => { await result.current.removeMember('trip-1', 'admin-2') })
 
     const text = showToast.mock.calls[0][0].text
-    expect(text).toContain('مسؤول')
+    // 🆕 بلا كلمة «مسؤول»: القاموس المعروض دورٌ واحد — «منظّم الرحلة». ما يُقال
+    // هنا هو *الأثر* (صلاحيته عامة لا تمرّ بهذه الرحلة) لا اسم دورٍ ثانٍ.
+    expect(text).toContain('صلاحيته عامة')
+    expect(text).not.toContain('مسؤول')
     expect(text).not.toContain('حتى ساعة')
   })
 
@@ -129,7 +132,7 @@ describe('removeMember — الرسالة تقول ما حدث فعلاً', () =
     const { result } = setup()
     await act(async () => { await result.current.removeMember('trip-1', 'ghost') })
 
-    expect(showToast.mock.calls[0][0].text).toContain('لم يكن عضواً')
+    expect(showToast.mock.calls[0][0].text).toContain('لم يكن منضمّاً')
   })
 })
 
@@ -190,14 +193,14 @@ describe('setMemberRole — المسؤول العالمي حصراً', () => {
 describe('removeMember — الفشل', () => {
   it('رسالة الدالة العربية تُعرض كما هي', async () => {
     mocks.callable.mockRejectedValue(
-      Object.assign(new Error('هذا الإجراء متاح للمسؤول فقط.'), { code: 'functions/permission-denied' }),
+      Object.assign(new Error('هذا الإجراء ليس من صلاحيات منظّم الرحلة.'), { code: 'functions/permission-denied' }),
     )
     const { result } = setup()
     let ok
     await act(async () => { ok = await result.current.removeMember('trip-1', 'u1') })
 
     expect(ok).toBe(false)
-    expect(showToast.mock.calls[0][0].text).toBe('هذا الإجراء متاح للمسؤول فقط.')
+    expect(showToast.mock.calls[0][0].text).toBe('هذا الإجراء ليس من صلاحيات منظّم الرحلة.')
   })
 
   it('خطأ غير خاص بالدوال يمرّ لمعالج أخطاء Firestore', async () => {
@@ -461,14 +464,14 @@ describe('deleteTrip — الصلاحية والعقد', () => {
 })
 
 describe('createInvite — الصلاحية والعقد', () => {
-  it('يرفض غير المسؤول ولمن ليس منظّم *هذه* الرحلة تحديداً — نفس شرط canAct', async () => {
+  it('يرفض من ليس منظّم *هذه* الرحلة تحديداً — نفس شرط canAct', async () => {
     const { result } = setup(false, 'trip-2')
     let token
     await act(async () => { token = await result.current.createInvite('trip-1') })
 
     expect(token).toBeNull()
     expect(mocks.callable).not.toHaveBeenCalled()
-    expect(showToast.mock.calls[0][0].text).toContain('أو منظّم الرحلة')
+    expect(showToast.mock.calls[0][0].text).toContain('منظّم الرحلة')
   })
 
   it('يستدعي manageInvite بالوضع create ويُعيد التوكن', async () => {
@@ -500,14 +503,14 @@ describe('createInvite — الصلاحية والعقد', () => {
 
   it('رسالة رفض الخادم تُعرض كما هي، وتُعيد null', async () => {
     mocks.callable.mockRejectedValue(
-      Object.assign(new Error('هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.'), { code: 'functions/permission-denied' }),
+      Object.assign(new Error('هذا الإجراء متاح لمنظّم الرحلة فقط.'), { code: 'functions/permission-denied' }),
     )
     const { result } = setup()
     let token
     await act(async () => { token = await result.current.createInvite('trip-1') })
 
     expect(token).toBeNull()
-    expect(showToast.mock.calls[0][0].text).toBe('هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.')
+    expect(showToast.mock.calls[0][0].text).toBe('هذا الإجراء متاح لمنظّم الرحلة فقط.')
   })
 
   it('خطأ شبكة (لا كود functions/) يستخدم handleFirestoreError لا رسالة الخادم', async () => {
@@ -571,14 +574,14 @@ describe('revokeInvite — الصلاحية والعقد', () => {
 // linkTravelerAccount (functions/index.js) — هنا فقط عقد الاستدعاء والصلاحية
 // على مستوى الواجهة، نفس نمط removeMember/createInvite أعلاه بالضبط.
 describe('linkTravelerAccount — الصلاحية والعقد', () => {
-  it('يرفض غير المسؤول ولمن ليس منظّم *هذه* الرحلة تحديداً — نفس شرط canAct', async () => {
+  it('يرفض من ليس منظّم *هذه* الرحلة تحديداً — نفس شرط canAct', async () => {
     const { result } = setup(false, 'trip-2')
     let ok
     await act(async () => { ok = await result.current.linkTravelerAccount('trip-1', 5, 'u1') })
 
     expect(ok).toBe(false)
     expect(mocks.callable).not.toHaveBeenCalled()
-    expect(showToast.mock.calls[0][0].text).toContain('أو منظّم الرحلة')
+    expect(showToast.mock.calls[0][0].text).toContain('منظّم الرحلة')
   })
 
   it('يستدعي linkTravelerAccount بالمعرّفات الصحيحة ويُظهر توست نجاح', async () => {

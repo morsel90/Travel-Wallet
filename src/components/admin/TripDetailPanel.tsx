@@ -418,13 +418,13 @@ export default function TripDetailPanel({
 
           <hr className="border-slate-100" />
 
-          {/* 🆕 لا حقول بنك هنا — بيانات البنك المعروضة لأعضاء هذه الرحلة تُقرأ
+          {/* 🆕 لا حقول بنك هنا — بيانات البنك المعروضة لمسافري هذه الرحلة تُقرأ
               حيّة من بروفايل المنظّم (users/{organizerUid})، لا مستند الرحلة.
               انظر docs/DECISIONS.md. */}
           <div className="flex items-start gap-2.5 bg-slate-50 border border-slate-100 rounded-xl p-3">
             <User className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
             <p className="text-xs text-slate-600 leading-relaxed">
-              بيانات البنك المعروضة لأعضاء هذه الرحلة تُقرأ من بروفايل المنظّم
+              بيانات البنك المعروضة لمسافري هذه الرحلة تُقرأ من بروفايل المنظّم
               الحالي مباشرة — عدّلها من (بروفايلي)، وينعكس التعديل فوراً هنا
               وفي كل رحلة أخرى ينظّمها نفس الحساب.
             </p>
@@ -438,7 +438,7 @@ export default function TripDetailPanel({
               <Lock className="w-4 h-4 text-teal-600" /> حالة الرحلة
             </h3>
             <p className="text-xs text-slate-500 mb-3">
-              يتغيّر الأثر فوراً لكل الأعضاء — والمنع مفروض على الخادم لا في الواجهة فقط.
+              يتغيّر الأثر فوراً لكل المسافرين — والمنع مفروض على الخادم لا في الواجهة فقط.
             </p>
 
             <div className="flex flex-wrap gap-1.5" role="group" aria-label="حالة الرحلة">
@@ -502,7 +502,7 @@ export default function TripDetailPanel({
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5">
                   <p className="text-xs text-amber-900 leading-relaxed">
                     يُخفي هذا واجهة "الشهر المحاسبي" فقط — لا يُلغي أثر أي شهر أُغلق فعلياً على
-                    هذه الرحلة، وحركاته المالية المُرحَّلة تبقى كما هي في دفتر الرحلة.
+                    هذه الرحلة، ومصاريفه المُرحَّلة تبقى كما هي في دفتر الرحلة.
                   </p>
                   <div className="flex gap-2">
                     <button
@@ -564,11 +564,11 @@ export default function TripDetailPanel({
               ملف JSON يحتوي كل بيانات هذه الرحلة القابلة لإعادة الاستيراد لاحقاً — المسافرون
               والمصاريف وسجلّات الإيداع ومسار الرحلة. بخلاف تصدير Excel، هذا الملف يحتفظ بالمعرّفات
               الداخلية وسجلّ الحذف اللين، وهو <span className="font-bold">الشيء الوحيد الذي ينجو من فقدان
-              الوصول لحساب Google/Firebase نفسه</span> — نسخ Firestore التلقائي يعيش داخل نفس المشروع.
+              الوصول لحساب Google/Firebase نفسه</span> — نسخ Firestore التلقائي يعيش داخل حساب Firebase نفسه.
             </p>
 
             <p className="text-[11px] text-slate-400">
-              لا يعيد وصول الأعضاء عند استعادته لاحقاً — العضوية تعيش في حساب كل عضو لا في هذا الملف.
+              لا يعيد وصول المسافرين عند استعادته لاحقاً — الوصول يعيش في حساب كل مسافر لا في هذا الملف.
             </p>
 
             <button
@@ -825,7 +825,7 @@ export default function TripDetailPanel({
               رحلة بعد الآن). رابط واحد نشط فقط لكل رحلة. */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-3">
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <Share2 className="w-4 h-4 text-teal-600" /> دعوة أعضاء
+              <Share2 className="w-4 h-4 text-teal-600" /> دعوة مسافرين
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed">
               رابط يدخل به المدعوّ إلى الرحلة مباشرة بعد تسجيل دخوله. رابط واحد نشط فقط لكل
@@ -888,14 +888,14 @@ export default function TripDetailPanel({
           <div className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1.5">
             <p className="font-bold">الإزالة قد تستغرق حتى ساعة لتصبح فعّالة.</p>
             <p>
-              جلسة العضو صالحة ٦٠ دقيقة، والصلاحية تُقرأ منها. لا يوجد إجراء فوري بديل —
-              العضوية تبقى سارية حتى تنتهي صلاحية توكن العضو الحالي.
+              جلسة المسافر صالحة ٦٠ دقيقة، والصلاحية تُقرأ منها. لا يوجد إجراء فوري بديل —
+              وصوله يبقى سارياً حتى تنتهي صلاحية جلسته الحالية.
             </p>
           </div>
 
           {(membersError || travelersError) && (
             <p role="alert" className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-2.5">
-              تعذّر جلب قائمة الأعضاء أو المسافرين. القراءة متاحة للمسؤول أو منظّم الرحلة — جرّب تسجيل الخروج والدخول لتحديث صلاحيتك.
+              تعذّر جلب قائمة المسافرين. القراءة متاحة لمنظّم الرحلة — جرّب تسجيل الخروج والدخول لتحديث صلاحيتك.
             </p>
           )}
 
@@ -957,7 +957,7 @@ export default function TripDetailPanel({
                             (لقب اختاره هو بنفسه)، وهي ما يعرف به المسؤول العضو فعلياً. */}
                         {m && (
                           <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                            {m.displayName || m.email || 'عضو بجلسة مجهولة'}
+                            {m.displayName || m.email || 'منضمّ بلا اسم'}
                           </p>
                         )}
                         {m && (
@@ -967,7 +967,7 @@ export default function TripDetailPanel({
                             {m.joinedAt
                               ? `انضمّ: ${new Date(m.joinedAt).toLocaleDateString(DT_LOCALE, { day: 'numeric', month: 'short', year: 'numeric' })}`
                               : 'تاريخ الانضمام غير معروف (سطر مُرحَّل)'}
-                            {m.mergedFrom && ' · نُقلت عضويته من جلسة سابقة'}
+                            {m.mergedFrom && ' · نُقل انضمامه من جلسة سابقة'}
                           </p>
                         )}
                       </div>
@@ -1017,7 +1017,7 @@ export default function TripDetailPanel({
                       <div className="mt-3 pt-3 border-t border-teal-200 space-y-2.5">
                         {unlinkedMembers.length === 0 ? (
                           <p className="text-xs text-slate-500">
-                            لا يوجد عضو غير مربوط بعد — كل من انضمّ للرحلة مربوط بمسافر آخر بالفعل.
+                            لا يوجد منضمّ غير مربوط بعد — كل من انضمّ للرحلة مربوط بمسافر بالفعل.
                           </p>
                         ) : (
                           <>
@@ -1028,10 +1028,10 @@ export default function TripDetailPanel({
                               onChange={e => setLinkTargetUid(e.target.value)}
                               className={inputClass}
                             >
-                              <option value="">— اختر عضواً —</option>
+                              <option value="">— اختر منضمّاً —</option>
                               {unlinkedMembers.map(um => (
                                 <option key={um.uid} value={um.uid}>
-                                  {um.displayName || um.email || `عضو بجلسة مجهولة (${um.uid})`}
+                                  {um.displayName || um.email || `منضمّ بلا اسم (${um.uid})`}
                                 </option>
                               ))}
                             </select>
@@ -1061,7 +1061,7 @@ export default function TripDetailPanel({
                     {isConfirming && m && (
                       <div className="mt-3 pt-3 border-t border-rose-200 space-y-2.5">
                         <p className="text-xs text-rose-900">
-                          <span className="font-bold">تُزال عضويته من هذه الرحلة وحدها.</span>{' '}
+                          <span className="font-bold">يُزال وصوله لهذه الرحلة وحدها.</span>{' '}
                           رحلاته الأخرى لا تتأثر، ومصاريفه المسجَّلة تبقى كما هي — إزالة شخص من
                           الرحلة ليست محو أثره من الدفتر.
                         </p>
@@ -1104,7 +1104,7 @@ export default function TripDetailPanel({
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-bold text-slate-800 flex items-center gap-1.5 min-w-0">
-                          <span className="truncate">{m.displayName || m.email || 'عضو بجلسة مجهولة'}</span>
+                          <span className="truncate">{m.displayName || m.email || 'منضمّ بلا اسم'}</span>
                           <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full shrink-0">
                             بلا ملف مسافر
                           </span>
@@ -1118,7 +1118,7 @@ export default function TripDetailPanel({
                           {m.joinedAt
                             ? `انضمّ: ${new Date(m.joinedAt).toLocaleDateString(DT_LOCALE, { day: 'numeric', month: 'short', year: 'numeric' })}`
                             : 'تاريخ الانضمام غير معروف (سطر مُرحَّل)'}
-                          {m.mergedFrom && ' · نُقلت عضويته من جلسة سابقة'}
+                          {m.mergedFrom && ' · نُقل انضمامه من جلسة سابقة'}
                         </p>
                       </div>
 
@@ -1150,7 +1150,7 @@ export default function TripDetailPanel({
                     {isConfirming && (
                       <div className="mt-3 pt-3 border-t border-rose-200 space-y-2.5">
                         <p className="text-xs text-rose-900">
-                          <span className="font-bold">تُزال عضويته من هذه الرحلة وحدها.</span>{' '}
+                          <span className="font-bold">يُزال وصوله لهذه الرحلة وحدها.</span>{' '}
                           رحلاته الأخرى لا تتأثر — لا ملف مسافر له هنا أصلاً ليتأثر.
                         </p>
                         <div className="flex gap-2">

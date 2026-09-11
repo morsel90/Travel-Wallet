@@ -542,7 +542,7 @@ export const ExpenseForm = memo(() => {
                                 }));
                               }}
                               className="w-16 bg-slate-50 border border-slate-200 rounded-lg py-1.5 text-base text-center focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none font-bold text-teal-700"
-                              aria-label={`حصة ${traveler.shortName}`}
+                              aria-label={`نصيب ${traveler.shortName}`}
                             />
                             <span className="text-xs font-bold text-slate-400 w-16 text-left" dir="ltr">
                               {(previewShares[i] ?? 0).toFixed(2)} ﷼
@@ -837,7 +837,7 @@ export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-1.5 bg-slate-50/60 p-2 rounded-xl border border-slate-100">
-              <span className="text-[10px] font-bold text-slate-400 ms-1 shrink-0">توزيع الحصص:</span>
+              <span className="text-[10px] font-bold text-slate-400 ms-1 shrink-0">توزيع النصيب:</span>
               <div className="flex flex-wrap gap-1">
                 {shareData.names.map((name: string, i: number) => {
                   const participantId = expense.participants[i];

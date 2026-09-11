@@ -200,7 +200,7 @@ describe('App — ترتيب البوابات', () => {
     render(<App />)
     expect(await screen.findByText('أرصدة المسافرين')).toBeInTheDocument()
     expect(screen.queryByText('سجّل الدخول لمتابعة')).not.toBeInTheDocument()
-    expect(screen.queryByText('لست عضواً في هذه الرحلة')).not.toBeInTheDocument()
+    expect(screen.queryByText('لست من مسافري هذه الرحلة')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'رحلاتي' })).not.toBeInTheDocument()
   })
 
@@ -226,7 +226,7 @@ describe('App — ترتيب البوابات', () => {
   it('يعرض شاشة "لست عضواً" حين يكون مسجَّل الدخول لكنه ليس عضواً في هذه الرحلة، ولم يكن مسؤولاً', async () => {
     h.auth = { ...h.auth, joinedTripIds: [] }
     render(<App />)
-    expect(await screen.findByText('لست عضواً في هذه الرحلة')).toBeInTheDocument()
+    expect(await screen.findByText('لست من مسافري هذه الرحلة')).toBeInTheDocument()
     expect(screen.queryByText('أرصدة المسافرين')).not.toBeInTheDocument()
   })
 
@@ -234,7 +234,7 @@ describe('App — ترتيب البوابات', () => {
     h.auth = { ...h.auth, isAdmin: true, joinedTripIds: [] }
     render(<App />)
     expect(await screen.findByText('أرصدة المسافرين')).toBeInTheDocument()
-    expect(screen.queryByText('لست عضواً في هذه الرحلة')).not.toBeInTheDocument()
+    expect(screen.queryByText('لست من مسافري هذه الرحلة')).not.toBeInTheDocument()
   })
 })
 

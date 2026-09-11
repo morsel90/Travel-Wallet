@@ -36,7 +36,7 @@ export default function MonthlyRolloverModal({
           صافٍ) ليفهم عملية نتيجتها سطر واحد: يبدأ الشهر الجديد بما لديه الآن.
           التفصيل — من له كم ومن عليه كم — يقرؤه في القائمة أسفلُه بالأرقام. */}
       <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-        يبدأ كل عضو {formatPeriodLabel(opening)} برصيده الحالي نفسه.{' '}
+        يبدأ كل مسافر {formatPeriodLabel(opening)} برصيده الحالي نفسه.{' '}
         <span className="font-bold text-slate-600">لا شيء يضيع ولا شيء يُضاف.</span>
       </p>
 
@@ -44,7 +44,7 @@ export default function MonthlyRolloverModal({
         <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <p className="text-xs text-amber-800 leading-relaxed">
-            كل الأرصدة صفر — لن تُكتب أي حركة مالية. الإغلاق سيمضي بالشهر إلى {formatPeriodLabel(opening)} فقط.
+            كل الأرصدة صفر — لن يُكتب أي مصروف ترحيل. الإغلاق سيمضي بالشهر إلى {formatPeriodLabel(opening)} فقط.
           </p>
         </div>
       ) : (

@@ -17,7 +17,7 @@ export default function NotAMemberScreen({ onShowMyTrips }: NotAMemberScreenProp
           <UserX className="w-6 h-6 text-rose-600" />
         </div>
 
-        <h1 className="text-lg font-bold text-slate-800 mb-1">لست عضواً في هذه الرحلة</h1>
+        <h1 className="text-lg font-bold text-slate-800 mb-1">لست من مسافري هذه الرحلة</h1>
         <p className="text-xs text-slate-400 leading-relaxed">
           اطلب من منظّم الرحلة رابط دعوة جديد للانضمام إليها.
         </p>

@@ -61,7 +61,7 @@ export function LongTermPanel({
               <Receipt className="w-3 h-3" /> مصاريف هذا الشهر
             </p>
             <p className="font-bold text-slate-800 tabular-nums">{money(periodTotal)}</p>
-            <p className="text-[11px] text-slate-400 tabular-nums">{periodCount} عملية</p>
+            <p className="text-[11px] text-slate-400 tabular-nums">{periodCount} مصروف</p>
           </div>
           <div className="p-4">
             <p className="text-[11px] text-slate-500 mb-1">آخر شهر أُغلق</p>
@@ -86,7 +86,7 @@ export function LongTermPanel({
             وبالتسمية الحرفية للزرّ. */}
         {canManage && (
           <p className="px-4 pt-3 pb-2 text-[11px] text-slate-500 leading-relaxed">
-            لإخراج عضو مغادر: اضغط بطاقته في «أرصدة المسافرين» أعلاه، ثم «تسوية وخروج من الرحلة» — يُسوَّى حسابه ويخرج بضغطة واحدة.
+            لإخراج مسافر مغادر: اضغط بطاقته في «أرصدة المسافرين» أعلاه، ثم «تسوية وخروج من الرحلة» — يُسوَّى حسابه ويخرج بضغطة واحدة.
           </p>
         )}
 
@@ -106,7 +106,7 @@ export function LongTermPanel({
                 : <><CalendarCheck className="w-4 h-4" /> إغلاق {formatPeriodLabel(period)} وبدء {formatPeriodLabel(nextPeriod(period))}</>}
             </button>
             <p className="text-[11px] text-slate-500 mt-2 text-center leading-relaxed">
-              يبدأ كل عضو الشهر الجديد برصيده الحالي نفسه — لا شيء يضيع ولا شيء يُضاف.
+              يبدأ كل مسافر الشهر الجديد برصيده الحالي نفسه — لا شيء يضيع ولا شيء يُضاف.
             </p>
           </div>
         )}

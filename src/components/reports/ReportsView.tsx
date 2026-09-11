@@ -256,7 +256,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
                         <span className="font-bold text-slate-700 flex items-center gap-1.5 flex-wrap">
                           {row.label}
                           {isCurrent && (
-                            <span className="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.5 rounded-full shrink-0">الحالية</span>
+                            <span className="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.5 rounded-full shrink-0">الحالي</span>
                           )}
                         </span>
                         <span className="text-center text-slate-500 font-bold tabular-nums">{row.count}</span>

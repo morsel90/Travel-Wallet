@@ -30,11 +30,11 @@ const OnboardingBanner = () => {
       <Info className="w-5 h-5 text-teal-600 shrink-0 mt-0.5" />
       <div className="flex-1 text-xs sm:text-sm text-teal-900 space-y-1.5">
         <p>
-          <span className="font-bold">الدفع المسبق</span> هو ما دفعه كل مسافر مقدمًا كوديعة، و
+          <span className="font-bold">المودع</span> هو ما دفعه كل مسافر مقدّماً، و
           <span className="font-bold"> المتبقي</span> هو هذا المبلغ ناقص نصيبه من المصاريف المشتركة حتى الآن.
         </p>
         <p>
-          <span className="font-bold">وضع المسؤول</span> (الزر أعلى الصفحة) مخصص لمنظّم الرحلة فقط، لتعديل المصاريف وإدارة المسافرين والودائع.
+          تعديل المصاريف والمسافرين متاح <span className="font-bold">لمنظّم الرحلة</span> وحده.
         </p>
       </div>
       <button

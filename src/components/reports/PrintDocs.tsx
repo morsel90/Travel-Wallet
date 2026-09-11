@@ -203,7 +203,7 @@ export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses
 
       {hasPeriods ? (
         <>
-          <SectionTitle>ملخص الفترة</SectionTitle>
+          <SectionTitle>الأشهر</SectionTitle>
           <table className="w-full border-collapse">
             <thead>
               <tr>
@@ -274,7 +274,7 @@ export const PrintableStatement = ({ tripName, generatedAt, traveler, statement,
         ['المودَع', fmt(statement.opening)],
         // 🆕 لا تُعرض لمن لم يدفع من جيبه قط — نفس منطق TravelerProfileModal.
         ...(statement.totalPaidByPocket !== 0 ? [['دفعه من جيبه', fmt(statement.totalPaidByPocket)]] : []),
-        ['إجمالي حصصه', fmt(statement.totalShare)],
+        ['إجمالي نصيبه', fmt(statement.totalShare)],
         ['المتبقي', fmt(statement.remaining)],
       ].map(([label, value]) => (
         <div key={label} className="border border-slate-300 rounded p-2">
@@ -287,7 +287,7 @@ export const PrintableStatement = ({ tripName, generatedAt, traveler, statement,
     {/* 🆕 canViewDepositLogs && timeline: جدول واحد مدمج (مصاريف + تعديلات
         رصيد) بعمود "النوع" — بدل جدولين منفصلين. غير ذلك (لا صلاحية/دورة
         مُصفَّاة/تعذّر التحميل): جدول statement.rows البسيط كما كان دائماً. */}
-    <SectionTitle>{timeline && canViewDepositLogs ? 'حركة الحساب' : 'حركة المصاريف (حصصه وما دفعه من جيبه)'}</SectionTitle>
+    <SectionTitle>{timeline && canViewDepositLogs ? 'كشف الحساب' : 'كشف المصاريف (نصيبه وما دفعه من جيبه)'}</SectionTitle>
     {timeline && canViewDepositLogs ? (
       timeline.rows.length === 0 ? (
         <p className="text-slate-500">لا حركة مسجّلة بعد.</p>
@@ -306,7 +306,7 @@ export const PrintableStatement = ({ tripName, generatedAt, traveler, statement,
             {timeline.rows.map(r => (
               <tr key={r.id}>
                 <td className={td}>{r.date}</td>
-                <td className={td}>{r.kind === 'deposit' ? (MODE_LABELS[r.mode] ?? r.mode) : r.kind === 'paidByPocket' ? 'دفعها من جيبه' : 'حصة مصروف'}</td>
+                <td className={td}>{r.kind === 'deposit' ? (MODE_LABELS[r.mode] ?? r.mode) : r.kind === 'paidByPocket' ? 'دفعها من جيبه' : 'نصيبه من مصروف'}</td>
                 <td className={td}>{r.kind === 'deposit' ? (r.reason ?? '—') : `${r.description} (${r.category})`}</td>
                 <td className={td} dir="ltr">
                   {r.kind === 'deposit' ? `${r.delta >= 0 ? '+' : ''}${fmt(r.delta)}` : `${r.kind === 'paidByPocket' ? '+' : '−'}${fmt(r.amount)}`}

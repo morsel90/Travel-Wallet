@@ -257,7 +257,7 @@ export const AddTravelerForm = memo(({
           </div>
           
           <div className="relative">
-            <label className="block text-xs font-bold text-slate-500 mb-1.5 ms-1">الدفع المسبق (اختياري)</label>
+            <label className="block text-xs font-bold text-slate-500 mb-1.5 ms-1">المودع (اختياري)</label>
             <div className="relative">
               <input
                 type="text" 

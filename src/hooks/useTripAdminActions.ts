@@ -162,7 +162,7 @@ export function useTripAdminActions({
     explainDenial?: () => Promise<string | null>,
   ): Promise<boolean> => {
     if (!canAct(tripId)) {
-      showToast({ text: 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.', type: 'error' }, 3000)
+      showToast({ text: 'هذا الإجراء متاح لمنظّم الرحلة فقط.', type: 'error' }, 3000)
       return false
     }
 
@@ -278,7 +278,7 @@ export function useTripAdminActions({
     // الإنشاء متاح لأي حساب حقيقي مسجّل دخوله (نموذج واتساب)، والحدّ الحقيقي
     // (جلسة غير مجهولة، حدّ زمني) خادمي بالكامل — هذا فحص واجهة فقط.
     if (mode === 'delete' && !isAdmin) {
-      showToast({ text: 'هذا الإجراء متاح للمسؤول فقط.', type: 'error' }, 3000)
+      showToast({ text: 'هذا الإجراء ليس من صلاحيات منظّم الرحلة.', type: 'error' }, 3000)
       return false
     }
 
@@ -344,7 +344,7 @@ export function useTripAdminActions({
   // (منظّم لا يزيل مسؤولاً ولا منظّماً آخر) يبقى خادمياً بالكامل في manageMember.
   const removeMember = useCallback(async (tripId: string, uid: string): Promise<boolean> => {
     if (!canAct(tripId)) {
-      showToast({ text: 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.', type: 'error' }, 3000)
+      showToast({ text: 'هذا الإجراء متاح لمنظّم الرحلة فقط.', type: 'error' }, 3000)
       return false
     }
 
@@ -368,11 +368,11 @@ export function useTripAdminActions({
       //     ولا يجوز أن يكتشفه المسؤول بنفسه بعد أن يظنّ الباب أُغلق.
       if (data.stillHasAccess) {
         showToast({
-          text: 'أُزيل من قائمة الرحلة، لكنه مسؤول — وصلاحيته عامة ولا تمرّ بعضوية الرحلة.',
+          text: 'أُزيل من قائمة الرحلة، لكن صلاحيته عامة ولا تمرّ بهذه الرحلة.',
           type: 'success',
         }, 6000)
       } else if (!data.claimRemoved) {
-        showToast({ text: 'لم يكن عضواً فعلياً — نُظِّف سطره من القائمة.', type: 'success' }, 4000)
+        showToast({ text: 'لم يكن منضمّاً فعلياً — نُظِّف سطره من القائمة.', type: 'success' }, 4000)
       } else {
         showToast({
           text: 'تمت الإزالة. قد يبقى وصوله فعّالاً حتى ساعة حتى تنتهي صلاحية جلسته.',
@@ -403,7 +403,7 @@ export function useTripAdminActions({
     tripId: string, uid: string, role: 'organizer' | 'member',
   ): Promise<boolean> => {
     if (!isAdmin) {
-      showToast({ text: 'تعيين دور منظّم الرحلة متاح للمسؤول فقط.', type: 'error' }, 3000)
+      showToast({ text: 'تغيير دور المنظّم ليس من صلاحيات منظّم الرحلة.', type: 'error' }, 3000)
       return false
     }
 
@@ -418,7 +418,7 @@ export function useTripAdminActions({
 
       haptic.success()
       showToast({
-        text: role === 'organizer' ? 'صار العضو منظّماً لهذه الرحلة.' : 'أُلغي دور المنظّم عن هذا العضو.',
+        text: role === 'organizer' ? 'صار هذا المسافر منظّماً لهذه الرحلة.' : 'أُلغي دور المنظّم عن هذا المسافر.',
         type: 'success',
       })
       return true
@@ -444,7 +444,7 @@ export function useTripAdminActions({
   // يستهلكه المستدعي فوراً (بناء رابط المشاركة)، لا نص نجاح ثابت.
   const createInvite = useCallback(async (tripId: string): Promise<string | null> => {
     if (!canAct(tripId)) {
-      showToast({ text: 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.', type: 'error' }, 3000)
+      showToast({ text: 'هذا الإجراء متاح لمنظّم الرحلة فقط.', type: 'error' }, 3000)
       return null
     }
 
@@ -476,7 +476,7 @@ export function useTripAdminActions({
 
   const revokeInvite = useCallback(async (tripId: string): Promise<boolean> => {
     if (!canAct(tripId)) {
-      showToast({ text: 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.', type: 'error' }, 3000)
+      showToast({ text: 'هذا الإجراء متاح لمنظّم الرحلة فقط.', type: 'error' }, 3000)
       return false
     }
 
@@ -516,7 +516,7 @@ export function useTripAdminActions({
     tripId: string, travelerId: number, targetUid: string,
   ): Promise<boolean> => {
     if (!canAct(tripId)) {
-      showToast({ text: 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.', type: 'error' }, 3000)
+      showToast({ text: 'هذا الإجراء متاح لمنظّم الرحلة فقط.', type: 'error' }, 3000)
       return false
     }
 
@@ -557,7 +557,7 @@ export function useTripAdminActions({
   // القراءات مقبولة لأنه إجراء يدوي نادر، لا مسار ساخن.
   const exportBackup = useCallback(async (trip: TripSummary): Promise<boolean> => {
     if (!isAdmin) {
-      showToast({ text: 'هذا الإجراء متاح للمسؤول فقط.', type: 'error' }, 3000)
+      showToast({ text: 'هذا الإجراء ليس من صلاحيات منظّم الرحلة.', type: 'error' }, 3000)
       return false
     }
 
@@ -611,7 +611,7 @@ export function useTripAdminActions({
   // functions/index.js؛ العميل هنا لا يفحص شكل backup إطلاقاً.
   const restoreTripFn = useCallback(async (tripId: string, backup: unknown): Promise<boolean> => {
     if (!isAdmin) {
-      showToast({ text: 'هذا الإجراء متاح للمسؤول فقط.', type: 'error' }, 3000)
+      showToast({ text: 'هذا الإجراء ليس من صلاحيات منظّم الرحلة.', type: 'error' }, 3000)
       return false
     }
 

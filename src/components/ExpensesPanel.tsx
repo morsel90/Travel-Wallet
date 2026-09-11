@@ -179,7 +179,7 @@ export const ExpensesPanel = ({
           Icon={Receipt}
           title={canAddExpenses ? 'لا توجد مصاريف بعد' : 'لا توجد مصاريف في هذه الرحلة'}
           description={canAddExpenses
-            ? 'ابدأ بتسجيل أول مصروف للرحلة، وسيتولّى التطبيق حساب حصة كل مسافر تلقائياً.'
+            ? 'ابدأ بتسجيل أول مصروف للرحلة، وسيتولّى التطبيق حساب نصيب كل مسافر تلقائياً.'
             : 'أُغلقت هذه الرحلة دون تسجيل أي مصروف فيها.'}
           actionLabel={canAddExpenses ? 'سجّل أول مصروف' : undefined}
           onAction={canAddExpenses ? onOpenExpenseForm : undefined}
