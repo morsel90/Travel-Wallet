@@ -48,7 +48,7 @@ beforeEach(async () => {
 
 // ─── سياقات المصادقة ────────────────────────────────────────────────────────
 //
-// ⚠️ `ctx.firestore()` في @firebase/rules-unit-testing v3 يُصرَّح بأنه نسخة
+// ⚠️ `ctx.firestore()` في @firebase/rules-unit-testing v5 يُصرَّح بأنه نسخة
 // التوافق (compat) من Firestore، بينما هذا الملف يستخدم الواجهة الحديثة
 // (doc/collection/getDoc من 'firebase/firestore'). النسخة المُعادة تعمل معها
 // فعلياً وقت التشغيل — الاختبارات تمرّ — لكن التصريحين لا يتطابقان نوعياً.

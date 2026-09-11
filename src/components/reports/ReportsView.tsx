@@ -125,7 +125,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
       if (!isPrinted) {
         window.print()
       }
-    } catch (e) {
+    } catch {
       window.print()
     }
   }

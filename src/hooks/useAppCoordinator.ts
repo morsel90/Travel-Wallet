@@ -201,7 +201,7 @@ export function useAppCoordinator() {
   const filter = useFilteredExpenses(activeExpenses, activeTravelers)
 
   const [toast, setToast] = useState<ToastMessage | null>(null)
-  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const modals = useModals()
 

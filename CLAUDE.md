@@ -54,24 +54,24 @@
 
 | Layer | Technology | Version |
 |---|---|---|
-| Framework | React | ^18.2.0 |
+| Framework | React | ^19.3.0 |
 | Language | TypeScript | ^5.3.3 |
-| Bundler | Vite | ^5.1.4 |
+| Bundler | Vite (Rolldown) | ^8.3.0 |
 | State | React Context (DataContext + UIActionsContext + UIFormContext) | — |
 | Styling | Tailwind CSS | ^3.4.1 |
-| Icons | Lucide React | ^0.383.0 |
+| Icons | Lucide React | ^1.44.0 |
 | QR encoding | qrcode-generator | ^2.0.4 |
 | Animations | Framer Motion | ^11.2.10 |
 | Virtual List | React Virtuoso | ^4.18.10 |
-| Backend | Firebase Auth + Firestore | ^10.8.1 |
+| Backend | Firebase Auth + Firestore | ^12.19.0 |
 | Offline | Firestore `persistentLocalCache` | — |
 | Cloud Functions | Firebase v2 onCall (Node 22) | — |
-| PWA | vite-plugin-pwa (generateSW) | ^0.19.8 |
-| Testing (unit) | Vitest + React Testing Library | ^1.6.0 |
-| Testing (rules) | @firebase/rules-unit-testing + Firestore emulator | ^3.0.4 |
-| Testing (E2E) | Playwright (chromium) + Auth/Firestore/Functions emulators | ^1.49.1 |
-| Component workshop | Storybook (react-vite) | ^10.5.7 |
-| Linting | ESLint + Prettier | ^8.57.0 |
+| PWA | vite-plugin-pwa (generateSW) | ^1.3.0 |
+| Testing (unit) | Vitest + React Testing Library | ^5.0.0 |
+| Testing (rules) | @firebase/rules-unit-testing + Firestore emulator | ^5.0.2 |
+| Testing (E2E) | Playwright (chromium) + Auth/Firestore/Functions emulators | ^1.63.0 |
+| Component workshop | Storybook (react-vite) | ^10.6.0 |
+| Linting | ESLint (flat config) + Prettier | ^10.10.0 |
 | Deployment (frontend) | Vercel SPA | — |
 | Deployment (backend) | Firebase CLI | — |
 
@@ -174,7 +174,7 @@ npm run e2e:install
 
 **Important:** The app reads `TRIP_ID` from `?trip=xyz` in the URL. Without it, it defaults to `?trip=travelapp-87206` — and 🆕 if you already belong to trips, the "my trips" picker is shown instead of that trip.
 
-🆕 **Prerequisite for the rules and E2E suites: Java.** The Firestore emulator is a JVM process; without a JDK both fail with «Unable to locate a Java Runtime» buried in `firebase-debug.log`.
+🆕 **Prerequisite for the rules and E2E suites: a JDK at version 21 or newer.** The Firestore emulator is a JVM process; without any JDK both fail with «Unable to locate a Java Runtime» buried in `firebase-debug.log`. 🆕 And with a JDK *older than 21* they fail differently — «firebase-tools no longer supports Java version before 21» — because `firebase-tools` 15 raised its floor (`MIN_SUPPORTED_JAVA_MAJOR_VERSION = 21`). CI pins the version explicitly via `actions/setup-java` rather than relying on whatever the runner image ships.
 
 🆕 **Cloud Function calls work under `npm run dev` with no proxy of any kind.** The client calls functions through `httpsCallable`, which derives the URL from `projectId`, so the dev server has nothing to forward. The old `/api/*` dev proxy — and the `vercel.json` rewrite it mirrored — are both gone; see *Environment Variables*.
 

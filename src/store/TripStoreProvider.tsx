@@ -72,7 +72,7 @@ export function TripStoreProvider({
   submitExpense, toggleParticipant, toggleAllParticipants,
   children,
 }: TripStoreProviderProps) {
-  const storeRef = useRef<TripStore>()
+  const storeRef = useRef<TripStore | undefined>(undefined)
   storeRef.current ??= createTripStore({
     data: { travelers, expenses, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt },
     actions: {

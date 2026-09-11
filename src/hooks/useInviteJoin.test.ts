@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { Mock } from 'vitest'
 import { renderHook, waitFor, act } from '@testing-library/react'
 import type { User } from 'firebase/auth'
 import { useInviteJoin } from './useInviteJoin'
@@ -42,15 +43,21 @@ function functionsError(code: string, message: string) {
 // كاملاً بمحاكاة بسيطة بدل ذلك، ونعيده كما كان بعد كل اختبار.
 const originalLocation = window.location
 
+type ShowToast = Parameters<typeof useInviteJoin>[1]
+
 describe('useInviteJoin', () => {
   let replaceSpy: ReturnType<typeof vi.fn>
-  let showToast: ReturnType<typeof vi.fn>
+  // ⚠️ منذ Vitest 5 يُستنتج `vi.fn()` بلا وسيط نوعي كـ
+  // Mock<Procedure | Constructable> — اتحادٌ لا يطابق أي توقيع محدد، فيرفضه
+  // TS عند تمريره كوسيط للخطّاف. نشتقّ النوع من توقيع الخطّاف نفسه بدل
+  // ReturnType<typeof vi.fn> حتى لا ينحرف الموك عن التوقيع الحقيقي لاحقاً.
+  let showToast: Mock<ShowToast>
 
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.inviteToken = null
     mocks.updateNameFn.mockResolvedValue({ data: { success: true } })
-    showToast = vi.fn()
+    showToast = vi.fn<ShowToast>()
     replaceSpy = vi.fn()
     Object.defineProperty(window, 'location', {
       value: { href: 'http://localhost:3000/', pathname: '/', origin: 'http://localhost:3000', search: '', replace: replaceSpy },

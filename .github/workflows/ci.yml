@@ -42,11 +42,22 @@ jobs:
       - run: npm test
 
   # 🔴 اختبارات firestore.rules — تعمل ضد محاكي Firestore الحقيقي، لا ضد كود
-  # التطبيق. Java مثبّتة مسبقاً على عدّاد ubuntu-latest (يحتاجها المحاكي).
+  # التطبيق. يحتاج المحاكي إلى Java.
+  #
+  # ⚠️ لم نعد نتّكل على Java المثبّتة مسبقاً على عدّاد ubuntu-latest: منذ
+  # firebase-tools 15 صار الحدّ الأدنى JDK 21، والمثبّت مسبقاً أقدم منه —
+  # فتفشل الوظيفة بـ «no longer supports Java version before 21» قبل تشغيل
+  # اختبار واحد. تثبيت النسخة صراحةً يجعل CI مستقلاً عن صورة العدّاد بدل أن
+  # يتبع تغيّراتها بصمت. (محلياً قد تمرّ بـ JDK أحدث فلا يظهر الفرق إطلاقاً.)
   rules:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set up JDK 21 (مطلوب للمحاكي)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -63,6 +74,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set up JDK 21 (مطلوب للمحاكي)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

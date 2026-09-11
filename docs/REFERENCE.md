@@ -426,7 +426,7 @@ npm run typecheck:e2e       # e2e/  (separate tsconfig)
 npm run lint                # ESLint
 ```
 
-Layers 2 and 3 need **Java** (the Firestore emulator is a JVM process) and a cached emulator jar.
+Layers 2 and 3 need **a JDK 21 or newer** (the Firestore emulator is a JVM process, and `firebase-tools` 15 refuses anything older) and a cached emulator jar.
 
 #### 1. Unit tests (`src/**/*.test.ts`)
 Pure utilities and every hook. Hooks are tested with `renderHook`, mocking `firebase/firestore` and `src/firestore.ts` — none of them need React context, because hooks take their data as parameters and the contexts only carry results *outward*.
@@ -558,7 +558,7 @@ Storybook 10 with `@storybook/react-vite`. Two pieces of setup are load-bearing 
 
 Sample data lives in `src/fixtures/`, shared with tests. Derived values (balances, settlements, category totals, trend) are **computed** from the fixture expenses via the real functions, never hand-written — an early draft hardcoded them and they disagreed with the same expense list, which reads as a bug in the app's arithmetic.
 
-Story names are Arabic on purpose (the app is Arabic-first and these are what appear in the sidebar), so `storybook/prefer-pascal-case` is disabled for `src/stories/**` in `.eslintrc.cjs` — Arabic has no letter case, so the rule can only ever emit unfixable warnings.
+Story names are Arabic on purpose (the app is Arabic-first and these are what appear in the sidebar), so `storybook/prefer-pascal-case` is disabled for `src/stories/**` in `eslint.config.js` — Arabic has no letter case, so the rule can only ever emit unfixable warnings.
 
 ---
 

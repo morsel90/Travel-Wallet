@@ -21,7 +21,10 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 export function useDialogA11y(
-  containerRef: RefObject<HTMLElement>,
+  // 🆕 `| null` مطلوب منذ React 19: صار `useRef<T>(null)` يُنتج
+  // `RefObject<T | null>` بدل `RefObject<T>`، فالمستدعي لم يعد يطابق التوقيع
+  // القديم. الجسم يفحص `if (!container) return` أصلاً، فلا تغيير في السلوك.
+  containerRef: RefObject<HTMLElement | null>,
   onClose: () => void,
 ): void {
   useEffect(() => {
