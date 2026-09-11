@@ -181,7 +181,7 @@ const TripPicker = ({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-dvh bg-slate-50 flex flex-col">
       {/* pt-[env(safe-area-inset-top)] كما في Header.tsx — بلا هذا الحشو تتداخل
           خلفية الهيدر مع شريط الحالة/الشقّ (notch) على iOS بدل تمديدها تحته. */}
       <header className="bg-teal-700 text-white shadow-md pt-[env(safe-area-inset-top)]">

@@ -76,7 +76,13 @@ export const Modal = ({ children, maxWidth = 'max-w-sm', onClose, label }: Modal
       aria-modal="true"
       aria-label={label}
       tabIndex={-1}
-      className={`bg-white rounded-t-3xl sm:rounded-2xl p-6 pt-3 sm:pt-6 w-full ${maxWidth} relative max-h-[92vh] overflow-y-auto outline-hidden`}
+      // 🆕 92dvh لا 92vh: الغلاف أعلاه `fixed inset-0`، وعلى iOS Safari يُقاس
+      // ذلك بالمساحة *المرئية* (فوق شريط العنوان) بينما `vh` يُقاس بالشاشة
+      // *الكبيرة* (بعد اختفائه). فلوحة طويلة بـ 92vh تصير أطول من غلافها،
+      // ومع `items-end` يفيض الفائض من الأعلى — أي يخرج المقبض وعنوان النافذة
+      // خارج الشاشة، ولا يُنقذهما overflow-y-auto لأنه يمرّر داخل اللوحة لا
+      // يعيدها إلى الإطار. dvh يقيس ما يقيسه الغلاف نفسه فينتفي التعارض.
+      className={`bg-white rounded-t-3xl sm:rounded-2xl p-6 pt-3 sm:pt-6 w-full ${maxWidth} relative max-h-[92dvh] overflow-y-auto outline-hidden`}
       onClick={(e) => e.stopPropagation()}
       initial={{ y: '100%' }}
       animate={{ y: 0 }}

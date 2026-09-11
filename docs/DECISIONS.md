@@ -756,6 +756,18 @@ Product feedback after the entry above shipped: the profile modal's own header b
 
 **Every e2e spec that reached trip management through the old `ExpensesPanel` button had to change, not just `organizer-role.spec.ts`.** `delete-empty-trip.spec.ts` and `delete-old-archived-trip.spec.ts` both had a local `openTripDetailAsAdmin` helper clicking the ExpensesPanel button directly (regex-matched against both "إدارة الرحلة" and "إدارة الرحلات" labels); `self-serve-trip-creation.spec.ts` asserted the organizer-facing button was visible immediately after self-serve trip creation. All four now call `openAccountMenu` (the existing helper in `e2e/utils/flows.ts`, already used by `openTripAsAdmin`) and target the `menuitem` role instead of `button`. `App.test.tsx`'s two admin-visibility assertions moved the same way — checking `screen.getByText('إدارة الرحلات')` directly is no longer meaningful once that text only exists inside a closed-by-default dropdown; both tests now open the menu (`fireEvent.click` on the "حسابي" toggle) before asserting what's inside it, the same "assert inside the open state, not just its absence when collapsed" fix `organizer-role.spec.ts`'s own negative-case assertion needed.
 
+### 🆕 كل ارتفاع مقيس بالشاشة يستعمل `dvh` لا `vh` — والاستثناء الوحيد هو الطباعة
+
+`vh` على iOS Safari هو ارتفاع الشاشة **الكبير** (بعد اختفاء شريط العنوان)، لا الارتفاع المرئي لحظة القياس. فأي `100vh` أطول من المساحة المرئية بمقدار ذلك الشريط دائماً — والنتيجة فائض تمرير على صفحة لا محتوى فيها يُمرَّر أصلاً.
+
+الأثر الأخطر ليس في جذر الصفحة بل في **`Modal.tsx`**: غلافها `fixed inset-0` يُقاس بالمساحة المرئية، بينما كان سقف اللوحة `max-h-[92vh]` يُقاس بالشاشة الكبيرة. فاللوحة الطويلة تصير أطول من غلافها، ومع `items-end` على الجوال يفيض الفائض من **الأعلى** — يخرج المقبض والعنوان خارج الشاشة، و`overflow-y-auto` لا يُنقذهما لأنه يمرّر داخل اللوحة لا يعيدها إلى الإطار. `dvh` يجعل السقف يقيس ما يقيسه الغلاف نفسه فينتفي التعارض من أصله.
+
+**الاستثناء:** `min-height: 100vh` داخل كتل `@media print` (في `ReportsView.tsx` و`TravelerProfileModal.tsx`) تبقى `vh` — هناك الوحدة تعني صندوق الصفحة المطبوعة لا إطار عرض متحرّكاً، و`dvh` بلا معنى.
+
+**⚠️ ولا يُكتب اسم فئة Tailwind القديمة حرفياً في أي تعليق.** ماسح v4 نصّي بحت ولا يفهم التعليقات: تعليقٌ يشرح *لماذا تُركت* الفئة يكفي لإعادة توليد قاعدتها الميتة في CSS المنشور. حدث فعلاً في أول صياغة لتعليق `App.tsx`، ورُصد بـ`grep 100vh dist/assets/*.css`.
+
+**⚠️ وهذا لا يُختبر في Chromium.** على سطح المكتب `dvh == vh == lvh` فالفرق صفر بالتعريف — اختبارات Playwright تبقى خضراء قبل التغيير وبعده على السواء. التحقق الوحيد ذو المعنى هو Safari على iOS (محاكي أو جهاز): سحبة واحدة على شاشة الدخول تُظهر انزياحاً ثابتاً ~45 نقطة بالفئة القديمة، وصفراً بـ`dvh`.
+
 ### 🆕 Mobile-first pass, four steps, each verified before the next: input bar safe-area, AccountMenu profile card, page-wide safe-area, floating list cards
 
 **Each step below was implemented, then proven with the full `lint`/`typecheck`/`test`/`test:e2e`/`build` sweep, before moving to the next** — not a single "redesign the UI" commit. That discipline caught a real intermittent-test-flake false alarm (see the trip-lifecycle/Sentry entries above for the same pattern recurring) and meant each step's blast radius was independently provable.
