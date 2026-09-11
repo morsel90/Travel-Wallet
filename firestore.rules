@@ -80,6 +80,26 @@ service cloud.firestore {
       return isMember(appId) && exists(ref) && get(ref).data.get('uid', null) == request.auth.uid;
     }
 
+    // 🆕 سقف مقداري لكل حقل مالي — والسبب `Infinity` لا حجم المبالغ.
+    //
+    // ⚠️ `x is number && x >= 0` تبدو كافيةً وليست كذلك: **`Infinity >= 0`
+    // صحيحة**، وFirestore يخزّن اللانهاية كقيمة double عادية. فأي عضو يكتب
+    // مباشرةً إلى Firestore (بلا مرور بالعميل) كان يستطيع حفظ مصروف بمبلغ غير
+    // منتهٍ. `-Infinity` و`NaN` كانتا تُرفَضان أصلاً لأن `>= 0` خاطئة لهما —
+    // فاللانهاية الموجبة وحدها هي التي كانت تنفذ.
+    //
+    // ولا يوجد isFinite في لغة القواعد، فالسقف هو الوسيلة الوحيدة للتعبير عنه.
+    // 1e15 مكتوبٌ كاملاً (اللغة لا تقبل الصيغة العلمية) وهو أقل من
+    // Number.MAX_SAFE_INTEGER (9.007e15)، فيستبعد أيضاً القيم التي تفقد دقّتها
+    // الصحيحة في JavaScript — وهو أعلى بمراحل من أي مبلغ سفر حقيقي.
+    //
+    // ⚠️ هذا حدّ الكتابة لا بديلٌ عن حرّاس القراءة: splitEven وsplitByShares
+    // وcalculateBalances وreportData وxlsx والدوال السحابية كلها تُطهّر أصلاً
+    // (Number.isFinite). تلك تحمي ما هو مخزَّن فعلاً؛ هذه تمنع تخزينه ابتداءً.
+    function isFiniteAmount(v) {
+      return v is number && v >= 0 && v < 1000000000000000;
+    }
+
     // التحقّق من بنية المصروف — تم السماح بحقل deletedAt الاختياري كـ number (Unix timestamp)
     // وحقل createdByUid الاختياري (uid صاحب المصروف) — انظر isExpenseOwner أدناه
     // وحقل category الاختياري (فئة المصروف — للرسم البياني في src/components/charts/)
@@ -92,10 +112,10 @@ service cloud.firestore {
              ])
         && d.date is string           && d.date.size() <= 10
         && d.description is string     && d.description.size() > 0 && d.description.size() <= 200
-        && d.amount is number          && d.amount >= 0
-        && d.originalAmount is number  && d.originalAmount >= 0
+        && isFiniteAmount(d.amount)
+        && isFiniteAmount(d.originalAmount)
         && d.currency is string        && d.currency.size() <= 5
-        && d.exchangeRate is number    && d.exchangeRate > 0
+        && d.exchangeRate is number    && d.exchangeRate > 0 && d.exchangeRate < 1000000000000000
         && d.participants is list      && d.participants.size() > 0 && d.participants.size() <= 50
         && d.createdAt is number
         && (!('deletedAt' in d) || d.deletedAt == null || d.deletedAt is number)
@@ -175,7 +195,7 @@ service cloud.firestore {
         && d.id is int
         && d.name is string       && d.name.size() > 0 && d.name.size() <= 100
         && d.shortName is string   && d.shortName.size() > 0 && d.shortName.size() <= 50
-        && d.deposited is number   && d.deposited >= 0
+        && isFiniteAmount(d.deposited)
         && (!('deletedAt' in d) || d.deletedAt == null || d.deletedAt is number)
         && (!('uid' in d) || d.uid == null || d.uid is string)
         && (!('joinedAt' in d) || d.joinedAt is number);
