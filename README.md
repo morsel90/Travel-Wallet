@@ -44,7 +44,7 @@ npm run dev      # خادم تطوير على http://localhost:5173
 | `npm run build` | فحص الأنواع ثم بناء الإنتاج (`tsc && vite build`) |
 | `npm run preview` | معاينة بناء الإنتاج محلياً |
 | `npm run typecheck` | فحص الأنواع فقط (`tsc --noEmit`) |
-| `npm test` | اختبارات الوحدة (`vitest run`) — ٣١٨ اختباراً، ~٣ ثوانٍ |
+| `npm test` | اختبارات الوحدة (`vitest run`) — ٧٠٧ اختباراً، ~١٢ ثانية |
 | `npm run test:watch` | الاختبارات بوضع المراقبة |
 | `npm run test:rules` | اختبارات `firestore.rules` على محاكي حقيقي — يتطلب Java |
 | `npm run test:e2e` | اختبارات المتصفح (Playwright) — يتطلب Java + `npm run e2e:install` مرة |
@@ -103,7 +103,7 @@ vercel --prod    # بعد ربط المشروع عبر vercel link
 | فهم البنية العامة | *Project Overview* ثم *Architecture* |
 | تعديل الحسابات المالية | ⚠️ *Testing › Financial invariants* **قبل** لمس `utils/calculations.ts` |
 | تعديل `App.tsx` أو السياقات | *Design Decisions* — قسما تفكيك `App.tsx` وفصل السياق حسب التقلّب |
-| إضافة ميزة | *Contributing Guidelines* (٢٢ قاعدة، كل واحدة تمنع عطلاً وقع فعلاً) |
+| إضافة ميزة | *Contributing Guidelines* (٢٥ قاعدة، كل واحدة تمنع عطلاً وقع فعلاً) |
 | النشر | *Deployment* — ثلاثة أنظمة تُنشر منفصلة |
 | حلّ مشكلة | *Troubleshooting* — جدول عَرَض ← سبب ← حلّ |
 | استعادة الوصول أو المفاتيح | [`RECOVERY.md`](./RECOVERY.md) |
