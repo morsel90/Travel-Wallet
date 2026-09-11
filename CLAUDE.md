@@ -63,12 +63,12 @@
 | QR encoding | qrcode-generator | ^2.0.4 |
 | Animations | Framer Motion | ^11.2.10 |
 | Virtual List | React Virtuoso | ^4.18.10 |
-| Backend | Firebase Auth + Firestore | ^10.8.1 |
+| Backend | Firebase Auth + Firestore | ^12.19.0 |
 | Offline | Firestore `persistentLocalCache` | — |
 | Cloud Functions | Firebase v2 onCall (Node 22) | — |
 | PWA | vite-plugin-pwa (generateSW) | ^0.19.8 |
 | Testing (unit) | Vitest + React Testing Library | ^1.6.0 |
-| Testing (rules) | @firebase/rules-unit-testing + Firestore emulator | ^3.0.4 |
+| Testing (rules) | @firebase/rules-unit-testing + Firestore emulator | ^5.0.2 |
 | Testing (E2E) | Playwright (chromium) + Auth/Firestore/Functions emulators | ^1.49.1 |
 | Component workshop | Storybook (react-vite) | ^10.5.7 |
 | Linting | ESLint + Prettier | ^8.57.0 |
