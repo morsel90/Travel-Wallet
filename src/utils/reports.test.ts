@@ -76,7 +76,7 @@ describe('buildTravelerRows', () => {
   it('per-traveler deposited/spent/remaining + totals', () => {
     const balances = calculateBalances(travelers, expenses)
     const rows = buildTravelerRows(balances)
-    expect(rows[0]).toEqual(['المسافر', 'المودَع', 'نصيبه من المصاريف', 'المتبقي'])
+    expect(rows[0]).toEqual(['المسافر', 'المودَع', 'نصيبه من المصاريف', 'الرصيد'])
     // أحمد: أودع 1000، نصيبه 350 (100+100+150)، المتبقي 650
     expect(rows[1]).toEqual(['أحمد الغامدي', 1000, 350, 650])
     // سعد: أودع 100، نصيبه 250 (100+150)، المتبقي -150

@@ -23,7 +23,6 @@ const baseProps = {
   displayName: 'أحمد الغامدي',
   email: 'ahmad@example.com',
   onShowProfile: noop,
-  onAdminSignIn: noop,
   onSignOut: noop,
   // 🆕 أفعال ورقة «المزيد» — الأفعال الثلاثة غير الاختيارية وحدها؛ البنود
   // المشروطة بالصلاحية تُمرَّر في اختبارها الخاص أدناه.
@@ -67,17 +66,17 @@ describe('Header — السطر الموجز (رقم واحد بدل حبّات 
 
   const cycleStats = { totalDeposited: 300, totalSpent: 50, totalRemaining: 700 }
 
-  it('رحلة قياسية — سطر «المتبقي» وحده', () => {
+  it('رحلة قياسية — سطر «الرصيد» وحده', () => {
     render(<Header {...baseProps} />)
-    expect(screen.getByText('المتبقي 600.00 ﷼')).toBeInTheDocument()
+    expect(screen.getByText('الرصيد 600.00 ﷼')).toBeInTheDocument()
   })
 
   // 🆕 الفرق بين الحالتين **كلمتان لا مفهوم**: لا كلمة «دورة» ولا اسم شهر ولا
   // زرّ تبديل. اسم الشهر الصريح مكانه التقارير والطباعة حيث تُقرأ الأرقام بعد
   // شهور وخارج التطبيق، لا الشاشة الرئيسية حيث «هذا الشهر» بديهي.
-  it('رحلة طويلة — «المتبقي هذا الشهر» بالرقم الشهري لا التراكمي', () => {
+  it('رحلة طويلة — «الرصيد هذا الشهر» بالرقم الشهري لا التراكمي', () => {
     render(<Header {...baseProps} cycleStats={cycleStats} />)
-    expect(screen.getByText('المتبقي هذا الشهر 700.00 ﷼')).toBeInTheDocument()
+    expect(screen.getByText('الرصيد هذا الشهر 700.00 ﷼')).toBeInTheDocument()
     // 600.00 (stats.totalRemaining التراكمي) لا يظهر — الشهر فقط، ولا خيار لعرضه.
     expect(screen.queryByText(/600\.00/)).not.toBeInTheDocument()
     // ولا اصطلاح داخلي مسرَّب: لا «دورة» ولا اسم شهر على الشاشة الرئيسية.
@@ -89,13 +88,13 @@ describe('Header — السطر الموجز (رقم واحد بدل حبّات 
     const onStatClick = vi.fn()
     render(<Header {...baseProps} onStatClick={onStatClick} />)
 
-    await user.click(screen.getByText('المتبقي 600.00 ﷼'))
+    await user.click(screen.getByText('الرصيد 600.00 ﷼'))
     expect(onStatClick).toHaveBeenCalledWith('remaining')
   })
 
   it('بلا onStatClick — السطر نصّ بحت لا زرّاً', () => {
     render(<Header {...baseProps} />)
-    expect(screen.getByText('المتبقي 600.00 ﷼').closest('button')).toBeNull()
+    expect(screen.getByText('الرصيد 600.00 ﷼').closest('button')).toBeNull()
   })
 })
 
@@ -120,7 +119,7 @@ describe('Header — اسم الرحلة يفتح ورقة «المزيد»', ()
   // عنصراً ميّتاً لأغلب الأعضاء. التقارير والإحصائيات والمسار حقٌّ لكل عضو.
   // (القاعدة ١٧: اسأل من يستبعده هذا الشرط قبل شحنه.)
   it('متاح للعضو العادي أيضاً — لا شرط صلاحية على الزرّ نفسه', async () => {
-    render(<Header {...baseProps} isAdmin={false} isOrganizer={false} />)
+    render(<Header {...baseProps} />)
 
     await userEvent.click(screen.getByRole('button', { name: 'قائمة الرحلة' }))
     expect(screen.getByText('التقارير')).toBeInTheDocument()

@@ -239,7 +239,7 @@ export default function TravelerProfileModal({
           <div className="grid grid-cols-3 gap-3">
             <KpiCard Icon={Wallet} label="المودَع" value={fmt(depositedThisCycle)} tone="teal" />
             <KpiCard Icon={Receipt} label="نصيبه" value={fmt(periodPocketAndShare.totalShare)} tone="rose" />
-            <KpiCard Icon={Scale} label="المتبقي" value={fmt(balance.remaining)} tone={balance.remaining < 0 ? 'rose' : 'teal'} />
+            <KpiCard Icon={Scale} label="الرصيد" value={fmt(balance.remaining)} tone={balance.remaining < 0 ? 'rose' : 'teal'} />
           </div>
           {/* 🆕 توضيح أن الأرقام أعلاه للشهر الجاري تحديداً — بلا مُصفّي يدوي بعد
               الآن، هذه القراءة الوحيدة لمعرفة الشهر المقصود. اسم الشهر صريح هنا
@@ -293,7 +293,7 @@ export default function TravelerProfileModal({
   
               <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50/50">
-                  <h3 className="text-sm font-bold text-slate-800">تفاصيل حصصه ({travelerReport.lines.length})</h3>
+                  <h3 className="text-sm font-bold text-slate-800">تفاصيل نصيبه ({travelerReport.lines.length})</h3>
                   <span className="text-xs font-black text-slate-700 tabular-nums">{fmt(travelerReport.totalShare)} ﷼</span>
                 </div>
                 {travelerReport.lines.length === 0 ? (
@@ -346,13 +346,13 @@ export default function TravelerProfileModal({
                   <KpiCard Icon={Wallet} label="المودَع" value={fmt(statement.opening)} tone="teal" />
                   <KpiCard Icon={HandCoins} label="دفعه من جيبه" value={fmt(statement.totalPaidByPocket)} tone="teal" />
                   <KpiCard Icon={Receipt} label="نصيبه من المصاريف" value={fmt(statement.totalShare)} tone="rose" />
-                  <KpiCard Icon={Scale} label="المتبقي" value={fmt(statement.remaining)} tone={statement.remaining < 0 ? 'rose' : 'teal'} />
+                  <KpiCard Icon={Scale} label="الرصيد" value={fmt(statement.remaining)} tone={statement.remaining < 0 ? 'rose' : 'teal'} />
                 </section>
               )}
 
               <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-5">
                 <h3 className="text-sm font-bold text-slate-800 mb-1">
-                  {mergedTimeline ? 'حركة الحساب — رصيد جارٍ' : 'حركة المصاريف — رصيد جارٍ'}
+                  {mergedTimeline ? 'كشف الحساب — رصيد جارٍ' : 'كشف المصاريف — رصيد جارٍ'}
                 </h3>
                 {(mergedTimeline ? mergedTimeline.rows.length === 0 : statement.rows.length === 0) ? (
                   <p className="text-center text-slate-400 font-medium text-sm py-8">لم يشارك في أي مصروف بعد.</p>
@@ -375,7 +375,7 @@ export default function TravelerProfileModal({
                 )}
                 {/* 🆕 لا تُخفى مشكلة التحميل صامتة — تظهر تحت الخط البسيط بدل قسم منفصل كامل. */}
                 {canViewDepositLogs && logsError && (
-                  <p className="text-[11px] text-rose-500 font-bold mt-3">تعذّر تحميل سجل تعديلات الرصيد — الخط أعلاه يعرض حركة المصاريف فقط حالياً.</p>
+                  <p className="text-[11px] text-rose-500 font-bold mt-3">تعذّر تحميل سجل تعديلات الرصيد — الخط أعلاه يعرض كشف المصاريف فقط حالياً.</p>
                 )}
               </section>
             </div>

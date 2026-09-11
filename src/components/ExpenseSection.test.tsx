@@ -44,13 +44,13 @@ describe('ExpenseListItem — عرض توزيع الحصص', () => {
   it('يعرض ملخّصاً واحداً حين يشارك كل المسافرين النشطين بالتساوي', () => {
     renderItem(baseExpense)
     expect(screen.getByText('موزّع بالتساوي على الجميع (3)')).toBeInTheDocument()
-    expect(screen.queryByText('توزيع الحصص:')).not.toBeInTheDocument()
+    expect(screen.queryByText('توزيع النصيب:')).not.toBeInTheDocument()
     expect(screen.queryByText('محمد')).not.toBeInTheDocument()
   })
 
   it('يعرض الكبسولات الكاملة حين يُستثنى أحد المسافرين', () => {
     renderItem({ ...baseExpense, participants: [1, 2] })
-    expect(screen.getByText('توزيع الحصص:')).toBeInTheDocument()
+    expect(screen.getByText('توزيع النصيب:')).toBeInTheDocument()
     expect(screen.getByText('محمد')).toBeInTheDocument()
     expect(screen.getByText('سعد')).toBeInTheDocument()
     expect(screen.queryByText(/موزّع بالتساوي على الجميع/)).not.toBeInTheDocument()
@@ -58,7 +58,7 @@ describe('ExpenseListItem — عرض توزيع الحصص', () => {
 
   it('يعرض الكبسولات الكاملة حين تكون الحصص مخصَّصة رغم مشاركة الجميع', () => {
     renderItem({ ...baseExpense, shares: { '1': 2, '2': 1, '3': 1 } })
-    expect(screen.getByText('توزيع الحصص:')).toBeInTheDocument()
+    expect(screen.getByText('توزيع النصيب:')).toBeInTheDocument()
     expect(screen.queryByText(/موزّع بالتساوي على الجميع/)).not.toBeInTheDocument()
   })
 })

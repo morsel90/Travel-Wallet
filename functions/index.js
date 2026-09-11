@@ -94,7 +94,7 @@ function assertClaimsFitTokenLimit(claims) {
     // يُضاف مستقبلاً، فلا يتحول التوسعة الصغيرة إلى عطل عند الحدّ مباشرةً.
     throw new HttpsError(
       'resource-exhausted',
-      'بلغت الحد الأقصى لعدد الرحلات على هذا الحساب. تواصل مع المسؤول لإزالة رحلة قديمة.',
+      'بلغت الحد الأقصى لعدد الرحلات على هذا الحساب — احذف رحلة قديمة فارغة أولاً.',
     );
   }
 }
@@ -192,7 +192,7 @@ exports.manageTrip = onCall(
     // 🆕 الحذف يبقى للمسؤول العالمي حصراً — لم يُطلب تغييره، وهو الأخطر
     // (يُتلف بيانات مالية إن أُسيء استخدامه)، بخلاف الإنشاء الذاتي الجديد.
     if (mode === 'delete' && !isAdminCaller) {
-      throw new HttpsError('permission-denied', 'حذف رحلة متاح للمسؤول فقط.');
+      throw new HttpsError('permission-denied', 'حذف الرحلة ليس من صلاحيات منظّم الرحلة.');
     }
 
     // 🆕 لا رحلة بجلسة مجهولة — نفس المنطق ونفس الرسالة اللذين ترفض بهما
@@ -215,7 +215,7 @@ exports.manageTrip = onCall(
       );
     }
     if (mode !== 'create' && mode !== 'delete') {
-      throw new HttpsError('invalid-argument', 'نوع العملية غير معروف.');
+      throw new HttpsError('invalid-argument', 'نوع الإجراء غير معروف.');
     }
     if (mode === 'create' && name.length > 100) {
       throw new HttpsError('invalid-argument', 'اسم الرحلة طويل جداً (100 حرف كحد أقصى).');
@@ -435,7 +435,7 @@ exports.manageMember = onCall(
       throw new HttpsError('invalid-argument', 'معرّف المستخدم غير صالح.');
     }
     if (mode !== 'remove' && mode !== 'setRole') {
-      throw new HttpsError('invalid-argument', 'نوع العملية غير معروف.');
+      throw new HttpsError('invalid-argument', 'نوع الإجراء غير معروف.');
     }
 
     const callerIsAdmin = request.auth.token.admin === true;
@@ -444,7 +444,7 @@ exports.manageMember = onCall(
     // ─── تعيين/إلغاء دور المنظّم — المسؤول العالمي حصراً ────────────────────
     if (mode === 'setRole') {
       if (!callerIsAdmin) {
-        throw new HttpsError('permission-denied', 'تعيين دور منظّم الرحلة متاح للمسؤول فقط.');
+        throw new HttpsError('permission-denied', 'تغيير دور المنظّم ليس من صلاحيات منظّم الرحلة.');
       }
       const role = String(request.data?.role ?? '').trim();
       if (role !== 'organizer' && role !== 'member') {
@@ -506,7 +506,7 @@ exports.manageMember = onCall(
       const callerSnap = await db.collection('trips').doc(tripId).collection('members').doc(request.auth.uid).get();
       const callerRole = callerSnap.exists ? (callerSnap.data().role || 'member') : 'member';
       if (callerRole !== 'organizer') {
-        throw new HttpsError('permission-denied', 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.');
+        throw new HttpsError('permission-denied', 'هذا الإجراء متاح لمنظّم الرحلة فقط.');
       }
     }
 
@@ -526,12 +526,12 @@ exports.manageMember = onCall(
     // الأفقي أعلاه. المسؤول العالمي معفى من هذا الشرط بالكامل.
     if (!callerIsAdmin) {
       if (existingClaims.admin === true) {
-        throw new HttpsError('permission-denied', 'لا يستطيع منظّم الرحلة إزالة المسؤول.');
+        throw new HttpsError('permission-denied', 'لا يستطيع منظّم الرحلة إزالة من صلاحيته عامة.');
       }
       const targetSnap = await memberDocRef.get();
       const targetRole = targetSnap.exists ? (targetSnap.data().role || 'member') : 'member';
       if (targetRole === 'organizer') {
-        throw new HttpsError('permission-denied', 'لا يستطيع منظّم الرحلة إزالة منظّم آخر — هذا للمسؤول وحده.');
+        throw new HttpsError('permission-denied', 'لا يستطيع منظّم الرحلة إزالة منظّماً آخر.');
       }
     }
 
@@ -949,10 +949,10 @@ exports.manageInvite = onCall(
       throw new HttpsError('invalid-argument', 'معرّف الرحلة غير صالح.');
     }
     if (mode !== 'create' && mode !== 'revoke') {
-      throw new HttpsError('invalid-argument', 'نوع العملية غير معروف.');
+      throw new HttpsError('invalid-argument', 'نوع الإجراء غير معروف.');
     }
     if (!(await callerManagesTrip(tripId, request.auth))) {
-      throw new HttpsError('permission-denied', 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.');
+      throw new HttpsError('permission-denied', 'هذا الإجراء متاح لمنظّم الرحلة فقط.');
     }
 
     // الحذف مشترك بين الوضعين: 'revoke' يتوقف هنا، و'create' يكمل لإنشاء توكن جديد.
@@ -1126,7 +1126,7 @@ exports.linkTravelerAccount = onCall(
       throw new HttpsError('invalid-argument', 'معرّف الحساب المستهدَف غير صالح.');
     }
     if (!(await callerManagesTrip(tripId, request.auth))) {
-      throw new HttpsError('permission-denied', 'هذا الإجراء متاح للمسؤول أو منظّم الرحلة فقط.');
+      throw new HttpsError('permission-denied', 'هذا الإجراء متاح لمنظّم الرحلة فقط.');
     }
 
     const travelersCol = db.collection('artifacts').doc(tripId).collection('public').doc('data').collection('travelers');
@@ -1161,7 +1161,7 @@ exports.restoreTrip = onCall(
       throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
     }
     if (request.auth.token.admin !== true) {
-      throw new HttpsError('permission-denied', 'هذا الإجراء متاح للمسؤول فقط.');
+      throw new HttpsError('permission-denied', 'هذا الإجراء ليس من صلاحيات منظّم الرحلة.');
     }
 
     const tripId = String(request.data?.tripId ?? '').trim();
@@ -1602,7 +1602,7 @@ function settlementDirectionJs(value) {
  */
 async function requireManagedLongTermTrip(tripId, auth) {
   if (!(await callerManagesTrip(tripId, auth))) {
-    throw new HttpsError('permission-denied', 'هذه العملية متاحة لمنظّم الرحلة أو المسؤول فقط.');
+    throw new HttpsError('permission-denied', 'هذا الإجراء متاح لمنظّم الرحلة فقط.');
   }
 
   const tripRef = db.collection('trips').doc(tripId);
@@ -1615,7 +1615,7 @@ async function requireManagedLongTermTrip(tripId, auth) {
   if ((trip.tripType || 'standard') !== 'long_term') {
     throw new HttpsError(
       'failed-precondition',
-      'هذه العملية متاحة للرحلات طويلة المدى (الانتدابات) فقط — الرحلة القياسية تُسوّى مرة واحدة عند انتهائها.',
+      'هذا الإجراء متاح للرحلات طويلة المدى (الانتدابات) فقط — الرحلة القياسية تُسوّى مرة واحدة عند انتهائها.',
     );
   }
 
@@ -1716,7 +1716,7 @@ exports.closeMonth = onCall(
       throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
     }
     if (request.auth.token.firebase?.sign_in_provider === 'anonymous') {
-      throw new HttpsError('failed-precondition', 'هذه العملية تتطلب حساباً حقيقياً.');
+      throw new HttpsError('failed-precondition', 'هذا الإجراء يتطلب حساباً حقيقياً.');
     }
 
     const tripId = String(request.data?.tripId ?? '').trim();
@@ -1754,7 +1754,7 @@ exports.closeMonth = onCall(
     if (travelers.length > MAX_ROLLOVER_TRAVELERS) {
       throw new HttpsError(
         'failed-precondition',
-        `عدد الأعضاء (${travelers.length}) يتجاوز الحدّ الذي يمكن ترحيله في عملية واحدة (${MAX_ROLLOVER_TRAVELERS}).`,
+        `عدد المسافرين (${travelers.length}) يتجاوز الحدّ الذي يمكن ترحيله دفعة واحدة (${MAX_ROLLOVER_TRAVELERS}).`,
       );
     }
 
@@ -1908,7 +1908,7 @@ exports.exitTraveler = onCall(
     const { travelers, remaining } = await readLedger(tripId);
     const traveler = travelers.find((t) => t.id === travelerId);
     if (!traveler) {
-      throw new HttpsError('not-found', 'هذا العضو غير موجود في الرحلة (أو أُخرج منها بالفعل).');
+      throw new HttpsError('not-found', 'هذا المسافر غير موجود في الرحلة (أو أُخرج منها بالفعل).');
     }
 
     // ⚠️ منفصل عن فحص الرصيد أدناه عمداً: تسوية الرصيد لا تحلّ هذا — البنك
@@ -1940,7 +1940,7 @@ exports.exitTraveler = onCall(
       throw new HttpsError(
         'failed-precondition',
         direction === 'credit'
-          ? `لا يمكن إخراج ${traveler.name} قبل تسوية حسابه — له رصيد متبقٍّ ${amount} ريال.`
+          ? `لا يمكن إخراج ${traveler.name} قبل تسوية حسابه — رصيده ${amount} ريال.`
           : `لا يمكن إخراج ${traveler.name} قبل تسوية حسابه — عليه ${amount} ريال.`,
       );
     }
@@ -1957,7 +1957,7 @@ exports.exitTraveler = onCall(
       // فلا تُكتب تسوية لعضو خرج بالفعل.
       const fresh = await tx.get(travelerRef);
       if (!fresh.exists || fresh.data().deletedAt) {
-        throw new HttpsError('failed-precondition', 'أُخرج هذا العضو للتو من جهاز آخر.');
+        throw new HttpsError('failed-precondition', 'أُخرج هذا المسافر للتو من جهاز آخر.');
       }
 
       // ⚠️ **تحديث واحد لمستند المسافر لا اثنان.** الرصيد والخروج يُكتبان معاً
@@ -1970,7 +1970,7 @@ exports.exitTraveler = onCall(
         tx.set(
           dataRoot.collection('expenses').doc(),
           buildAdjustmentExpense(traveler, Math.abs(balance), todayDate,
-            `تسوية خروج ${traveler.name} — إعادة الرصيد المتبقّي`, actor.uid),
+            `تسوية خروج ${traveler.name} — إعادة الرصيد`, actor.uid),
         );
       } else if (direction === 'debt') {
         // عليه عجز: حركة إيداع تُصفّره (يقابلها في الواقع استلام المبلغ منه).
@@ -1980,7 +1980,7 @@ exports.exitTraveler = onCall(
         tx.set(
           travelerRef.collection('depositLogs').doc(),
           buildDepositLog(travelerId, previousDeposited, newDeposited,
-            `تسوية خروج ${traveler.name} — سداد العجز المتبقّي`, actor),
+            `تسوية خروج ${traveler.name} — سداد العجز`, actor),
         );
       }
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AnimatePresence } from 'framer-motion'
-import { PieChart, Loader2, ChevronDown } from '../icons'
+import { PieChart, Loader2, ChevronDown, Luggage } from '../icons'
 import { useHeaderCollapse } from '../hooks/useHeaderCollapse'
 import { haptic } from '../utils/haptics'
 import AccountMenu from './AccountMenu'
@@ -28,7 +28,6 @@ export type HeaderCycleStats = HeaderStats
 // 1. إضافة onStatClick و isOnline للخصائص (Props)
 interface HeaderProps {
   isSyncing: boolean
-  isAdmin: boolean
   /**
    * 🆕 اسم الرحلة المفتوحة — يحلّ محلّ «مصاريف السفر» الثابت في العنوان.
    *
@@ -37,9 +36,6 @@ interface HeaderProps {
    * تأكيد الرحلة المفتوحة *قبل* تسجيل مصروف فيها معلومةً مالية لا ترفاً بصرياً.
    */
   tripName: string
-  /** 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يمرَّر إلى AccountMenu لإخفاء
-   * زرّ «الدخول بحساب آخر» عمّن لا يحتاجه أصلاً. */
-  isOrganizer: boolean
   stats: HeaderStats | null
   /** 🆕 أرقام الشهر الجاري — الرحلة الطويلة فقط. غيابها (undefined/null)
    * يُبقي السطر الموجز بلا أي ذكر للشهر، بالضبط كما كان قبل هذه الميزة. */
@@ -50,11 +46,15 @@ interface HeaderProps {
   // انظر AccountMenu.tsx وdocs/DECISIONS.md.
   displayName: string | null
   email: string | null
-  /** 🆕 يُمرَّر حين يكون المستخدم عضواً في أكثر من رحلة، أو مسؤولاً/منظّماً —
-   * «رحلاتي» نقطة الدخول الوحيدة الآن لإدارة أي رحلة (انظر App.tsx). */
+  /**
+   * 🆕 يُمرَّر حين يكون المستخدم عضواً في أكثر من رحلة، أو مسؤولاً — أي حين
+   * يوجد ما يُرجَع إليه فعلاً. **زرّ مستقلّ يتصدّر الهيدر، لا بند في قائمة
+   * الحساب ولا عنصر مجاور لها**: هو المسار الرئيسي (دخول ← رحلاتي ← الرحلة)،
+   * وترتيبه أولاً هو ترتيب زرّ الرجوع في كل شريط عنوان — انظر AccountMenu.tsx
+   * وdocs/DECISIONS.md.
+   */
   onShowMyTrips?: () => void
   onShowProfile: () => void
-  onAdminSignIn: () => void
   onSignOut: () => void
   /**
    * 🆕 أفعال ورقة «المزيد» — كل ما ليس من الأقسام الثلاثة الرئيسية
@@ -83,9 +83,7 @@ function Logo({ isCollapsed, isOnline }: { isCollapsed: boolean; isOnline: boole
 
 const Header = ({
   isSyncing,
-  isAdmin,
   tripName,
-  isOrganizer,
   stats,
   cycleStats,
   onStatClick,
@@ -94,7 +92,6 @@ const Header = ({
   email,
   onShowMyTrips,
   onShowProfile,
-  onAdminSignIn,
   onSignOut,
   more,
 }: HeaderProps) => {
@@ -115,8 +112,8 @@ const Header = ({
   // فاسم واحد لشيء واحد — انظر تعليق HeaderCycleStats أعلاه.
   const summaryText = stats
     ? cycleStats
-      ? `المتبقي هذا الشهر ${cycleStats.totalRemaining.toFixed(2)} ﷼`
-      : `المتبقي ${stats.totalRemaining.toFixed(2)} ﷼`
+      ? `الرصيد هذا الشهر ${cycleStats.totalRemaining.toFixed(2)} ﷼`
+      : `الرصيد ${stats.totalRemaining.toFixed(2)} ﷼`
     : null
 
   const renderSummary = (compact: boolean) => {
@@ -156,6 +153,26 @@ const Header = ({
           isCollapsed ? 'py-2' : 'py-3'
         }`}
       >
+        {/* 🆕 **الرجوع أولاً، ثم هوية الرحلة، والحساب في الطرف الآخر.**
+            ترتيب شريط العنوان في كل تطبيق محادثة: زرّ الرجوع يتصدّر الصفّ لأنه
+            يسبق ما تنظر إليه — أنت *خارج* من هنا إلى القائمة. وضعُه بجانب
+            الأفاتار كان يُقرأ كأنه من عناصر الحساب، وهو بالضبط الالتباس الذي
+            نُقل من قائمة الحساب ليتخلّص منه.
+
+            لا يظهر إطلاقاً لمن له رحلة واحدة (onShowMyTrips غير مُمرَّرة) —
+            لا شيء يُرجَع إليه، فيبدأ الصفّ بالشعار كما كان قبل هذه الميزة. */}
+        {onShowMyTrips && (
+          <button
+            type="button"
+            onClick={() => { haptic.light(); onShowMyTrips() }}
+            aria-label="رحلاتي"
+            title="رحلاتي"
+            className="flex items-center justify-center bg-teal-800/50 hover:bg-teal-800 text-teal-50 hover:text-white transition-all duration-200 rounded-xl border border-teal-500/30 backdrop-blur-sm shrink-0 min-h-[44px] min-w-[44px]"
+          >
+            <Luggage className="w-[18px] h-[18px]" />
+          </button>
+        )}
+
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           {/* 🆕 **اسم الرحلة/الشعار هو زرّ فتح ورقة «المزيد»** — لا زرّ ⋯
               منفصل. لاحظ صاحب الحساب أن القائمة تحوي الإعدادات وإدارة الرحلة
@@ -198,23 +215,37 @@ const Header = ({
                 aria-expanded={isMoreOpen}
                 aria-label="قائمة الرحلة"
                 title="قائمة الرحلة"
-                className="flex items-center gap-2.5 min-w-0 self-start max-w-full text-right"
+                className="flex items-center gap-2 min-w-0 self-start max-w-full text-right"
               >
-                <Logo isCollapsed={isCollapsed} isOnline={isOnline} />
+                {/* ⚠️ **السهم ملازمٌ للشعار، لا داخل العنوان ولا شقيقاً بعده.**
+                    كان inline داخل الـh1 ليتبع آخر كلمة أينما وقعت — لكن
+                    `line-clamp-2` تقصّ *محتوى الصندوق كله* عند سطرين وتضع «…»،
+                    **فتبتلع السهم نفسه**. أي أن اسماً طويلاً كان يُخفي الدليل
+                    الوحيد على أن العنوان قائمة، فتصير «المزيد» كلها (التقارير،
+                    الإحصائيات، المسار، إدارة الرحلة) صحيحةً وغير قابلة
+                    للاكتشاف في آنٍ واحد.
+
+                    ⚠️ وجعلُه شقيقاً *بعد* العنوان جُرِّب وسقط مرتين: يُدفع إلى
+                    أقصى اليسار ملاصقاً لقائمة الحساب فيُقرأ كأنه جزء منها،
+                    وحجزُ مساحة تمنع ذلك (`pe-7`) يقتطع ٢٨ بكسل من عمودٍ عرضه
+                    ١٣٦ بكسل أصلاً على شاشة 360 — فيبقى للاسم ٥٠ بكسل. قِيس
+                    فعلياً، لا تُعِده.
+
+                    وموضعه هنا ليس حلاً وسطاً بل توحيد: الحالة المتقلّصة تفعل
+                    هذا بالضبط منذ البداية (`Logo` ثم `ChevronDown`)، فصار
+                    السهم في مكان واحد لا يتنقّل مع تمرير الصفحة، ولا يُقصّ
+                    مهما طال الاسم، ولا يكلّف الاسم بكسلاً واحداً. */}
+                <span className="flex items-center gap-0.5 shrink-0">
+                  <Logo isCollapsed={isCollapsed} isOnline={isOnline} />
+                  <ChevronDown className="w-4 h-4 text-teal-100/80" />
+                </span>
                 {/* 🆕 line-clamp-2 لا truncate: اسم يخلط عربية بمقطع لاتيني
                     يتقطّع مع truncate بترتيب بصري مُضلِّل (قصور معروف في
                     تفاعل text-overflow:ellipsis مع bidi — جرّبنا dir="ltr"
                     فزاد الأمر سوءاً). الالتفاف لسطرين يعرض الاسم كاملاً دوماً؛
                     bdi يعزل اتجاهه عن سياق RTL المحيط عند الالتفاف. */}
-                {/* ⚠️ السهم **داخل** العنوان لا شقيقاً له في الـflex: الاسم
-                    يلتفّ لسطرين ويشغل العرض كاملاً، فسهمٌ شقيق يُدفع إلى أقصى
-                    اليسار ملاصقاً لقائمة الحساب فيُقرأ كأنه جزء منها. inline
-                    داخل h1 يجعله يتبع آخر كلمة أينما وقعت. وهو وحده ما يوحي
-                    بأن العنوان قائمة — بلا شيء يوحي بذلك تصبح القائمة صحيحة
-                    وغير قابلة للاكتشاف في آنٍ واحد. */}
-                <h1 className="font-bold tracking-wide line-clamp-2 text-xl">
+                <h1 className="font-bold tracking-wide line-clamp-2 text-xl min-w-0">
                   <bdi>{tripName}</bdi>
-                  <ChevronDown className="inline-block align-middle w-4 h-4 me-1.5 ms-1 text-teal-100/80" />
                 </h1>
               </button>
 
@@ -234,18 +265,12 @@ const Header = ({
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          <AccountMenu
-            displayName={displayName}
-            email={email}
-            isAdmin={isAdmin}
-            isOrganizer={isOrganizer}
-            onShowMyTrips={onShowMyTrips}
-            onShowProfile={onShowProfile}
-            onAdminSignIn={onAdminSignIn}
-            onSignOut={onSignOut}
-          />
-        </div>
+        <AccountMenu
+          displayName={displayName}
+          email={email}
+          onShowProfile={onShowProfile}
+          onSignOut={onSignOut}
+        />
       </div>
 
       {/* ⚠️ داخل <header> لكن خارج شريطه: Modal يرسم عبر portal إلى body على

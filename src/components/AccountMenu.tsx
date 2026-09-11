@@ -1,43 +1,29 @@
-// 🆕 قائمة حساب موحّدة في الهيدر — تجمع كل ما كان أزراراً منفصلة (رحلاتي،
-// بروفايلي، تبديل وضع المسؤول) في نقطة دخول واحدة بنمط تطبيقات جوجل: صورة/حرف
-// أول للمستخدم، وقائمة منسدلة عند الضغط. انظر docs/DECISIONS.md للسياق.
+// ─── AccountMenu — شيئان لا أكثر: من أنت، والخروج ────────────────────────────
+// 🆕 كانت تجمع أربعة: بطاقة البروفايل، «رحلاتي»، «الدخول بحساب آخر»، والخروج.
+//
+// ⚠️ **و«رحلاتي» تحديداً لم تكن مكانها هنا إطلاقاً.** هي المسار الرئيسي
+// (دخول ← رحلاتي ← الرحلة)، فوضعها داخل قائمة حساب جعل الرجوع لقائمة الرحلات
+// يمرّ بـ«حسابي» — أي بالضبط `دخول ← حساب ← … ← رحلات` الذي رفضه صاحب الحساب.
+// صارت زرّاً مستقلاً مجاوراً في الهيدر (Header.tsx): نقرة واحدة، نمط زرّ
+// الرجوع من المحادثة إلى قائمة المحادثات.
+//
+// ⚠️ و«الدخول بحساب آخر» حُذف بنافذته وخطّافه كاملاً — انظر docs/DECISIONS.md.
+//
+// ما بقي هو ما يصنع قائمة حساب فعلاً: بطاقة تقول من أنت وتفتح بروفايلك،
+// وتسجيل الخروج. أي بند خامس هنا يجب أن يجيب أولاً: هل هو «حساب» أم مسار؟
 import { useEffect, useRef, useState } from 'react'
-import { Luggage, UserRoundCog, LogOut, ChevronDown, ChevronLeft } from '../icons'
+import { LogOut, ChevronDown, ChevronLeft } from '../icons'
 import { haptic } from '../utils/haptics'
 
 interface AccountMenuProps {
   displayName: string | null
   email: string | null
-  isAdmin: boolean
-  /** 🆕 منظّم هذه الرحلة تحديداً (لا مسؤول عالمي) — يُستهلك فقط لإخفاء زرّ
-   * «الدخول بحساب آخر» عمّن لا يحتاجه (يدير رحلته من «رحلاتي» مباشرة). */
-  isOrganizer: boolean
-  /** 🆕 يُمرَّر حين يكون المستخدم عضواً في أكثر من رحلة، أو مسؤولاً/منظّماً —
-   * «رحلاتي» نقطة الدخول الوحيدة الآن لإدارة أي رحلة (بعد دمج «إدارة الرحلات»
-   * فيها، انظر docs/DECISIONS.md)، فلم يعد لهما زرّ منفصل هنا. */
-  onShowMyTrips?: () => void
   onShowProfile: () => void
-  /**
-   * 🆕 الدخول بحساب آخر — يظهر فقط لمن لا يملك admin ولا isOrganizer.
-   *
-   * ⚠️ **كان اسمه «تسجيل الدخول كمسؤول»، وكان ذلك وعداً كاذباً.** الشرط أعلاه
-   * يعرضه على غير المسؤول وغير المنظّم حصراً — أي على المسافر العادي بالضبط،
-   * وهو الوحيد الذي *لا يستطيع* أن يصير مسؤولاً بضغطه. ما يفعله الزرّ فعلاً
-   * `signInWithEmailAndPassword` بحساب مختلف: من يملك حساب مسؤول منفصل يدخل
-   * به، ومن لا يملكه يصطدم بـ«البريد الإلكتروني أو كلمة المرور غير صحيحة».
-   * الصلاحية لا تُمنح من هنا إطلاقاً — تُقرأ من claims الحساب الذي دخل.
-   *
-   * الاسم الجديد يصف الأثر لا يَعِد بحالة: تبديل الحساب شيء يستطيعه كل
-   * مستخدم فعلاً، فالبند صار صادقاً لمن يراه بدل أن يكون باباً موصداً عليه
-   * قفلٌ مرسوم. انظر docs/DECISIONS.md.
-   */
-  onAdminSignIn: () => void
   onSignOut: () => void
 }
 
 export default function AccountMenu({
-  displayName, email, isAdmin, isOrganizer,
-  onShowMyTrips, onShowProfile, onAdminSignIn, onSignOut,
+  displayName, email, onShowProfile, onSignOut,
 }: AccountMenuProps) {
   const [isOpen, setIsOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -89,7 +75,7 @@ export default function AccountMenu({
         <div
           role="menu"
           aria-label="حسابي"
-          className="absolute left-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-lg border border-slate-200 py-2 z-[110] text-right"
+          className="absolute left-0 top-full mt-2 w-60 bg-white rounded-2xl shadow-lg border border-slate-200 py-2 z-[110] text-right"
         >
           {/* 🆕 بطاقة المستخدم نفسها هي زر «بروفايلي» الآن — نمط تطبيقات الجوّال
               الأصلية (إعدادات iOS/Android: بطاقة الحساب العلوية تفتح صفحة الحساب
@@ -111,36 +97,7 @@ export default function AccountMenu({
             <ChevronLeft className="w-4 h-4 text-slate-300 shrink-0" />
           </button>
 
-          <div className="py-1">
-            {onShowMyTrips && (
-              <button
-                type="button" role="menuitem"
-                onClick={() => runAndClose(onShowMyTrips)}
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-              >
-                <Luggage className="w-4 h-4 text-slate-500" /> رحلاتي
-              </button>
-            )}
-
-            {/* 🆕 لا زرّ «لوحة الإدارة»/«إدارة الرحلة» بعد الآن — دُمجت إدارة
-                الرحلات في «رحلاتي» أعلاه (زرّ «تعديل» على كل رحلة يملك المستخدم
-                صلاحيتها). من ليس مسؤولاً ولا منظّماً وحده يرى هذا البند.
-
-                ⚠️ **وهو الآن «الدخول بحساب آخر» لا «تسجيل الدخول كمسؤول»** —
-                انظر تعليق `onAdminSignIn` أعلاه لسبب أن الاسم القديم كان
-                يَعِد المسافر العادي تحديداً بما لا يستطيعه. */}
-            {!isAdmin && !isOrganizer && (
-              <button
-                type="button" role="menuitem"
-                onClick={() => runAndClose(onAdminSignIn)}
-                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
-              >
-                <UserRoundCog className="w-4 h-4 text-slate-500" /> الدخول بحساب آخر
-              </button>
-            )}
-          </div>
-
-          <div className="pt-1 border-t border-slate-100">
+          <div className="pt-1">
             <button
               type="button" role="menuitem"
               onClick={() => runAndClose(onSignOut)}

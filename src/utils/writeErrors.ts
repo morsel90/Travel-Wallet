@@ -114,7 +114,7 @@ export function describeWriteError(err: unknown, action: WriteAction = 'generic'
       }
       // كود غير معروف: لا ندّعي معرفة السبب، ولا ندّعي أنه انقطاع اتصال.
       return {
-        text: `تعذّر إتمام العملية ${reverted}.`,
+        text: `تعذّر إتمام الإجراء ${reverted}.`,
         retryable: true,
       }
   }

@@ -3,7 +3,7 @@ import {
   onAuthStateChanged, User,
   GoogleAuthProvider,
   signInWithPopup, signInWithRedirect, getRedirectResult,
-  signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut as firebaseSignOut,
 } from 'firebase/auth'
 import { auth } from '../firebase'
 
@@ -105,6 +105,8 @@ export interface UseAuth {
   isSigningIn: boolean
   signInWithGoogle: () => Promise<void>
   signInWithEmail: (email: string, password: string, mode: 'signIn' | 'signUp') => Promise<void>
+  /** 🆕 الخروج — من نفس خطّاف الدخول، لا خطّاف مصادقة ثانٍ. */
+  signOut: () => Promise<void>
 }
 
 export function useAuth(): UseAuth {
@@ -228,8 +230,20 @@ export function useAuth(): UseAuth {
     }
   }, [])
 
+  // 🆕 الخروج يعيش هنا لا في خطّاف مصادقة ثانٍ. كان في `useAdminAuth` — خطّاف
+  // كامل بنموذج بريد/كلمة مرور خاص به («الدخول بحساب آخر») ومسار استرداد كلمة
+  // مرور مستقلّ. حُذف كله: سطح تسجيل دخول واحد في التطبيق هو `AuthGate`، ومن
+  // أراد حساباً آخر يخرج ثم يدخل به. انظر docs/DECISIONS.md.
+  //
+  // بعد الخروج، مستمع onAuthStateChanged أعلاه يرصد غياب المستخدم ويُظهر
+  // AuthGate من جديد — لا جلسة بديلة تُنشأ تلقائياً (لا وجود لجلسات مجهولة بعد
+  // إلغاء PIN).
+  const signOut = useCallback(async () => {
+    try { await firebaseSignOut(auth) } catch (err) { console.error(err) }
+  }, [])
+
   return {
     user, isAdmin, authLoading, joinedTripIds,
-    signInError, isSigningIn, signInWithGoogle, signInWithEmail,
+    signInError, isSigningIn, signInWithGoogle, signInWithEmail, signOut,
   }
 }

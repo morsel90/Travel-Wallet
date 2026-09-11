@@ -122,9 +122,6 @@ vi.mock('./hooks', async () => {
   // 🆕 تعافي المزامنة — مستمعا أحداث فقط (visibilitychange/online) بلا أثر على
   // العرض؛ منطقه مغطّى في useSyncRecovery.test.ts.
   useSyncRecovery: () => undefined,
-  useAdminAuth: () => ({
-    showAdminSignIn: false, openAdminSignIn: noop, handleAdminSignOut: noop, adminModalProps: {},
-  }),
   // 🆕 استرداد كلمة المرور — منطقه في usePasswordReset.test.ts، وبلوغه من
   // بوابة الدخول في AuthGate.test.tsx. هنا مجرّد بديل صامت.
   usePasswordReset: () => ({
@@ -203,7 +200,7 @@ describe('App — ترتيب البوابات', () => {
     render(<App />)
     expect(await screen.findByText('أرصدة المسافرين')).toBeInTheDocument()
     expect(screen.queryByText('سجّل الدخول لمتابعة')).not.toBeInTheDocument()
-    expect(screen.queryByText('لست عضواً في هذه الرحلة')).not.toBeInTheDocument()
+    expect(screen.queryByText('لست من مسافري هذه الرحلة')).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'رحلاتي' })).not.toBeInTheDocument()
   })
 
@@ -229,7 +226,7 @@ describe('App — ترتيب البوابات', () => {
   it('يعرض شاشة "لست عضواً" حين يكون مسجَّل الدخول لكنه ليس عضواً في هذه الرحلة، ولم يكن مسؤولاً', async () => {
     h.auth = { ...h.auth, joinedTripIds: [] }
     render(<App />)
-    expect(await screen.findByText('لست عضواً في هذه الرحلة')).toBeInTheDocument()
+    expect(await screen.findByText('لست من مسافري هذه الرحلة')).toBeInTheDocument()
     expect(screen.queryByText('أرصدة المسافرين')).not.toBeInTheDocument()
   })
 
@@ -237,7 +234,7 @@ describe('App — ترتيب البوابات', () => {
     h.auth = { ...h.auth, isAdmin: true, joinedTripIds: [] }
     render(<App />)
     expect(await screen.findByText('أرصدة المسافرين')).toBeInTheDocument()
-    expect(screen.queryByText('لست عضواً في هذه الرحلة')).not.toBeInTheDocument()
+    expect(screen.queryByText('لست من مسافري هذه الرحلة')).not.toBeInTheDocument()
   })
 })
 
@@ -325,10 +322,10 @@ describe('App — الحالات الفارغة', () => {
     openMoreMenu()
     expect(screen.getByText('سلة المهملات')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'إغلاق المزيد' }))
-    // 🆕 «إدارة الرحلات» دُمجت في «رحلاتي» (AccountMenu، الهيدر) — لا زرّ
-    // لوحة إدارة منفصل بعد الآن. انظر AccountMenu.tsx وdocs/DECISIONS.md.
-    fireEvent.click(screen.getByRole('button', { name: 'حسابي' }))
-    expect(screen.getByRole('menuitem', { name: 'رحلاتي' })).toBeInTheDocument()
+    // 🆕 «رحلاتي» زرٌّ مستقلّ في الهيدر لا بند في قائمة الحساب — نقرة واحدة
+    // للرجوع للقائمة (انظر Header.tsx وAccountMenu.tsx). والمسؤول يراه دائماً
+    // لأنه يتصفّح كل الرحلات. ولا زرّ «لوحة إدارة» منفصل بعد الآن.
+    expect(screen.getByRole('button', { name: 'رحلاتي' })).toBeInTheDocument()
     expect(screen.queryByText('لوحة الإدارة')).not.toBeInTheDocument()
   })
 
@@ -352,12 +349,16 @@ describe('App — الحالات الفارغة', () => {
     expect(moreItems).toEqual(['التقارير', 'الإحصائيات', 'مسار الرحلة'])
 
     fireEvent.click(screen.getByRole('button', { name: 'إغلاق المزيد' }))
+
+    // 🆕 ولا زرّ «رحلاتي» في الهيدر أصلاً: عضو برحلة واحدة لا شيء يُرجَع إليه.
+    expect(screen.queryByRole('button', { name: 'رحلاتي' })).not.toBeInTheDocument()
+
     fireEvent.click(screen.getByRole('button', { name: 'حسابي' }))
     const accountItems = screen.getAllByRole('menuitem').map(b => b.getAttribute('aria-label') ?? b.textContent?.trim())
-    // «رحلاتي» غائبة أيضاً: عضو برحلة واحدة لا شيء يبدّل إليه.
-    // 🆕 و«الدخول بحساب آخر» لا «تسجيل الدخول كمسؤول» — كان البند الوحيد الذي
-    // يَعِد المسافر العادي (وهو تحديداً من يراه) بصلاحية لا يمنحها الضغط عليه.
-    expect(accountItems).toEqual(['بروفايلي', 'الدخول بحساب آخر', 'تسجيل الخروج'])
+    // 🆕 **قائمة الحساب شيئان لا أكثر: من أنت، والخروج.** «رحلاتي» غادرتها إلى
+    // الهيدر (مسار لا حساب)، و«الدخول بحساب آخر» حُذف بنافذته وخطّافه كاملاً —
+    // سطح تسجيل دخول واحد في التطبيق هو AuthGate. انظر docs/DECISIONS.md.
+    expect(accountItems).toEqual(['بروفايلي', 'تسجيل الخروج'])
   })
 
   it('بلا مصاريف: حالة فارغة في السجل ولا قسم إحصائيات', async () => {
@@ -400,7 +401,7 @@ describe('App — الرحلات طويلة المدى', () => {
     // قبل وصول البيانات، ففتح «المزيد» عندها كان سيمرّ بلا longTerm أصلاً —
     // نجاح زائف. والرقم مباشرةً بعد «المتبقي» هو ما يُثبت أنها رحلة قياسية:
     // الطويلة تقحم «هذا الشهر» بينهما (انظر Header.tsx).
-    await screen.findByText(/^المتبقي \d/)
+    await screen.findByText(/^الرصيد \d/)
     openMoreMenu()
     expect(screen.queryByText('هذا الشهر')).not.toBeInTheDocument()
     expect(screen.queryByText(/إغلاق أغسطس 2026/)).not.toBeInTheDocument()
@@ -412,7 +413,7 @@ describe('App — الرحلات طويلة المدى', () => {
 
     // السطر الموجز بصيغة الشهر (`المتبقي هذا الشهر …`) دليلٌ على أن longTerm
     // وصل فعلاً — وهو شرط ظهور البند في «المزيد».
-    await screen.findByText(/^المتبقي هذا الشهر /)
+    await screen.findByText(/^الرصيد هذا الشهر /)
     openMoreMenu()
     fireEvent.click(screen.getByText('هذا الشهر'))
     expect(await screen.findByText('أغسطس 2026')).toBeInTheDocument()
@@ -424,7 +425,7 @@ describe('App — الرحلات طويلة المدى', () => {
     h.tripType = 'long_term'
     h.isOrganizer = false
     const { unmount } = render(<App />)
-    await screen.findByText(/^المتبقي هذا الشهر /)
+    await screen.findByText(/^الرصيد هذا الشهر /)
     openMoreMenu()
     fireEvent.click(screen.getByText('هذا الشهر'))
     await screen.findByText('لم يُغلق شهر بعد')
@@ -433,7 +434,7 @@ describe('App — الرحلات طويلة المدى', () => {
 
     h.isOrganizer = true
     render(<App />)
-    await screen.findByText(/^المتبقي هذا الشهر /)
+    await screen.findByText(/^الرصيد هذا الشهر /)
     openMoreMenu()
     fireEvent.click(screen.getByText('هذا الشهر'))
     expect(await screen.findByRole('button', { name: /إغلاق أغسطس 2026/ })).toBeInTheDocument()

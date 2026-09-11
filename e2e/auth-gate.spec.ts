@@ -6,7 +6,7 @@
 //   ٢. حساب جديد يُنشأ عبر البريد الإلكتروني برابط دعوة غير صالح يرى رسالة
 //      خطأ واضحة، لا انضماماً صامتاً.
 //   ٣. حساب موجود يسجّل دخوله عبر البريد وكلمة المرور فيصل مباشرة لرحلته.
-//   ٤. حساب مسجَّل دخوله لكنه ليس عضواً في رحلة بعينها يرى شاشة "لست عضواً"،
+//   ٤. حساب مسجَّل دخوله لكنه ليس من مسافري رحلة بعينها يرى شاشة تقول ذلك،
 //      لا حلقة إعادة محاولة (لا رمز رحلة يمكنه تجربته بعد الآن).
 import { test, expect } from '@playwright/test'
 import { seedTrip } from './utils/seed'
@@ -58,7 +58,7 @@ test('عضو موجود يسجّل الدخول عبر البريد وكلمة �
   await expect(page.getByText('أرصدة المسافرين')).toBeVisible()
 })
 
-test('حساب مسجَّل دخوله لكنه ليس عضواً في هذه الرحلة يرى شاشة "لست عضواً" لا حلقة إعادة محاولة', async ({ page }) => {
+test('حساب مسجَّل دخوله لكنه ليس من مسافري هذه الرحلة يرى شاشة تقول ذلك، لا حلقة إعادة محاولة', async ({ page }) => {
   await page.goto(`/?trip=${CREDS.tripId}`)
   await page.getByText('أو عبر البريد الإلكتروني').click()
   await page.getByPlaceholder('البريد الإلكتروني').fill('e2e-auth-gate-outsider@test.local')
@@ -66,5 +66,5 @@ test('حساب مسجَّل دخوله لكنه ليس عضواً في هذه ا
   await page.getByRole('button', { name: 'حساب جديد؟ أنشئ حساباً' }).click()
   await page.getByRole('button', { name: 'إنشاء حساب' }).click()
 
-  await expect(page.getByRole('heading', { name: 'لست عضواً في هذه الرحلة' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'لست من مسافري هذه الرحلة' })).toBeVisible()
 })

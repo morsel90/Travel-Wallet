@@ -117,13 +117,13 @@ export function useLongTermActions({
       haptic.success()
       showToast({
         text: data.settledAmount > 0
-          ? `تمت تسوية ${data.settledAmount.toFixed(2)} ريال وإخراج العضو من الرحلة`
-          : 'تم إخراج العضو من الرحلة',
+          ? `تمت تسوية ${data.settledAmount.toFixed(2)} ريال وإخراج المسافر من الرحلة`
+          : 'تم إخراج المسافر من الرحلة',
         type: 'success',
       }, 4000)
       return true
     } catch (err) {
-      showCallableError(err, 'تعذّر إخراج العضو — تحقّق من اتصالك.', showToast, handleFirestoreError)
+      showCallableError(err, 'تعذّر إخراج المسافر — تحقّق من اتصالك.', showToast, handleFirestoreError)
       return false
     } finally {
       setIsExitingTraveler(false)

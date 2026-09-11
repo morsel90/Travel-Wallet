@@ -28,14 +28,24 @@ export async function signInWithEmail(page: Page, email: string, password: strin
 }
 
 /**
- * 🆕 يفتح قائمة الحساب الموحّدة في الهيدر (AccountMenu.tsx) — نقطة الدخول
- * الوحيدة الآن لـ«رحلاتي»/«بروفايلي»/«تسجيل الخروج»، بعد أن كانت أزراراً
- * منفصلة في الهيدر مباشرة. 🆕 لا «لوحة الإدارة» بعد الآن — تعديل أي رحلة يمرّ
- * عبر اسمها في الهيدر (openTripDetailFromHeader)، لا عبر هذه القائمة.
+ * يفتح قائمة الحساب في الهيدر (AccountMenu.tsx) — **شيئان فقط بداخلها**:
+ * «بروفايلي» و«تسجيل الخروج».
+ *
+ * ⚠️ «رحلاتي» ليست منها: صارت زرّاً مستقلاً في الهيدر (`myTripsButton` أدناه)
+ * لأنها المسار الرئيسي لا بند حساب — انظر docs/DECISIONS.md. و«لوحة الإدارة»
+ * لا وجود لها أصلاً؛ تعديل أي رحلة يمرّ عبر اسمها في الهيدر.
  */
 export async function openAccountMenu(page: Page): Promise<void> {
   // exact: true — يتجنّب تطابقاً جزئياً مع زر "كشف حسابي" (نموذج الهوية الهجين).
   await page.getByRole('button', { name: 'حسابي', exact: true }).click()
+}
+
+/**
+ * 🆕 زرّ «رحلاتي» في الهيدر — الرجوع لقائمة الرحلات بنقرة واحدة. لا يُعرض
+ * إطلاقاً لعضو برحلة واحدة (لا شيء يُرجَع إليه)، فغيابه نتيجةٌ تُختبر لا عطل.
+ */
+export function myTripsButton(page: Page) {
+  return page.getByRole('button', { name: 'رحلاتي', exact: true })
 }
 
 /**
@@ -44,9 +54,8 @@ export async function openAccountMenu(page: Page): Promise<void> {
  * ⚠️ لا خطوة "وضع المسؤول" منفصلة هنا بعد الآن: حساب المسؤول في seedTrip يحمل
  * admin claim من البداية، وisAdmin() في firestore.rules لا تحتاج عضوية الرحلة
  * (`isMember(appId) || isAdmin()`) — فمروره عبر AuthGate وحده كافٍ للوصول
- * المباشر بصفة مسؤول. عنصر "الدخول بحساب آخر" داخل AccountMenu يبقى متاحاً
- * لسيناريو مختلف (من سجّل دخوله كعضو عادي بحسابه الشخصي ويريد التبديل لحساب
- * المسؤول العالمي المنفصل) — انظر useAdminAuth.ts — لا للمسار الذي يختبره هذا الملف.
+ * المباشر بصفة مسؤول. (ولا يوجد اليوم أي مسار «دخول بحساب آخر» داخل التطبيق —
+ * حُذف بنافذته وخطّافه؛ من أراد حساباً آخر يخرج ثم يدخل به من AuthGate.)
  *
  * ⚠️ هذا هو المسار الوحيد الفعلي لإضافة مسافر عبر الواجهة: زر "إضافة مسافر"
  * لا يظهر إطلاقاً لعضو غير مسؤول (انظر App.tsx وTravelerSection.tsx) — رغم أن
@@ -56,12 +65,11 @@ export async function openAccountMenu(page: Page): Promise<void> {
 export async function openTripAsAdmin(page: Page, creds: TripCreds): Promise<void> {
   await page.goto(`/?trip=${creds.tripId}`)
   await signInWithEmail(page, creds.adminEmail, creds.adminPassword)
-  // 🆕 «رحلاتي» تظهر دائماً لحساب يحمل admin claim فعلاً — نفس الدور الذي كان
-  // زر "إغلاق المسؤول" الظاهر مباشرة يؤكّده سابقاً. تعديل هذه الرحلة تحديداً
-  // من هنا يمرّ عبر اسمها في الهيدر (openTripDetailFromHeader)، لا «رحلاتي».
-  await openAccountMenu(page)
-  await expect(page.getByRole('menuitem', { name: 'رحلاتي' })).toBeVisible()
-  await page.keyboard.press('Escape')
+  // 🆕 زرّ «رحلاتي» في الهيدر يظهر دائماً لحساب يحمل admin claim فعلاً (يتصفّح
+  // كل الرحلات) — نفس الدور الذي كان زر "إغلاق المسؤول" يؤكّده سابقاً، وبلا
+  // فتح أي قائمة الآن. تعديل هذه الرحلة تحديداً يمرّ عبر اسمها في الهيدر
+  // (openTripDetailFromHeader) لا عبر «رحلاتي».
+  await expect(myTripsButton(page)).toBeVisible()
 }
 
 /** يفتح رابط الرحلة ويسجّل دخول حساب العضو العادي عبر AuthGate — بلا صلاحية مسؤول. */

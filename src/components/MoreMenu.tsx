@@ -79,7 +79,7 @@ export default function MoreMenuSheet({ onClose, ...actions }: MoreMenuSheetProp
       ? [{ key: 'longTerm', label: 'هذا الشهر', hint: 'مصاريف الشهر وإغلاقه', Icon: CalendarClock, action: actions.onOpenLongTerm }]
       : []),
     ...(actions.onOpenTripAdmin
-      ? [{ key: 'admin', label: 'إدارة الرحلة', hint: 'الاسم، المسار، الأعضاء وروابط الدعوة', Icon: Settings, action: actions.onOpenTripAdmin }]
+      ? [{ key: 'admin', label: 'إدارة الرحلة', hint: 'الاسم، المسار، المسافرون وروابط الدعوة', Icon: Settings, action: actions.onOpenTripAdmin }]
       : []),
     ...(actions.onExportBackup
       ? [{ key: 'backup', label: 'نسخة احتياطية', hint: 'تنزيل كل بيانات الرحلة كملف JSON', Icon: Download, action: actions.onExportBackup }]

@@ -1,6 +1,5 @@
 // نقطة استيراد موحّدة للـ hooks
 export { useAuth }             from './useAuth'
-export { useAdminAuth }        from './useAdminAuth' // 🆕 حالة/منطق مصادقة المسؤول — استُخرج من App.tsx (يعرضه مكوّن AuthFlow)
 export { useModals }           from './useModals'    // 🆕 حالة المودالات موحّدة في reducer واحد — استُخرجت من App.tsx
 export { useExchangeRates }    from './useExchangeRates'
 export { useExpenses }         from './useExpenses'
@@ -10,7 +9,7 @@ export { useFilteredExpenses } from './useFilteredExpenses' // ★ تمت إضا
 export { useDebounce }         from './useDebounce' // 🆕 أداة عامة لتأخير أي قيمة متغيّرة بسرعة (بحث، فلاتر...)
 export { useOnlineStatus }     from './useOnlineStatus' // 🆕 حالة اتصال الشبكة (online/offline) — لبانر التنبيه العام
 export { useCountdown }        from './useCountdown' // 🆕 عدّ تنازلي عام بالثواني (مثال: مهلة إعادة إرسال رابط استرداد كلمة المرور)
-export { usePasswordReset }    from './usePasswordReset' // 🆕 استرداد كلمة المرور — يشاركه AuthGate (قبل الدخول) وAdminSignInModal (بعده)
+export { usePasswordReset }    from './usePasswordReset' // 🆕 استرداد كلمة المرور — لـAuthGate وحدها، سطح الدخول الوحيد في التطبيق
 export { useExpenseActions }   from './useExpenseActions' // 🆕 منطق نموذج/عمليات المصروف كاملاً — استُخرج من App.tsx لتقليل حجمه
 export { useTravelerActions }  from './useTravelerActions' // 🆕 منطق نموذج/عمليات المسافر كاملاً — استُخرج من App.tsx
 export { useDepositActions }   from './useDepositActions'  // 🆕 منطق نموذج/عمليات الإيداع كاملاً — استُخرج من App.tsx

@@ -241,7 +241,7 @@ test('خروج منتدَب: يُمنع برصيد غير مسوّى، ويمر�
   // زرّ التأكيد داخل النافذة يحمل نصّاً أقصر («تسوية وخروج» بلا «من الرحلة») —
   // ملف المسافر أُغلق أصلاً عند فتح هذه النافذة، فلا التباس بين الاثنين.
   await page.getByRole('dialog').getByRole('button', { name: 'تسوية وخروج' }).click()
-  await expect(page.getByText(/تمت تسوية 200\.00 ريال وإخراج العضو/)).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText(/تمت تسوية 200\.00 ريال وإخراج المسافر/)).toBeVisible({ timeout: 15_000 })
 
   // خرج فعلاً من القائمة النشطة — حذف ليّن، فسجلّه المالي باقٍ (القاعدة ٥).
   await expect(travelerCard(page, KHALED.name)).toHaveCount(0)

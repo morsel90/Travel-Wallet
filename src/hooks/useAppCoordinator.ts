@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import * as Sentry from '@sentry/react'
 import type { ToastMessage, Traveler } from '../types'
 import {
-  useAuth, useAdminAuth, usePasswordReset, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
+  useAuth, usePasswordReset, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
   useTripAdminActions, useAllTrips, useMyTrips, useTripStats, useMyTripRole, useInviteJoin, useUserProfile,
   useOrganizerBankDetails, useSyncTravelerNameFromProfile, useLongTermActions,
@@ -18,7 +18,6 @@ import { planRollover, describeExitBlock, filterCycleExpenses, calculateCycleWal
 import { describeWriteError, writeErrorCode } from '../utils/writeErrors'
 import { onIdle, preloadAll } from '../utils/preload'
 import { modalImporters } from '../components/ModalManager'
-import { authImporters } from '../components/AuthFlow'
 import { tripPickerImporters } from '../components/TripPicker'
 
 // ─── منسّق التطبيق ────────────────────────────────────────────────────────────
@@ -40,7 +39,7 @@ import { tripPickerImporters } from '../components/TripPicker'
 // 🆕 لا chartsImporters منفصلة بعد الآن: ChartsSection انتقل خلف زرّ «المزيد»
 // داخل ChartsModal، وهذا الأخير من modalImporters — فيظلّ مغطّى بالتحميل
 // المسبق بلا قائمة ثانية (انظر ModalManager.tsx وutils/preload.ts).
-const LAZY_IMPORTERS = [...modalImporters, ...authImporters, ...tripPickerImporters]
+const LAZY_IMPORTERS = [...modalImporters, ...tripPickerImporters]
 
 export function useAppCoordinator() {
   // 🆕 علم مستقل لكل مستمع بدل علم واحد مشترك بينهما. المشترك كان يكذب: كلاهما
@@ -56,7 +55,7 @@ export function useAppCoordinator() {
 
   const {
     user, isAdmin, authLoading, joinedTripIds,
-    signInError, isSigningIn, signInWithGoogle, signInWithEmail,
+    signInError, isSigningIn, signInWithGoogle, signInWithEmail, signOut,
   } = useAuth()
   const isOnline = useOnlineStatus()
   // 🆕 بروفايل المستخدم العام (اسم/بنك) — يُدار من شاشة بروفايل منفصلة
@@ -219,10 +218,9 @@ export function useAppCoordinator() {
   // والفشل يُنظّف الرابط ويعرض توستاً ثم يُكمل التدفّق المعتاد (رحلاتي/بوابة الرمز).
   const inviteJoin = useInviteJoin(user, showToast)
 
-  // 🆕 يُركَّب هنا لا داخل useAdminAuth: `AuthGate` يحتاجه قبل تسجيل الدخول،
-  // وuseAdminAuth لا يُستهلك هناك أصلاً. انظر usePasswordReset.ts.
+  // 🆕 لـ`AuthGate` وحدها — سطح تسجيل الدخول الوحيد في التطبيق بعد حذف
+  // «الدخول بحساب آخر» ونافذته. انظر usePasswordReset.ts وdocs/DECISIONS.md.
   const passwordReset = usePasswordReset({ showToast })
-  const admin = useAdminAuth({ passwordReset })
 
   // 🆕 يعتمد على كود خطأ Firestore لا على البحث في نص الرسالة: النص غير موثوق
   // (يتغيّر بين إصدارات SDK وقد يكون مترجَماً)، والكود ثابت ومحدَّد.
@@ -461,9 +459,9 @@ export function useAppCoordinator() {
       authLoading, joinedTripIds,
       // 🆕 لا PIN بعد الآن — تسجيل الدخول (AuthGate) هو الحارس الوحيد المتبقي.
       signInError, isSigningIn, signInWithGoogle, signInWithEmail,
-      // 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يُستهلك في canManageLongTerm
-      // أدناه، وفي AccountMenu لإخفاء زرّ «الدخول بحساب آخر» عمّن لا يحتاجه
-      // أصلاً (منظّم يدير رحلته من «رحلاتي» مباشرة، لا من حساب مسؤول منفصل).
+      // 🆕 الخروج من نفس خطّاف الدخول — لا خطّاف مصادقة ثانٍ بعد اليوم.
+      signOut,
+      /** 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يُستهلك في canManageLongTerm أدناه. */
       isOrganizer,
     },
     /** الأرقام المشتقّة — مدخلات كل ما يُعرض ويُصدَّر. */
@@ -578,6 +576,5 @@ export function useAppCoordinator() {
     expense,
     traveler,
     deposit,
-    admin,
   }
 }

@@ -82,11 +82,11 @@ describe('describeWriteError', () => {
   it('الكود المجهول يُعامل بحذر: بلا ادّعاء سبب، ومع إعادة محاولة', () => {
     const d = describeWriteError(fbError('something-new'), 'generic')
     expect(d.retryable).toBe(true)
-    expect(d.text).toMatch('تعذّر إتمام العملية')
+    expect(d.text).toMatch('تعذّر إتمام الإجراء')
   })
 
   it('يتعامل مع خطأ بلا كود إطلاقاً', () => {
     const d = describeWriteError(new Error('عادي'), 'create')
-    expect(d.text).toMatch('تعذّر إتمام العملية')
+    expect(d.text).toMatch('تعذّر إتمام الإجراء')
   })
 })

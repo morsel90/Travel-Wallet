@@ -10,7 +10,7 @@
 // كتغطية عامة لصمود جلسة تسجيل الدخول عبر إعادة التحميل والتنقّل بين الرحلات.
 import { test, expect } from '@playwright/test'
 import { seedTrip } from './utils/seed'
-import { openTripAsAdmin, openAccountMenu } from './utils/flows'
+import { openTripAsAdmin, openAccountMenu, myTripsButton } from './utils/flows'
 
 const CREDS = {
   tripId: 'e2e-admin-persist-a',
@@ -32,29 +32,26 @@ test('وضع المسؤول يصمد عبر إعادة التحميل والتب
   await openTripAsAdmin(page, CREDS)
 
   // ── إعادة تحميل بسيطة لنفس الرحلة ────────────────────────────────────────
+  // 🆕 دليل بقاء صفة المسؤول صار زرّ «رحلاتي» في الهيدر نفسه: يظهر للمسؤول
+  // دائماً (يتصفّح كل الرحلات)، وكان بنداً داخل قائمة الحساب قبل اليوم.
   await page.reload()
-  await openAccountMenu(page)
-  await expect(page.getByRole('menuitem', { name: 'رحلاتي' })).toBeVisible()
-  await page.keyboard.press('Escape')
+  await expect(myTripsButton(page)).toBeVisible()
 
   // ── التبديل لرحلة أخرى (إعادة تحميل كاملة عبر ?trip=) ───────────────────
   await page.goto(`/?trip=${SECOND_TRIP_ID}`)
-  await openAccountMenu(page)
-  await expect(page.getByRole('menuitem', { name: 'رحلاتي' })).toBeVisible()
-  await page.keyboard.press('Escape')
+  await expect(myTripsButton(page)).toBeVisible()
   // ولا يُطالَب بتسجيل دخول جديد إطلاقاً — الجلسة القائمة تكفي
   await expect(page.getByRole('button', { name: /متابعة عبر Google/ })).not.toBeVisible()
 
   // ── العودة للرحلة الأولى ─────────────────────────────────────────────────
   await page.goto(`/?trip=${CREDS.tripId}`)
-  await openAccountMenu(page)
-  await expect(page.getByRole('menuitem', { name: 'رحلاتي' })).toBeVisible()
+  await expect(myTripsButton(page)).toBeVisible()
 })
 
 test('الخروج من وضع المسؤول يُسجّل خروجاً كاملاً ويعيد بوابة تسجيل الدخول', async ({ page }) => {
   // ⚠️ لا جلسة "عضو عادي" تظهر بعد الخروج بعد الآن: openTripAsAdmin يسجّل
   // الدخول مباشرة بحساب المسؤول نفسه عبر AuthGate (لا جلسة مجهولة تحته يعود
-  // إليها signOut — انظر تعليق handleAdminSignOut في useAdminAuth.ts). الخروج
+  // إليها signOut — انظر تعليق signOut في useAuth.ts). الخروج
   // إذاً خروج كامل من الحساب لا مجرّد تبديل دور. 🆕 "تسجيل الخروج" عنصر مستقل
   // الآن في AccountMenu، متاح بصرف النظر عن صلاحية admin — انظر docs/DECISIONS.md.
   await openTripAsAdmin(page, CREDS)

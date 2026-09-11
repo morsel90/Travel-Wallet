@@ -53,9 +53,6 @@ const base = {
 
 export const عضو: Story = { args: base }
 
-/** المعرّف يظهر تحت الاسم — المسؤول يتصفّح رحلات لا يعرفها بالاسم وحده. */
-export const مسؤول: Story = { args: { ...base, isAdmin: true } }
-
 /** التجميع خادمي بحتاً، فيفشل بلا اتصال — البطاقة تبقى صالحة بالاسم والحالة. */
 export const بلا_إحصاءات: Story = { args: { ...base, stats: {} } }
 

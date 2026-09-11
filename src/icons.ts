@@ -2,9 +2,6 @@ export {
   PieChart,
   Lock,
   Unlock,
-  // 🆕 «الدخول بحساب آخر» في AccountMenu — قفلٌ كان يوحي بباب موصد يُفتح
-  // بضغطة، وهذا بالضبط ما لا يحدث. أيقونة تبديل الحساب تصف الفعل.
-  UserRoundCog,
   Loader2,
   Users,
   UserMinus,
@@ -46,7 +43,7 @@ export {
   ArrowRight,   // 🆕 رجوع من تفاصيل الرحلة لقائمة الرحلات (RTL: يشير للخلف)
   ExternalLink, // 🆕 فتح رحلة أخرى في ?trip=
   KeyRound,     // 🆕 تغيير رمز الرحلة (PIN)
-  Luggage,      // 🆕 أيقونة بطاقة الرحلة في قائمة الإدارة
+  Luggage,      // 🆕 بطاقة الرحلة في «رحلاتي»، وزرّ الرجوع إليها في الهيدر
   ChevronLeft,  // 🆕 مؤشّر فتح الرحلة في شاشة «رحلاتي» (RTL: يشير للأمام)
   Upload,       // 🆕 اختيار ملف نسخة احتياطية للاستعادة (RestoreTripForm)
   FileJson,     // 🆕 مؤشّر ملف JSON مُختار بنجاح (RestoreTripForm)
