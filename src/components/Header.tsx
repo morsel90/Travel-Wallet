@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { AnimatePresence } from 'framer-motion'
-import { PieChart, Loader2, ChevronDown } from '../icons'
+import { PieChart, Loader2, ChevronDown, Luggage } from '../icons'
 import { useHeaderCollapse } from '../hooks/useHeaderCollapse'
 import { haptic } from '../utils/haptics'
 import AccountMenu from './AccountMenu'
@@ -28,7 +28,6 @@ export type HeaderCycleStats = HeaderStats
 // 1. إضافة onStatClick و isOnline للخصائص (Props)
 interface HeaderProps {
   isSyncing: boolean
-  isAdmin: boolean
   /**
    * 🆕 اسم الرحلة المفتوحة — يحلّ محلّ «مصاريف السفر» الثابت في العنوان.
    *
@@ -37,9 +36,6 @@ interface HeaderProps {
    * تأكيد الرحلة المفتوحة *قبل* تسجيل مصروف فيها معلومةً مالية لا ترفاً بصرياً.
    */
   tripName: string
-  /** 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يمرَّر إلى AccountMenu لإخفاء
-   * زرّ «الدخول بحساب آخر» عمّن لا يحتاجه أصلاً. */
-  isOrganizer: boolean
   stats: HeaderStats | null
   /** 🆕 أرقام الشهر الجاري — الرحلة الطويلة فقط. غيابها (undefined/null)
    * يُبقي السطر الموجز بلا أي ذكر للشهر، بالضبط كما كان قبل هذه الميزة. */
@@ -50,11 +46,14 @@ interface HeaderProps {
   // انظر AccountMenu.tsx وdocs/DECISIONS.md.
   displayName: string | null
   email: string | null
-  /** 🆕 يُمرَّر حين يكون المستخدم عضواً في أكثر من رحلة، أو مسؤولاً/منظّماً —
-   * «رحلاتي» نقطة الدخول الوحيدة الآن لإدارة أي رحلة (انظر App.tsx). */
+  /**
+   * 🆕 يُمرَّر حين يكون المستخدم عضواً في أكثر من رحلة، أو مسؤولاً — أي حين
+   * يوجد ما يُرجَع إليه فعلاً. **زرّ مستقلّ في الهيدر لا بند في قائمة الحساب**:
+   * هو المسار الرئيسي (دخول ← رحلاتي ← الرحلة)، ونقرةٌ واحدة تكفيه — انظر
+   * AccountMenu.tsx وdocs/DECISIONS.md.
+   */
   onShowMyTrips?: () => void
   onShowProfile: () => void
-  onAdminSignIn: () => void
   onSignOut: () => void
   /**
    * 🆕 أفعال ورقة «المزيد» — كل ما ليس من الأقسام الثلاثة الرئيسية
@@ -83,9 +82,7 @@ function Logo({ isCollapsed, isOnline }: { isCollapsed: boolean; isOnline: boole
 
 const Header = ({
   isSyncing,
-  isAdmin,
   tripName,
-  isOrganizer,
   stats,
   cycleStats,
   onStatClick,
@@ -94,7 +91,6 @@ const Header = ({
   email,
   onShowMyTrips,
   onShowProfile,
-  onAdminSignIn,
   onSignOut,
   more,
 }: HeaderProps) => {
@@ -235,14 +231,26 @@ const Header = ({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
+          {/* 🆕 الرجوع لقائمة الرحلات بنقرة واحدة — كان بنداً داخل قائمة
+              الحساب، فكان المسار الرئيسي يمرّ بـ«حسابي». أيقونة وحدها بلا
+              نصّ: الهيدر ضيّق واسم الرحلة يحتاج عرضه، والأيقونة مع aria-label
+              وtitle كافية لنمط مألوف (الرجوع من المحادثة إلى قائمتها).
+              لا يظهر إطلاقاً لمن له رحلة واحدة — لا شيء يُرجَع إليه. */}
+          {onShowMyTrips && (
+            <button
+              type="button"
+              onClick={() => { haptic.light(); onShowMyTrips() }}
+              aria-label="رحلاتي"
+              title="رحلاتي"
+              className="flex items-center justify-center bg-teal-800/50 hover:bg-teal-800 text-teal-50 hover:text-white transition-all duration-200 rounded-xl border border-teal-500/30 backdrop-blur-sm shrink-0 min-h-[44px] min-w-[44px]"
+            >
+              <Luggage className="w-[18px] h-[18px]" />
+            </button>
+          )}
           <AccountMenu
             displayName={displayName}
             email={email}
-            isAdmin={isAdmin}
-            isOrganizer={isOrganizer}
-            onShowMyTrips={onShowMyTrips}
             onShowProfile={onShowProfile}
-            onAdminSignIn={onAdminSignIn}
             onSignOut={onSignOut}
           />
         </div>

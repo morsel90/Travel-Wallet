@@ -27,45 +27,22 @@ type Story = StoryObj<typeof meta>
 
 const noop = () => {}
 
-export const عضو_برحلة_واحدة: Story = {
+// 🆕 قصّة واحدة لا أربع: القائمة صارت بندين لا تتغيّران بصلاحية أحد —
+// من أنت، والخروج. القصص الأربع القديمة كانت تصف بنوداً مشروطة لم تعد
+// موجودة (رحلاتي صارت زرّاً في الهيدر، و«الدخول بحساب آخر» حُذف).
+export const قائمة_الحساب: Story = {
   args: {
     displayName: 'أحمد الغامدي',
     email: 'ahmad@example.com',
-    isAdmin: false,
-    isOrganizer: false,
-    onShowMyTrips: undefined,
     onShowProfile: noop,
-    onAdminSignIn: noop,
     onSignOut: noop,
-  },
-}
-
-export const عضو_بعدة_رحلات: Story = {
-  args: {
-    ...عضو_برحلة_واحدة.args,
-    onShowMyTrips: noop,
-  },
-}
-
-export const مسؤول: Story = {
-  args: {
-    ...عضو_بعدة_رحلات.args,
-    isAdmin: true,
-  },
-}
-
-/** منظّم رحلة غير مسؤول عالمي — لا يرى «الدخول بحساب آخر» (يدير رحلته من «رحلاتي»). */
-export const منظّم_رحلة: Story = {
-  args: {
-    ...عضو_برحلة_واحدة.args,
-    isOrganizer: true,
   },
 }
 
 /** بلا اسم عرض — يسقط للبريد، والحرف الأول من البريد في الدائرة. */
 export const بلا_اسم_عرض: Story = {
   args: {
-    ...عضو_برحلة_واحدة.args,
+    ...قائمة_الحساب.args,
     displayName: null,
   },
 }

@@ -15,7 +15,6 @@ import AuthGate             from './components/AuthGate'
 import NotAMemberScreen     from './components/NotAMemberScreen'
 import InviteJoinScreen     from './components/InviteJoinScreen'
 import TripPicker           from './components/TripPicker'
-import AuthFlow             from './components/AuthFlow'
 import ModalManager         from './components/ModalManager'
 import ModalFallback        from './components/modals/ModalFallback'
 import PullToRefresh        from './components/PullToRefresh'
@@ -43,7 +42,7 @@ const UserProfileModal = lazy(() => import('./components/modals/UserProfileModal
 // store/TripStoreProvider.tsx، والتخطيط إلى أقسام components/*Panel.tsx.
 export default function App() {
   const {
-    session, ledger, trip, rates, status, picker, tripEdit, filter, modals, expense, traveler, deposit, admin, invite,
+    session, ledger, trip, rates, status, picker, tripEdit, filter, modals, expense, traveler, deposit, invite,
     profile, isSavingProfile, saveProfile, organizerBank, longTerm, requestDeleteTraveler, passwordReset,
   } = useAppCoordinator()
 
@@ -142,7 +141,7 @@ export default function App() {
               (max(1rem, safe-area)) بهامش واضح. */}
           <div className="min-h-screen pb-24">
             <Header
-              isSyncing={status.isSyncing} isAdmin={session.isAdmin} isOrganizer={session.isOrganizer}
+              isSyncing={status.isSyncing}
               // 🆕 اسم الرحلة يحلّ محلّ «مصاريف السفر» الثابت في العنوان —
               // وهو نفسه زرّ فتح ورقة «المزيد» (انظر Header.tsx/MoreMenu.tsx).
               // «إدارة الرحلة» صارت بنداً داخلها لا زرّاً منفصلاً هنا.
@@ -171,8 +170,7 @@ export default function App() {
                   ? picker.show : undefined
               }
               onShowProfile={modals.openUserProfile}
-              onAdminSignIn={admin.openAdminSignIn}
-              onSignOut={admin.handleAdminSignOut}
+              onSignOut={session.signOut}
               // 🆕 كل ما ليس من الأقسام الثلاثة الرئيسية. اختيارية كل بند هي
               // حارس صلاحيته/سياقه — لا شرط `isAdmin` داخل MoreMenu نفسه.
               more={{
@@ -372,8 +370,6 @@ export default function App() {
                 onConfirmExit: longTerm.onConfirmExit,
               } : undefined}
             />
-  
-            <AuthFlow open={admin.showAdminSignIn} modalProps={admin.adminModalProps} />
   
             <UpdatePrompt hasUnsavedData={status.hasUnsavedData} />
           </div>

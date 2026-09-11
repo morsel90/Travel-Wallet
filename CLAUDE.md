@@ -24,7 +24,7 @@
 
 **Core features:**
 - Multi-trip support (each trip has its own data)
-- 🆕 Mandatory Google/Email sign-in + admin auth via Firebase Auth + Custom Claims — no PIN, no anonymous sessions (see *Design Decisions* in `docs/DECISIONS.md`)
+- 🆕 Mandatory Google/Email sign-in via Firebase Auth + Custom Claims — no PIN, no anonymous sessions. 🆕 **One sign-in surface only (`AuthGate`)**: the second in-app sign-in modal («الدخول بحساب آخر») is gone, and after signing in the path is دخول ← رحلاتي ← الرحلة with no "account" detour — the account menu holds just who you are and sign out (see *Design Decisions*)
 - 🆕 Trip membership: join an *existing* trip only via a signed invite link (`?invite=TOKEN`); start a *new* trip yourself any time — any signed-in account can self-serve create a trip and becomes its organizer immediately (see *Design Decisions*)
 - 🆕 Per-user profile (`users/{uid}`: name + bank details) auto-fills bank details on trip creation, editable per trip afterward
 - Real-time Firestore listeners with optimistic updates
@@ -100,20 +100,21 @@
 │  │  │ TravelersPanel   (cards + add form)            ││ │
 │  │  └────────────────────────────────────────────────┘│ │
 │  └────────────────────────────────────────────────────┘ │
-│  ┌──────────────┐ ┌───────────┐ ┌──────────────┐       │
-│  │ ModalManager │ │ AuthFlow  │ │    Toast     │       │
-│  │ (+ MoreMenu: │ │ (lazy     │ │              │       │
-│  │  اسم الرحلة) │ │  admin)   │ │              │       │
-│  │ (lazy, from  │ │ (lazy     │ │              │       │
-│  │  useModals)  │ │  admin)   │ │              │       │
-│  └──────────────┘ └───────────┘ └──────────────┘       │
+│  ┌──────────────┐ ┌───────────────┐ ┌────────────┐     │
+│  │ ModalManager │ │ UserProfile   │ │   Toast    │     │
+│  │ (+ MoreMenu: │ │ Modal (lazy)  │ │            │     │
+│  │  اسم الرحلة) │ │               │ │            │     │
+│  │ (lazy, from  │ │               │ │            │     │
+│  │  useModals)  │ │               │ │            │     │
+│  └──────────────┘ └───────────────┘ └────────────┘     │
 └─────────────────────────────────────────────────────────┘
           │                      │
      ┌────▼────┐          ┌──────▼──────┐
      │  Auth   │          │  Firestore  │
      │(Google/ │          │ (real-time) │
-     │ Email/  │          └─────────────┘
-     │ admin)  │
+     │ Email)  │          └─────────────┘
+     │ AuthGate│
+     │  وحدها  │
      └─────────┘
 ```
 

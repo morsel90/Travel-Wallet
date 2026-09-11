@@ -23,7 +23,6 @@ const baseProps = {
   displayName: 'أحمد الغامدي',
   email: 'ahmad@example.com',
   onShowProfile: noop,
-  onAdminSignIn: noop,
   onSignOut: noop,
   // 🆕 أفعال ورقة «المزيد» — الأفعال الثلاثة غير الاختيارية وحدها؛ البنود
   // المشروطة بالصلاحية تُمرَّر في اختبارها الخاص أدناه.
@@ -120,7 +119,7 @@ describe('Header — اسم الرحلة يفتح ورقة «المزيد»', ()
   // عنصراً ميّتاً لأغلب الأعضاء. التقارير والإحصائيات والمسار حقٌّ لكل عضو.
   // (القاعدة ١٧: اسأل من يستبعده هذا الشرط قبل شحنه.)
   it('متاح للعضو العادي أيضاً — لا شرط صلاحية على الزرّ نفسه', async () => {
-    render(<Header {...baseProps} isAdmin={false} isOrganizer={false} />)
+    render(<Header {...baseProps} />)
 
     await userEvent.click(screen.getByRole('button', { name: 'قائمة الرحلة' }))
     expect(screen.getByText('التقارير')).toBeInTheDocument()

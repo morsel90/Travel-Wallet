@@ -7,7 +7,7 @@ import { useState, useEffect } from 'react'
  * targetTimestamp = null يعني: لا يوجد عدّ تنازلي نشط (يُرجع 0 مباشرة).
  *
  * مفيد لأزرار "أعد المحاولة خلال Xث" (مثال: زر استرداد كلمة المرور في
- * AdminSignInModal — يمنع إعادة الإرسال المتكرر خلال 60 ثانية من كل محاولة).
+ * AuthGate — يمنع إعادة الإرسال المتكرر خلال 60 ثانية من كل محاولة).
  */
 export function useCountdown(targetTimestamp: number | null): number {
   const [remaining, setRemaining] = useState(() =>

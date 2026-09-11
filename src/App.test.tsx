@@ -122,9 +122,6 @@ vi.mock('./hooks', async () => {
   // 🆕 تعافي المزامنة — مستمعا أحداث فقط (visibilitychange/online) بلا أثر على
   // العرض؛ منطقه مغطّى في useSyncRecovery.test.ts.
   useSyncRecovery: () => undefined,
-  useAdminAuth: () => ({
-    showAdminSignIn: false, openAdminSignIn: noop, handleAdminSignOut: noop, adminModalProps: {},
-  }),
   // 🆕 استرداد كلمة المرور — منطقه في usePasswordReset.test.ts، وبلوغه من
   // بوابة الدخول في AuthGate.test.tsx. هنا مجرّد بديل صامت.
   usePasswordReset: () => ({
@@ -325,10 +322,10 @@ describe('App — الحالات الفارغة', () => {
     openMoreMenu()
     expect(screen.getByText('سلة المهملات')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'إغلاق المزيد' }))
-    // 🆕 «إدارة الرحلات» دُمجت في «رحلاتي» (AccountMenu، الهيدر) — لا زرّ
-    // لوحة إدارة منفصل بعد الآن. انظر AccountMenu.tsx وdocs/DECISIONS.md.
-    fireEvent.click(screen.getByRole('button', { name: 'حسابي' }))
-    expect(screen.getByRole('menuitem', { name: 'رحلاتي' })).toBeInTheDocument()
+    // 🆕 «رحلاتي» زرٌّ مستقلّ في الهيدر لا بند في قائمة الحساب — نقرة واحدة
+    // للرجوع للقائمة (انظر Header.tsx وAccountMenu.tsx). والمسؤول يراه دائماً
+    // لأنه يتصفّح كل الرحلات. ولا زرّ «لوحة إدارة» منفصل بعد الآن.
+    expect(screen.getByRole('button', { name: 'رحلاتي' })).toBeInTheDocument()
     expect(screen.queryByText('لوحة الإدارة')).not.toBeInTheDocument()
   })
 
@@ -352,12 +349,16 @@ describe('App — الحالات الفارغة', () => {
     expect(moreItems).toEqual(['التقارير', 'الإحصائيات', 'مسار الرحلة'])
 
     fireEvent.click(screen.getByRole('button', { name: 'إغلاق المزيد' }))
+
+    // 🆕 ولا زرّ «رحلاتي» في الهيدر أصلاً: عضو برحلة واحدة لا شيء يُرجَع إليه.
+    expect(screen.queryByRole('button', { name: 'رحلاتي' })).not.toBeInTheDocument()
+
     fireEvent.click(screen.getByRole('button', { name: 'حسابي' }))
     const accountItems = screen.getAllByRole('menuitem').map(b => b.getAttribute('aria-label') ?? b.textContent?.trim())
-    // «رحلاتي» غائبة أيضاً: عضو برحلة واحدة لا شيء يبدّل إليه.
-    // 🆕 و«الدخول بحساب آخر» لا «تسجيل الدخول كمسؤول» — كان البند الوحيد الذي
-    // يَعِد المسافر العادي (وهو تحديداً من يراه) بصلاحية لا يمنحها الضغط عليه.
-    expect(accountItems).toEqual(['بروفايلي', 'الدخول بحساب آخر', 'تسجيل الخروج'])
+    // 🆕 **قائمة الحساب شيئان لا أكثر: من أنت، والخروج.** «رحلاتي» غادرتها إلى
+    // الهيدر (مسار لا حساب)، و«الدخول بحساب آخر» حُذف بنافذته وخطّافه كاملاً —
+    // سطح تسجيل دخول واحد في التطبيق هو AuthGate. انظر docs/DECISIONS.md.
+    expect(accountItems).toEqual(['بروفايلي', 'تسجيل الخروج'])
   })
 
   it('بلا مصاريف: حالة فارغة في السجل ولا قسم إحصائيات', async () => {

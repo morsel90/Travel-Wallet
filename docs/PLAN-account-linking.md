@@ -195,6 +195,10 @@ Firebase ولا يمكن تزويره. فلا حاجة لآلية إثبات ج�
 مزوّد Email/Password **مفعَّل أصلاً** (`hooks/useAdminAuth.ts` يستخدمه لدخول
 المسؤول منذ البداية). لا `auth/operation-not-allowed` هنا بخلاف Google.
 
+> ⚠️ **تحديث لاحق (2026-09-11):** `useAdminAuth.ts` حُذف بالكامل مع نافذة
+> «الدخول بحساب آخر» — انظر `docs/DECISIONS.md`. المزوّد نفسه ما زال مفعَّلاً
+> ويستخدمه `AuthGate` (سطح الدخول الوحيد الآن)، فالخلاصة أعلاه لم تتغيّر.
+
 ### `src/hooks/useAccountLink.ts` — إضافتان بجانب `linkAccount`
 
 ```ts

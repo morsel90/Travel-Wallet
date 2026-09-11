@@ -23,17 +23,27 @@ const noop = () => {}
 export const رحلة_قياسية: Story = {
   args: {
     isSyncing: false,
-    isAdmin: false,
-    isOrganizer: false,
     tripName: 'رحلة بولندا 2026',
     stats: { totalDeposited: 1000, totalSpent: 400, totalRemaining: 600 },
     displayName: 'أحمد الغامدي',
     email: 'ahmad@example.com',
     onShowProfile: noop,
-    onAdminSignIn: noop,
     onSignOut: noop,
     onStatClick: noop,
     more: { onOpenReports: noop, onOpenCharts: noop, onOpenItinerary: noop },
+  },
+}
+
+/**
+ * 🆕 عضو في أكثر من رحلة — زرّ «رحلاتي» (الحقيبة) بجانب الأفاتار يُرجعه
+ * للقائمة بنقرة واحدة. كان بنداً داخل قائمة الحساب، أي أن المسار الرئيسي كان
+ * يمرّ بـ«حسابي». لا يظهر إطلاقاً لمن له رحلة واحدة (القصص الأخرى) — لا شيء
+ * يُرجَع إليه. انظر docs/DECISIONS.md.
+ */
+export const عضو_بعدة_رحلات: Story = {
+  args: {
+    ...رحلة_قياسية.args,
+    onShowMyTrips: noop,
   },
 }
 
