@@ -55,7 +55,7 @@ export default function ExitTravelerModal({
           <p className="text-xs text-slate-500 mb-4 leading-relaxed">
             «تسوية وخروج» تُسجّل مصروف التسوية الذي يُصفّر رصيده ثم تُخرجه — بضغطة واحدة.
             {direction === 'credit'
-              ? ' تُسجَّل بوصفها إعادة المبلغ المتبقّي له.'
+              ? ' تُسجَّل بوصفها إعادة رصيده له.'
               : ' تُسجَّل بوصفها استلام المبلغ منه.'}
           </p>
         </>

@@ -108,7 +108,7 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
                     مقابل «المودع»، فيرى المستخدم مصطلحاً لا يعرفه لمجرّد أن رحلته
                     طويلة. ما اختلف هو *مصدر* الرقم لا معناه: كم لديه الآن. اختلافُ
                     الحساب تعقيدٌ داخلي، وإظهاره في التسمية يجعله تعقيداً ظاهراً. */}
-                المودع:{' '}
+                المودَع:{' '}
                 <span className="font-bold text-slate-700">
                   {cycleWallet !== undefined ? cycleWallet.toFixed(2) : traveler.deposited} ﷼
                 </span>
@@ -122,7 +122,7 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
           <div className={`text-left shrink-0 px-3 py-1.5 rounded-2xl ${isNegative ? 'bg-rose-50' : 'bg-teal-50'}`}>
             {/* اسم واحد في الحالتين — انظر تعليق «المودع» أعلاه. */}
             <div className="text-[10px] sm:text-xs font-medium text-slate-400 mb-0.5 text-center">
-              المتبقي
+              الرصيد
             </div>
             <div className={`text-sm sm:text-base font-black tabular-nums text-center leading-none ${isNegative ? 'text-rose-700' : 'text-teal-700'}`} dir="ltr">
               {traveler.remaining.toFixed(2)}
@@ -257,7 +257,7 @@ export const AddTravelerForm = memo(({
           </div>
           
           <div className="relative">
-            <label className="block text-xs font-bold text-slate-500 mb-1.5 ms-1">المودع (اختياري)</label>
+            <label className="block text-xs font-bold text-slate-500 mb-1.5 ms-1">المودَع (اختياري)</label>
             <div className="relative">
               <input
                 type="text" 

@@ -325,14 +325,14 @@ describe('useTravelerActions — حذف واستعادة', () => {
 
   // 🆕 حارس الرحلات طويلة المدى (utils/longTerm.ts: describeExitBlock).
   it('يمنع الخروج ويعرض السبب حين يُرجع describeExitBlockFor نصاً', () => {
-    const describeExitBlockFor = vi.fn(() => 'له رصيد متبقٍّ 300.00 ريال')
+    const describeExitBlockFor = vi.fn(() => 'رصيده 300.00 ريال')
     const { result, setTravelers, closeModal, showToast } = setup({ user: fakeUser, describeExitBlockFor })
 
     act(() => result.current.confirmDeleteTraveler(1))
 
     expect(describeExitBlockFor).toHaveBeenCalledWith(1)
     expect(showToast).toHaveBeenCalledWith(
-      { text: 'له رصيد متبقٍّ 300.00 ريال', type: 'error' }, 7000
+      { text: 'رصيده 300.00 ريال', type: 'error' }, 7000
     )
     // ⚠️ الجوهر: لا كتابة إطلاقاً — لا محلية ولا على Firestore.
     expect(mocks.batchCommit).not.toHaveBeenCalled()

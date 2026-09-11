@@ -83,7 +83,7 @@ export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses
         {[
           ['إجمالي المودَع', fmt(deposited)],
           ['إجمالي المصروف', fmt(spent)],
-          ['المتبقي', fmt(remaining)],
+          ['الرصيد', fmt(remaining)],
           ['عدد المصاريف', String(expenses.length)],
           ['عدد المسافرين', String(travelers.length)],
           ['عدد أيام الصرف', String(days)],
@@ -130,7 +130,7 @@ export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses
             <th className={th}>المسافر</th>
             <th className={th}>المودَع</th>
             <th className={th}>نصيبه من المصاريف</th>
-            <th className={th}>المتبقي</th>
+            <th className={th}>الرصيد</th>
           </tr>
         </thead>
         <tbody>
@@ -275,7 +275,7 @@ export const PrintableStatement = ({ tripName, generatedAt, traveler, statement,
         // 🆕 لا تُعرض لمن لم يدفع من جيبه قط — نفس منطق TravelerProfileModal.
         ...(statement.totalPaidByPocket !== 0 ? [['دفعه من جيبه', fmt(statement.totalPaidByPocket)]] : []),
         ['إجمالي نصيبه', fmt(statement.totalShare)],
-        ['المتبقي', fmt(statement.remaining)],
+        ['الرصيد', fmt(statement.remaining)],
       ].map(([label, value]) => (
         <div key={label} className="border border-slate-300 rounded p-2">
           <div className="text-[10px] text-slate-500">{label}</div>

@@ -1940,7 +1940,7 @@ exports.exitTraveler = onCall(
       throw new HttpsError(
         'failed-precondition',
         direction === 'credit'
-          ? `لا يمكن إخراج ${traveler.name} قبل تسوية حسابه — له رصيد متبقٍّ ${amount} ريال.`
+          ? `لا يمكن إخراج ${traveler.name} قبل تسوية حسابه — رصيده ${amount} ريال.`
           : `لا يمكن إخراج ${traveler.name} قبل تسوية حسابه — عليه ${amount} ريال.`,
       );
     }
@@ -1970,7 +1970,7 @@ exports.exitTraveler = onCall(
         tx.set(
           dataRoot.collection('expenses').doc(),
           buildAdjustmentExpense(traveler, Math.abs(balance), todayDate,
-            `تسوية خروج ${traveler.name} — إعادة الرصيد المتبقّي`, actor.uid),
+            `تسوية خروج ${traveler.name} — إعادة الرصيد`, actor.uid),
         );
       } else if (direction === 'debt') {
         // عليه عجز: حركة إيداع تُصفّره (يقابلها في الواقع استلام المبلغ منه).
@@ -1980,7 +1980,7 @@ exports.exitTraveler = onCall(
         tx.set(
           travelerRef.collection('depositLogs').doc(),
           buildDepositLog(travelerId, previousDeposited, newDeposited,
-            `تسوية خروج ${traveler.name} — سداد العجز المتبقّي`, actor),
+            `تسوية خروج ${traveler.name} — سداد العجز`, actor),
         );
       }
 

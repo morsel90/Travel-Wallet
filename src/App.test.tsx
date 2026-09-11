@@ -401,7 +401,7 @@ describe('App — الرحلات طويلة المدى', () => {
     // قبل وصول البيانات، ففتح «المزيد» عندها كان سيمرّ بلا longTerm أصلاً —
     // نجاح زائف. والرقم مباشرةً بعد «المتبقي» هو ما يُثبت أنها رحلة قياسية:
     // الطويلة تقحم «هذا الشهر» بينهما (انظر Header.tsx).
-    await screen.findByText(/^المتبقي \d/)
+    await screen.findByText(/^الرصيد \d/)
     openMoreMenu()
     expect(screen.queryByText('هذا الشهر')).not.toBeInTheDocument()
     expect(screen.queryByText(/إغلاق أغسطس 2026/)).not.toBeInTheDocument()
@@ -413,7 +413,7 @@ describe('App — الرحلات طويلة المدى', () => {
 
     // السطر الموجز بصيغة الشهر (`المتبقي هذا الشهر …`) دليلٌ على أن longTerm
     // وصل فعلاً — وهو شرط ظهور البند في «المزيد».
-    await screen.findByText(/^المتبقي هذا الشهر /)
+    await screen.findByText(/^الرصيد هذا الشهر /)
     openMoreMenu()
     fireEvent.click(screen.getByText('هذا الشهر'))
     expect(await screen.findByText('أغسطس 2026')).toBeInTheDocument()
@@ -425,7 +425,7 @@ describe('App — الرحلات طويلة المدى', () => {
     h.tripType = 'long_term'
     h.isOrganizer = false
     const { unmount } = render(<App />)
-    await screen.findByText(/^المتبقي هذا الشهر /)
+    await screen.findByText(/^الرصيد هذا الشهر /)
     openMoreMenu()
     fireEvent.click(screen.getByText('هذا الشهر'))
     await screen.findByText('لم يُغلق شهر بعد')
@@ -434,7 +434,7 @@ describe('App — الرحلات طويلة المدى', () => {
 
     h.isOrganizer = true
     render(<App />)
-    await screen.findByText(/^المتبقي هذا الشهر /)
+    await screen.findByText(/^الرصيد هذا الشهر /)
     openMoreMenu()
     fireEvent.click(screen.getByText('هذا الشهر'))
     expect(await screen.findByRole('button', { name: /إغلاق أغسطس 2026/ })).toBeInTheDocument()

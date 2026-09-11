@@ -84,7 +84,7 @@ describe('describeExitBlock', () => {
   })
 
   it('يمنع الخروج ويسمّي المبلغ والاتجاه', () => {
-    expect(describeExitBlock('long_term', 'سعد', 300)).toContain('له رصيد متبقٍّ 300.00 ريال')
+    expect(describeExitBlock('long_term', 'سعد', 300)).toContain('رصيده 300.00 ريال')
     expect(describeExitBlock('long_term', 'خالد', -120.5)).toContain('عليه 120.50 ريال')
   })
 })
@@ -115,7 +115,7 @@ describe('calculateCycleWallet', () => {
   // ⚠️ الجوهر: مهما كانت القيمتان، محفظة الدورة ناقص مصاريفها يُعيد الرصيد
   // المتبقي نفسه دائماً — هذا هو الاتساق بين «رصيد الدورة» و«المتبقي» في
   // البطاقة/الهيدر، بلا اعتماد على أي مصدر بيانات آخر.
-  it('يُعيد المتبقي نفسه عند طرح مصاريف الدورة من محفظتها', () => {
+  it('يُعيد الرصيد نفسه عند طرح مصاريف الدورة من محفظتها', () => {
     for (const [remaining, spent] of [[800, 0], [-200, 0], [150.5, 320], [-90, 45]]) {
       const wallet = calculateCycleWallet(remaining, spent)
       expect(wallet - spent).toBeCloseTo(remaining, 10)

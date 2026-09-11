@@ -239,7 +239,7 @@ export default function TravelerProfileModal({
           <div className="grid grid-cols-3 gap-3">
             <KpiCard Icon={Wallet} label="المودَع" value={fmt(depositedThisCycle)} tone="teal" />
             <KpiCard Icon={Receipt} label="نصيبه" value={fmt(periodPocketAndShare.totalShare)} tone="rose" />
-            <KpiCard Icon={Scale} label="المتبقي" value={fmt(balance.remaining)} tone={balance.remaining < 0 ? 'rose' : 'teal'} />
+            <KpiCard Icon={Scale} label="الرصيد" value={fmt(balance.remaining)} tone={balance.remaining < 0 ? 'rose' : 'teal'} />
           </div>
           {/* 🆕 توضيح أن الأرقام أعلاه للشهر الجاري تحديداً — بلا مُصفّي يدوي بعد
               الآن، هذه القراءة الوحيدة لمعرفة الشهر المقصود. اسم الشهر صريح هنا
@@ -346,7 +346,7 @@ export default function TravelerProfileModal({
                   <KpiCard Icon={Wallet} label="المودَع" value={fmt(statement.opening)} tone="teal" />
                   <KpiCard Icon={HandCoins} label="دفعه من جيبه" value={fmt(statement.totalPaidByPocket)} tone="teal" />
                   <KpiCard Icon={Receipt} label="نصيبه من المصاريف" value={fmt(statement.totalShare)} tone="rose" />
-                  <KpiCard Icon={Scale} label="المتبقي" value={fmt(statement.remaining)} tone={statement.remaining < 0 ? 'rose' : 'teal'} />
+                  <KpiCard Icon={Scale} label="الرصيد" value={fmt(statement.remaining)} tone={statement.remaining < 0 ? 'rose' : 'teal'} />
                 </section>
               )}
 

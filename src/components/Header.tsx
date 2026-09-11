@@ -112,8 +112,8 @@ const Header = ({
   // فاسم واحد لشيء واحد — انظر تعليق HeaderCycleStats أعلاه.
   const summaryText = stats
     ? cycleStats
-      ? `المتبقي هذا الشهر ${cycleStats.totalRemaining.toFixed(2)} ﷼`
-      : `المتبقي ${stats.totalRemaining.toFixed(2)} ﷼`
+      ? `الرصيد هذا الشهر ${cycleStats.totalRemaining.toFixed(2)} ﷼`
+      : `الرصيد ${stats.totalRemaining.toFixed(2)} ﷼`
     : null
 
   const renderSummary = (compact: boolean) => {

@@ -197,7 +197,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
         {activeTab === 'current' && (
           <SummaryBody
             depositLabel="المودَع"
-            remainingLabel="المتبقي"
+            remainingLabel="الرصيد"
             deposited={currentTotals.deposited}
             spent={currentTotals.spent}
             remaining={currentTotals.remaining}
@@ -219,7 +219,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
                 يحدّد المدى، لا كلمة «إجمالي» ملصقةً على البطاقة. */}
             <SummaryBody
               depositLabel="المودَع"
-              remainingLabel="المتبقي"
+              remainingLabel="الرصيد"
               deposited={fullTotals.deposited}
               spent={fullTotals.spent}
               remaining={fullTotals.remaining}

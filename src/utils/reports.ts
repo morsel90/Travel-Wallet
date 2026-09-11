@@ -47,7 +47,7 @@ export function buildExpenseRows(expenses: Expense[], travelers: Traveler[]): Xl
 
 /** ورقة "ملخص المسافرين": المودَع، نصيبه من المصاريف، المتبقي + صف إجمالي. */
 export function buildTravelerRows(balances: TravelerBalance[]): XlsxCell[][] {
-  const header: XlsxCell[] = ['المسافر', 'المودَع', 'نصيبه من المصاريف', 'المتبقي']
+  const header: XlsxCell[] = ['المسافر', 'المودَع', 'نصيبه من المصاريف', 'الرصيد']
   const rows: XlsxCell[][] = balances.map(b => [b.name, money(b.deposited), money(b.totalExpenses), money(b.remaining)])
   rows.push([
     'الإجمالي',
@@ -142,7 +142,7 @@ export function exportTravelerToExcel({ traveler, balance, statement, filenameSu
     ['اسم المسافر', traveler.name],
     ['إجمالي المودَع', money(balance.deposited)],
     ['نصيبه من المصاريف', money(balance.totalExpenses)],
-    ['الرصيد المتبقي', money(balance.remaining)]
+    ['الرصيد', money(balance.remaining)]
   ]
 
   // 2. بناء ورقة كشف الحساب التفصيلي
