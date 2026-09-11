@@ -71,7 +71,7 @@
 | Testing (rules) | @firebase/rules-unit-testing + Firestore emulator | ^5.0.2 |
 | Testing (E2E) | Playwright (chromium) + Auth/Firestore/Functions emulators | ^1.63.0 |
 | Component workshop | Storybook (react-vite) | ^10.6.0 |
-| Linting | ESLint + Prettier | ^8.57.0 |
+| Linting | ESLint (flat config) + Prettier | ^10.10.0 |
 | Deployment (frontend) | Vercel SPA | — |
 | Deployment (backend) | Firebase CLI | — |
 

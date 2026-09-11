@@ -161,7 +161,7 @@ export default function TravelerProfileModal({
       if (!isPrinted) {
         window.print()
       }
-    } catch (e) {
+    } catch {
       window.print()
     }
   }
