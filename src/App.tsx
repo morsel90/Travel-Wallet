@@ -58,7 +58,7 @@ export default function App() {
   // الدالة بصرف النظر عن أي شاشة معروضة — رابط دعوة فاشل مثلاً ينتهي بالمستخدم
   // على TripPicker أو NotAMemberScreen لا داخل التطبيق الكامل، وToast كان
   // يُعرَض فقط داخل فرع التطبيق الكامل فيختفي الخطأ صامتاً في كل الفروع الأخرى.
-  let screen: JSX.Element
+  let screen: React.JSX.Element
   if (session.authLoading || !session.user) {
     screen = (
       <AuthGate

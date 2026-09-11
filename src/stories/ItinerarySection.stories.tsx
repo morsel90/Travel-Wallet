@@ -12,7 +12,7 @@ import type { ItinerarySegment } from '../types'
 // في آخر الملف تعيش في تدفّق الشاشة الرئيسية على أرضيتها الرمادية، فبطاقة
 // بيضاء حولها تكذب على القارئ بدل أن تساعده.
 const inModal = [
-  (Story: () => JSX.Element) => (
+  (Story: () => React.JSX.Element) => (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 max-w-2xl">
       <Story />
     </div>

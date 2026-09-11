@@ -54,12 +54,12 @@
 
 | Layer | Technology | Version |
 |---|---|---|
-| Framework | React | ^18.2.0 |
+| Framework | React | ^19.3.0 |
 | Language | TypeScript | ^5.3.3 |
 | Bundler | Vite (Rolldown) | ^8.3.0 |
 | State | React Context (DataContext + UIActionsContext + UIFormContext) | — |
 | Styling | Tailwind CSS | ^3.4.1 |
-| Icons | Lucide React | ^0.383.0 |
+| Icons | Lucide React | ^1.44.0 |
 | QR encoding | qrcode-generator | ^2.0.4 |
 | Animations | Framer Motion | ^11.2.10 |
 | Virtual List | React Virtuoso | ^4.18.10 |
