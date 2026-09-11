@@ -7,7 +7,7 @@
 // المسؤول تماماً — أي عن كل من قد يجرّبها عملياً.
 import { test, expect } from '@playwright/test'
 import { seedTrip, adminFirestore } from './utils/seed'
-import { openTripAsMember } from './utils/flows'
+import { openTripAsMember, tripRowInPicker } from './utils/flows'
 
 const CREDS = {
   tripId: 'e2e-trip-picker',
@@ -16,6 +16,9 @@ const CREDS = {
   adminEmail: 'e2e-admin-picker@test.local', // غير مستخدَم في هذا السيناريو، لكن seedTrip يتطلبه
   adminPassword: 'E2eTestPass!1',
 }
+
+/** نفس الاسم الذي تكتبه seedTrip حرفياً — الصفّ يُعرَف باسمه لا بمعرّفه. */
+const TRIP_NAME = `رحلة اختبار E2E — ${CREDS.tripId}`
 
 // 🆕 دفتر مقصود الشكل: البطاقة يجب أن تعرض «٢ مسافرين · 300 ﷼» — أي المسافر
 // المحذوف لا يُعدّ، والمصروف المحذوف لا يُجمع، **والمصروف القديم بلا حقل
@@ -85,7 +88,10 @@ test('بطاقة الرحلة تعرض عدد المسافرين وإجمالي 
   await openTripAsMember(page, CREDS)
   await page.goto('/')
 
-  const row = page.getByRole('listitem').filter({ hasText: CREDS.tripId })
+  // ⚠️ باسمها لا بمعرّفها: المعرّف لم يعد يُعرض على البطاقة إطلاقاً (انظر
+  // tripRowInPicker). ومطابقة الصفّ هنا مُثبَتة بالتحقّقات الموجبة أدناه — لا
+  // تنجح على محدِّد لا يطابق شيئاً، بخلاف أي `toHaveCount(0)`.
+  const row = tripRowInPicker(page, TRIP_NAME)
   // البطاقة تظهر فوراً بالاسم؛ الرقمان يلحقان بها بعد التجميع.
   await expect(row).toBeVisible()
 
