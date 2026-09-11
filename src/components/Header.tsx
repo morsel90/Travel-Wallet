@@ -215,23 +215,37 @@ const Header = ({
                 aria-expanded={isMoreOpen}
                 aria-label="قائمة الرحلة"
                 title="قائمة الرحلة"
-                className="flex items-center gap-2.5 min-w-0 self-start max-w-full text-right"
+                className="flex items-center gap-2 min-w-0 self-start max-w-full text-right"
               >
-                <Logo isCollapsed={isCollapsed} isOnline={isOnline} />
+                {/* ⚠️ **السهم ملازمٌ للشعار، لا داخل العنوان ولا شقيقاً بعده.**
+                    كان inline داخل الـh1 ليتبع آخر كلمة أينما وقعت — لكن
+                    `line-clamp-2` تقصّ *محتوى الصندوق كله* عند سطرين وتضع «…»،
+                    **فتبتلع السهم نفسه**. أي أن اسماً طويلاً كان يُخفي الدليل
+                    الوحيد على أن العنوان قائمة، فتصير «المزيد» كلها (التقارير،
+                    الإحصائيات، المسار، إدارة الرحلة) صحيحةً وغير قابلة
+                    للاكتشاف في آنٍ واحد.
+
+                    ⚠️ وجعلُه شقيقاً *بعد* العنوان جُرِّب وسقط مرتين: يُدفع إلى
+                    أقصى اليسار ملاصقاً لقائمة الحساب فيُقرأ كأنه جزء منها،
+                    وحجزُ مساحة تمنع ذلك (`pe-7`) يقتطع ٢٨ بكسل من عمودٍ عرضه
+                    ١٣٦ بكسل أصلاً على شاشة 360 — فيبقى للاسم ٥٠ بكسل. قِيس
+                    فعلياً، لا تُعِده.
+
+                    وموضعه هنا ليس حلاً وسطاً بل توحيد: الحالة المتقلّصة تفعل
+                    هذا بالضبط منذ البداية (`Logo` ثم `ChevronDown`)، فصار
+                    السهم في مكان واحد لا يتنقّل مع تمرير الصفحة، ولا يُقصّ
+                    مهما طال الاسم، ولا يكلّف الاسم بكسلاً واحداً. */}
+                <span className="flex items-center gap-0.5 shrink-0">
+                  <Logo isCollapsed={isCollapsed} isOnline={isOnline} />
+                  <ChevronDown className="w-4 h-4 text-teal-100/80" />
+                </span>
                 {/* 🆕 line-clamp-2 لا truncate: اسم يخلط عربية بمقطع لاتيني
                     يتقطّع مع truncate بترتيب بصري مُضلِّل (قصور معروف في
                     تفاعل text-overflow:ellipsis مع bidi — جرّبنا dir="ltr"
                     فزاد الأمر سوءاً). الالتفاف لسطرين يعرض الاسم كاملاً دوماً؛
                     bdi يعزل اتجاهه عن سياق RTL المحيط عند الالتفاف. */}
-                {/* ⚠️ السهم **داخل** العنوان لا شقيقاً له في الـflex: الاسم
-                    يلتفّ لسطرين ويشغل العرض كاملاً، فسهمٌ شقيق يُدفع إلى أقصى
-                    اليسار ملاصقاً لقائمة الحساب فيُقرأ كأنه جزء منها. inline
-                    داخل h1 يجعله يتبع آخر كلمة أينما وقعت. وهو وحده ما يوحي
-                    بأن العنوان قائمة — بلا شيء يوحي بذلك تصبح القائمة صحيحة
-                    وغير قابلة للاكتشاف في آنٍ واحد. */}
-                <h1 className="font-bold tracking-wide line-clamp-2 text-xl">
+                <h1 className="font-bold tracking-wide line-clamp-2 text-xl min-w-0">
                   <bdi>{tripName}</bdi>
-                  <ChevronDown className="inline-block align-middle w-4 h-4 me-1.5 ms-1 text-teal-100/80" />
                 </h1>
               </button>
 
