@@ -95,5 +95,5 @@ test('مسؤول يحذف مصروفاً ونفسه من مسافري رحلة �
   // ⚠️ تحقّق سلبي حقيقي (القاعدة ١٨): رحلتنا اختفت فعلاً من «رحلاتي» — لا
   // مجرّد توجيه ناجح بلا أثر حقيقي.
   await expect(page.getByRole('heading', { name: 'رحلاتي' })).toBeVisible()
-  await expect(tripRowInPicker(page, TRIP_ID)).toHaveCount(0)
+  await expect(tripRowInPicker(page, TRIP_NAME)).toHaveCount(0)
 })

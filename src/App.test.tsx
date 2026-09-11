@@ -74,6 +74,9 @@ vi.mock('./hooks', async () => {
   useAuth: () => h.auth,
   useOnlineStatus: () => h.isOnline,
   useMyTrips: () => ({ trips: h.myTrips, loading: false, error: null }),
+  // 🆕 رقما بطاقة «رحلاتي» — خريطة فارغة: هذه الاختبارات تحرس *ترتيب البوابات*
+  // لا محتوى البطاقة، والبطاقة تُرسم بالاسم والحالة وحدهما بلا إحصاءات.
+  useTripStats: () => ({}),
   useAllTrips: () => ({ trips: h.allTrips, loading: false, error: null }),
   useExchangeRates: () => ({ ratesUpdatedAt: null, CURRENCIES: {} }),
   useExpenses: () => ({

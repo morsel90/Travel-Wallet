@@ -71,13 +71,19 @@ export async function openTripAsMember(page: Page, creds: TripCreds): Promise<vo
 }
 
 /**
- * صفّ رحلة بعينها في شاشة «رحلاتي» — بمعرّفها الفريد لا اسمها المعروض (قد
- * يتكرر بين رحلات ملفات اختبار مختلفة تشترك في نفس محاكي Firestore). المعرّف
- * ظاهر في الصفّ للمسؤول فقط (TripPicker.tsx) — استخدم هذه الدالة من جلسة
- * مسؤول تحديداً.
+ * صفّ رحلة بعينها في شاشة «رحلاتي» — **باسمها المعروض**.
+ *
+ * ⚠️ كانت تأخذ المعرّف، وكان يعمل لأن الصفّ يعرض المعرّف تحت الاسم للمسؤول.
+ * حُذف ذلك السطر (البطاقة أربعة أشياء لا خامس — انظر docs/DECISIONS.md)، وصار
+ * تمرير معرّف لا يطابق شيئاً **فينجح أي تحقّق سلبي مجاناً** (`toHaveCount(0)`
+ * على محدِّد لا يطابق أصلاً) — أخطر أنواع الاختبار الأخضر الكاذب. لهذا تأخذ
+ * الاسم صراحةً الآن.
+ *
+ * والأسماء قد تتكرر بين ملفات اختبار تشترك في نفس محاكي Firestore — اجعل اسم
+ * رحلة ملفك فريداً بدل العودة للمعرّف.
  */
-export function tripRowInPicker(page: Page, tripId: string) {
-  return page.getByRole('listitem').filter({ hasText: tripId })
+export function tripRowInPicker(page: Page, tripName: string) {
+  return page.getByRole('listitem').filter({ hasText: tripName })
 }
 
 /**

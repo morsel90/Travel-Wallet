@@ -90,6 +90,7 @@ export default function App() {
       <TripPicker
         trips={picker.trips}
         archivedTrips={picker.archivedTrips}
+        stats={picker.stats}
         loading={picker.loading}
         error={picker.error}
         currentTripId={HAS_EXPLICIT_TRIP_ID && session.hasAccess ? TRIP_ID : undefined}

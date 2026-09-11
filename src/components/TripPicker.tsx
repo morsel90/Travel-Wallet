@@ -3,6 +3,7 @@ import {
   Luggage, ChevronLeft, ChevronDown, Loader2, AlertTriangle, PieChart, Plus, User, Upload, Archive,
 } from '../icons'
 import type { MyTrip } from '../hooks/useMyTrips'
+import type { TripStatsMap } from '../hooks/useTripStats'
 import { TRIP_STATUS_LABEL } from '../types'
 import { tripUrl } from '../utils/tripId'
 import { haptic } from '../utils/haptics'
@@ -21,18 +22,16 @@ const RestoreTripForm = lazy(importRestoreTripForm)
 // eslint-disable-next-line react-refresh/only-export-components
 export const tripPickerImporters = [importRestoreTripForm]
 
-// 🆕 نفس تنسيق ItinerarySection.tsx (تقويم ميلادي + أرقام لاتينية) — عرض
-// مختصر لتاريخ المسار وحده هنا، بلا وقت (البطاقة صف واحد لا مساحة لتفصيل الساعة).
-const DT_LOCALE = 'ar-SA-u-ca-gregory-nu-latn'
-const fmtDay = (iso: string): string =>
-  new Date(iso).toLocaleDateString(DT_LOCALE, { day: 'numeric', month: 'short' })
+// 🆕 صيغة عدد المسافرين — نفس صيغة ExpenseSection.tsx حرفياً («مسافر» للواحد
+// و«مسافرين» لما سواه)، فالاتساق مع بقية التطبيق أهم من دقّة المثنّى العربي.
+const travelersLabel = (n: number): string => `${n} ${n === 1 ? 'مسافر' : 'مسافرين'}`
 
-/** ملخّص سطر واحد: "الرياض ← دبي · ١٢ يوليو – ١٨ يوليو"، أو التاريخ وحده لمقطع واحد. */
-const formatRouteSummary = (r: { start: string; end: string; fromLocation: string; toLocation: string }): string => {
-  const dateRange = fmtDay(r.start) === fmtDay(r.end) ? fmtDay(r.start) : `${fmtDay(r.start)} – ${fmtDay(r.end)}`
-  const route = r.fromLocation === r.toLocation ? r.fromLocation : `${r.fromLocation} ← ${r.toLocation}`
-  return `${route} · ${dateRange}`
-}
+// 🆕 الإجمالي بلا هللات وبفواصل آلاف — بخلاف toFixed(2) في الترويسة والتسويات.
+// هذا رقم *ملخّص* على بطاقة تُقرأ بلمحة، لا مبلغ يُسوّى به دين: «12,480 ﷼»
+// تُقرأ فوراً حيث «12480.00 ﷼» تُفكّ حرفاً حرفاً. الرقم الدقيق بالهللة يبقى
+// حيث يُحتاج فعلاً — داخل الرحلة وفي التقارير والطباعة وExcel.
+const totalLabel = (n: number): string =>
+  `${n.toLocaleString('en-US', { maximumFractionDigits: 0 })} ﷼`
 
 const LazyFallback = () => (
   <div className="flex items-center justify-center py-16 gap-2 text-slate-400">
@@ -66,6 +65,12 @@ interface TripPickerProps {
    * واتساب: لا تختفي نهائياً، لكنها لا تزدحم مع القائمة النشطة.
    */
   archivedTrips: MyTrip[]
+  /**
+   * 🆕 رقما كل بطاقة (عدد المسافرين + إجمالي المصروف) بمعرّف الرحلة. تصل بعد
+   * القائمة وقد لا تصل إطلاقاً (التجميع خادمي، فيفشل بلا اتصال — انظر
+   * useTripStats.ts)، والبطاقة تُرسم بالاسم والحالة وحدهما حينها.
+   */
+  stats: TripStatsMap
   loading: boolean
   error: string | null
   /**
@@ -84,7 +89,11 @@ interface TripPickerProps {
    */
   onShowProfile: () => void
 
-  /** 🆕 يُظهر معرّف كل رحلة تحت اسمها، ويتيح تبويب «استعادة من نسخة احتياطية». */
+  /**
+   * 🆕 يتيح تبويب «استعادة من نسخة احتياطية» في شاشة الإنشاء — لا أثر له على
+   * شكل صفّ الرحلة إطلاقاً. كان يُظهر معرّف كل رحلة تحت اسمها، وحُذف: البطاقة
+   * أربعة أشياء لا خامس، ولا استثناء لأحد (انظر docs/DECISIONS.md).
+   */
   isAdmin: boolean
   isSaving: boolean
   /** 🆕 استعادة من نسخة احتياطية — للمسؤول فقط، نفس حدّ useTripAdminActions. */
@@ -92,7 +101,7 @@ interface TripPickerProps {
 }
 
 const TripPicker = ({
-  trips, archivedTrips, loading, error, currentTripId,
+  trips, archivedTrips, stats, loading, error, currentTripId,
   onCreateTrip, isCreatingTrip, onShowProfile,
   isAdmin, isSaving, onRestoreTrip,
 }: TripPickerProps) => {
@@ -123,6 +132,7 @@ const TripPicker = ({
   // بالضبط)، بدل تكرار الـJSX في مكانين.
   const renderTripRow = (trip: MyTrip) => {
     const isCurrent = trip.id === currentTripId
+    const stat = stats[trip.id]
     return (
       <li key={trip.id}>
         <button
@@ -140,17 +150,17 @@ const TripPicker = ({
             <span className="block font-bold text-slate-800 truncate leading-tight">
               {trip.name}
             </span>
-            {/* 🆕 المعرّف يظهر للمسؤول فقط — يتصفّح كل رحلات النظام وقد
-                تتشابه أسماؤها، بخلاف عضو عادي يرى رحلاته القليلة المعروفة
-                له أصلاً بالاسم وحده. */}
-            {isAdmin && (
-              <span className="block text-[11px] text-slate-400 truncate" dir="ltr">{trip.id}</span>
-            )}
-            {trip.routeSummary && (
-              <span className="block text-[11px] text-slate-400 truncate mt-0.5">
-                {formatRouteSummary(trip.routeSummary)}
+            {/* 🆕 سطر واحد لرقمي البطاقة. غيابه (بلا اتصال، أو قبل وصول
+                التجميع) لا يُستبدل بهيكل تحميل ولا بشرطة: البطاقة تعمل
+                بالاسم وحده، والرقم يظهر حين يصل. */}
+            {stat && (
+              <span className="block text-[11px] text-slate-500 truncate mt-0.5">
+                {travelersLabel(stat.travelerCount)}
+                <span className="text-slate-300 mx-1.5">·</span>
+                {totalLabel(stat.totalSpent)}
               </span>
             )}
+
             <span className="flex items-center gap-1.5 mt-0.5">
               {isCurrent && (
                 <span className="text-[11px] font-bold text-teal-600">الرحلة المفتوحة حالياً</span>

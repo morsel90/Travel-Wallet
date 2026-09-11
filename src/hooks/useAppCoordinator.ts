@@ -4,13 +4,12 @@ import type { ToastMessage, Traveler } from '../types'
 import {
   useAuth, useAdminAuth, usePasswordReset, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
-  useTripAdminActions, useAllTrips, useMyTrips, useMyTripRole, useInviteJoin, useUserProfile,
+  useTripAdminActions, useAllTrips, useMyTrips, useTripStats, useMyTripRole, useInviteJoin, useUserProfile,
   useOrganizerBankDetails, useSyncTravelerNameFromProfile, useLongTermActions,
   useSyncRecovery,
 } from './index'
 import { useFilteredExpenses } from './useFilteredExpenses'
 import { calculateBalances, calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from '../utils/calculations'
-import { tripRouteSummary } from '../utils/itinerary'
 import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from '../utils/tripId'
 import { acceptsExpenses, closedTripNotice } from '../utils/tripStatus'
 import { isLongTerm } from '../utils/tripType'
@@ -373,7 +372,7 @@ export function useAppCoordinator() {
   // يمرّ عبر اسمها في الهيدر بعد فتحها (انظر tripEdit أدناه).
   const pickerAllTrips = useMemo(
     () => (isAdmin
-      ? trips.map(t => ({ id: t.id, name: t.name, status: t.status, routeSummary: tripRouteSummary(t.itinerary) }))
+      ? trips.map(t => ({ id: t.id, name: t.name, status: t.status }))
       : myTrips),
     [isAdmin, trips, myTrips],
   )
@@ -387,6 +386,20 @@ export function useAppCoordinator() {
   )
   const pickerLoading = isAdmin ? tripsLoading : myTripsLoading
   const pickerError   = isAdmin ? tripsError   : myTripsError
+
+  // 🆕 رقما البطاقة — عدد المسافرين وإجمالي المصروف، ولا ثالث لهما (انظر
+  // useTripStats.ts وTripPicker.tsx). يُجلبان لكل ما تعرضه الشاشة فعلاً، بما
+  // فيه المؤرشف: قائمة المؤرشف مطويّة لكنها قصيرة، وتأجيل جلبها حتى فتحها
+  // يوفّر أقل بكثير مما يكلّفه تسريب حالة الطيّ من TripPicker إلى هنا.
+  //
+  // ⚠️ المسؤول يرى كل رحلات النظام (useAllTrips)، فعدد الاستعلامات هنا ينمو
+  // بعددها. مقبول لأن البطاقات نفسها تُرسم كلها أصلاً، ولأن التجميع خادمي لا
+  // يقرأ المستندات — لكنه الموضع الذي يستحقّ النظر أولاً إن كبر عدد الرحلات.
+  const pickerStatIds = useMemo(
+    () => [...pickerTrips, ...archivedTrips].map(t => t.id),
+    [pickerTrips, archivedTrips],
+  )
+  const tripStats = useTripStats(pickerStatIds, user)
 
   // تُعرض حين فُتح التطبيق بلا `?trip=` — أي بلا رحلة مقصودة — أو حين طلبها
   // المستخدم صراحةً من الهيدر. اختيار رحلة ينقل إلى `?trip=X` فيصبح المعرّف
@@ -510,6 +523,9 @@ export function useAppCoordinator() {
     /** شاشة «رحلاتي» — تنقّل بحت (فتح/إنشاء/استعادة)، بلا تعديل من القائمة. */
     picker: {
       trips: pickerTrips, archivedTrips, loading: pickerLoading, error: pickerError,
+      // 🆕 خريطة الإحصاءات منفصلة عن قائمة الرحلات لأنها تصل بعدها (وقد لا تصل
+      // بلا اتصال) — الرحلة الغائبة منها تُرسم بالاسم والحالة وحدهما.
+      stats: tripStats,
       isVisible: isPickerVisible,
       show: () => setShowTripPicker(true),
       // 🆕 الإنشاء الذاتي (نموذج واتساب) — أي مستخدم مسجّل دخوله، لا المسؤول

@@ -18,7 +18,6 @@ import type { User } from 'firebase/auth'
 import { getDoc } from 'firebase/firestore'
 import { tripDocById } from '../firestore'
 import { normalizeTripStatus } from '../utils/tripStatus'
-import { tripRouteSummary, type TripRouteSummary } from '../utils/itinerary'
 import type { TripStatus } from '../types'
 
 export interface MyTrip {
@@ -27,9 +26,11 @@ export interface MyTrip {
   name: string
   /** حالة دورة الحياة — تُستخدم لإخفاء المؤرشفة ولتمييز المنتهية في القائمة. */
   status: TripStatus
-  /** 🆕 ملخّص المسار من خط الرحلة (أول انطلاق ← آخر وصول)، أو null بلا مسار بعد. */
-  routeSummary: TripRouteSummary | null
 }
+
+// ⚠️ **لا حقل ثالث هنا.** البطاقة اسم وحالة، ورقماها (عدد المسافرين وإجمالي
+// المصروف) يأتيان من useTripStats منفصلين لأنهما يُجلبان من مجموعات أخرى وبعد
+// هذه القراءة. أي إضافة رابعة تُحوّل «رحلاتي» للوحة معلومات — وهي قائمة تنقّل.
 
 export interface UseMyTripsResult {
   trips: MyTrip[]
@@ -69,12 +70,11 @@ export function useMyTrips(tripIds: string[], user: User | null): UseMyTripsResu
           // قاعدة البيانات بعد انضمامه (الحذف ممنوع من الواجهة لكنه ممكن
           // بـ Admin SDK). نُسقطها بصمت بدل عرض صف مكسور لا يفتح شيئاً.
           if (!snap.exists()) return null
-          const data = snap.data() as { name?: unknown; status?: unknown; itinerary?: unknown }
+          const data = snap.data() as { name?: unknown; status?: unknown }
           return {
             id,
             name: typeof data.name === 'string' && data.name ? data.name : id,
             status: normalizeTripStatus(data.status),
-            routeSummary: tripRouteSummary(data.itinerary),
           }
         } catch {
           // فشل قراءة رحلة واحدة (صلاحية سُحبت، أو انقطاع لحظي) يجب ألا
