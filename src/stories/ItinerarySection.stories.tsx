@@ -13,7 +13,7 @@ import type { ItinerarySegment } from '../types'
 // بيضاء حولها تكذب على القارئ بدل أن تساعده.
 const inModal = [
   (Story: () => React.JSX.Element) => (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 max-w-2xl">
+    <div className="bg-white rounded-2xl shadow-xs border border-slate-200 p-5 max-w-2xl">
       <Story />
     </div>
   ),

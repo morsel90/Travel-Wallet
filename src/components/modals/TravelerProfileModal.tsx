@@ -173,16 +173,16 @@ export default function TravelerProfileModal({
       {/* 🆕 بوابة الشاشة نفسها — لا الطباعة وحدها. المودال يُفتح من عمق الشجرة
           (TravelerCard ضمن PullToRefresh)، وPullToRefresh يُطبّق transform على
           حاوية محتواه دائماً (حتى بقيمة 0px، انظر تعليقه) — أي تحويل غير none
-          يُنشئ سياق تكديس (stacking context) جديداً، فيصير z-[9998] هنا محلياً
+          يُنشئ سياق تكديس (stacking context) جديداً، فيصير z-9998 هنا محلياً
           داخله فقط، لا منافساً حقيقياً لـSmartInputBar (z-40، خارج PullToRefresh
           تماماً في App.tsx) عند المقارنة الفعلية أعلى الشجرة — فيظهر شريط
           الإدخال السريع فوق هذا المودال تحديداً دون ReportsView (يُفتح عبر
           ModalManager، شقيق PullToRefresh لا حفيد له، فلا يقع في الفخّ أصلاً).
           البوابة هنا تُخرج جذر المودال إلى document.body مباشرة، فيتنافس
-          z-[9998] عند المستوى الصحيح تماماً كما يحدث لـReportsView بالفعل. */}
+          z-9998 عند المستوى الصحيح تماماً كما يحدث لـReportsView بالفعل. */}
       {createPortal(
         <motion.div
-          className="fixed inset-0 z-[9998] bg-slate-50 overflow-y-auto"
+          className="fixed inset-0 z-9998 bg-slate-50 overflow-y-auto"
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 24 }}
@@ -252,13 +252,13 @@ export default function TravelerProfileModal({
           <div className="flex bg-slate-200/70 p-1 rounded-xl">
             <button
               onClick={() => setActiveTab('summary')}
-              className={`flex-1 py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-colors ${activeTab === 'summary' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}
+              className={`flex-1 py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-colors ${activeTab === 'summary' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500'}`}
             >
               الخلاصة والتسويات
             </button>
             <button
               onClick={() => setActiveTab('statement')}
-              className={`flex-1 py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-colors ${activeTab === 'statement' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}
+              className={`flex-1 py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-colors ${activeTab === 'statement' ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500'}`}
             >
               كشف الحساب التفصيلي
             </button>
@@ -275,7 +275,7 @@ export default function TravelerProfileModal({
               {onSubmitDeposit && <DepositEditor onSubmit={onSubmitDeposit} />}
 
               {(pays.length > 0 || receives.length > 0) && (
-                <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-2">
+                <section className="bg-white rounded-2xl shadow-xs border border-slate-200 p-4 space-y-2">
                   {pays.map((s, i) => (
                     <div key={`p${i}`} className="flex items-center justify-between text-sm">
                       <span className="font-bold text-slate-700">عليه تحويل إلى {nameById.get(s.toId) ?? s.toName}</span>
@@ -291,7 +291,7 @@ export default function TravelerProfileModal({
                 </section>
               )}
   
-              <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <section className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50/50">
                   <h3 className="text-sm font-bold text-slate-800">تفاصيل نصيبه ({travelerReport.lines.length})</h3>
                   <span className="text-xs font-black text-slate-700 tabular-nums">{fmt(travelerReport.totalShare)} ﷼</span>
@@ -318,7 +318,7 @@ export default function TravelerProfileModal({
                   سيفتحه العضو نفسه مستقبلاً حين يُربط حسابه ويصير قادراً على
                   مراجعة مصروفاته ثم تسوية حسابه والخروج ذاتياً. */}
               {longTermExit?.canManage && (
-                <section className="bg-white rounded-2xl shadow-sm border border-rose-200 p-4">
+                <section className="bg-white rounded-2xl shadow-xs border border-rose-200 p-4">
                   <button
                     type="button"
                     onClick={longTermExit.onExit}
@@ -350,7 +350,7 @@ export default function TravelerProfileModal({
                 </section>
               )}
 
-              <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-5">
+              <section className="bg-white rounded-2xl shadow-xs border border-slate-200 p-4 sm:p-5">
                 <h3 className="text-sm font-bold text-slate-800 mb-1">
                   {mergedTimeline ? 'كشف الحساب — رصيد جارٍ' : 'كشف المصاريف — رصيد جارٍ'}
                 </h3>
@@ -463,7 +463,7 @@ function DepositEditor({ onSubmit }: { onSubmit: (submission: DepositSubmission)
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="w-full flex items-center justify-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 font-bold text-xs py-2.5 rounded-2xl shadow-sm transition-colors"
+        className="w-full flex items-center justify-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 font-bold text-xs py-2.5 rounded-2xl shadow-xs transition-colors"
       >
         <Pencil className="w-3.5 h-3.5" /> تعديل الرصيد
       </button>
@@ -471,7 +471,7 @@ function DepositEditor({ onSubmit }: { onSubmit: (submission: DepositSubmission)
   }
 
   return (
-    <section className="bg-white rounded-2xl shadow-sm border border-teal-200 p-4">
+    <section className="bg-white rounded-2xl shadow-xs border border-teal-200 p-4">
       <div className="flex items-center justify-between gap-2 mb-3">
         <h3 className="text-sm font-bold text-slate-800">تعديل الرصيد</h3>
         <button
@@ -510,7 +510,7 @@ function DepositEditor({ onSubmit }: { onSubmit: (submission: DepositSubmission)
           onChange={(e) => setAmount(sanitizeAmountInput(e.target.value))}
           placeholder={mode === 'set' ? 'الرصيد الجديد (ريال)' : 'المبلغ (ريال)'}
           aria-label={mode === 'set' ? 'الرصيد الجديد' : 'مبلغ التعديل'}
-          className="w-full border border-slate-200 rounded-xl p-3 mb-2.5 text-base focus:ring-2 focus:ring-teal-500 outline-none font-bold"
+          className="w-full border border-slate-200 rounded-xl p-3 mb-2.5 text-base focus:ring-2 focus:ring-teal-500 outline-hidden font-bold"
         />
         <input
           type="text"
@@ -519,7 +519,7 @@ function DepositEditor({ onSubmit }: { onSubmit: (submission: DepositSubmission)
           placeholder="سبب التعديل (اختياري) — مثال: دفع نقدي إضافي"
           aria-label="سبب التعديل"
           maxLength={300}
-          className="w-full border border-slate-200 rounded-xl p-3 mb-3 text-base focus:ring-2 focus:ring-teal-500 outline-none"
+          className="w-full border border-slate-200 rounded-xl p-3 mb-3 text-base focus:ring-2 focus:ring-teal-500 outline-hidden"
         />
         <button
           type="submit"
@@ -546,7 +546,7 @@ const TONE: Record<'teal' | 'rose' | 'slate', string> = {
 
 function KpiCard({ Icon, label, value, tone }: { Icon: typeof Wallet; label: string; value: string; tone: 'teal' | 'rose' | 'slate' }) {
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 text-center">
+    <div className="bg-white rounded-2xl shadow-xs border border-slate-200 p-3 text-center">
       <div className="flex items-center justify-center gap-1 text-slate-400 mb-1">
         <Icon className="w-3.5 h-3.5" />
         <span className="text-[10px] font-bold">{label}</span>
@@ -639,7 +639,7 @@ function StatementTimeline({ opening, openingLabel, rows, closing, closingLabel 
   return (
     <ol className="relative">
       {/* الخط العمودي المتصل — خلف كل النقاط، بعرض النقطة بالضبط (26px) لتتمركز فوقه. */}
-      <div className="absolute top-1 bottom-1 start-[13px] w-0.5 bg-slate-200" aria-hidden="true" />
+      <div className="absolute top-1 bottom-1 inset-s-[13px] w-0.5 bg-slate-200" aria-hidden="true" />
 
       <li className="relative flex gap-3 pb-5 ps-9">
         <span className="absolute start-0 top-0.5 w-[26px] h-[26px] rounded-full bg-slate-600 text-white flex items-center justify-center ring-4 ring-white shrink-0">

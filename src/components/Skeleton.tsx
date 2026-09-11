@@ -19,7 +19,7 @@ const pulse = 'animate-pulse bg-slate-200 rounded'
 export function TravelerCardSkeleton() {
   return (
     // 🆕 بلا border — مطابق للبطاقة الفعلية بعد إزالة الحدّ الافتراضي منها.
-    <div className="bg-white rounded-xl p-3 sm:p-4 shadow-sm">
+    <div className="bg-white rounded-xl p-3 sm:p-4 shadow-xs">
       <div className="flex justify-between items-start mb-2 sm:mb-3">
         <div className="flex items-start gap-2 min-w-0">
           <div className={`${pulse} w-8 h-8 sm:w-9 sm:h-9 rounded-full shrink-0`} />
@@ -42,8 +42,8 @@ export function TravelerCardSkeleton() {
 export function ExpenseListItemSkeleton() {
   return (
     // 🆕 بطاقة عائمة مطابقة لـ ExpenseListItem الفعلي (bg-white rounded-2xl
-    // shadow-sm mb-3، لا border-b) — بلا هذا تظهر قفزة تخطيط عند اكتمال التحميل.
-    <div className="bg-white rounded-2xl shadow-sm p-4 mb-3">
+    // shadow-xs mb-3، لا border-b) — بلا هذا تظهر قفزة تخطيط عند اكتمال التحميل.
+    <div className="bg-white rounded-2xl shadow-xs p-4 mb-3">
       <div className="flex justify-between items-start">
         <div className="flex-1 space-y-2">
           <div className={`${pulse} h-4 w-40`} />
@@ -61,7 +61,7 @@ export function ExpenseListItemSkeleton() {
 // اكتمال التحميل. يُستخدم كـ fallback لـ <Suspense> حول <ChartsSection> في App.tsx.
 export function ChartsSectionSkeleton() {
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+    <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
       <div className="flex flex-wrap items-center gap-2 p-4 border-b border-slate-100">
         <div className={`${pulse} h-5 w-40 me-2`} />
         <div className="flex flex-wrap gap-1.5">
@@ -83,7 +83,7 @@ export function SettlementsPanelSkeleton() {
   return (
     <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
       {Array.from({ length: 2 }, (_, i) => (
-        <div key={i} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 space-y-3">
+        <div key={i} className="bg-white rounded-2xl shadow-xs border border-slate-200 p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div className={`${pulse} h-8 w-32 rounded-full`} />
             <div className={`${pulse} h-7 w-20 rounded-xl`} />

@@ -40,7 +40,7 @@ function ChartsSection({ categoryTotals, spendingTrend }: ChartsSectionProps) {
                 onClick={() => setActiveTab(tab.key)}
                 className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
                   isActive
-                    ? 'bg-slate-800 text-white shadow-sm'
+                    ? 'bg-slate-800 text-white shadow-xs'
                     : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-100'
                 }`}
               >
@@ -74,7 +74,7 @@ function ChartsSection({ categoryTotals, spendingTrend }: ChartsSectionProps) {
                     </div>
                     <div className="w-full h-3.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
                       <div 
-                        className="h-full bg-gradient-to-r from-teal-500 to-teal-600 rounded-full transition-all duration-500"
+                        className="h-full bg-linear-to-r from-teal-500 to-teal-600 rounded-full transition-all duration-500"
                         style={{ width: `${percentage}%` }}
                       />
                     </div>
@@ -95,7 +95,7 @@ function ChartsSection({ categoryTotals, spendingTrend }: ChartsSectionProps) {
             ) : (
               spendingTrend.map((point, idx) => (
                 <div key={idx} className="relative pr-6">
-                  <span className="absolute -right-[7px] top-1.5 w-3 h-3 rounded-full bg-teal-500 ring-4 ring-white border border-teal-600" />
+                  <span className="absolute right-[-7px] top-1.5 w-3 h-3 rounded-full bg-teal-500 ring-4 ring-white border border-teal-600" />
                   
                   <div className="flex items-center justify-between bg-slate-50/50 border border-slate-100 rounded-2xl p-3 hover:bg-slate-50 transition-colors">
                     <span className="text-sm font-bold text-slate-700">{point.date}</span>

@@ -276,7 +276,7 @@ export const ExpenseForm = memo(() => {
             value={expenseForm.amount}
             onChange={handleAmountChange}
             placeholder="0"
-            className="w-full bg-transparent border-none text-5xl font-bold text-center text-slate-800 outline-none focus:ring-0 placeholder-slate-300 tabular-nums"
+            className="w-full bg-transparent border-none text-5xl font-bold text-center text-slate-800 outline-hidden focus:ring-0 placeholder-slate-300 tabular-nums"
             dir="ltr"
             aria-label="المبلغ"
           />
@@ -298,7 +298,7 @@ export const ExpenseForm = memo(() => {
               <select
                 value={expenseForm.currency}
                 onChange={handleCurrencyChange}
-                className="appearance-none bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold pl-7 pr-3 py-1.5 rounded-full outline-none focus:ring-2 focus:ring-teal-200 transition-colors cursor-pointer"
+                className="appearance-none bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold pl-7 pr-3 py-1.5 rounded-full outline-hidden focus:ring-2 focus:ring-teal-200 transition-colors cursor-pointer"
                 aria-label="العملة"
               >
                 {popular.length > 0 && (
@@ -332,7 +332,7 @@ export const ExpenseForm = memo(() => {
                   required
                   value={expenseForm.exchangeRate}
                   onChange={handleRateChange}
-                  className="w-20 text-center bg-slate-50 border border-slate-200 rounded-lg py-1 text-sm font-bold text-slate-700 focus:border-teal-500 focus:ring-1 focus:ring-teal-100 outline-none"
+                  className="w-20 text-center bg-slate-50 border border-slate-200 rounded-lg py-1 text-sm font-bold text-slate-700 focus:border-teal-500 focus:ring-1 focus:ring-teal-100 outline-hidden"
                   dir="ltr"
                   aria-label="سعر الصرف"
                 />
@@ -361,7 +361,7 @@ export const ExpenseForm = memo(() => {
             placeholder="مثال: وقود، عشاء..."
             value={expenseForm.description}
             onChange={handleDescriptionChange}
-            className="flex-1 min-w-0 bg-transparent border-none outline-none focus:ring-0 text-base font-bold text-slate-800 placeholder:text-slate-300 placeholder:font-normal py-1.5"
+            className="flex-1 min-w-0 bg-transparent border-none outline-hidden focus:ring-0 text-base font-bold text-slate-800 placeholder:text-slate-300 placeholder:font-normal py-1.5"
             aria-label="الوصف"
           />
           {/* 🆕 الفئة تُشتقّ من الوصف ولا تظهر قبله: قبل أن يُكتب "ماذا كان؟" لا
@@ -374,7 +374,7 @@ export const ExpenseForm = memo(() => {
             <select
               value={expenseForm.category}
               onChange={handleCategoryChange}
-              className="appearance-none bg-slate-50 hover:bg-slate-100 text-slate-500 text-xs font-bold pl-6 pr-7 py-1.5 rounded-full outline-none focus:ring-2 focus:ring-teal-200 cursor-pointer max-w-[150px]"
+              className="appearance-none bg-slate-50 hover:bg-slate-100 text-slate-500 text-xs font-bold pl-6 pr-7 py-1.5 rounded-full outline-hidden focus:ring-2 focus:ring-teal-200 cursor-pointer max-w-[150px]"
               aria-label="الفئة"
             >
               {EXPENSE_CATEGORIES.map(cat => (
@@ -405,7 +405,7 @@ export const ExpenseForm = memo(() => {
               aria-label="دفع من الصندوق المشترك"
               className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
                 expenseForm.paidBy === 'fund'
-                  ? 'bg-teal-600 text-white border border-teal-600 shadow-sm'
+                  ? 'bg-teal-600 text-white border border-teal-600 shadow-xs'
                   : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
               }`}
             >
@@ -422,7 +422,7 @@ export const ExpenseForm = memo(() => {
                   aria-label={`دفعها ${t.shortName}`}
                   className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
                     isSelected
-                      ? 'bg-teal-600 text-white border border-teal-600 shadow-sm'
+                      ? 'bg-teal-600 text-white border border-teal-600 shadow-xs'
                       : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
                   }`}
                 >
@@ -494,7 +494,7 @@ export const ExpenseForm = memo(() => {
                       onClick={() => toggleParticipant(t.id)}
                       className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
                         isSelected
-                          ? 'bg-teal-600 text-white border border-teal-600 shadow-sm'
+                          ? 'bg-teal-600 text-white border border-teal-600 shadow-xs'
                           : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50'
                       }`}
                       aria-pressed={isSelected}
@@ -541,7 +541,7 @@ export const ExpenseForm = memo(() => {
                                   shares: { ...prev.shares, [id]: isNaN(w) || w <= 0 ? 1 : w },
                                 }));
                               }}
-                              className="w-16 bg-slate-50 border border-slate-200 rounded-lg py-1.5 text-base text-center focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none font-bold text-teal-700"
+                              className="w-16 bg-slate-50 border border-slate-200 rounded-lg py-1.5 text-base text-center focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-hidden font-bold text-teal-700"
                               aria-label={`نصيب ${traveler.shortName}`}
                             />
                             <span className="text-xs font-bold text-slate-400 w-16 text-left" dir="ltr">
@@ -625,7 +625,7 @@ export const ExpenseForm = memo(() => {
           <button
             type="submit"
             disabled={expenseForm.participants.length === 0}
-            className="w-full bg-teal-600 text-white font-bold py-4 rounded-xl hover:bg-teal-700 transition-colors disabled:opacity-50 text-base shadow-sm"
+            className="w-full bg-teal-600 text-white font-bold py-4 rounded-xl hover:bg-teal-700 transition-colors disabled:opacity-50 text-base shadow-xs"
           >
             {isEditingExpense ? 'حفظ التعديلات' : 'اعتماد المصروف'}
           </button>
@@ -743,21 +743,21 @@ export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
   }, [expense.participants, expense.shares, travelers]);
 
   return (
-    // 🆕 بطاقة عائمة (rounded-2xl + shadow-sm + mb-3) بدل صفّ مقسَّم بخط سفلي —
+    // 🆕 بطاقة عائمة (rounded-2xl + shadow-xs + mb-3) بدل صفّ مقسَّم بخط سفلي —
     // overflow-hidden يبقى ضرورياً: هو ما يقصّ لوحتي الحذف/التعديل الملوّنتين
     // (أسفله) على شكل البطاقة المدوّرة أثناء السحب، لا مجرد قصّ قائمة قديم.
     // بلا خلفية هنا عمداً: البطاقة البيضاء الداخلية (أسفل) تغطيها بالكامل عند
     // السكون؛ فقط أثناء السحب تظهر لوحتا الحذف/التعديل من تحتها.
-    <div className="relative overflow-hidden group rounded-2xl shadow-sm mb-3">
+    <div className="relative overflow-hidden group rounded-2xl shadow-xs mb-3">
 
       {/* خلفية الألوان أثناء السحب على الجوال */}
       {canManage && (
         <>
-          <div className="absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-rose-500 to-rose-600 flex flex-col items-center justify-center gap-1 text-white pointer-events-none">
+          <div className="absolute inset-y-0 left-0 w-24 bg-linear-to-r from-rose-500 to-rose-600 flex flex-col items-center justify-center gap-1 text-white pointer-events-none">
             <Trash2 className="w-4 h-4" />
             <span className="text-[10px] font-bold">حذف</span>
           </div>
-          <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-teal-500 to-teal-600 flex flex-col items-center justify-center gap-1 text-white pointer-events-none">
+          <div className="absolute inset-y-0 right-0 w-24 bg-linear-to-l from-teal-500 to-teal-600 flex flex-col items-center justify-center gap-1 text-white pointer-events-none">
             <Pencil className="w-4 h-4" />
             <span className="text-[10px] font-bold">تعديل</span>
           </div>
@@ -781,7 +781,7 @@ export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
 
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm border shrink-0 shadow-sm ${getCategoryColor(expense.category || 'أخرى')}`}>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm border shrink-0 shadow-xs ${getCategoryColor(expense.category || 'أخرى')}`}>
                 {(expense.category || 'أخرى').charAt(0)}
               </div>
 
@@ -844,7 +844,7 @@ export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
                   return (
                     <span
                       key={participantId}
-                      className="inline-flex items-center gap-1 bg-white border border-slate-200/80 rounded-lg px-2 py-0.5 text-[11px] font-bold text-slate-600 shadow-sm"
+                      className="inline-flex items-center gap-1 bg-white border border-slate-200/80 rounded-lg px-2 py-0.5 text-[11px] font-bold text-slate-600 shadow-xs"
                     >
                       <span className="text-slate-700">{name || 'غير معروف'}</span>
                       <span className="text-[10px] text-teal-600 font-black tracking-tight tabular-nums bg-teal-50/50 px-1 rounded">
@@ -865,7 +865,7 @@ export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
             <button 
               type="button" 
               onClick={() => startEditExpense(expense)} 
-              className="pointer-events-auto p-2 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-teal-600 hover:border-teal-200 transition-all shadow-sm hover:shadow-md"
+              className="pointer-events-auto p-2 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-teal-600 hover:border-teal-200 transition-all shadow-xs hover:shadow-md"
               aria-label="تعديل المصروف"
             >
               <Pencil className="w-4 h-4" />
@@ -873,7 +873,7 @@ export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
             <button 
               type="button" 
               onClick={() => requestDeleteExpense(expense.id)} 
-              className="pointer-events-auto p-2 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-200 transition-all shadow-sm hover:shadow-md"
+              className="pointer-events-auto p-2 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-rose-600 hover:border-rose-200 transition-all shadow-xs hover:shadow-md"
               aria-label="حذف المصروف"
             >
               <Trash2 className="w-4 h-4" />

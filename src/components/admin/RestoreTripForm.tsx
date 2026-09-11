@@ -18,7 +18,7 @@ interface RestoreTripFormProps {
 }
 
 const inputClass =
-  'w-full border border-slate-200 rounded-xl px-3 py-2 text-base bg-white focus:ring-2 focus:ring-teal-500 outline-none'
+  'w-full border border-slate-200 rounded-xl px-3 py-2 text-base bg-white focus:ring-2 focus:ring-teal-500 outline-hidden'
 const labelClass = 'block text-xs font-bold text-slate-500 mb-1.5'
 
 // فحص محلي سريع وسطحي فقط — الخادم هو المرجع الحقيقي لصحة كل حقل (انظر
@@ -72,7 +72,7 @@ export default function RestoreTripForm({ isSaving, onRestore, onCancel }: Resto
   return (
     <form
       onSubmit={e => { e.preventDefault(); void submit() }}
-      className="bg-white rounded-2xl shadow-sm border-2 border-amber-200 p-4 space-y-4"
+      className="bg-white rounded-2xl shadow-xs border-2 border-amber-200 p-4 space-y-4"
     >
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-bold text-slate-800">استعادة من نسخة احتياطية</h3>
@@ -134,7 +134,7 @@ export default function RestoreTripForm({ isSaving, onRestore, onCancel }: Resto
         <button
           type="submit"
           disabled={isSaving}
-          className="flex-1 flex items-center justify-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm disabled:opacity-40"
+          className="flex-1 flex items-center justify-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-xs disabled:opacity-40"
         >
           {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           استعادة الرحلة

@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
 
 /* 🆕 Pull-to-Refresh: نعطّل السحب-للتحديث الأصلي للمتصفح (يظهر افتراضياً في
    Chrome على أندرويد عند سحب أعلى الصفحة) حتى لا يتعارض بصرياً مع مؤشرنا

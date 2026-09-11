@@ -8,13 +8,13 @@ import { AlertTriangle } from '../icons'
 /** عطل يُسقط التطبيق كاملاً — الملاذ الأخير. */
 export const AppErrorFallback = () => (
   <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50 text-center">
-    <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 max-w-md">
+    <div className="bg-white p-8 rounded-2xl shadow-xs border border-slate-200 max-w-md">
       <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
       <h1 className="text-xl font-bold text-slate-800 mb-2">عذراً، حدث خطأ غير متوقع في النظام!</h1>
       <p className="text-sm text-slate-500 mb-6">يرجى إعادة تحميل الصفحة أو المحاولة لاحقاً.</p>
       <button
         onClick={() => window.location.reload()}
-        className="w-full bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm"
+        className="w-full bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-xs"
       >
         إعادة تحميل الصفحة
       </button>

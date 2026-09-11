@@ -149,13 +149,13 @@ export const ExpensesPanel = ({
         <input
           type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="بحث بالوصف أو المشارك..."
-          className="w-full border border-slate-200 rounded-xl pr-9 ps-3 py-2 text-base focus:ring-2 focus:ring-teal-500 outline-none"
+          className="w-full border border-slate-200 rounded-xl pr-9 ps-3 py-2 text-base focus:ring-2 focus:ring-teal-500 outline-hidden"
         />
       </div>
       <select
         value={sortOrder}
         onChange={(e) => setSortOrder(e.target.value as unknown as SortOrder)}
-        className="border border-slate-200 rounded-xl px-2 py-2 text-base bg-white focus:ring-2 focus:ring-teal-500 outline-none"
+        className="border border-slate-200 rounded-xl px-2 py-2 text-base bg-white focus:ring-2 focus:ring-teal-500 outline-hidden"
       >
         <option value="date_desc">الأحدث أولاً</option>
         <option value="date_asc">الأقدم أولاً</option>
@@ -186,7 +186,7 @@ export const ExpensesPanel = ({
           ActionIcon={canAddExpenses ? Plus : undefined}
         />
       ) : filteredExpenses.length === 0 ? (
-        <div className="p-8 text-center text-slate-400 font-medium bg-white rounded-2xl shadow-sm">لا توجد نتائج لـ "{searchQuery}"</div>
+        <div className="p-8 text-center text-slate-400 font-medium bg-white rounded-2xl shadow-xs">لا توجد نتائج لـ "{searchQuery}"</div>
       ) : (
         <Virtuoso
           ref={virtuosoRef}

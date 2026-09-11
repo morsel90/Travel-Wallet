@@ -23,7 +23,7 @@ export default function InviteJoinScreen({ status, onSubmitName, onSkipName, isS
   if (status === 'needsName') {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 w-full max-w-xs">
+        <div className="bg-white rounded-2xl shadow-xs border border-slate-200 p-8 w-full max-w-xs">
           <div className="w-12 h-12 rounded-full bg-teal-50 flex items-center justify-center mx-auto mb-4">
             <Users className="w-6 h-6 text-teal-600" />
           </div>
@@ -42,12 +42,12 @@ export default function InviteJoinScreen({ status, onSubmitName, onSkipName, isS
               onChange={e => setName(e.target.value)}
               disabled={isSubmittingName}
               placeholder="مثال: سعد الغامدي"
-              className="w-full bg-white border border-slate-200 rounded-xl p-3 text-base text-slate-800 font-bold text-center focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-none transition-all placeholder:text-slate-300 placeholder:font-normal disabled:opacity-50"
+              className="w-full bg-white border border-slate-200 rounded-xl p-3 text-base text-slate-800 font-bold text-center focus:border-teal-500 focus:ring-2 focus:ring-teal-100 outline-hidden transition-all placeholder:text-slate-300 placeholder:font-normal disabled:opacity-50"
             />
             <button
               type="submit"
               disabled={isSubmittingName || !name.trim()}
-              className="w-full bg-teal-600 text-white font-bold py-3 rounded-xl hover:bg-teal-700 active:scale-[0.99] transition-all text-sm shadow-sm disabled:opacity-40 flex items-center justify-center gap-1.5"
+              className="w-full bg-teal-600 text-white font-bold py-3 rounded-xl hover:bg-teal-700 active:scale-[0.99] transition-all text-sm shadow-xs disabled:opacity-40 flex items-center justify-center gap-1.5"
             >
               {isSubmittingName && <Loader2 className="w-4 h-4 animate-spin" />}
               متابعة إلى الرحلة
@@ -68,7 +68,7 @@ export default function InviteJoinScreen({ status, onSubmitName, onSkipName, isS
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 w-full max-w-xs text-center">
+      <div className="bg-white rounded-2xl shadow-xs border border-slate-200 p-8 w-full max-w-xs text-center">
         <div className="w-12 h-12 rounded-full bg-teal-50 flex items-center justify-center mx-auto mb-4">
           <Users className="w-6 h-6 text-teal-600" />
         </div>

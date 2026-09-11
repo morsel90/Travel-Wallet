@@ -132,7 +132,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
 
   return (
     <motion.div
-      className="fixed inset-0 z-[9998] bg-slate-50 overflow-y-auto"
+      className="fixed inset-0 z-9998 bg-slate-50 overflow-y-auto"
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 24 }}
@@ -186,7 +186,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
               type="button"
               onClick={() => setActiveTab(key)}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-colors ${
-                activeTab === key ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'
+                activeTab === key ? 'bg-white text-slate-800 shadow-xs' : 'text-slate-500'
               }`}
             >
               <Icon className="w-3.5 h-3.5" /> {label}
@@ -229,7 +229,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
             />
 
             {hasPeriods && (
-              <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <section className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
                 <div className="flex items-center gap-2 px-4 sm:px-5 py-3 border-b border-slate-100 bg-slate-50/50">
                   <CalendarRange className="w-4 h-4 text-teal-600" />
                   {/* «الأشهر» لا «ملخص الفترة» — الجدول أدناه صفٌّ لكل شهر
@@ -271,7 +271,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
         )}
 
         {activeTab === 'daily' && (
-          <section className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <section className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
             {daily.length === 0 ? (
               <p className="text-center text-slate-400 font-medium text-sm py-10">لا توجد مصاريف بعد.</p>
             ) : (
@@ -350,7 +350,7 @@ const TONE: Record<'teal' | 'rose' | 'slate', string> = {
 
 function KpiCard({ Icon, label, value, tone }: { Icon: typeof Wallet; label: string; value: string; tone: 'teal' | 'rose' | 'slate' }) {
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-3 text-center">
+    <div className="bg-white rounded-2xl shadow-xs border border-slate-200 p-3 text-center">
       <div className="flex items-center justify-center gap-1.5 text-slate-400 mb-1">
         <Icon className="w-3.5 h-3.5" />
         <span className="text-[11px] font-bold">{label}</span>
@@ -388,7 +388,7 @@ function SummaryBody({
           في TravelerProfileModal: سطر واحد خفيف تحت المؤشرات. */}
       <p className="text-[11px] text-slate-400 font-bold text-center -mt-2">{caption}</p>
 
-      <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+      <section className="bg-white rounded-2xl shadow-xs border border-slate-200 p-5">
         <h2 className="text-base font-bold text-slate-800 flex items-center gap-2 mb-4">
           <ArrowRightLeft className="w-5 h-5 text-teal-600" /> التسويات المقترحة
         </h2>
@@ -407,7 +407,7 @@ function SummaryBody({
       </section>
 
       {categoryTotals.length > 0 && (
-        <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+        <section className="bg-white rounded-2xl shadow-xs border border-slate-200 p-5">
           <h2 className="text-base font-bold text-slate-800 flex items-center gap-2 mb-4">
             <BarChart3 className="w-5 h-5 text-teal-600" /> التوزيع حسب الفئة
           </h2>
@@ -423,7 +423,7 @@ function SummaryBody({
                     </span>
                   </div>
                   <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200/50">
-                    <div className="h-full bg-gradient-to-r from-teal-500 to-teal-600 rounded-full" style={{ width: `${pct}%` }} />
+                    <div className="h-full bg-linear-to-r from-teal-500 to-teal-600 rounded-full" style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               )

@@ -49,7 +49,7 @@ interface ModalProps {
 // <main> بأكمله بـ transform دائم (لازم لتأثير السحب المطاطي). portal إلى
 // document.body يحلّ التعارض جذرياً: Modal لم يعد سليلاً لأي عنصر متحوّل
 // إطلاقاً، بصرف النظر عمّا يتغيّر مستقبلاً في أسلافه — لا حاجة لتتبّع كل سلف
-// محتمل بحثاً عن transform. z-[9999] يبقى كافياً للطبقة العليا فوق أي محتوى.
+// محتمل بحثاً عن transform. z-9999 يبقى كافياً للطبقة العليا فوق أي محتوى.
 // (انظر أيضاً ExpensesPanel.tsx: نداء scrollTo لقائمة react-virtuoso، مطلوب
 // بصرف النظر عن هذا التغيير — انظر docs/DECISIONS.md للتفاصيل الكاملة.)
 export const Modal = ({ children, maxWidth = 'max-w-sm', onClose, label }: ModalProps) => {
@@ -60,7 +60,7 @@ export const Modal = ({ children, maxWidth = 'max-w-sm', onClose, label }: Modal
 
   return createPortal(
   <motion.div
-    className="fixed inset-0 bg-slate-900/60 flex items-end sm:items-center justify-center z-[9999]"
+    className="fixed inset-0 bg-slate-900/60 flex items-end sm:items-center justify-center z-9999"
     initial={{ opacity: 0 }}
     animate={{ opacity: 1 }}
     exit={{ opacity: 0 }}
@@ -76,7 +76,7 @@ export const Modal = ({ children, maxWidth = 'max-w-sm', onClose, label }: Modal
       aria-modal="true"
       aria-label={label}
       tabIndex={-1}
-      className={`bg-white rounded-t-3xl sm:rounded-2xl p-6 pt-3 sm:pt-6 w-full ${maxWidth} relative max-h-[92vh] overflow-y-auto outline-none`}
+      className={`bg-white rounded-t-3xl sm:rounded-2xl p-6 pt-3 sm:pt-6 w-full ${maxWidth} relative max-h-[92vh] overflow-y-auto outline-hidden`}
       onClick={(e) => e.stopPropagation()}
       initial={{ y: '100%' }}
       animate={{ y: 0 }}

@@ -86,9 +86,9 @@ export const TravelersPanel = ({
           <button
             type="button"
             onClick={onStartAddTraveler}
-            className="border-2 border-dashed border-slate-200 hover:border-teal-500 hover:bg-teal-50/40 rounded-xl p-4 flex flex-row sm:flex-col items-center justify-center gap-3 text-slate-500 hover:text-teal-600 transition-all shadow-sm bg-slate-50/10 group cursor-pointer min-h-[76px] sm:min-h-[120px]"
+            className="border-2 border-dashed border-slate-200 hover:border-teal-500 hover:bg-teal-50/40 rounded-xl p-4 flex flex-row sm:flex-col items-center justify-center gap-3 text-slate-500 hover:text-teal-600 transition-all shadow-xs bg-slate-50/10 group cursor-pointer min-h-[76px] sm:min-h-[120px]"
           >
-            <div className="w-9 h-9 rounded-full bg-slate-100 group-hover:bg-teal-100 flex items-center justify-center text-slate-600 group-hover:text-teal-700 transition-colors shrink-0 shadow-sm">
+            <div className="w-9 h-9 rounded-full bg-slate-100 group-hover:bg-teal-100 flex items-center justify-center text-slate-600 group-hover:text-teal-700 transition-colors shrink-0 shadow-xs">
               <Plus className="w-4 h-4" />
             </div>
             <span className="text-sm font-bold">إضافة مسافر جديد</span>

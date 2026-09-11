@@ -138,11 +138,11 @@ const TripPicker = ({
         <button
           type="button"
           onClick={() => openTrip(trip.id)}
-          className={`w-full bg-white rounded-2xl border p-4 flex items-center gap-3.5 text-right transition-all shadow-sm hover:shadow-md active:scale-[0.99] ${
+          className={`w-full bg-white rounded-2xl border p-4 flex items-center gap-3.5 text-right transition-all shadow-xs hover:shadow-md active:scale-[0.99] ${
             isCurrent ? 'border-teal-300 ring-1 ring-teal-100' : 'border-slate-200 hover:border-teal-300'
           }`}
         >
-          <span className="w-11 h-11 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+          <span className="w-11 h-11 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-lg shrink-0 shadow-xs">
             {trip.name.trim()[0] ?? '؟'}
           </span>
 
@@ -224,7 +224,7 @@ const TripPicker = ({
                   aria-pressed={createMode === 'new'}
                   className={`flex-1 flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border ${
                     createMode === 'new'
-                      ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
+                      ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
                       : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
@@ -236,7 +236,7 @@ const TripPicker = ({
                   aria-pressed={createMode === 'restore'}
                   className={`flex-1 flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border ${
                     createMode === 'restore'
-                      ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
+                      ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
                       : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
@@ -273,7 +273,7 @@ const TripPicker = ({
             {error}
           </div>
         ) : trips.length === 0 && archivedTrips.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-8 text-center">
             <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
               <Luggage className="w-7 h-7 text-slate-400" />
             </div>
@@ -285,7 +285,7 @@ const TripPicker = ({
             <button
               type="button"
               onClick={openCreate}
-              className="mt-4 inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm"
+              className="mt-4 inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-xs"
             >
               <Plus className="w-4 h-4" /> إنشاء رحلة جديدة
             </button>

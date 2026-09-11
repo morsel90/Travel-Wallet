@@ -54,7 +54,7 @@ export function LongTermPanel({
         </h2>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-xs border border-slate-100 overflow-hidden">
         <div className="grid grid-cols-2 divide-x divide-x-reverse divide-slate-100 border-b border-slate-100">
           <div className="p-4">
             <p className="text-[11px] text-slate-500 mb-1 flex items-center gap-1">

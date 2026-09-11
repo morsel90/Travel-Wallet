@@ -99,7 +99,7 @@ const fmtDateTime = (iso: string | undefined): string => {
 }
 
 const inputClass =
-  'w-full border border-slate-200 rounded-xl px-3 py-2 text-base bg-white focus:ring-2 focus:ring-teal-500 outline-none'
+  'w-full border border-slate-200 rounded-xl px-3 py-2 text-base bg-white focus:ring-2 focus:ring-teal-500 outline-hidden'
 const labelClass = 'block text-xs font-bold text-slate-500 mb-1.5'
 
 // ما تمنعه كل حالة — يُعرض للمسؤول قبل أن يختار، لأن الأثر ليس بديهياً من الاسم
@@ -382,7 +382,7 @@ export default function TripDetailPanel({
 
   return (
     <div className="space-y-5">
-      <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex gap-1.5 overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden">
         {ALL_TABS.map(({ key, label, Icon }) => (
           <button
             key={key}
@@ -390,7 +390,7 @@ export default function TripDetailPanel({
             onClick={() => setActiveTab(key)}
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
               activeTab === key
-                ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
+                ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
                 : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
             }`}
           >
@@ -403,7 +403,7 @@ export default function TripDetailPanel({
         <>
         <form
           onSubmit={e => { e.preventDefault(); void saveName() }}
-          className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4"
+          className="bg-white rounded-2xl shadow-xs border border-slate-200 p-5 space-y-4"
         >
           <div>
             <label className={labelClass} htmlFor="trip-name">اسم الرحلة</label>
@@ -451,7 +451,7 @@ export default function TripDetailPanel({
                   aria-pressed={trip.status === value}
                   className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all border disabled:opacity-40 ${
                     trip.status === value
-                      ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
+                      ? 'bg-teal-600 text-white border-teal-600 shadow-xs'
                       : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
@@ -533,7 +533,7 @@ export default function TripDetailPanel({
             <button
               type="submit"
               disabled={isSaving || !nameDirty}
-              className="flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm disabled:opacity-40"
+              className="flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-xs disabled:opacity-40"
             >
               {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               حفظ التغييرات
@@ -555,7 +555,7 @@ export default function TripDetailPanel({
             الحماية الحقيقية خادمية بالكامل (manageTrip mode:'delete' وقراءة
             بيانات النسخة الاحتياطية تشترطان isAdmin())؛ هذا إخفاء واجهة فقط. */}
         {viewerRole === 'admin' && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+          <div className="bg-white rounded-2xl shadow-xs border border-slate-200 p-5 space-y-4">
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
               <Download className="w-4 h-4 text-teal-600" /> تنزيل نسخة احتياطية
             </h3>
@@ -575,7 +575,7 @@ export default function TripDetailPanel({
               type="button"
               onClick={() => void onExportBackup(trip)}
               disabled={isSaving}
-              className="flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm disabled:opacity-40"
+              className="flex items-center justify-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-xs disabled:opacity-40"
             >
               {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               تنزيل نسخة احتياطية (JSON)
@@ -586,7 +586,7 @@ export default function TripDetailPanel({
         {viewerRole === 'admin' && (
           <form
             onSubmit={e => { e.preventDefault(); void submitDelete() }}
-            className="bg-white rounded-2xl shadow-sm border border-rose-200 p-5 space-y-4"
+            className="bg-white rounded-2xl shadow-xs border border-rose-200 p-5 space-y-4"
           >
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
               <Trash2 className="w-4 h-4 text-rose-600" /> حذف الرحلة نهائياً
@@ -634,7 +634,7 @@ export default function TripDetailPanel({
             <button
               type="submit"
               disabled={isSaving || deleteConfirm.trim() !== trip.id}
-              className="flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm disabled:opacity-40"
+              className="flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-xs disabled:opacity-40"
             >
               {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
               حذف الرحلة نهائياً
@@ -646,7 +646,7 @@ export default function TripDetailPanel({
 
       {activeTab === 'itinerary' && (
         <>
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+          <div className="bg-white rounded-2xl shadow-xs border border-slate-200 p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
@@ -661,7 +661,7 @@ export default function TripDetailPanel({
                   type="button"
                   onClick={startAdd}
                   disabled={workingItinerary.length >= MAX_SEGMENTS}
-                  className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm disabled:opacity-40"
+                  className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-xl text-xs font-bold transition-colors shadow-xs disabled:opacity-40"
                 >
                   <Plus className="w-3.5 h-3.5" /> إضافة مقطع
                 </button>
@@ -724,7 +724,7 @@ export default function TripDetailPanel({
           )}
 
           {workingItinerary.length === 0 && !draft ? (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
               <EmptyState
                 Icon={Route}
                 title="لا يوجد مسار بعد"
@@ -742,7 +742,7 @@ export default function TripDetailPanel({
                 // لاسم وسيلة التنقل بدل عرض "undefined" أو ترك سطر فارغ.
                 const title = segment.identifier || segment.notes || TRANSPORT_LABEL[segment.mode]
                 return (
-                  <div key={segment.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
+                  <div key={segment.id} className="bg-white rounded-2xl shadow-xs border border-slate-200 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <span className="flex items-center justify-center w-9 h-9 rounded-full bg-teal-100 text-teal-700 shrink-0">
@@ -823,7 +823,7 @@ export default function TripDetailPanel({
         <>
           {/* 🆕 رابط دعوة بنقرة واحدة — طريقة الانضمام الوحيدة لرحلة (لا رمز
               رحلة بعد الآن). رابط واحد نشط فقط لكل رحلة. */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-3">
+          <div className="bg-white rounded-2xl shadow-xs border border-slate-200 p-5 space-y-3">
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
               <Share2 className="w-4 h-4 text-teal-600" /> دعوة مسافرين
             </h3>
@@ -837,7 +837,7 @@ export default function TripDetailPanel({
                 type="button"
                 onClick={() => void handleShareInvite()}
                 disabled={isPreparingInvite}
-                className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm disabled:opacity-40"
+                className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-colors shadow-xs disabled:opacity-40"
               >
                 {isPreparingInvite ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -870,7 +870,7 @@ export default function TripDetailPanel({
               بعينه. الأعضاء الذين لا ملف مسافر لهم بعد (حالة نادرة — فشل
               التزويد التلقائي، انظر تعليق joinViaInvite في functions/index.js)
               يظهرون في قسم إضافي أسفل القائمة بدل أن يختفوا. */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 space-y-4">
+          <div className="bg-white rounded-2xl shadow-xs border border-slate-200 p-5 space-y-4">
           <div>
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
               <UserCheck className="w-4 h-4 text-teal-600" /> المسافرون
