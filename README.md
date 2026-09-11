@@ -16,12 +16,18 @@
 
 ## التقنيات
 
-React 18 · TypeScript · Vite 5 · Tailwind CSS 3 · Firebase 10 (Auth + Firestore) ·
-vite-plugin-pwa (Workbox) · Vitest.
+React 19 · TypeScript 5.9 · Vite 8 (Rolldown) · Tailwind CSS 4 · Firebase 12
+(Auth + Firestore) · vite-plugin-pwa (Workbox) · Vitest · Playwright.
 
 ## المتطلبات
 
-Node.js 18 أو أحدث، و npm.
+Node.js **22.12 أو أحدث** (أو 24.x، أو 26+)، و npm. الأرضية يفرضها Vitest 5
+تحديداً — لا يعمل على Node 20 إطلاقاً — ونفس النسخة (22) يستعملها CI ودوال
+Firebase السحابية.
+
+**أرضية المتصفح: Safari 16.4+ / Chrome 111+ / Firefox 128+** — أي **iOS 16.4
+فأحدث** على الجوال. يفرضها CSS المولَّد من Tailwind 4 (`@property` وألوان
+`oklch()` بلا بادئات)، فهي قيد منتَج لا تفصيلة بناء.
 
 ## التشغيل المحلي
 
