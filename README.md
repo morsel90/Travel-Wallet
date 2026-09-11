@@ -44,7 +44,7 @@ npm run dev      # خادم تطوير على http://localhost:5173
 | `npm run build` | فحص الأنواع ثم بناء الإنتاج (`tsc && vite build`) |
 | `npm run preview` | معاينة بناء الإنتاج محلياً |
 | `npm run typecheck` | فحص الأنواع فقط (`tsc --noEmit`) |
-| `npm test` | اختبارات الوحدة (`vitest run`) — ٧٠٧ اختباراً، ~١٢ ثانية |
+| `npm test` | اختبارات الوحدة (`vitest run`) — ٧٠٧ اختباراً |
 | `npm run test:watch` | الاختبارات بوضع المراقبة |
 | `npm run test:rules` | اختبارات `firestore.rules` على محاكي حقيقي — يتطلب Java |
 | `npm run test:e2e` | اختبارات المتصفح (Playwright) — يتطلب Java + `npm run e2e:install` مرة |
