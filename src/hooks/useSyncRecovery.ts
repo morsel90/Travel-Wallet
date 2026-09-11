@@ -54,10 +54,21 @@ const RECOVERY_COOLDOWN_MS = 10_000
 export function useSyncRecovery(enabled: boolean, refresh: () => Promise<void>): void {
   // يبدأ من لحظة التركيب لا من الصفر: المستمعون (onSnapshot) نفّذوا للتوّ
   // قراءتهم الأولى، فأي تعافٍ خلال الثواني التالية مباشرةً تكرار بلا فائدة.
-  const lastRecoveredAtRef = useRef(Date.now())
+  //
+  // 🆕 الطابع يُضبط داخل التأثير لا كقيمة ابتدائية لـ useRef: `Date.now()` دالة
+  // غير نقيّة، ووضعها في نداء useRef يعني استدعاءها في **كل** تصيير وإهمال
+  // قيمتها بعد الأول (useRef يتجاهل وسيطه بعد التهيئة). بلا أثر عملي، لكنه
+  // استدعاء مهدور أثناء الرسم ترصده `react-hooks/purity`. والضبط داخل التأثير
+  // أوفى للتعليق أعلاه أصلاً: «لحظة التركيب» هي توقيت التأثير بالضبط.
+  const lastRecoveredAtRef = useRef<number | null>(null)
   const inFlightRef = useRef(false)
 
   useEffect(() => {
+    // ⚠️ قبل حارس enabled لا بعده: التهيئة يجب أن تقع عند التركيب حتى لو بدأ
+    // الخطّاف معطّلاً — وإلا بدأت مهلة التهدئة من أول تفعيل لاحق. و`??=` تضمن
+    // أنها مرّة واحدة مهما أُعيد تشغيل التأثير (enabled يتذبذب مع _pending).
+    lastRecoveredAtRef.current ??= Date.now()
+
     if (!enabled) return
 
     const recover = () => {
@@ -67,7 +78,10 @@ export function useSyncRecovery(enabled: boolean, refresh: () => Promise<void>):
       if (inFlightRef.current) return
 
       const now = Date.now()
-      if (now - lastRecoveredAtRef.current < RECOVERY_COOLDOWN_MS) return
+      // `?? 0` مسار نظري بحت: التأثير أعلاه ضبط الطابع قبل تسجيل أي مستمع،
+      // فلا يمكن لـ recover أن تعمل والقيمة null. وحتى لو وقع، القيمة 0 تسمح
+      // بالتعافي بدل منعه — وهو الفشل الآمن هنا.
+      if (now - (lastRecoveredAtRef.current ?? 0) < RECOVERY_COOLDOWN_MS) return
 
       lastRecoveredAtRef.current = now
       inFlightRef.current = true
