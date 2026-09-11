@@ -18,7 +18,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('firebase/auth', () => ({
   onAuthStateChanged: mocks.onAuthStateChanged,
   // 🆕 مُنشئ بسيط يكفي: الكود لا يفحص شكل المزوّد، فقط يمرّره لـ signInWithPopup/Redirect.
-  GoogleAuthProvider: vi.fn().mockImplementation(() => ({})),
+  // ⚠️ لا بد أن يكون التنفيذ دالةً عادية لا سهمية: الكود يستدعيه بـ `new`، ومنذ
+  // Vitest 5 يُمرَّر `new` إلى التنفيذ مباشرة بدل أن يلتقطه غلاف vi.fn — والدالة
+  // السهمية ليست مُنشئاً، فتنهار بـ "is not a constructor" قبل بلوغ signInWithPopup.
+  GoogleAuthProvider: vi.fn(function () { return {} }),
   signInWithPopup: mocks.signInWithPopup,
   signInWithRedirect: mocks.signInWithRedirect,
   getRedirectResult: mocks.getRedirectResult,

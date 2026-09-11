@@ -56,7 +56,7 @@
 |---|---|---|
 | Framework | React | ^18.2.0 |
 | Language | TypeScript | ^5.3.3 |
-| Bundler | Vite | ^5.1.4 |
+| Bundler | Vite (Rolldown) | ^8.3.0 |
 | State | React Context (DataContext + UIActionsContext + UIFormContext) | — |
 | Styling | Tailwind CSS | ^3.4.1 |
 | Icons | Lucide React | ^0.383.0 |
@@ -66,11 +66,11 @@
 | Backend | Firebase Auth + Firestore | ^12.19.0 |
 | Offline | Firestore `persistentLocalCache` | — |
 | Cloud Functions | Firebase v2 onCall (Node 22) | — |
-| PWA | vite-plugin-pwa (generateSW) | ^0.19.8 |
-| Testing (unit) | Vitest + React Testing Library | ^1.6.0 |
+| PWA | vite-plugin-pwa (generateSW) | ^1.3.0 |
+| Testing (unit) | Vitest + React Testing Library | ^5.0.0 |
 | Testing (rules) | @firebase/rules-unit-testing + Firestore emulator | ^5.0.2 |
-| Testing (E2E) | Playwright (chromium) + Auth/Firestore/Functions emulators | ^1.49.1 |
-| Component workshop | Storybook (react-vite) | ^10.5.7 |
+| Testing (E2E) | Playwright (chromium) + Auth/Firestore/Functions emulators | ^1.63.0 |
+| Component workshop | Storybook (react-vite) | ^10.6.0 |
 | Linting | ESLint + Prettier | ^8.57.0 |
 | Deployment (frontend) | Vercel SPA | — |
 | Deployment (backend) | Firebase CLI | — |
