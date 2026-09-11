@@ -223,6 +223,34 @@ describe('ملكية المصروف — update', () => {
 // 🔒 الثغرة التي كانت مفتوحة وأُغلقت: الإنشاء لم يكن يتحقق أن createdByUid يطابق
 // هوية الكاتب، فأي عضو يستطيع نسبة مصروف لغيره. هذه الاختبارات تمنع عودتها.
 describe('نسبة المصروف عند الإنشاء — createdByUid', () => {
+  // ⚠️ `Infinity` وحدها هي التي كانت تنفذ من `amount >= 0` — لأن المقارنة صحيحة
+  // لها، بينما `-Infinity` و`NaN` تُرفضان بها أصلاً. والحارس في العميل
+  // (useExpenseActions) لا يحمي من كتابة مباشرة إلى Firestore، فالحدّ هنا هو
+  // الحدّ الوحيد. انظر isFiniteAmount في firestore.rules.
+  it('مصروف بمبلغ غير منتهٍ يُرفض — ولو جاء من عضو صالح مباشرةً', async () => {
+    await assertFails(
+      setDoc(expenseDoc(memberDb(), 'inf'), expenseBy('member-1', { amount: Infinity, originalAmount: Infinity })),
+    )
+  })
+
+  it('مصروف بمبلغ أصلي غير منتهٍ يُرفض كذلك — الحقلان يُفحصان لا أحدهما', async () => {
+    await assertFails(
+      setDoc(expenseDoc(memberDb(), 'inf2'), expenseBy('member-1', { amount: 100, originalAmount: Infinity })),
+    )
+  })
+
+  it('سعر صرف غير منتهٍ يُرفض — `> 0` وحدها كانت تمرّره', async () => {
+    await assertFails(
+      setDoc(expenseDoc(memberDb(), 'inf3'), expenseBy('member-1', { exchangeRate: Infinity })),
+    )
+  })
+
+  it('مبلغ منتهٍ كبير جداً يُرفض أيضاً — فوق حدّ الدقّة الصحيحة في JS', async () => {
+    await assertFails(
+      setDoc(expenseDoc(memberDb(), 'big'), expenseBy('member-1', { amount: 1e16, originalAmount: 1e16 })),
+    )
+  })
+
   it('عضو لا يستطيع إنشاء مصروف منسوب لعضو آخر', async () => {
     await assertFails(
       setDoc(expenseDoc(memberDb('member-1'), 'impersonated'), validExpense({ createdByUid: 'member-2' }))
@@ -272,6 +300,19 @@ describe('المسافرون — إنشاء وتعديل', () => {
 
   it('مسافر ببنية غير صالحة (إيداع سالب) يُرفض', async () => {
     await assertFails(setDoc(travelerDoc(memberDb(), 1), validTraveler({ deposited: -5 })))
+  })
+
+  // ⚠️ الإنشاء محكوم بـ `deposited == 0`، فالثغرة كانت في *التعديل* وحده:
+  // `isValidTraveler` تفحص `>= 0` فقط، و`Infinity >= 0` صحيحة — فمسؤول (أو
+  // عميل على حزمة قديمة) كان يستطيع تثبيت رصيد غير منتهٍ في المستند.
+  it('المسؤول لا يستطيع تعديل الرصيد إلى قيمة غير منتهية', async () => {
+    await seed(db => setDoc(travelerDoc(db, 1), validTraveler()))
+    await assertFails(updateDoc(travelerDoc(adminDb(), 1), { deposited: Infinity }))
+  })
+
+  it('وتعديل الرصيد إلى قيمة منتهية يبقى ناجحاً — الحدّ لا يعطّل المسار السليم', async () => {
+    await seed(db => setDoc(travelerDoc(db, 1), validTraveler()))
+    await assertSucceeds(updateDoc(travelerDoc(adminDb(), 1), { deposited: 500 }))
   })
 
   it('عضو عادي لا يستطيع تعديل مسافر — التعديل للمسؤول حصراً', async () => {
