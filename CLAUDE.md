@@ -248,6 +248,6 @@ For deployment:
 
 ## Contributing Guidelines
 
-للمساهمة وكتابة الكود، يرجى مراجعة ملف [`CONTRIBUTING.md`](CONTRIBUTING.md) — 23 قاعدة يجب اتباعها عند تعديل الكود.
+للمساهمة وكتابة الكود، يرجى مراجعة ملف [`CONTRIBUTING.md`](CONTRIBUTING.md) — 25 قاعدة يجب اتباعها عند تعديل الكود.
 
 </div>
