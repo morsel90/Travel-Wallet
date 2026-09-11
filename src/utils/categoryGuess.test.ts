@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { guessCategory, FALLBACK_CATEGORY } from './categoryGuess'
 import { EXPENSE_CATEGORIES } from '../constants'

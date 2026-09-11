@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import { buildTripBackup, backupFilename, BACKUP_SCHEMA_VERSION } from './backup'
 import type { Traveler, Expense, DepositLogEntry } from '../types'

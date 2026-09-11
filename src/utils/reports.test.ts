@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import type { Expense, Traveler } from '../types'
 import { calculateBalances, calculateSettlements } from './calculations'
