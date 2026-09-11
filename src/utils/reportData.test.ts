@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import type { DepositLogEntry, Expense, Traveler } from '../types'
 import { buildTravelerReport, buildDailySummary, buildAccountStatement, buildMergedTimeline, buildCurrentPeriodTravelerSummaries, buildPeriodOverview } from './reportData'

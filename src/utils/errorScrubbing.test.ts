@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import type { ErrorEvent, Breadcrumb } from '@sentry/react'
 import { scrubEvent, scrubBreadcrumb } from './errorScrubbing'

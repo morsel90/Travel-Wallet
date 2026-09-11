@@ -23,6 +23,16 @@ export default defineConfig(({ mode }) => {
     },
 
     test: {
+      // jsdom هي البيئة الافتراضية عمداً — الافتراض الآمن أن الملف قد يلمس
+      // DOM. الملفات المنطقية البحتة تعلن `@vitest-environment node` في أعلاها
+      // فتتخطّى إنشاء jsdom (18 ملفاً، ~21% من زمن التشغيل).
+      //
+      // ⚠️ ولا تُطفَأ العزلة ولا يُبدَّل المجمَّع استجابةً لتحذير Vitest عن
+      // «jsdom يُنشأ 56 مرة». جُرِّب الاقتراحان فعلاً وكلاهما يكسر المجموعة:
+      // `isolate: false` أسقط 26 اختباراً في 9 ملفات (حالة عامة تتسرّب بين
+      // الملفات)، و`pool: 'vmThreads'` أسقط 12 في `useInviteJoin.test.ts`
+      // بـ«Cannot redefine property: location» لأن `window.location` غير قابل
+      // لإعادة التعريف داخل عوالم الـVM. انظر docs/DECISIONS.md.
       environment: 'jsdom',
       setupFiles: ['./src/setupTests.ts'],
       globals: true,

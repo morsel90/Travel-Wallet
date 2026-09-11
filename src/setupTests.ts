@@ -1,1 +1,12 @@
-import '@testing-library/jest-dom/vitest'
+// مطابِقات jest-dom تعمل على DOM حصراً، وملفات الاختبار المنطقية البحتة تعلن
+// `@vitest-environment node` فلا window لديها ولا حاجة بها إليها. الاستيراد
+// المشروط يوفّر تحميلها في تلك الملفات؛ وفي بيئة jsdom يبقى السلوك كما كان.
+//
+// `export {}` ليست زخرفة: بلا استيراد أو تصدير ثابت يعدّ TypeScript الملف
+// سكربتاً لا وحدة، فيرفض الـ await في المستوى الأعلى (TS1375) — والاختبارات
+// تمرّ خضراء رغم ذلك لأن Vite يحوّل الملف بلا فحص أنواع.
+export {}
+
+if (typeof window !== 'undefined') {
+  await import('@testing-library/jest-dom/vitest')
+}
