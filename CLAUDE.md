@@ -174,7 +174,7 @@ npm run e2e:install
 
 **Important:** The app reads `TRIP_ID` from `?trip=xyz` in the URL. Without it, it defaults to `?trip=travelapp-87206` — and 🆕 if you already belong to trips, the "my trips" picker is shown instead of that trip.
 
-🆕 **Prerequisite for the rules and E2E suites: Java.** The Firestore emulator is a JVM process; without a JDK both fail with «Unable to locate a Java Runtime» buried in `firebase-debug.log`.
+🆕 **Prerequisite for the rules and E2E suites: a JDK at version 21 or newer.** The Firestore emulator is a JVM process; without any JDK both fail with «Unable to locate a Java Runtime» buried in `firebase-debug.log`. 🆕 And with a JDK *older than 21* they fail differently — «firebase-tools no longer supports Java version before 21» — because `firebase-tools` 15 raised its floor (`MIN_SUPPORTED_JAVA_MAJOR_VERSION = 21`). CI pins the version explicitly via `actions/setup-java` rather than relying on whatever the runner image ships.
 
 🆕 **Cloud Function calls work under `npm run dev` with no proxy of any kind.** The client calls functions through `httpsCallable`, which derives the URL from `projectId`, so the dev server has nothing to forward. The old `/api/*` dev proxy — and the `vercel.json` rewrite it mirrored — are both gone; see *Environment Variables*.
 

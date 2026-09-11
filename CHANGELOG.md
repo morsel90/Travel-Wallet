@@ -110,6 +110,8 @@
 
 **التحقق:** typecheck ×3 + lint + 707 اختبار وحدة + 136 اختبار قواعد + 34 اختبار E2E + بناء الإنتاج + بناء Storybook + فحص يدوي لخادم التطوير (AuthGate يُرسم بـ RTL وTailwind سليمين، صفر أخطاء طرفية). ⚠️ فشل E2E أول مرة بـ 27/34 لسبب لا علاقة له بالترقية: Playwright قفز 1.62 → 1.63 فاحتاج ثنائي متصفح جديد — وCI يشغّل `npx playwright install` أصلاً، فمحلياً فقط.
 
+**🐛 وكشف CI ما لم يكشفه أي تشغيل محلي: `firebase-tools` 15 رفع حدّه الأدنى إلى JDK 21** (`MIN_SUPPORTED_JAVA_MAJOR_VERSION = 21` في `lib/emulator/commandUtils.js`). محلياً مرّ كل شيء لأن الجهاز على OpenJDK 26؛ وعلى `ubuntu-latest` كانت Java المثبّتة مسبقاً أقدم، فسقطت وظيفة `rules` بـ «no longer supports Java version before 21» **قبل تشغيل اختبار واحد**. كان تعليق `ci.yml` يتّكل صراحةً على Java المثبّتة مسبقاً — افتراضٌ أبطلته هذه الترقية. صارت الوظيفتان المعتمدتان على المحاكي (`rules` وe2e) تثبّتان JDK 21 عبر `actions/setup-java`، فلا يتبع CI صورة العدّاد بصمت.
+
 **ما زال مؤجّلاً:** `firebase-tools` (high) و`tar` (critical عبره) — آخر ثغرتين حرجتين، وكلاهما أداة سطر أوامر لا تدخل أي حزمة. ثم ESLint 10 وflat config، فReact 19.
 
 ---

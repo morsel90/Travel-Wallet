@@ -426,7 +426,7 @@ npm run typecheck:e2e       # e2e/  (separate tsconfig)
 npm run lint                # ESLint
 ```
 
-Layers 2 and 3 need **Java** (the Firestore emulator is a JVM process) and a cached emulator jar.
+Layers 2 and 3 need **a JDK 21 or newer** (the Firestore emulator is a JVM process, and `firebase-tools` 15 refuses anything older) and a cached emulator jar.
 
 #### 1. Unit tests (`src/**/*.test.ts`)
 Pure utilities and every hook. Hooks are tested with `renderHook`, mocking `firebase/firestore` and `src/firestore.ts` — none of them need React context, because hooks take their data as parameters and the contexts only carry results *outward*.
