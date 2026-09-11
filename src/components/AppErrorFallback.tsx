@@ -7,7 +7,7 @@ import { AlertTriangle } from '../icons'
 
 /** عطل يُسقط التطبيق كاملاً — الملاذ الأخير. */
 export const AppErrorFallback = () => (
-  <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50 text-center">
+  <div className="min-h-dvh flex flex-col items-center justify-center p-6 bg-slate-50 text-center">
     <div className="bg-white p-8 rounded-2xl shadow-xs border border-slate-200 max-w-md">
       <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
       <h1 className="text-xl font-bold text-slate-800 mb-2">عذراً، حدث خطأ غير متوقع في النظام!</h1>

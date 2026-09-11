@@ -64,7 +64,7 @@ export default function TrashBinModal({
       </div>
 
       {/* قائمة العناصر القابلة للتمرير الداخلي المحمي */}
-      <div className="overflow-y-auto max-h-[50vh] space-y-2.5 pl-1" dir="rtl">
+      <div className="overflow-y-auto max-h-[50dvh] space-y-2.5 pl-1" dir="rtl">
         {activeTab === 'expenses' ? (
           deletedExpenses.length === 0 ? (
             <div className="text-center text-slate-400 py-12 text-sm font-medium">لا توجد مصاريف محذوفة حالياً.</div>
