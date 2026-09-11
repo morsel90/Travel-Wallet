@@ -2,7 +2,7 @@
 
 <div dir="rtl" style="text-align: right">
 
-## آخر تحديث: 2026-09-08
+## آخر تحديث: 2026-09-11
 
 ### توثيق هذا الملف أُعيد تنظيمه
 
@@ -40,7 +40,7 @@
 - Rate limiting on expense creation
 - Trip itinerary (flights/car/train/bus) stored per-trip + "next segment" widget
 - In-app admin/organizer panel: list all trips, create a trip, edit bank details and itinerary, delete an *empty* trip. Admins see every trip; a trip's **organizer** sees a limited panel for their own trip only
-- 🆕 "My trips" picker: opening the app with no `?trip=` shows the trips you belong to instead of the default one
+- 🆕 "My trips" picker: opening the app with no `?trip=` shows the trips you belong to instead of the default one. 🆕 Each card carries four things and no fifth — name, traveler count, total spent, status — and the two numbers come from server-side aggregation, not from reading each trip's collections (see *Design Decisions*)
 - 🆕 Long-term trips: monthly cycles (`closeMonth` rolls balances over), mid-cycle traveler exit + refund (`exitTraveler`), and cycle-scoped reports/statements
 - 🆕 Trip lifecycle advances itself: `active → completed → archived` derived from the itinerary, never deletion
 - 🆕 Backup & restore: export a trip's full data, and re-create it from that backup (`restoreTrip`)

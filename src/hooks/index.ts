@@ -19,6 +19,7 @@ export { useOrganizerBankDetails } from './useOrganizerBankDetails' // 🆕 قر
 export { useTripAdminActions } from './useTripAdminActions' // 🆕 كتابة إعدادات أي رحلة (الاسم/المسار/الحالة) من واجهة الإدارة
 export { useAllTrips }         from './useAllTrips' // 🆕 قائمة كل الرحلات — استعلام يرضيه isAdmin() وحده
 export { useMyTrips }          from './useMyTrips'  // 🆕 رحلات المستخدم المنضم لها (شاشة «رحلاتي») — قراءة مستند كل رحلة على حدة
+export { useTripStats }        from './useTripStats' // 🆕 رقما بطاقة «رحلاتي» (عدد المسافرين + إجمالي المصروف) — تجميع خادمي لا قراءة مجموعات
 export { useTripMembers }      from './useTripMembers' // 🆕 أعضاء رحلة بعينها من السجلّ — للمسؤول وحده (الـ claims لا تُستعلَم)
 export { useMyTripRole }       from './useMyTripRole'  // 🆕 «هل أنا منظّم هذه الرحلة؟» (المرحلة ٣) — قراءة ذاتية واحدة
 export { useHeaderCollapse }   from './useHeaderCollapse' // 🆕 تتبّع اتجاه التمرير لتقليص/توسيع الهيدر (Sticky + Collapsible)
