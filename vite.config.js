@@ -33,6 +33,10 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_USE_FIREBASE_EMULATORS': JSON.stringify(pick('VITE_USE_FIREBASE_EMULATORS')),
       // 🆕 اختياري — انظر src/sentry.ts. غيابه لا يمنع البناء ولا التشغيل.
       'import.meta.env.VITE_SENTRY_DSN': JSON.stringify(pick('VITE_SENTRY_DSN')),
+      // 🆕 العنوان الأساسي للتطبيق — انظر src/utils/canonicalUrl.ts. تجاوز يدوي
+      // أولاً (لبيئة staging مثلاً)، ثم متغيّر النظام الذي يوفّره Vercel لكل
+      // بناء. غيابهما محلياً يعني سلسلة فارغة: لا تنبيه عنوان ولا رابط.
+      'import.meta.env.VITE_APP_PRODUCTION_HOST': JSON.stringify(pick('VITE_APP_PRODUCTION_HOST') || pick('VERCEL_PROJECT_PRODUCTION_URL') || ''),
     },
 
     // 🗑️ لا حاجة لأي وسيط `/api/*` بعد الآن: العميل يستدعي الدوال عبر

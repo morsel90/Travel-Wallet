@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Loader2, LogIn, Mail } from '../icons'
 import { INVITE_TOKEN } from '../utils/tripId'
+import { canonicalAppUrl } from '../utils/canonicalUrl'
 import type { UsePasswordResetResult } from '../hooks/usePasswordReset'
 
 // ─── شعار Google ──────────────────────────────────────────────────────────────
@@ -40,6 +41,9 @@ interface AuthGateProps {
 export default function AuthGate({
   loading, isSigningIn, signInError, onSignInGoogle, onSignInEmail, passwordReset,
 }: AuthGateProps) {
+  // 🆕 قبل أن يفشل الدخول لا بعده: من فتح رابط نشر فريد (رسالة Vercel البريدية
+  // مثلاً) يرى من البداية أين يعمل الدخول عبر Google. null خارج Vercel.
+  const canonicalUrl = canonicalAppUrl(window.location, import.meta.env.VITE_APP_PRODUCTION_HOST)
   const [showEmailForm, setShowEmailForm] = useState(false)
   const [emailMode, setEmailMode] = useState<'signIn' | 'signUp'>('signIn')
   const [email, setEmail] = useState('')
@@ -95,6 +99,13 @@ export default function AuthGate({
             <p className="text-[11px] text-slate-400 mt-2">
               يُفضل فتح الرابط في متصفح خارجي (Safari / Chrome) لسهولة تسجيل الدخول.
             </p>
+
+            {canonicalUrl && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-3 leading-relaxed">
+                هذا ليس العنوان الأساسي للتطبيق، والدخول عبر Google لا يعمل منه.{' '}
+                <a href={canonicalUrl} className="font-bold underline">افتح التطبيق من عنوانه الأساسي</a>
+              </p>
+            )}
 
             {signInError && (
               <p className="text-xs text-rose-500 font-bold mt-3">{signInError}</p>

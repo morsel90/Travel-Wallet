@@ -19,6 +19,9 @@ interface ImportMetaEnv {
   readonly VITE_USE_FIREBASE_EMULATORS?: string
   // 🆕 اختياري — انظر src/sentry.ts. غيابه لا يمنع البناء ولا التشغيل.
   readonly VITE_SENTRY_DSN?: string
+  // 🆕 اختياري — انظر src/utils/canonicalUrl.ts وvite.config.js (يسقط إلى
+  // VERCEL_PROJECT_PRODUCTION_URL). غيابه يُطفئ تنبيه «عنوان غير أساسي» فقط.
+  readonly VITE_APP_PRODUCTION_HOST?: string
 }
 
 interface ImportMeta {

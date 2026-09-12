@@ -290,6 +290,31 @@ describe('useAuth', () => {
       expect(result.current.signInError).toContain('متصفحاً آخر')
     })
 
+    // 🆕 العنوان مرفوض لا المتصفح — فالرسالة لا تنصح بمتصفح آخر.
+    it('عنوان غير مصرّح به عبر النافذة المنبثقة: رسالة العنوان، بلا تراجع إلى التوجيه', async () => {
+      mocks.signInWithPopup.mockRejectedValue(authError('auth/unauthorized-domain'))
+      const { result } = renderHook(() => useAuth())
+
+      await act(async () => { await result.current.signInWithGoogle() })
+
+      expect(result.current.signInError).toContain('من هذا العنوان')
+      expect(result.current.signInError).not.toContain('متصفحاً آخر')
+      expect(mocks.signInWithRedirect).not.toHaveBeenCalled()
+    })
+
+    // ⚠️ المسار الفعلي الذي رُصد (2026-09-12): متصفح Gmail المدمج يحجب النافذة،
+    // فالتوجيه يُجرَّب ويرفضه SDK بفحص العنوان قبل المغادرة.
+    it('نافذة محجوبة ثم عنوان غير مصرّح به عند التوجيه: رسالة العنوان لا «متصفحاً آخر»', async () => {
+      mocks.signInWithPopup.mockRejectedValue(authError('auth/popup-blocked'))
+      mocks.signInWithRedirect.mockRejectedValue(authError('auth/unauthorized-domain'))
+      const { result } = renderHook(() => useAuth())
+
+      await act(async () => { await result.current.signInWithGoogle() })
+
+      expect(result.current.signInError).toContain('من هذا العنوان')
+      expect(result.current.signInError).not.toContain('متصفحاً آخر')
+    })
+
     it('خطأ آخر غير مصنَّف كإلغاء أو كبيئة غير مدعومة يعرض رسالة عامة', async () => {
       mocks.signInWithPopup.mockRejectedValue(authError('auth/network-request-failed'))
       const { result } = renderHook(() => useAuth())
