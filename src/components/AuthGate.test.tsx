@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import AuthGate from './AuthGate'
 import type { UsePasswordResetResult } from '../hooks/usePasswordReset'
@@ -66,5 +66,34 @@ describe('AuthGate — استرداد كلمة المرور قبل تسجيل ا
     openEmailForm()
     fireEvent.click(screen.getByRole('button', { name: 'حساب جديد؟ أنشئ حساباً' }))
     expect(screen.queryByRole('button', { name: 'نسيت كلمة المرور؟' })).not.toBeInTheDocument()
+  })
+})
+
+// 🆕 تنبيه العنوان غير الأساسي — يظهر قبل محاولة الدخول، لا بعد فشلها.
+describe('AuthGate — عنوان غير أساسي', () => {
+  afterEach(() => { vi.unstubAllEnvs() })
+
+  const notice = () => screen.queryByRole('link', { name: 'افتح التطبيق من عنوانه الأساسي' })
+
+  it('عنوان أساسي معرَّف ومختلف عن الحالي: رابط يحمل المسار والاستعلام كما هما', () => {
+    // jsdom يعمل على localhost، وهو مُستثنى عمداً — فالعنوان الحالي يُحاكى هنا.
+    const original = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { host: 'travel-app-final-abc-projects.vercel.app', pathname: '/', search: '?trip=Mdrsah', hash: '' },
+    })
+    vi.stubEnv('VITE_APP_PRODUCTION_HOST', 'travel-app-final-nu.vercel.app')
+    try {
+      renderGate()
+      expect(notice()).toHaveAttribute('href', 'https://travel-app-final-nu.vercel.app/?trip=Mdrsah')
+    } finally {
+      Object.defineProperty(window, 'location', { configurable: true, value: original })
+    }
+  })
+
+  it('بلا عنوان أساسي معرَّف: لا تنبيه إطلاقاً', () => {
+    vi.stubEnv('VITE_APP_PRODUCTION_HOST', '')
+    renderGate()
+    expect(notice()).toBeNull()
   })
 })

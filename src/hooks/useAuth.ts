@@ -66,6 +66,12 @@ const REDIRECT_FALLBACK_CODES = new Set([
   'auth/popup-blocked',
 ])
 
+// 🆕 Firebase يرفض الدخول عبر Google من أي عنوان خارج «النطاقات المصرّح بها» —
+// وأبرزها عناوين النشر الفريدة على Vercel. الدخول بالبريد لا يخضع لهذه القائمة.
+const UNAUTHORIZED_DOMAIN = 'auth/unauthorized-domain'
+const UNAUTHORIZED_DOMAIN_MESSAGE =
+  'الدخول عبر Google لا يعمل من هذا العنوان. افتح التطبيق من عنوانه الأساسي، أو سجّل الدخول عبر البريد الإلكتروني.'
+
 const USER_CANCELLED_CODES = new Set([
   'auth/popup-closed-by-user',
   'auth/cancelled-popup-request',
@@ -196,14 +202,27 @@ export function useAuth(): UseAuth {
         return
       }
 
+      // 🆕 العنوان نفسه مرفوض — لا المتصفح. «جرّب متصفحاً آخر» هنا ترسل
+      // المستخدم في الاتجاه الخطأ: كل متصفح سيفشل بالطريقة نفسها على هذا العنوان.
+      // AuthGate تعرض رابط العنوان الأساسي بجانبها (utils/canonicalUrl.ts).
+      if (code === UNAUTHORIZED_DOMAIN) {
+        setSignInError(UNAUTHORIZED_DOMAIN_MESSAGE)
+        return
+      }
+
       if (code && REDIRECT_FALLBACK_CODES.has(code)) {
         try {
           // الصفحة ستُعاد تحميلها بعد العودة من إعادة التوجيه — لا داعٍ لإدارة
           // حالة إضافية هنا، ولا لإيقاف isSigningIn (المستخدم يغادر الصفحة أصلاً).
           await signInWithRedirect(auth, new GoogleAuthProvider())
           return
-        } catch {
-          setSignInError('تعذّر تسجيل الدخول عبر Google. جرّب متصفحاً آخر (Safari أو Chrome).')
+        } catch (redirectErr) {
+          // 🆕 المسار الأكثر شيوعاً لهذا الخطأ فعلياً: متصفح Gmail المدمج يحجب
+          // النافذة المنبثقة، فيُجرَّب التوجيه — وSDK يفحص العنوان قبل أن يغادر.
+          const redirectCode = (redirectErr as { code?: string })?.code
+          setSignInError(redirectCode === UNAUTHORIZED_DOMAIN
+            ? UNAUTHORIZED_DOMAIN_MESSAGE
+            : 'تعذّر تسجيل الدخول عبر Google. جرّب متصفحاً آخر (Safari أو Chrome).')
         }
       } else {
         setSignInError('تعذّر تسجيل الدخول عبر Google. حاول مجدداً.')
