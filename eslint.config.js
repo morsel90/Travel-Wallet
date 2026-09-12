@@ -3,7 +3,12 @@
 // مبدأ لم يتغيّر عن الإعداد السابق: نلتقط الأخطاء المنطقية فقط (TS + قواعد
 // React Hooks) دون فرض أسلوب تنسيق يصطدم بمحاذاة الأعمدة اليدوية المتّبعة في
 // هذا المشروع. لا قواعد أقواس/فواصل منقوطة/علامات اقتباس — تُترك للمطوّر
-// (ولـ Prettier عبر eslint-config-prettier الذي يُطفئ ما قد يتعارض).
+// وحده.
+//
+// 🆕 وزال معها `eslint-config-prettier`: وظيفته إطفاء قواعد التنسيق في
+// ESLint، وflat config الحديث لا يحوي أياً منها أصلاً (نُقلت كلها إلى
+// @stylistic). قِيس ذلك لا خُمِّن — `npm run lint` يخرج بصفر بوجوده وبغيابه
+// سواءً بسواء، فكان يُطفئ قواعد غير مُشعَلة.
 //
 // 🆕 انتقل من .eslintrc.cjs إلى هذا الملف لأن ESLint 10 أسقط دعم eslintrc
 // كلياً. الفروق البنيوية التي يجب الانتباه لها عند التعديل:
@@ -14,14 +19,12 @@
 //     وهو لا يفحص شيئاً.
 //   • `ignorePatterns` صار `ignores` في كتلة مستقلة تُطبَّق عالمياً.
 //   • `env: { browser: true }` صار `languageOptions.globals`.
-//   • ترتيب الكتل يحسم التعارض: الأخيرة تغلب. لذا `prettier` بعد الإعدادات
-//     الموصى بها، والاستثناءات بعد كل شيء.
+//   • ترتيب الكتل يحسم التعارض: الأخيرة تغلب. لذا الاستثناءات بعد كل شيء.
 import js            from '@eslint/js'
 import tseslint      from 'typescript-eslint'
 import reactHooks    from 'eslint-plugin-react-hooks'
 import reactRefresh  from 'eslint-plugin-react-refresh'
 import storybook     from 'eslint-plugin-storybook'
-import prettier      from 'eslint-config-prettier/flat'
 import globals       from 'globals'
 
 export default tseslint.config(
@@ -47,7 +50,6 @@ export default tseslint.config(
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
-      prettier,
     ],
     languageOptions: {
       globals: globals.browser,
