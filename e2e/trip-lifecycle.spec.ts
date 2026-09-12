@@ -43,8 +43,16 @@ test.describe('دورة حياة الرحلة التلقائية — advanceTrip
       itinerary: segmentEndingAt(now - 40 * DAY_MS),
     })
 
+    // ⚠️ التأكيد على نوع العدّ لا على قيمته، عمداً — وهذا ما كان يجعل هذا
+    // الملف متذبذباً. `advanceTripLifecycleLogic` دالة **كنسٍ شاملة**: تمسح
+    // مجموعة `trips` كلها لا رحلة هذا الاختبار وحدها، وتعيد عدّاً شاملاً.
+    // ومع `fullyParallel: true`، يسبق عاملٌ متوازٍ إلى كنس رحلتنا فيعود
+    // عدّنا صفراً رغم أن الانتقال حدث فعلاً — والدليل الصادق على الانتقال
+    // هو حالة الرحلة نفسها بعد سطرين، وهي مستقلة عن ترتيب التشغيل تماماً.
+    // أُثبت السباق بإجباره لا باستنتاجه (`--repeat-each=8`): كان يُسقط هذين
+    // السطرين بـ`Received: 0` بينما يمرّ تأكيدا الحالة أدناه دائماً.
     const first = await advanceTripLifecycleLogic(now)
-    expect(first.completed).toBeGreaterThanOrEqual(1)
+    expect(typeof first.completed).toBe('number')
 
     const afterFirst = (await db.collection('trips').doc(tripId).get()).data()
     expect(afterFirst?.status).toBe('completed')
@@ -57,7 +65,7 @@ test.describe('دورة حياة الرحلة التلقائية — advanceTrip
     })
 
     const second = await advanceTripLifecycleLogic(now)
-    expect(second.archived).toBeGreaterThanOrEqual(1)
+    expect(typeof second.archived).toBe('number')
 
     const afterSecond = (await db.collection('trips').doc(tripId).get()).data()
     expect(afterSecond?.status).toBe('archived')
