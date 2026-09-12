@@ -15,7 +15,11 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['tests/**/*.test.ts'],
+    // 🆕 محصور بـ tests/firestore-rules/ لا `tests/**`: هذا الإعداد وُجد لهذه
+    // الاختبارات وحدها كما يشرح أعلاه، و`tests/**` كان يلتقط أيضاً
+    // tests/build/ (اختبارات إعداد البناء) فيشغّلها مرتين — مرة في `npm test`
+    // ومرة هنا تحت محاكي Firestore الذي لا تحتاجه إطلاقاً.
+    include: ['tests/firestore-rules/**/*.test.ts'],
     // عمليات المحاكي (اتصال شبكي محلي حقيقي، ولو على 127.0.0.1) أبطأ ملحوظاً
     // من اختبارات الوحدة النقية — المهلة الافتراضية (5 ثوانٍ) قد لا تكفي خصوصاً
     // في beforeAll (تحميل قواعد Firestore والاتصال الأول بالمحاكي).

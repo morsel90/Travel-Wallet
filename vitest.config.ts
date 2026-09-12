@@ -36,7 +36,10 @@ export default defineConfig(({ mode }) => {
       environment: 'jsdom',
       setupFiles: ['./src/setupTests.ts'],
       globals: true,
-      include: ['src/**/*.{test,spec}.{ts,tsx}'],
+      // 🆕 tests/build: اختبارات على إعداد البناء نفسه (لا على كود التطبيق)،
+      // فلا مكان لها في src/ التي تُشحن. النمط ضيّق عمداً — `tests/**` كان
+      // سيلتقط اختبارات قواعد Firestore التي لها مُشغِّل ومحاكٍ منفصلان.
+      include: ['src/**/*.{test,spec}.{ts,tsx}', 'tests/build/*.test.ts'],
     },
   }
 })
