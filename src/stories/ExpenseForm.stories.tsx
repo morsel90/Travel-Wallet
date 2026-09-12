@@ -37,7 +37,7 @@ function InteractiveExpenseForm({ initial, isEditing = false, travelers = fx.tra
 
   return (
     <Providers
-      data={{ travelers, expenses, user: myUid ? ({ uid: myUid } as never) : null }}
+      data={{ travelers, expenses, user: myUid ? { uid: myUid } : null }}
       uiForm={{
         ...baseUIForm,
         expenseForm,

@@ -106,4 +106,35 @@ export default tseslint.config(
       'react-refresh/only-export-components': 'off',
     },
   },
+
+  {
+    // 🆕 حدّ Firebase: لا شيء في src/ يعرف Firebase إلا طبقة البيانات.
+    //
+    // الحدّ كان قائماً عرفاً قبل هذه القاعدة — صفر مكوّنات تستورد Firebase،
+    // والتسرّب الوحيد كان `import type { User }` في المخزن (استُبدل بـ AppUser
+    // في types.ts). القاعدة لا تبني عزلاً جديداً؛ تمنع العزل القائم من التآكل
+    // بصمت. طبقة repository كاملة فوق الخطّافات رُفضت عمداً: كلفة الهجرة
+    // الحقيقية في firestore.rules وfunctions/ والبيانات، لا في أماكن الاستدعاء
+    // — انظر docs/DECISIONS.md.
+    //
+    // نطاقها src/ فقط: e2e/ واختبارات القواعد تختبر Firebase نفسه، فاستيراده
+    // هناك هو الغرض لا التسرّب. والنمط `^firebase(/|$)` لا يلتقط
+    // `@firebase/rules-unit-testing` عمداً.
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/hooks/**', 'src/firebase.ts', 'src/firestore.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [
+          {
+            regex:   '^firebase(/|$)',
+            message: 'Firebase محصور في src/hooks/ — عرّف نوعاً في types.ts (مثل AppUser) أو مرّر البيانات عبر خطّاف.',
+          },
+          {
+            regex:   '^(\\.{1,2}/)+(firebase|firestore)$',
+            message: 'مثيلات db/auth/functions محصورة في src/hooks/ — لا تُستورد من المكوّنات أو المخزن.',
+          },
+        ],
+      }],
+    },
+  },
 )

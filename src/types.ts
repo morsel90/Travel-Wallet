@@ -371,3 +371,16 @@ export interface RolloverResult {
   /** عدد المستندات المكتوبة فعلاً — مصاريف التسوية + حركات الإيداع. */
   written: { expenses: number; deposits: number }
 }
+
+/**
+ * 🆕 المستخدم كما تراه الواجهة — لا كما يراه Firebase Auth.
+ *
+ * المخزن والمكوّنات لا تقرأ من الحساب إلا `uid` (مقارنته بـ Traveler.uid
+ * وExpense.createdByUid)، فهذا كل ما يُعلَن هنا. كائن `User` من Firebase يطابق
+ * هذا الشكل بنيوياً فيمرّ كما هو من useAuth دون تحويل. الغرض أن يبقى نوع
+ * Firebase داخل src/hooks/ وحدها — القاعدة المفروضة في eslint.config.js.
+ * أضف حقلاً هنا حين يحتاجه مستهلك فعلي، لا قبل ذلك.
+ */
+export interface AppUser {
+  uid: string
+}

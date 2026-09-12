@@ -6,6 +6,18 @@
 
 ---
 
+## آخر تحديث: 2026-09-12 (١٦)
+
+### What changed on 2026-09-12 — حدّ Firebase صار قاعدة lint
+
+- **`AppUser`** (`src/types.ts`) يحلّ محلّ `User` من `firebase/auth` في `store/tripStore.ts` و`store/TripStoreProvider.tsx`. المخزن والمكوّنات لا تقرأ إلا `uid`. وسقط معه التحويلان `as unknown as User` و`as never` من `TravelerCard.stories.tsx` و`ExpenseForm.stories.tsx`.
+- **`no-restricted-imports`** في `eslint.config.js`: لا `firebase/*` ولا `../firebase`/`../firestore` في `src/` خارج `src/hooks/`. كانت هذه أول مخالفة للقاعدة في الكود، وأُصلحت في التغيير نفسه.
+- **لماذا قاعدة لا طبقة repository:** انظر المدخلة في [docs/DECISIONS.md](docs/DECISIONS.md).
+
+التحقّق: `lint` و`typecheck` نجحا، و714/714 اختباراً. والحالة السالبة جُرّبت فعلاً بملفات تجريبية حُذفت بعدها.
+
+---
+
 ## آخر تحديث: 2026-09-12 (١٥)
 
 ### What changed on 2026-09-12 — تأكيدات دائمة بدل إشعارات عابرة في E2E

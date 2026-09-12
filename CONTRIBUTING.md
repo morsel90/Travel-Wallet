@@ -38,4 +38,6 @@
 
     للقياس: انظر مدخلة `2026-09-11 (١٢)` في [CHANGELOG.md](CHANGELOG.md) — فيها الإعداد التشخيصي المؤقّت وطريقة تشغيله بلا تثبيت شيء وبلا لمس `eslint.config.js`.
 
+26. 🆕 **Firebase stays inside `src/hooks/`.** Components and the store never import `firebase/*`, `../firebase` or `../firestore` — `no-restricted-imports` in `eslint.config.js` fails the build if they do. Need a Firebase value in the UI? Declare the shape you actually read in `types.ts` (see `AppUser`, which is only `uid`) and pass it through a hook. Do not answer the rule by adding a repository layer above the hooks; see *Design Decisions* for why that was rejected.
+
 </div>
