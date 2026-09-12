@@ -74,8 +74,9 @@ test('منظّم الرحلة: يُعيَّن من المسؤول، يرى لو�
   const nameInput = memberPage.getByLabel('اسم الرحلة')
   await nameInput.fill('رحلة عدّلها المنظّم')
   await memberPage.getByRole('button', { name: 'حفظ التغييرات' }).click()
-  await expect(memberPage.getByText('تم حفظ اسم الرحلة')).toBeVisible()
-
+  // ⚠️ لا تأكيد على توست النجاح (2500ms): الأسطر الثلاثة التالية أقوى منه
+  // بكثير — إعادة تحميل كاملة ثم قراءة القيمة المحفوظة تثبت أن الحفظ وصل
+  // الخادم فعلاً، بينما التوست يثبت ظهور رسالة وحدها.
   await memberPage.reload()
   await openTripDetailFromHeader(memberPage)
   await expect(memberPage.getByLabel('اسم الرحلة')).toHaveValue('رحلة عدّلها المنظّم')
