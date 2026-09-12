@@ -57,11 +57,15 @@ export default defineConfig(({ mode }) => {
               if (id.includes('firebase') || id.includes('@firebase')) {
                 return 'firebase-sdk';
               }
+              // ⚠️ الترتيب هنا جزء من المنطق لا تجميل: الفحص يمرّ بالمسار
+              // الكامل للوحدة، و`id.includes('react')` يلتقط `react-virtuoso`
+              // و`motion/dist/es/react.mjs` معاً — فلو سبق ui-vendor لابتلعهما
+              // react-vendor وبقي سطر ui-vendor ميتاً (وهو ما كان يحدث فعلاً).
+              if (id.includes('motion') || id.includes('lucide-react') || id.includes('react-virtuoso')) {
+                return 'ui-vendor';
+              }
               if (id.includes('react') || id.includes('react-dom')) {
                 return 'react-vendor';
-              }
-              if (id.includes('framer-motion') || id.includes('lucide-react') || id.includes('react-virtuoso')) {
-                return 'ui-vendor';
               }
             }
           }

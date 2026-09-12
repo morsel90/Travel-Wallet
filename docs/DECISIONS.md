@@ -8,6 +8,23 @@
 
 Decisions that look like oversights but are not. Read this before "fixing" them.
 
+### 🆕 ترتيب `manualChunks` صار جزءاً من المنطق — وهذا نقضٌ صريح لتأجيل موثَّق سابقاً
+
+`CHANGELOG.md` كان يسجّل الخلل ويتركه عمداً: «شرط `id.includes('react')` يسبق فرع `ui-vendor` ويبتلع `lucide-react` و`react-virtuoso` … تُرك كما هو عمداً: إصلاحه يغيّر تقسيم الحزم ووقت التحميل، وهو قرار مستقل عن ترقية React». **ذلك التأجيل انتهى هنا، بقرار جديد لا بسهو** — فترقية `framer-motion` → `motion` جعلت تركه خياراً أسوأ لا محايداً.
+
+**السبب أن الاسم الجديد أدخل «react» إلى مسار المكتبة نفسها.** مدخل الحزمة هو `motion/dist/es/react.mjs` — و`framer-motion` لم تكن تحوي «react» كنصّ فرعي إطلاقاً. أي أن الشرط الذي كان يبتلع مكتبتين صار يبتلع مكتبة الحركات نفسها، وهي أكبرهنّ.
+
+**وقيس الأثر ببناءين فعليين لا بتقدير:**
+
+| الحزمة | قبل | بعد |
+|---|---|---|
+| `react-vendor` | 421.15 kB | **219.36 kB** |
+| `ui-vendor` | 4.58 kB | **205.35 kB** |
+
+المجموع لم يتغيّر عملياً (≈426 kB). المكسب ليس بايتات بل **تخزيناً مؤقتاً مستقلاً**: React نفسها نادرة التغيّر، ومكتبات الواجهة أكثر تقلّباً — ودمجهنّ في حزمة واحدة يعني أن ترقية أيقونة واحدة تُبطل ذاكرة React كاملةً عند كل زائر. وبإصلاح الترتيب عاد `react-virtuoso` أيضاً إلى الفرع الذي كُتب له أصلاً بعد أن ظلّ سطره ميتاً طوال الوقت.
+
+⚠️ **الترتيب نفسه هو الإصلاح، لا نصّ الشرط.** الفحص يمرّ بالمسار الكامل للوحدة، فأي فرع يذكر «react» كنصّ فرعي يجب أن يأتي **بعد** `ui-vendor`، لا قبله. تعليق صريح يحرس هذا في `vite.config.js` — ومن يعكس الترتيب مستقبلاً سيعيد الخلل صامتاً بلا أي اختبار ساقط، لأن البناء ينجح في الحالتين.
+
 ### 🆕 بيئة الاختبار: `node` للمنطق البحت — وتحذير Vitest عن jsdom لا يُتّبع حرفياً
 
 يطبع Vitest بعد كل تشغيل أن «jsdom أُنشئ 56 مرة، 46.69 ثانية، 64% من الزمن المتتبَّع» ويقترح `pool: 'vmThreads'` أو `isolate: false`. الرقم صحيح، والاقتراحان **جُرِّبا فعلاً وكلاهما يكسر المجموعة**:
@@ -805,7 +822,7 @@ Product feedback after the entry above shipped: the profile modal's own header b
 
 **Reported by the user as "the expense form opens off-screen after scrolling down, with blank gaps appearing"** — from `SmartInputBar`'s "إضافة تفاصيل" (expand) button specifically, but the same underlying trigger (`expense.openExpenseForm`) is also used by `ExpensesPanel`'s empty-state "سجّل أول مصروف" button and by editing an existing expense, so all three shared the bug. Root cause, found by tracing the render tree rather than patching the reported symptom: `<ExpenseForm />` was rendered directly inside a `<section>` in `App.tsx`'s normal page flow — the *only* form/dialog in the codebase that wasn't already going through the shared `Modal` component (`DepositModal`, `TrashBinModal`, `UserProfileModal`, `AdminSignInModal`, `DepositHistoryModal`, `ConfirmModal` all already wrap in `<Modal>`). Toggling `isExpenseFormOpen` just swapped that section's content between `null` and the full form, wherever that section happened to sit relative to however far down the page the user had scrolled — with no relationship between the two.
 
-**The literal fix initially requested — `scrollIntoView` plus a Tailwind `transition-all` on the section — was considered and rejected as incomplete, not just inelegant.** A CSS `transition` only animates continuous property changes on an already-mounted element; it does not animate an element appearing from a React `null`-to-content mount, which is exactly what was happening here. This codebase already uses `framer-motion`/`AnimatePresence` everywhere else for that exact reason (see the `AccountMenu`/Bottom Sheet entries above) — bolting a CSS transition onto this one form would not have produced the "smooth expansion" being asked for, and `scrollIntoView` alone would have patched only the `SmartInputBar` call site while leaving the identical bug live on the empty-state button.
+**The literal fix initially requested — `scrollIntoView` plus a Tailwind `transition-all` on the section — was considered and rejected as incomplete, not just inelegant.** A CSS `transition` only animates continuous property changes on an already-mounted element; it does not animate an element appearing from a React `null`-to-content mount, which is exactly what was happening here. This codebase already uses `motion` (then named `framer-motion`)/`AnimatePresence` everywhere else for that exact reason (see the `AccountMenu`/Bottom Sheet entries above) — bolting a CSS transition onto this one form would not have produced the "smooth expansion" being asked for, and `scrollIntoView` alone would have patched only the `SmartInputBar` call site while leaving the identical bug live on the empty-state button.
 
 **The actual fix: `ExpenseForm` now returns `<Modal onClose={cancelExpenseForm} label={...} maxWidth="max-w-md">...</Modal>` instead of a plain `<div>`.** Being `position: fixed`, `Modal` is unaffected by scroll position or its own position in the DOM — no `scrollIntoView` call is needed at all. `App.tsx`'s wrapping `<section className="bg-white rounded-2xl shadow-sm border ...">` was removed entirely (it also happened to leave a visible empty bordered/shadowed sliver in the layout whenever the form was closed, since `trip.canAddExpenses` alone still rendered the now-content-less section) and replaced with `<AnimatePresence>{expense.isAddingExpense && <ExpenseForm />}</AnimatePresence>` at the call site — matching `ModalManager.tsx`'s existing pattern exactly. This mattered specifically because `ExpenseForm` does its own internal `if (!isExpenseFormOpen) return null` (required by its Rules-of-Hooks ordering comment, left untouched), and `AnimatePresence` only detects a child's removal — and therefore only plays the exit animation — when the conditional sits at the JSX call site AnimatePresence directly wraps, not inside a child component's own internal early return.
 

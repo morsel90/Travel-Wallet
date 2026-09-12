@@ -53,7 +53,7 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     // 🆕 30 ثانية كانت غير كافية في التجربة الفعلية: أول إقلاع لـ Vite بإعداد
     // e2e (بذاكرة تخزين مؤقت جديدة كلياً لهذا الوضع) يزامن تجميع firebase +
-    // framer-motion + lucide-react + react-virtuoso لأول مرة، أثناء تنافس مع
+    // motion + lucide-react + react-virtuoso لأول مرة، أثناء تنافس مع
     // ثلاث محاكيات تعمل بالتوازي على نفس الجهاز (auth+firestore+functions —
     // الأخيرين يعتمدان على JVM). التشغيلات اللاحقة أسرع بكثير بفضل كاش Vite.
     timeout: 120_000,

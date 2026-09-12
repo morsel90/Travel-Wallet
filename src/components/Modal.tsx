@@ -1,6 +1,6 @@
 import { useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { motion, useDragControls } from 'framer-motion'
+import { motion, useDragControls } from 'motion/react'
 import { useDialogA11y } from '../hooks/useDialogA11y'
 
 interface ModalProps {
@@ -23,7 +23,7 @@ interface ModalProps {
 // 🆕 Bottom Sheet: تنبثق كل النوافذ من الأسفل على الجوال (نمط تطبيقات الجوال
 // الأصلية) بدل نافذة مركزية تقليدية — من عرض sm فأكبر (شاشات أوسع) تبقى
 // نافذة مركزية عادية بزوايا كاملة الاستدارة (لا فائدة من Bottom Sheet على
-// شاشة عريضة). framer-motion (motion.div + drag="y") يوفّر حركة دخول/خروج
+// شاشة عريضة). motion (motion.div + drag="y") يوفّر حركة دخول/خروج
 // طبيعية بفيزياء حركة حقيقية (spring)، وسحب لأسفل بما يكفي (أو بسرعة كافية)
 // يُغلق النافذة كما في تطبيقات الجوال المعتادة. ⚠️ السحب-للإغلاق مقصور على
 // المقبض العلوي وحده (dragListener={false} + dragControls) لا اللوحة كلها —

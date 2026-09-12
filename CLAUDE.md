@@ -61,7 +61,7 @@
 | Styling | Tailwind CSS | ^4.3.3 |
 | Icons | Lucide React | ^1.44.0 |
 | QR encoding | qrcode-generator | ^2.0.4 |
-| Animations | Framer Motion | ^11.2.10 |
+| Animations | Motion (سابقاً Framer Motion) | ^13.2.0 |
 | Virtual List | React Virtuoso | ^4.18.10 |
 | Backend | Firebase Auth + Firestore | ^12.19.0 |
 | Offline | Firestore `persistentLocalCache` | — |

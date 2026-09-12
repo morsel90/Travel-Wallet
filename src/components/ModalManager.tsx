@@ -14,7 +14,7 @@
 // هذه المكوّنة (مثل TripPicker لعضو بلا أي رحلة بعد — انظر App.tsx).
 import { lazy, Suspense } from 'react'
 import type { ComponentProps } from 'react'
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence } from 'motion/react'
 import ModalFallback from './modals/ModalFallback'
 import type { ModalState } from '../hooks/useModals'
 

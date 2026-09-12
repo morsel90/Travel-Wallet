@@ -8,7 +8,7 @@
 // ⚠️ لتعديل رحلة أخرى غير المفتوحة حالياً: افتحها أولاً من «رحلاتي» (المسؤول
 // يرى كل الرحلات هناك ويدخل أيّاً منها)، ثم عدّلها من هنا بعد أن تصبح هي
 // المفتوحة. انظر docs/DECISIONS.md.
-import { motion } from 'framer-motion'
+import { motion } from 'motion/react'
 import { X } from '../../icons'
 import TripDetailPanel from '../admin/TripDetailPanel'
 import type { ComponentProps } from 'react'

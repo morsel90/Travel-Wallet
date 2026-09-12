@@ -28,8 +28,8 @@
   "dependencies": {
     "@sentry/react": "^10.70.0",
     "firebase": "^12.19.0",
-    "framer-motion": "^11.2.10",
     "lucide-react": "^1.44.0",
+    "motion": "^13.2.0",
     "qrcode-generator": "^2.0.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
