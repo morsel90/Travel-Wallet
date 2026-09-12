@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence } from 'motion/react'
 import { TRIP_ID, HAS_EXPLICIT_TRIP_ID, appHomeUrl } from './utils/tripId'
 import { haptic } from './utils/haptics'
 import { useAppCoordinator } from './hooks/useAppCoordinator'

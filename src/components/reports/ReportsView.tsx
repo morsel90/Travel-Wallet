@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { motion } from 'framer-motion'
+import { motion } from 'motion/react'
 // تمت إعادة استيراد أيقونة Printer
 import { X, Download, Printer, BarChart3, TrendingUp, Wallet, Receipt, Scale, ArrowRightLeft, CalendarRange } from '../../icons'
 import type { Expense, Traveler, TravelerBalance, Settlement, CategoryTotal, ItinerarySegment, PeriodKey } from '../../types'

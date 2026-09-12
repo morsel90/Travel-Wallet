@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence } from 'motion/react'
 import { PieChart, Loader2, ChevronDown, Luggage } from '../icons'
 import { useHeaderCollapse } from '../hooks/useHeaderCollapse'
 import { haptic } from '../utils/haptics'

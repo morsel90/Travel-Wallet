@@ -1,7 +1,7 @@
 // TravelerProfileModal.tsx
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { motion } from 'framer-motion'
+import { motion } from 'motion/react'
 import { X, Wallet, Receipt, Scale, Download, Printer, HandCoins, DoorOpen, RefreshCw, Landmark, Pencil, Plus, Minus, Target, Check } from '../../icons'
 import type { Expense, Traveler, TravelerBalance, Settlement, PeriodKey, DepositMode } from '../../types'
 import type { TimelineRow } from '../../utils/reportData'
