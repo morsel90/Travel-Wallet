@@ -20,6 +20,7 @@
 // (users/{organizerUid})، تُقرأ حيّة عبر useOrganizerBankDetails، لا تُكتب على
 // مستند الرحلة إطلاقاً. انظر docs/DECISIONS.md.
 import { useState, useCallback } from 'react'
+import * as Sentry from '@sentry/react'
 import { setDoc, getDoc, getDocs } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, functions } from '../firebase'
@@ -29,7 +30,7 @@ import {
 import { haptic } from '../utils/haptics'
 import { MAX_SEGMENTS, deriveTripType, normalizeItineraryRev } from '../utils/itinerary'
 import { currentPeriodKey } from '../utils/period'
-import { buildTripBackup, downloadTripBackup } from '../utils/backup'
+import { buildTripBackup, downloadTripBackup, BackupNotPortableError } from '../utils/backup'
 import { TRIP_STATUS_LABEL } from '../types'
 import type { DepositLogEntry, Expense, ItinerarySegment, ToastMessage, Traveler, TripStatus, TripType } from '../types'
 import type { TripSummary } from './useAllTrips'
@@ -598,6 +599,16 @@ export function useTripAdminActions({
       return true
     } catch (err) {
       haptic.error()
+      // 🆕 خطأ بيانات لا خطأ Firestore: handleFirestoreError لا يجد له code
+      // فيعرض نصاً عاماً بلا موضع. المسار هو ما يحتاجه من سيصلح المستند.
+      if (err instanceof BackupNotPortableError) {
+        Sentry.captureException(err, { tags: { source: 'backup-export' }, extra: { tripId: trip.id } })
+        showToast({
+          text: `لم تُنزَّل النسخة: في "${trip.name}" قيمة لن تُستعاد كما هي عند ${err.path}.`,
+          type: 'error',
+        }, 8000)
+        return false
+      }
       handleFirestoreError(err, 'تعذّر تنزيل النسخة الاحتياطية.')
       return false
     } finally {

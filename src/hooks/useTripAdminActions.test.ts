@@ -270,6 +270,29 @@ describe('exportBackup', () => {
     expect(result.current.isSaving).toBe(false)
     expect(mocks.downloadTripBackup).not.toHaveBeenCalled()
   })
+
+  // 🆕 مستند عُدِّل من الكونسول يحمل Timestamp بدل رقم — الملف يُرفض قبل
+  // التنزيل، والرسالة تسمّي الموضع لا نصاً عاماً.
+  it('قيمة لا تنجو من JSON تمنع التنزيل، والرسالة تسمّي موضعها', async () => {
+    class Timestamp { constructor(readonly seconds: number) {} }
+    mocks.getDocs.mockImplementation((ref: { _tag?: string }) => Promise.resolve(
+      ref._tag === 'travelers'
+        ? { docs: [{ id: '1', data: () => ({ id: 1, name: 'أحمد', shortName: 'أحمد', deposited: 0, deletedAt: new Timestamp(1) }) }] }
+        : { docs: [] },
+    ))
+    const { result } = setup()
+    let ok
+    await act(async () => { ok = await result.current.exportBackup(tripSummary) })
+
+    expect(ok).toBe(false)
+    expect(mocks.downloadTripBackup).not.toHaveBeenCalled()
+    expect(handleFirestoreError).not.toHaveBeenCalled()
+    const toast = showToast.mock.calls[0][0]
+    expect(toast.type).toBe('error')
+    expect(toast.text).toContain('$.travelers[0].deletedAt')
+    expect(toast.text).toContain('رحلة تركيا')
+    expect(result.current.isSaving).toBe(false)
+  })
 })
 
 // 🆕 الترقية التلقائية لـ tripType (standard → long_term) عند تجاوز مدّة
