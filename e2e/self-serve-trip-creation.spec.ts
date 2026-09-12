@@ -91,8 +91,19 @@ test('عضو بلا أي رحلة سابقة يملأ بروفايله، يُن�
   const nameInput = page.getByLabel('اسم الرحلة')
   await nameInput.fill('اسم عدّله المنظّم بعد الإنشاء')
   await page.getByRole('button', { name: 'حفظ التغييرات' }).click()
-  await expect(page.getByText('تم حفظ اسم الرحلة')).toBeVisible()
   await page.getByRole('button', { name: 'إغلاق تعديل الرحلة' }).click()
+  // ⚠️ الأثر الدائم لا الإشعار العابر — وهذا كان أضيق الأربعة: توست النجاح هنا
+  // يمرّ بلا مدّة صريحة فيأخذ الافتراضي 2500ms (showToast في useAppCoordinator)،
+  // لا 5000 كتوستات الحذف الليّن.
+  //
+  // ⚠️ والتحديد بزرّ هيدر التطبيق تحديداً، لا بـ`getByRole('heading')` المجرّد:
+  // اسم الرحلة يظهر في <h1> هيدر التطبيق **و**<h1> هيدر المودال معاً، والمودال
+  // يبقى في DOM لحظةً بعد الإغلاق (حركة خروج AnimatePresence) — فالمجرّد يسقط
+  // بـ«strict mode violation: resolved to 2 elements». نفس الالتباس عولج في
+  // delete-empty-trip.spec.ts بتصفية هيدر المودال بمعرّف الرحلة.
+  await expect(page.getByRole('button', { name: 'قائمة الرحلة' })).toContainText(
+    'اسم عدّله المنظّم بعد الإنشاء',
+  )
 
   // ── جوهر الميزة: يعدّل بروفايله (لا الرحلة) — عبر AccountMenu المتاحة الآن
   // بعد الانضمام لرحلة — والتغيير ينعكس على بطاقة التحويل فوراً، بلا أي حفظ
