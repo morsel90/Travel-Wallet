@@ -6,6 +6,19 @@
 
 ---
 
+## آخر تحديث: 2026-09-12 (١٦)
+
+### What changed on 2026-09-12 — حدّ Firebase صار قاعدة lint، والنسخة الاحتياطية تُفحَص استقلاليتها
+
+- **`AppUser`** (`src/types.ts`) يحلّ محلّ `User` من `firebase/auth` في `store/tripStore.ts` و`store/TripStoreProvider.tsx`. المخزن والمكوّنات لا تقرأ إلا `uid`. وسقط معه التحويلان `as unknown as User` و`as never` من `TravelerCard.stories.tsx` و`ExpenseForm.stories.tsx`.
+- **`no-restricted-imports`** في `eslint.config.js`: لا `firebase/*` ولا `../firebase`/`../firestore` في `src/` خارج `src/hooks/`. كانت هذه أول مخالفة للقاعدة في الكود، وأُصلحت في التغيير نفسه.
+- **لماذا قاعدة لا طبقة repository:** انظر المدخلة في [docs/DECISIONS.md](docs/DECISIONS.md).
+- **النسخة الاحتياطية تُفحَص عند التصدير:** `buildTripBackup` يرفض أي قيمة لا تنجو من JSON كما هي (`Timestamp`، `Date`، `NaN`، `Infinity`، `undefined` داخل مصفوفة)، و`exportBackup` يعرض موضعها بدل تنزيل ملف سترفضه الاستعادة. اختبار جديد يثبت أن الملف وحده، بعد تمريره عبر JSON، يعيد إنتاج الأرصدة والتسويات. وفحص الإنتاج (قراءة فقط) وجد صفر مخالفات في 255 مستنداً.
+
+التحقّق: `lint` و`typecheck` نجحا، وكل الاختبارات. والحالتان السالبتان جُرّبتا فعلاً: ملفات lint تجريبية حُذفت بعدها، وتعطيل حارس النسخة أسقط 6 اختبارات.
+
+---
+
 ## آخر تحديث: 2026-09-12 (١٥)
 
 ### What changed on 2026-09-12 — تأكيدات دائمة بدل إشعارات عابرة في E2E

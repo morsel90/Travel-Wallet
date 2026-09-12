@@ -1,7 +1,6 @@
 import { useLayoutEffect, useState } from 'react'
 import type { ReactNode, Dispatch, FormEvent, SetStateAction } from 'react'
-import type { User } from 'firebase/auth'
-import type { Traveler, Expense, ExpenseFormData, CurrencyMap } from '../types'
+import type { Traveler, Expense, ExpenseFormData, CurrencyMap, AppUser } from '../types'
 import { createTripStore, TripStoreContext } from './tripStore'
 import type { TripActionsSlice } from './tripStore'
 
@@ -40,7 +39,7 @@ interface TripStoreProviderProps {
   // — data
   travelers: Traveler[]
   expenses: Expense[]
-  user: User | null
+  user: AppUser | null| null
   isAdmin: boolean
   isOrganizer: boolean
   currencies: CurrencyMap

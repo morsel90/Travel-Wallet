@@ -2,8 +2,7 @@ import { createContext, useContext } from 'react'
 import { createStore } from 'zustand/vanilla'
 import { useStore } from 'zustand'
 import type { Dispatch, SetStateAction, FormEvent } from 'react'
-import type { User } from 'firebase/auth'
-import type { Traveler, Expense, ExpenseFormData, CurrencyMap } from '../types'
+import type { Traveler, Expense, ExpenseFormData, CurrencyMap, AppUser } from '../types'
 import type { DepositSubmission } from '../hooks/useDepositActions'
 
 // ─── مخزن Zustand بدل ثلاث React Contexts ────────────────────────────────────
@@ -25,7 +24,7 @@ import type { DepositSubmission } from '../hooks/useDepositActions'
 export interface TripDataSlice {
   travelers: Traveler[]
   expenses: Expense[]
-  user: User | null
+  user: AppUser | null| null
   isAdmin: boolean
   /** 🆕 منظّم الرحلة الحالية (docs/PLAN-member-management.md المرحلة ٣) —
    *  محسوبة أصلاً في useAppCoordinator، تُضاف هنا لتصل TravelerSection/

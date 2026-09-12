@@ -1,5 +1,4 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import type { User } from 'firebase/auth'
 import { TravelerCard } from '../components/TravelerSection'
 import { withContext, withAdminContext, Providers } from './decorators'
 import * as fx from '../fixtures'
@@ -89,7 +88,7 @@ export const بطاقتي_الشخصية: Story = {
         data={{
           travelers: fx.travelersWithMine,
           expenses: fx.expensesWithMine,
-          user: { uid: fx.MY_UID } as unknown as User,
+          user: { uid: fx.MY_UID },
         }}
       >
         <Story />

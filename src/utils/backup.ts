@@ -12,6 +12,64 @@
 //     لأحد وصوله (العضوية الفعلية في custom claims حساب كل عضو لا Firestore)
 import type { DepositLogEntry, Expense, ItinerarySegment, Traveler, TripStatus } from '../types'
 
+// 🆕 الملف مستقل عن Firestore — وهذا شرط يُفحَص عند التصدير، لا افتراض.
+//
+// النسخة هي تأمين الخروج الوحيد من Firebase (انظر docs/DECISIONS.md: «حدّ
+// Firebase يُفرَض بقاعدة lint»)، فيجب أن تُقرأ وتُعاد بناؤها بلا أي SDK. الأنواع
+// أعلاه تَعِد بذلك، لكن `d.data() as Traveler` في useTripAdminActions تحويلٌ لا
+// تحقّق: مستند عُدِّل يدوياً من الكونسول أو بسكربت قد يحمل Timestamp أو
+// DocumentReference، وJSON.stringify يحوّلها بصمت إلى `{seconds, nanoseconds}`
+// أو `{}`، وNaN إلى null. لا شيء يظهر عند التصدير. الفشل يظهر عند الاستعادة
+// (restoreTrip يرفض deletedAt غير الرقمي) — أي في أسوأ لحظة ممكنة، بعد ضياع
+// الأصل. لذا التصدير يرفض الملف فوراً ويسمّي موضع القيمة.
+//
+// المقبول: null، نص، منطقي، رقم منتهٍ، مصفوفة، وكائن عادي. أي نسخة كائن من
+// صنف (Timestamp، Date، GeoPoint، Bytes…) مرفوضة. لا حاجة لاستيراد Firebase
+// لتمييزها: كائنات SDK كلها أصناف، ونموذج البيانات هنا لا يحوي صنفاً واحداً.
+// `undefined` مقبول كقيمة خاصية فقط — يسقط المفتاح، وهو نفس معنى الحقل
+// الاختياري الغائب — ومرفوض داخل مصفوفة لأنه يصير null هناك.
+
+export class BackupNotPortableError extends Error {
+  readonly path: string
+  constructor(path: string, found: string) {
+    super(`قيمة لا تنجو من JSON كما هي عند ${path} (${found})`)
+    this.name = 'BackupNotPortableError'
+    this.path = path
+  }
+}
+
+function describeValue(v: unknown): string {
+  if (typeof v === 'number') return String(v)
+  if (typeof v === 'object' && v !== null) return v.constructor?.name ?? 'object'
+  return typeof v
+}
+
+/** مسار أول قيمة لا تُحفظ في JSON كما هي، أو null إن كان كل شيء قابلاً للنقل. */
+export function findNonPortableValue(value: unknown, path = '$'): { path: string; found: string } | null {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return null
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? null : { path, found: describeValue(value) }
+  }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      const hit = findNonPortableValue(value[i], `${path}[${i}]`)
+      if (hit) return hit
+    }
+    return null
+  }
+  if (typeof value === 'object') {
+    const proto = Object.getPrototypeOf(value)
+    if (proto !== Object.prototype && proto !== null) return { path, found: describeValue(value) }
+    for (const [k, v] of Object.entries(value)) {
+      if (v === undefined) continue
+      const hit = findNonPortableValue(v, `${path}.${k}`)
+      if (hit) return hit
+    }
+    return null
+  }
+  return { path, found: describeValue(value) }
+}
+
 export const BACKUP_SCHEMA_VERSION = 1 as const
 
 // 🆕 لا bankDetails في trip هنا بعد اليوم — بيانات البنك مصدرها الوحيد بروفايل
@@ -43,9 +101,10 @@ export interface BuildTripBackupParams {
   travelerNames: Array<{ shortName: string; travelerId: number }>
 }
 
-/** دالة نقية — لا قراءة Firestore هنا، فقط تجميع الشكل النهائي. */
+/** دالة نقية — لا قراءة Firestore هنا، فقط تجميع الشكل النهائي. ترمي
+ *  BackupNotPortableError إن حوى المُدخل قيمة لا تنجو من JSON (انظر أعلاه). */
 export function buildTripBackup(params: BuildTripBackupParams): TripBackup {
-  return {
+  const backup: TripBackup = {
     schemaVersion: BACKUP_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     tripId: params.tripId,
@@ -55,6 +114,9 @@ export function buildTripBackup(params: BuildTripBackupParams): TripBackup {
     depositLogs: params.depositLogs,
     travelerNames: params.travelerNames,
   }
+  const hit = findNonPortableValue(backup)
+  if (hit) throw new BackupNotPortableError(hit.path, hit.found)
+  return backup
 }
 
 export function backupFilename(tripId: string): string {
