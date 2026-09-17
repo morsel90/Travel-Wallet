@@ -4,14 +4,16 @@ import { haptic } from '../utils/haptics'
 
 // 🆕 حالة فارغة عامة (Empty State) قابلة لإعادة الاستخدام — تُعرض بدلاً من الشاشات
 // البيضاء المربكة عندما لا توجد بيانات بعد (رحلة جديدة بلا مسافرين/مصاريف).
-// تتضمّن أيقونة ودّية + عنوان ووصف بالعربية + زر إجراء أساسي اختياري.
+// تتضمّن أيقونة ودّية + عنوان + زر إجراء أساسي اختياري. الوصف اختياري ويُترك غالباً:
+// العنوان يقول ما الحال والزر يقول الخطوة التالية، فلا حاجة لفقرة تشرحهما. يُستعمل
+// الوصف فقط حين لا زرّ والخطوة التالية ليست واضحة من الشاشة — وسطراً قصيراً واحداً.
 // الأيقونات تُمرَّر من الأعلى (المستوردة من src/icons.ts) التزاماً بقاعدة المشروع
 // بعدم استيراد أيقونات lucide-react مباشرةً داخل المكوّنات — هنا نستورد النوع فقط.
 
 interface EmptyStateProps {
   Icon: LucideIcon
   title: string
-  description: string
+  description?: string
   actionLabel?: string
   onAction?: () => void
   ActionIcon?: LucideIcon
@@ -23,8 +25,8 @@ export const EmptyState = memo(({ Icon, title, description, actionLabel, onActio
       <Icon className="w-8 h-8" />
     </div>
 
-    <h3 className="text-base sm:text-lg font-bold text-slate-800 mb-1.5">{title}</h3>
-    <p className="text-sm text-slate-500 max-w-xs leading-relaxed mb-5">{description}</p>
+    <h3 className={`text-base sm:text-lg font-bold text-slate-800 ${description ? 'mb-1.5' : 'mb-4'}`}>{title}</h3>
+    {description && <p className="text-sm text-slate-500 max-w-xs leading-relaxed mb-5">{description}</p>}
 
     {actionLabel && onAction && (
       <button

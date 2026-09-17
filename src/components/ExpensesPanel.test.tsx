@@ -29,18 +29,18 @@ describe('ExpensesPanel — نقاط الدخول', () => {
     expect(screen.queryByRole('button', { name: 'سلة المهملات' })).not.toBeInTheDocument()
   })
 
-  it('الحالة الفارغة تقود إلى تسجيل أول مصروف — الفعل الوحيد الباقي في القسم', async () => {
+  it('الحالة الفارغة تقود إلى إضافة مصروف — الفعل الوحيد الباقي في القسم', async () => {
     const onOpenExpenseForm = vi.fn()
     render(<ExpensesPanel {...baseProps} onOpenExpenseForm={onOpenExpenseForm} />)
 
     expect(screen.getByText('لا توجد مصاريف بعد')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: /سجّل أول مصروف/ }))
+    await userEvent.click(screen.getByRole('button', { name: /إضافة مصروف/ }))
     expect(onOpenExpenseForm).toHaveBeenCalledTimes(1)
   })
 
-  it('رحلة مغلقة: لا زرّ تسجيل — النص يشرح أنها أُغلقت لا أنها لم تبدأ', () => {
+  it('رحلة مغلقة: لا زرّ إضافة — العنوان يقول «في هذه الرحلة» لا «بعد»', () => {
     render(<ExpensesPanel {...baseProps} canAddExpenses={false} />)
     expect(screen.getByText('لا توجد مصاريف في هذه الرحلة')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /سجّل أول مصروف/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /إضافة مصروف/ })).not.toBeInTheDocument()
   })
 })

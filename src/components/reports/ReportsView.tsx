@@ -273,7 +273,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
         {activeTab === 'daily' && (
           <section className="bg-white rounded-2xl shadow-xs border border-slate-200 overflow-hidden">
             {daily.length === 0 ? (
-              <p className="text-center text-slate-400 font-medium text-sm py-10">لا توجد مصاريف بعد.</p>
+              <p className="text-center text-slate-400 font-medium text-sm py-10">لا توجد مصاريف بعد</p>
             ) : (
               <div className="divide-y divide-slate-100">
                 <div className="grid grid-cols-4 gap-2 px-4 py-2.5 bg-slate-50/50 text-[11px] font-bold text-slate-400">
@@ -393,7 +393,7 @@ function SummaryBody({
           <ArrowRightLeft className="w-5 h-5 text-teal-600" /> التسويات المقترحة
         </h2>
         {settlements.length === 0 ? (
-          <p className="text-center text-slate-400 font-medium text-sm py-4">🎉 لا توجد تسويات مطلوبة — الأرصدة متساوية.</p>
+          <p className="text-center text-slate-400 font-medium text-sm py-4">🎉 الحسابات مصفّاة</p>
         ) : (
           <div className="grid gap-2.5 sm:grid-cols-2">
             {settlements.map((s, i) => (

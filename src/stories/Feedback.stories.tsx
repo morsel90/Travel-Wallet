@@ -92,8 +92,7 @@ export const فارغ_لا_مسافرون: EmptyStory = {
     <EmptyState
       Icon={Users}
       title="لا يوجد مسافرون بعد"
-      description="أضف المسافرين المشاركين في الرحلة لتتمكّن من توزيع المصاريف وحساب من يدين لمن."
-      actionLabel="إضافة أول مسافر"
+      actionLabel="إضافة مسافر"
       onAction={() => console.log('[story] إضافة مسافر')}
       ActionIcon={Plus}
     />
@@ -105,8 +104,7 @@ export const فارغ_لا_مصاريف: EmptyStory = {
     <EmptyState
       Icon={Receipt}
       title="لا توجد مصاريف بعد"
-      description="ابدأ بتسجيل أول مصروف للرحلة، وسيتولّى التطبيق حساب حصة كل مسافر تلقائياً."
-      actionLabel="سجّل أول مصروف"
+      actionLabel="إضافة مصروف"
       onAction={() => console.log('[story] تسجيل مصروف')}
       ActionIcon={Plus}
     />
@@ -119,7 +117,6 @@ export const فارغ_بلا_إجراء: EmptyStory = {
     <EmptyState
       Icon={Route}
       title="لا يوجد مسار بعد"
-      description="أضف رحلات الطيران أو التنقلات البرية ليظهر للمسافرين المقطع القادم وموعده."
     />
   ),
 }

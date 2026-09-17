@@ -13,4 +13,10 @@ describe('EmptyState Component', () => {
     expect(screen.getByText(testTitle)).toBeInTheDocument()
     expect(screen.getByText(testDesc)).toBeInTheDocument()
   })
+
+  it('بلا وصف لا تُرسم فقرة فارغة — العنوان والزر يكفيان', () => {
+    const { container } = render(<EmptyState Icon={Inbox} title="لا توجد مصاريف بعد" actionLabel="إضافة مصروف" onAction={() => {}} />)
+    expect(container.querySelector('p')).toBeNull()
+    expect(screen.getByRole('button', { name: 'إضافة مصروف' })).toBeInTheDocument()
+  })
 })

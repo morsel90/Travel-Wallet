@@ -134,7 +134,7 @@ export async function openFromMoreMenu(page: Page, itemName: string): Promise<vo
 
 /** يضيف مسافراً عبر النموذج — يتطلب وضع المسؤول مفعّلاً مسبقاً (openTripAsAdmin). */
 export async function addTraveler(page: Page, name: string, deposit?: string): Promise<void> {
-  await page.getByRole('button', { name: /إضافة (أول مسافر|مسافر جديد)/ }).click()
+  await page.getByRole('button', { name: /^إضافة مسافر( جديد)?$/ }).click()
   await page.getByPlaceholder('مثال: سعد الغامدي').fill(name)
   if (deposit) await page.getByPlaceholder('0.00').first().fill(deposit)
   await page.getByRole('button', { name: 'اعتماد المسافر الجديد' }).click()

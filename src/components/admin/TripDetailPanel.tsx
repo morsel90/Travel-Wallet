@@ -728,8 +728,7 @@ export default function TripDetailPanel({
               <EmptyState
                 Icon={Route}
                 title="لا يوجد مسار بعد"
-                description="أضف رحلات الطيران أو التنقلات البرية ليظهر للمسافرين المقطع القادم وموعده."
-                actionLabel="إضافة أول مقطع"
+                actionLabel="إضافة مقطع"
                 onAction={startAdd}
                 ActionIcon={Plus}
               />
@@ -910,7 +909,7 @@ export default function TripDetailPanel({
             <EmptyState
               Icon={UserCheck}
               title="لا أحد في السجلّ بعد"
-              description="يُضاف المسافرون من صفحة الرحلة الرئيسية، أو تلقائياً عند الانضمام برابط دعوة."
+              description="يُضافون من صفحة الرحلة أو برابط دعوة."
             />
           )}
 
@@ -1017,7 +1016,7 @@ export default function TripDetailPanel({
                       <div className="mt-3 pt-3 border-t border-teal-200 space-y-2.5">
                         {unlinkedMembers.length === 0 ? (
                           <p className="text-xs text-slate-500">
-                            لا يوجد منضمّ غير مربوط بعد — كل من انضمّ للرحلة مربوط بمسافر بالفعل.
+                            كل من انضمّ مربوط بمسافر.
                           </p>
                         ) : (
                           <>

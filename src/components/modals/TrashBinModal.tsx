@@ -67,7 +67,7 @@ export default function TrashBinModal({
       <div className="overflow-y-auto max-h-[50dvh] space-y-2.5 pl-1" dir="rtl">
         {activeTab === 'expenses' ? (
           deletedExpenses.length === 0 ? (
-            <div className="text-center text-slate-400 py-12 text-sm font-medium">لا توجد مصاريف محذوفة حالياً.</div>
+            <div className="text-center text-slate-400 py-12 text-sm font-medium">لا توجد مصاريف محذوفة</div>
           ) : (
             deletedExpenses.map(exp => (
               <div key={exp.id} className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex justify-between items-center gap-4">
@@ -94,7 +94,7 @@ export default function TrashBinModal({
           )
         ) : (
           deletedTravelers.length === 0 ? (
-            <div className="text-center text-slate-400 py-12 text-sm font-medium">لا يوجد مسافرون محذوفون حالياً.</div>
+            <div className="text-center text-slate-400 py-12 text-sm font-medium">لا يوجد مسافرون محذوفون</div>
           ) : (
             deletedTravelers.map(t => (
               <div key={t.id} className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex justify-between items-center gap-4">

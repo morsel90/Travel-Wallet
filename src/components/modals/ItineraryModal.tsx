@@ -53,8 +53,7 @@ export default function ItineraryModal({ itinerary, onEditItinerary, onClose }: 
       ) : (
         <EmptyState
           Icon={Route}
-          title="لا يوجد مسار لهذه الرحلة"
-          description="أضف مقاطع التنقّل (طيران، سيارة، قطار، حافلة) من «إدارة الرحلة» ليظهر هنا مع عدّ تنازلي للمقطع القادم."
+          title="لا يوجد مسار بعد"
           actionLabel={onEditItinerary ? 'إدارة الرحلة' : undefined}
           onAction={onEditItinerary}
           ActionIcon={onEditItinerary ? Route : undefined}
