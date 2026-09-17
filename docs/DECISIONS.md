@@ -685,7 +685,7 @@ Two implementation details worth keeping:
 
 **Still missing on purpose:** no invite records, no per-trip organizer role. That is phase 3 of `docs/PLAN-member-management.md`.
 
-⚠️ 🆕 **`components/admin/QrCode.tsx` and its test were deleted** when the PIN was removed entirely (see the entry below) — the manual "scan + tell them the PIN separately" flow it served no longer has a PIN to pair with. The reasoning above is kept as history for the `qrcode-generator` dependency choice itself, which is otherwise unexplained if the component is ever reintroduced (e.g. for an invite link).
+⚠️ 🆕 **`components/admin/QrCode.tsx` and its test were deleted** when the PIN was removed entirely (see the entry below) — the manual "scan + tell them the PIN separately" flow it served no longer has a PIN to pair with. The reasoning above is kept for the day QR returns (e.g. for an invite link). 🆕 On 2026-09-17 the `qrcode-generator` package itself was uninstalled too — nothing had imported it since this deletion. Reinstall it rather than hand-rolling QR if the component comes back.
 
 ### 🆕 PIN access and anonymous sessions are removed entirely — mandatory Google/Email sign-in
 
