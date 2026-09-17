@@ -43,7 +43,7 @@ export default function ChartsModal({
         <EmptyState
           Icon={PieChart}
           title="لا توجد إحصائيات بعد"
-          description="سجّل أول مصروف للرحلة لعرض توزيع المصاريف حسب الفئة وتطوّرها الزمني."
+          description="تظهر بعد أول مصروف."
         />
       )}
     </Modal>

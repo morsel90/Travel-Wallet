@@ -278,9 +278,8 @@ const TripPicker = ({
               <Luggage className="w-7 h-7 text-slate-400" />
             </div>
             <h2 className="font-bold text-slate-800 mb-2">لم تنضم لأي رحلة بعد</h2>
-            <p className="text-sm text-slate-500 leading-relaxed">
-              للانضمام لرحلة قائمة، اطلب رابط دعوة من منظّمها. أو أنشئ رحلتك
-              الخاصة الآن وادعُ رفاقك إليها.
+            <p className="text-sm text-slate-500">
+              انضم برابط دعوة، أو أنشئ رحلتك.
             </p>
             <button
               type="button"

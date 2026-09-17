@@ -178,15 +178,12 @@ export const ExpensesPanel = ({
         <EmptyState
           Icon={Receipt}
           title={canAddExpenses ? 'لا توجد مصاريف بعد' : 'لا توجد مصاريف في هذه الرحلة'}
-          description={canAddExpenses
-            ? 'ابدأ بتسجيل أول مصروف للرحلة، وسيتولّى التطبيق حساب نصيب كل مسافر تلقائياً.'
-            : 'أُغلقت هذه الرحلة دون تسجيل أي مصروف فيها.'}
-          actionLabel={canAddExpenses ? 'سجّل أول مصروف' : undefined}
+          actionLabel={canAddExpenses ? 'إضافة مصروف' : undefined}
           onAction={canAddExpenses ? onOpenExpenseForm : undefined}
           ActionIcon={canAddExpenses ? Plus : undefined}
         />
       ) : filteredExpenses.length === 0 ? (
-        <div className="p-8 text-center text-slate-400 font-medium bg-white rounded-2xl shadow-xs">لا توجد نتائج لـ "{searchQuery}"</div>
+        <div className="p-8 text-center text-slate-400 font-medium bg-white rounded-2xl shadow-xs">لا نتائج لـ "{searchQuery}"</div>
       ) : (
         <Virtuoso
           ref={virtuosoRef}

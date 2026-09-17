@@ -307,16 +307,16 @@ describe('App — الحالات الفارغة', () => {
     expect(await screen.findByText('لا يوجد مسافرون بعد')).toBeInTheDocument()
   })
 
-  it('زر إضافة أول مسافر يظهر للمسؤول فقط', async () => {
+  it('زر إضافة مسافر يظهر للمسؤول فقط', async () => {
     render(<App />)
     await screen.findByText('لا يوجد مسافرون بعد')
-    expect(screen.queryByText('إضافة أول مسافر')).not.toBeInTheDocument()
+    expect(screen.queryByText('إضافة مسافر')).not.toBeInTheDocument()
   })
 
-  it('المسؤول يرى زر إضافة أول مسافر وأزرار الإدارة', async () => {
+  it('المسؤول يرى زر إضافة مسافر وأزرار الإدارة', async () => {
     h.auth = { ...h.auth, isAdmin: true }
     render(<App />)
-    expect(await screen.findByText('إضافة أول مسافر')).toBeInTheDocument()
+    expect(await screen.findByText('إضافة مسافر')).toBeInTheDocument()
     // 🆕 السلة انتقلت من ذيل سجلّ المصاريف إلى «المزيد» — موضع لا يعتمد على
     // حالة القائمة، فيُرى في كل الحالات لا في حالة القائمة وحدها (القاعدة ١٧).
     openMoreMenu()

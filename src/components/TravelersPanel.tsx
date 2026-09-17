@@ -62,8 +62,7 @@ export const TravelersPanel = ({
       <EmptyState
         Icon={Users}
         title="لا يوجد مسافرون بعد"
-        description="أضف المسافرين المشاركين في الرحلة لتتمكّن من توزيع المصاريف وحساب من يدين لمن."
-        actionLabel={isAdmin ? 'إضافة أول مسافر' : undefined}
+        actionLabel={isAdmin ? 'إضافة مسافر' : undefined}
         onAction={isAdmin ? onStartAddTraveler : undefined}
         ActionIcon={isAdmin ? Plus : undefined}
       />

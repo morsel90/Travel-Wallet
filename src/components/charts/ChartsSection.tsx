@@ -90,7 +90,7 @@ function ChartsSection({ categoryTotals, spendingTrend }: ChartsSectionProps) {
           <div className="relative border-r-2 border-slate-100 ms-3 space-y-5 py-2">
             {spendingTrend.length === 0 ? (
               <div className="text-center py-6 text-slate-400 font-medium text-sm border-r-0">
-                لا توجد بيانات زمنية متاحة بعد.
+                لا توجد بيانات زمنية بعد
               </div>
             ) : (
               spendingTrend.map((point, idx) => (

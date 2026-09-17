@@ -67,11 +67,11 @@ export const SettlementsPanel = ({
         <EmptyState
           Icon={ArrowRightLeft}
           title="لا توجد أرصدة بعد"
-          description="سجّل أول مصروف للرحلة، وسيحسب التطبيق تلقائياً من يدين لمن وبكم — بأقل عدد ممكن من التحويلات."
+          description="تظهر بعد أول مصروف."
         />
       ) : settlements.length === 0 ? (
         <div className="bg-white rounded-2xl shadow-xs border border-slate-200 py-8 text-center text-slate-400 font-medium text-sm">
-          🎉 جميع الحسابات مصفّاة والأرصدة متساوية تماماً!
+          🎉 الحسابات مصفّاة
         </div>
       ) : (
         <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
