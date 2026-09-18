@@ -247,14 +247,42 @@ describe('useAuth', () => {
       expect(result.current.isSigningIn).toBe(false)
     })
 
-    it('إلغاء المستخدم للنافذة (popup-closed-by-user) لا يُعرَض كخطأ', async () => {
+    // 🐛 هذا الاختبار كان يثبّت الصمت: `popup-closed-by-user` تُرمى أيضاً حين
+    // يختار المستخدم حسابه ثم تفقد الجلسةُ طريقها إلى التطبيق (تقسيم تخزين،
+    // حاجب إعلانات) — وهي شكوى مستخدم حقيقية: «يرجعني لنقطة البداية دون أي
+    // خطأ». لا سبيل للتمييز من العميل، فالصمت خيار خاطئ في الحالتين: من ألغى
+    // لا يضرّه سطر هادئ، ومن فشل دخوله يحتاجه.
+    it('النافذة أُغلقت أو لم تكتمل الجلسة: رسالة تسمّي المخرج بدل الصمت', async () => {
       mocks.signInWithPopup.mockRejectedValue(authError('auth/popup-closed-by-user'))
       const { result } = renderHook(() => useAuth())
 
       await act(async () => { await result.current.signInWithGoogle() })
 
-      expect(result.current.signInError).toBeNull()
+      expect(result.current.signInError).toContain('لم يكتمل الدخول')
+      expect(result.current.signInError).toContain('البريد الإلكتروني')
+      // ⚠️ ولا تراجع تلقائي إلى التوجيه: من ألغى عن قصد لا يصحّ أن تُغادر به
+      // الصفحة إلى Google جزاءَ إلغائه.
       expect(mocks.signInWithRedirect).not.toHaveBeenCalled()
+    })
+
+    // 🆕 نافذة خاصة أو «منع التتبّع» — المتصفح يمنع التخزين الذي يحتاجه SDK.
+    it('تخزين المتصفح ممنوع: رسالة تسمّي البريد كمخرج', async () => {
+      mocks.signInWithPopup.mockRejectedValue(authError('auth/web-storage-unsupported'))
+      const { result } = renderHook(() => useAuth())
+
+      await act(async () => { await result.current.signInWithGoogle() })
+
+      expect(result.current.signInError).toContain('يمنع التخزين')
+      expect(mocks.signInWithRedirect).not.toHaveBeenCalled()
+    })
+
+    it('إلغاء بنافذة أخرى (cancelled-popup-request) يبقى صامتاً', async () => {
+      mocks.signInWithPopup.mockRejectedValue(authError('auth/cancelled-popup-request'))
+      const { result } = renderHook(() => useAuth())
+
+      await act(async () => { await result.current.signInWithGoogle() })
+
+      expect(result.current.signInError).toBeNull()
     })
 
     // ⚠️ هذا هو مسار متصفحات واتساب/تيليجرام المدمجة — النافذة المنبثقة غير
