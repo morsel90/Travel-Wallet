@@ -23,23 +23,29 @@ interface SettlementsPanelProps {
   travelers: Traveler[]
   /** لا مصاريف بعد = لا معنى لعرض «كل الحسابات مصفّاة» (لا حسابات أصلاً). */
   hasExpenses: boolean
+  /**
+   * 🆕 منظّم الرحلة أو المسؤول وحدهما — نفس حدّ `callerManagesTrip` خادمياً.
+   * غيابه يُخفي الزرّ: بقية المسافرين يقرأون «من يدفع لمن» ولا يسجّلون.
+   */
+  onRecordTransfer?: (settlement: Settlement) => void
+  /** مفتاح التسوية الجاري تسجيلها (`fromId→toId`) — يعطّل زرّها وحده. */
+  recordingKey?: string | null
 }
 
 export const SettlementsPanel = ({
-  isInitialLoading, settlements, travelers, hasExpenses,
+  isInitialLoading, settlements, travelers, hasExpenses, onRecordTransfer, recordingKey,
 }: SettlementsPanelProps) => {
-  // 🆕 تتبّع محلي للتسويات التي "تم تحويلها" (لتظليلها بعد إتمام الدفع). هذه حالة
-  // واجهة بحتة غير محفوظة في Firestore — تُصفَّر عند إعادة تحميل الصفحة.
-  const [paidSettlements, setPaidSettlements] = useState<Set<string>>(new Set())
-  const settlementKey = (s: Settlement) => `${s.fromName}→${s.toName}`
-  const togglePaid = (key: string) => {
-    haptic.light()
-    setPaidSettlements(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key); else next.add(key)
-      return next
-    })
-  }
+  // 🆕 خطوة التأكيد وحدها هي ما يعيش محلياً هنا — التحويل نفسه يُسجَّل في الدفتر.
+  //
+  // ⚠️ كان هذا `paidSettlements: Set<string>` يُظلِّل السطر ولا شيء غير ذلك:
+  // «تم التحويل ✓» تُقرأ كأن الحركة سُجّلت، والدفتر لا يعرف عنها شيئاً، والتأشير
+  // يزول بإعادة التحميل ولا يراه جهاز آخر. الآن يكتب الخادم حركة موثّقة
+  // (recordSettlement) فتختفي التسوية من القائمة لأن الرصيدَين صارا صحيحَين.
+  //
+  // والتأكيد خطوة لأن الحركة مالية غير قابلة للتراجع بضغطة: نقرة واحدة تكشف
+  // «تأكيد» في السطر نفسه بلا نافذة — لا حقل ولا سؤال إضافي (القاعدة ٢٥).
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
+  const settlementKey = (s: Settlement) => `${s.fromId}→${s.toId}`
 
   // المشاركون قد يُخزَّنون كمعرّف رقمي (الصيغة الحالية) أو كاسم مختصر نصي
   // (مصاريف قديمة) — نفس اتحاد الأنواع المستخدم في Expense['participants'].
@@ -77,13 +83,14 @@ export const SettlementsPanel = ({
         <div className="grid gap-2.5 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {settlements.map((s, idx) => {
             const key = settlementKey(s)
-            const isPaid = paidSettlements.has(key)
+            const isPending = pendingKey === key
+            const isRecording = recordingKey === key
             return (
               <div
                 key={idx}
                 className={cn(
                   'flex flex-col gap-3 border rounded-2xl p-4 transition-all shadow-xs',
-                  isPaid ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-slate-200 hover:border-slate-300'
+                  isRecording ? 'bg-slate-50 border-slate-200 opacity-60' : 'bg-white border-slate-200 hover:border-slate-300'
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -105,18 +112,36 @@ export const SettlementsPanel = ({
                   </span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => togglePaid(key)}
-                  className={cn(
-                    'w-full py-2 rounded-xl text-xs font-bold transition-all active:scale-95',
-                    isPaid
-                      ? 'bg-slate-200 text-slate-500 hover:bg-slate-300'
-                      : 'bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-100'
-                  )}
-                >
-                  {isPaid ? 'تم التحويل ✓ (تراجع)' : 'تحديد كمُحوَّل'}
-                </button>
+                {onRecordTransfer && (
+                  isPending ? (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={isRecording}
+                        onClick={() => { haptic.light(); setPendingKey(null); onRecordTransfer(s) }}
+                        className="flex-1 py-2 rounded-xl text-xs font-bold bg-teal-600 text-white hover:bg-teal-700 transition-all active:scale-95 disabled:opacity-60"
+                      >
+                        {isRecording ? 'جارٍ التسجيل…' : `تأكيد تسجيل ${s.amount.toFixed(2)} ﷼`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { haptic.light(); setPendingKey(null) }}
+                        className="py-2 px-3 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all active:scale-95"
+                      >
+                        إلغاء
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={isRecording}
+                      onClick={() => { haptic.light(); setPendingKey(key) }}
+                      className="w-full py-2 rounded-xl text-xs font-bold bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-100 transition-all active:scale-95 disabled:opacity-60"
+                    >
+                      {isRecording ? 'جارٍ التسجيل…' : 'تسجيل التحويل'}
+                    </button>
+                  )
+                )}
               </div>
             )
           })}

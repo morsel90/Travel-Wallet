@@ -160,6 +160,11 @@ vi.mock('./hooks', async () => {
     isClosingMonth: false, isExitingTraveler: false,
     closeMonth: async () => null, exitTraveler: async () => false,
   }),
+  // 🆕 تسجيل التحويل — لا يُضغط زرّه هنا (السلوك محروس في
+  // SettlementsPanel.test.tsx)، لكن الخطاف يُستدعى في كل عرض فيجب أن يوجد.
+  useSettlementActions: () => ({
+    recordingKey: null, recordSettlement: async () => false,
+  }),
   }
 })
 

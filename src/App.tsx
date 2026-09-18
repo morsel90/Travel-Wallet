@@ -271,6 +271,8 @@ export default function App() {
                   settlements={ledger.settlements}
                   travelers={ledger.activeTravelers}
                   hasExpenses={ledger.activeExpenses.length > 0}
+                  onRecordTransfer={ledger.onRecordTransfer}
+                  recordingKey={ledger.recordingSettlementKey}
                 />
 
                 {/* 🆕 تفاصيل حساب المنظّم مباشرة تحت «الأرصدة» لا في عمود جانبي
