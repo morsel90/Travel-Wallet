@@ -289,6 +289,15 @@ Variables* for why hand-rolled `fetch` made a staging environment impossible.
 import { httpsCallable } from 'firebase/functions'
 import { functions } from './firebase'
 
+// 🆕 hooks/useSettlementActions.ts — records a transfer between two travelers as a
+// documented ledger movement (payer's `deposited` up, payee's down, one audit row each).
+// Organizer or global admin only; the server re-derives both balances and caps the
+// amount at min(debt, credit), so a stale screen cannot over-transfer.
+await httpsCallable<
+  { tripId: string; fromId: number; toId: number; amount: number },
+  { success: boolean; tripId: string; fromId: number; toId: number; amount: number }
+>(functions, 'recordSettlement')({ tripId, fromId, toId, amount })
+
 // 🆕 hooks/useInviteJoin.ts — requires a real (non-anonymous) sign-in first;
 // rejected with failed-precondition otherwise
 await httpsCallable<{ inviteToken: string }, { success: boolean; tripId: string; needsName?: boolean }>(
@@ -569,7 +578,7 @@ Three independent systems that must be deployed separately:
 |---|---|---|
 | Frontend | `vercel --prod` | SPA hosted on Vercel |
 | Firestore Rules | `firebase deploy --only firestore:rules` | Security rules |
-| Cloud Functions | `firebase deploy --only functions` | `manageTrip`, `manageInvite`, `joinViaInvite`, `updateMyTravelerName`, `linkTravelerAccount`, `manageMember`, 🆕 `restoreTrip` |
+| Cloud Functions | `firebase deploy --only functions` | `manageTrip`, `manageInvite`, `joinViaInvite`, `updateMyTravelerName`, `linkTravelerAccount`, `manageMember`, `restoreTrip`, 🆕 `recordSettlement` |
 
 **Important:** Always create the trip via `scripts/create-trip.mjs` before deploying rules that depend on it existing.
 

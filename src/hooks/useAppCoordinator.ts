@@ -1,11 +1,11 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import * as Sentry from '@sentry/react'
-import type { ToastMessage, Traveler } from '../types'
+import type { ToastMessage, Traveler, Settlement } from '../types'
 import {
   useAuth, usePasswordReset, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
   useTripAdminActions, useAllTrips, useMyTrips, useTripStats, useMyTripRole, useInviteJoin, useUserProfile,
-  useOrganizerBankDetails, useSyncTravelerNameFromProfile, useLongTermActions,
+  useOrganizerBankDetails, useSyncTravelerNameFromProfile, useLongTermActions, useSettlementActions,
   useSyncRecovery,
 } from './index'
 import { useFilteredExpenses } from './useFilteredExpenses'
@@ -308,6 +308,16 @@ export function useAppCoordinator() {
   // هنا إطلاقاً؛ انظر تعليق الملف في hooks/useLongTermActions.ts.
   const longTermActions = useLongTermActions({ showToast, handleFirestoreError })
 
+  // 🆕 تسجيل التحويلات — نفس السبب ونفس الحدّ: الدفتر لا يُكتب من المتصفح،
+  // والفعل متاح لمنظّم الرحلة أو المسؤول وحدهما (callerManagesTrip خادمياً).
+  const settlementActions = useSettlementActions({ showToast, handleFirestoreError })
+  const canRecordSettlements = isAdmin || isOrganizer
+  const recordTransfer = useCallback((settlement: Settlement) => {
+    void settlementActions.recordSettlement(
+      TRIP_ID, settlement.fromId, settlement.toId, settlement.amount, settlement.toName,
+    )
+  }, [settlementActions])
+
   const confirmRollover = useCallback(async () => {
     const result = await longTermActions.closeMonth(TRIP_ID, currentPeriod)
     // المودال يُغلق عند النجاح وحده: الفشل يترك المنظّم أمام نفس الشاشة مع
@@ -470,6 +480,9 @@ export function useAppCoordinator() {
       activeExpenses, activeTravelers, deletedExpenses, deletedTravelers,
       balances, totalSpent, totalDeposited, totalRemaining,
       settlements, categoryTotals, spendingTrend,
+      // 🆕 تسجيل التحويل — undefined لغير المنظّم/المسؤول، فيُخفي الزرّ نفسه.
+      onRecordTransfer: canRecordSettlements ? recordTransfer : undefined,
+      recordingSettlementKey: settlementActions.recordingKey,
       // 🆕 نموذج الهوية الهجين — بطاقتك مثبَّتة أولاً هنا (انظر myBalance
       // وتعليقه أعلاه) — هذا وحده كافٍ الآن، بلا بطاقة ملخّص منفصلة فوقها
       // (MyBalanceBanner، حُذفت — كانت تكرر نفس الرقم بلا معلومة جديدة).

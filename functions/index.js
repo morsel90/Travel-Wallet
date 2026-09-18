@@ -1680,14 +1680,22 @@ function buildAdjustmentExpense(traveler, amount, date, description, actorUid) {
   };
 }
 
-/** يبني سطر تدقيق إيداع مطابقاً لـ isValidDepositLog في القواعد. */
-function buildDepositLog(travelerId, previousDeposited, newDeposited, reason, actor) {
+/**
+ * يبني سطر تدقيق إيداع مطابقاً لـ isValidDepositLog في القواعد.
+ *
+ * ⚠️ `mode` وسيطٌ افتراضه `'add'` لا ثابتٌ مكتوب: recordSettlement تخصم من
+ * الدائن، و`mode` هو ما يجعل `replayDepositLogs` (src/utils/deposits.ts)
+ * يُعيد بناء الرصيد نفسه — سطرُ خصمٍ مكتوبٌ بـ`'add'` يجعل إعادة التشغيل
+ * تُضيف ما خُصم، فينكسر التدقيق كله بصمت. لا يُمرَّر إلا ما يطابق اتجاه
+ * `delta` فعلاً.
+ */
+function buildDepositLog(travelerId, previousDeposited, newDeposited, reason, actor, mode = 'add') {
   return {
     travelerId,
     previousDeposited,
     newDeposited,
     delta: newDeposited - previousDeposited,
-    mode: 'add',
+    mode,
     reason,
     changedByEmail: actor.email || '',
     changedByUid: actor.uid,
@@ -1995,5 +2003,145 @@ exports.exitTraveler = onCall(
     console.log(`[exitTraveler] ${tripId}: خرج ${travelerId} (رصيد ${balance}، تسوية: ${settle})`);
 
     return { success: true, tripId, travelerId, settledAmount: direction === 'settled' ? 0 : Math.abs(balance), direction };
+  }),
+);
+
+/**
+ * 🆕 recordSettlement — تسجيل تحويل بين مسافرَين كحركة مالية موثّقة.
+ *
+ * ── العطل الذي أوجدها ──────────────────────────────────────────────────────
+ * زرّ «تحديد كمُحوَّل» في SettlementsPanel كان يكتب في `useState` محلي فقط:
+ * يُظلِّل السطر، ثم يعود كل شيء كما كان عند إعادة التحميل، ولا يرى التأشير
+ * أحدٌ على جهاز آخر. المستخدم يقرأ «تم التحويل ✓» فيفهم أن التحويل سُجِّل،
+ * والدفتر لا يعرف عنه شيئاً — أسوأ من زرٍّ غائب.
+ *
+ * ── لماذا `deposited` لا علَمٌ باسم «مُحوَّل» ───────────────────────────────
+ * التسويات **مشتقّة** من الأرصدة لا مخزّنة (calculateSettlements)، فأي علَم
+ * يُخزَّن على «فلان → فلان بمبلغ س» يتقادم مع أول مصروف جديد: يبقى التأشير
+ * معلّقاً على مبلغ لم يعد قائماً. أما الحركة الحقيقية فتُغيّر الرصيدَين
+ * نفسيهما: المَدين دفع نقداً فصار كأنه أودع أكثر، والدائن استلم فصار كأنه
+ * أودع أقل. مجموع المُودَع لا يتغيّر (تحويل لا إيداع جديد)، والتسوية تختفي
+ * من القائمة لأن الرصيدَين صارا صحيحَين — لا لأن أحداً أشّر عليها.
+ *
+ * ── ولماذا دالة سحابية لا كتابة من المتصفح ─────────────────────────────────
+ * `travelers.update` و`depositLogs.create` كلاهما `isAdmin()` في
+ * firestore.rules، ومنظّم الرحلة — وهو من يدير التحويلات فعلاً — لا يملك
+ * المسار. الخيار الآخر كان توسيع القاعدتين له، وهو يمنحه تعديل أي حقل في أي
+ * مستند مسافر (الاسم، الحذف الليّن) لا الرصيد وحده. الدالة تمنحه فعلاً واحداً
+ * محدوداً بحدود يفحصها الخادم.
+ */
+exports.recordSettlement = onCall(
+  { region: 'us-central1', maxInstances: 5, secrets: [SENTRY_DSN] },
+  withSentry('recordSettlement', async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+    }
+
+    const tripId = String(request.data?.tripId ?? '').trim();
+    const fromId = Number(request.data?.fromId);
+    const toId = Number(request.data?.toId);
+    const amount = Number(request.data?.amount);
+
+    if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
+      throw new HttpsError('invalid-argument', 'معرّف الرحلة غير صالح.');
+    }
+    if (!Number.isInteger(fromId) || !Number.isInteger(toId)) {
+      throw new HttpsError('invalid-argument', 'معرّف المسافر غير صالح.');
+    }
+    if (fromId === toId) {
+      throw new HttpsError('invalid-argument', 'لا يمكن تسجيل تحويل من مسافر إلى نفسه.');
+    }
+    // القاعدة ١٩: `Infinity` تمرّ من `> 0` وحدها، فالفحص على الانتهاء أولاً.
+    if (!Number.isFinite(amount) || amount <= ROLLOVER_EPSILON) {
+      throw new HttpsError('invalid-argument', 'مبلغ التحويل غير صالح.');
+    }
+
+    if (!(await callerManagesTrip(tripId, request.auth))) {
+      throw new HttpsError('permission-denied', 'تسجيل التحويلات متاح لمنظّم الرحلة أو المسؤول فقط.');
+    }
+
+    const tripSnap = await db.collection('trips').doc(tripId).get();
+    if (!tripSnap.exists) {
+      throw new HttpsError('not-found', `الرحلة "${tripId}" غير موجودة.`);
+    }
+    // نفس شرط tripAcceptsWrites في القواعد: رحلة منتهية أو مؤرشفة لا تقبل
+    // حركات مالية جديدة، ولا استثناء للمسؤول هناك ولا هنا.
+    if ((tripSnap.data().status || 'active') !== 'active') {
+      throw new HttpsError('failed-precondition', 'الرحلة ليست نشطة — لا يمكن تسجيل حركات مالية جديدة فيها.');
+    }
+
+    const { travelers, remaining } = await readLedger(tripId);
+    const from = travelers.find((t) => t.id === fromId);
+    const to = travelers.find((t) => t.id === toId);
+    if (!from || !to) {
+      throw new HttpsError('not-found', 'أحد طرفَي التحويل غير موجود في الرحلة (أو أُخرج منها).');
+    }
+
+    const fromBalance = Math.round((remaining.get(fromId) ?? 0) * 100) / 100;
+    const toBalance = Math.round((remaining.get(toId) ?? 0) * 100) / 100;
+    const transfer = Math.round(amount * 100) / 100;
+
+    // الاتجاه يُفحَص ولا يُصحَّح: تحويلٌ مقلوب الاتجاه يُبعِد الرصيدَين عن
+    // الصفر بدل تقريبهما، وتصحيحه صامتاً يعني تسجيل عكس ما ضُغط عليه.
+    if (settlementDirectionJs(fromBalance) !== 'debt') {
+      throw new HttpsError('failed-precondition', `${from.name} ليس مديناً — لا تحويل مطلوب منه.`);
+    }
+    if (settlementDirectionJs(toBalance) !== 'credit') {
+      throw new HttpsError('failed-precondition', `${to.name} ليس دائناً — لا تحويل مستحقّ له.`);
+    }
+
+    // سقف مزدوج: لا يدفع المَدين أكثر من عجزه، ولا يستلم الدائن أكثر من حقّه.
+    // تجاوز أيٍّ منهما يقلب إشارة رصيد الطرف الآخر، أي يخلق ديناً لم يوجد.
+    const maxTransfer = Math.round(Math.min(-fromBalance, toBalance) * 100) / 100;
+    if (transfer > maxTransfer + ROLLOVER_EPSILON) {
+      throw new HttpsError(
+        'failed-precondition',
+        `أقصى تحويل ممكن من ${from.name} إلى ${to.name} هو ${maxTransfer.toFixed(2)} ريال.`,
+      );
+    }
+
+    const actor = { uid: request.auth.uid, email: request.auth.token.email || '' };
+    const dataRoot = tripDataRoot(tripId);
+    const fromRef = dataRoot.collection('travelers').doc(String(fromId));
+    const toRef = dataRoot.collection('travelers').doc(String(toId));
+
+    await db.runTransaction(async (tx) => {
+      const [fromFresh, toFresh] = await Promise.all([tx.get(fromRef), tx.get(toRef)]);
+      if (!fromFresh.exists || fromFresh.data().deletedAt || !toFresh.exists || toFresh.data().deletedAt) {
+        throw new HttpsError('failed-precondition', 'أُخرج أحد طرفَي التحويل للتو من جهاز آخر.');
+      }
+
+      const fromDeposited = Number.isFinite(fromFresh.data().deposited) ? fromFresh.data().deposited : 0;
+      const toDeposited = Number.isFinite(toFresh.data().deposited) ? toFresh.data().deposited : 0;
+
+      // ⚠️ الحارس الذي يمنع التسجيل المزدوج: الأرصدة أعلاه قُرئت قبل المعاملة،
+      // فضغطتان متلاحقتان (أو جهازان) كانتا ستمرّان بالسقف نفسه وتكتبان الحركة
+      // مرتين — أي يدفع المَدين ضعف ما يدين به. نفس دور إعادة القراءة في
+      // exitTraveler، وبمقارنةٍ صريحة هنا لأن الرصيد رقم لا وجودُ مستند.
+      if (Math.abs(fromDeposited - (Number.isFinite(from.deposited) ? from.deposited : 0)) > ROLLOVER_EPSILON
+        || Math.abs(toDeposited - (Number.isFinite(to.deposited) ? to.deposited : 0)) > ROLLOVER_EPSILON) {
+        throw new HttpsError('aborted', 'تغيّرت الأرصدة قبل لحظة — أعد المحاولة لتُحسب من جديد.');
+      }
+
+      const fromNew = Math.round((fromDeposited + transfer) * 100) / 100;
+      // الخصم لا يُقصَر عند الصفر هنا: سقف `toBalance` أعلاه يضمن
+      // `transfer <= toDeposited` أصلاً، والقصر كان سيكتب سطراً يخالف delta.
+      const toNew = Math.round((toDeposited - transfer) * 100) / 100;
+
+      tx.update(fromRef, { deposited: fromNew });
+      tx.update(toRef, { deposited: toNew });
+      tx.set(
+        fromRef.collection('depositLogs').doc(),
+        buildDepositLog(fromId, fromDeposited, fromNew, `تحويل إلى ${to.name}`, actor, 'add'),
+      );
+      tx.set(
+        toRef.collection('depositLogs').doc(),
+        buildDepositLog(toId, toDeposited, toNew, `استلام من ${from.name}`, actor, 'subtract'),
+      );
+    });
+
+    console.log(`[recordSettlement] ${tripId}: ${fromId} → ${toId} بمبلغ ${transfer}`);
+
+    return { success: true, tripId, fromId, toId, amount: transfer };
   }),
 );

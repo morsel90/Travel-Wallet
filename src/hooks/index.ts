@@ -25,5 +25,6 @@ export { useHeaderCollapse }   from './useHeaderCollapse' // 🆕 تتبّع ا�
 export { useInviteJoin }       from './useInviteJoin' // 🆕 انضمام فوري عبر رابط دعوة (?invite=TOKEN) — بديل بوابة الرمز اليدوية
 export { useUserProfile }      from './useUserProfile' // 🆕 بروفايل المستخدم العام (اسم/بنك) — لتعبئة نموذج إنشاء رحلة تلقائياً
 export { useSyncTravelerNameFromProfile } from './useSyncTravelerNameFromProfile' // 🆕 يزامن اسم مسافري مع بروفايلي بلا أي واجهة جديدة
+export { useSettlementActions } from './useSettlementActions' // 🆕 تسجيل تحويل بين مسافرَين كحركة موثّقة (recordSettlement)
 export { useLongTermActions } from './useLongTermActions' // 🆕 الرحلات طويلة المدى: إغلاق الشهر (closeMonth) وخروج المنتدَبين (exitTraveler)
 export { useSyncRecovery }     from './useSyncRecovery' // 🆕 تعافٍ من المزامنة الصامتة عند عودة التطبيق للواجهة/الشبكة
