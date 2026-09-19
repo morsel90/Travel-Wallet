@@ -44,6 +44,11 @@ export function useTripWorkspace({
   showToast, handleFirestoreError, setSyncError,
 }: UseTripWorkspaceArgs) {
   const { tripType, currentPeriod, lastClosedPeriod, organizerUid } = config
+  // ⚠️ مُفكَّكة لا `modals.closeModal`: كل دالة في useModals ثابتة (useCallback
+  // بلا اعتماديات)، لكن كائن `modals` نفسه يُبنى من جديد في كل رسمة. وضعه في
+  // قائمة اعتماديات كان يُفقد requestDeleteTraveler ثباتها — وهي في شريحة
+  // `actions` من المتجر (القاعدة ١٦). انظر useTripWorkspace.test.ts.
+  const { openExitTraveler, closeModal, openMonthlyRollover } = modals
 
   // 🆕 علم مستقل لكل مستمع بدل علم واحد مشترك بينهما. المشترك كان يكذب: كلاهما
   // يرفعه عند الاشتراك ويُنزله في معالج لقطته، فأيّ المجموعتين وصلت أولاً
@@ -213,7 +218,7 @@ export function useTripWorkspace({
 
   const traveler = useTravelerActions({
     travelers, activeTravelers, user, setTravelers, showToast, handleFirestoreError, setSyncError,
-    closeModal: modals.closeModal,
+    closeModal,
     describeExitBlockFor,
   })
 
@@ -238,8 +243,8 @@ export function useTripWorkspace({
     const result = await longTermActions.closeMonth(TRIP_ID, currentPeriod)
     // المودال يُغلق عند النجاح وحده: الفشل يترك المنظّم أمام نفس الشاشة مع
     // رسالة السبب، بدل أن تختفي الشاشة ويبقى هو في حيرة مما جرى.
-    if (result) modals.closeModal()
-  }, [longTermActions, currentPeriod, modals])
+    if (result) closeModal()
+  }, [longTermActions, currentPeriod, closeModal])
 
   /**
    * 🆕 نقطة دخول واحدة لإخراج عضو، تتفرّع بحسب نوع الرحلة.
@@ -273,13 +278,13 @@ export function useTripWorkspace({
     // يعني مسافراً لم يُحسب بعد — نمرّره برصيد صفر فتتصرّف النافذة كحساب مسوّى،
     // والخادم يبقى الحكم الفعلي على أي حال.
     const withBalance = balances.find(b => b.id === target.id)
-    modals.openExitTraveler(withBalance ?? { ...target, totalExpenses: 0, remaining: 0 })
-  }, [isLongTermTrip, balances, modals, confirmDeleteTraveler])
+    openExitTraveler(withBalance ?? { ...target, totalExpenses: 0, remaining: 0 })
+  }, [isLongTermTrip, balances, openExitTraveler, confirmDeleteTraveler])
 
   const confirmExitTraveler = useCallback(async (travelerId: number, settle: boolean) => {
     const ok = await longTermActions.exitTraveler(TRIP_ID, travelerId, settle)
-    if (ok) modals.closeModal()
-  }, [longTermActions, modals])
+    if (ok) closeModal()
+  }, [longTermActions, closeModal])
 
   const hasUnsavedData = useCallback(() => {
     const hasExpenseData = expense.isAddingExpense && (
@@ -345,7 +350,7 @@ export function useTripWorkspace({
       isClosingMonth: longTermActions.isClosingMonth,
       isExitingTraveler: longTermActions.isExitingTraveler,
       organizerUid,
-      openRollover: modals.openMonthlyRollover,
+      openRollover: openMonthlyRollover,
       onConfirmRollover: confirmRollover,
       onConfirmExit: confirmExitTraveler,
     } : null,
