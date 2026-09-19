@@ -6,19 +6,11 @@ import type { TripStoreState } from './tripStore'
 const initial: TripStoreState = {
   data: {
     travelers: [], expenses: [], repayments: [], user: null, isAdmin: false, isOrganizer: false,
-    currencies: {}, ratesUpdatedAt: null,
+    currencies: {},
   },
   actions: {
-    cancelExpenseForm: () => {}, startEditExpense: () => {}, requestDeleteExpense: () => {},
+    startEditExpense: () => {}, requestDeleteExpense: () => {},
     requestDeleteTraveler: () => {}, submitDeposit: () => true,
-  },
-  form: {
-    expenseForm: {
-      date: '', description: '', amount: '', currency: 'SAR', exchangeRate: '1',
-      participants: [], category: '', splitMode: 'equal', shares: {}, paidBy: 'fund',
-    },
-    setExpenseForm: () => {}, isExpenseFormOpen: false, isEditingExpense: false,
-    submitExpense: () => {}, toggleParticipant: () => {}, toggleAllParticipants: () => {},
   },
 }
 
@@ -28,38 +20,25 @@ describe('createTripStore', () => {
     expect(store.getState()).toBe(initial)
   })
 
-  it('تحديث مفتاح data لا يمسّ هوية مفتاحي actions وform', () => {
+  it('تحديث مفتاح data لا يمسّ هوية مفتاح actions', () => {
     const store = createTripStore(initial)
-    const { actions, form } = store.getState()
+    const { actions } = store.getState()
 
     store.setState({ data: { ...initial.data, isAdmin: true } })
 
     expect(store.getState().actions).toBe(actions)
-    expect(store.getState().form).toBe(form)
     expect(store.getState().data.isAdmin).toBe(true)
   })
 
-  it('تحديث مفتاح actions لا يمسّ هوية مفتاحي data وform', () => {
+  it('تحديث مفتاح actions لا يمسّ هوية مفتاح data', () => {
     const store = createTripStore(initial)
-    const { data, form } = store.getState()
-    const newCancel = () => {}
+    const { data } = store.getState()
+    const newStartEdit = () => {}
 
-    store.setState({ actions: { ...initial.actions, cancelExpenseForm: newCancel } })
+    store.setState({ actions: { ...initial.actions, startEditExpense: newStartEdit } })
 
     expect(store.getState().data).toBe(data)
-    expect(store.getState().form).toBe(form)
-    expect(store.getState().actions.cancelExpenseForm).toBe(newCancel)
-  })
-
-  it('تحديث مفتاح form لا يمسّ هوية مفتاحي data وactions', () => {
-    const store = createTripStore(initial)
-    const { data, actions } = store.getState()
-
-    store.setState({ form: { ...initial.form, isExpenseFormOpen: true } })
-
-    expect(store.getState().data).toBe(data)
-    expect(store.getState().actions).toBe(actions)
-    expect(store.getState().form.isExpenseFormOpen).toBe(true)
+    expect(store.getState().actions.startEditExpense).toBe(newStartEdit)
   })
 
   it('نسختان منفصلتان لا تتشاركان الحالة', () => {

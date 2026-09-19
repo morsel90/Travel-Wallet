@@ -5,7 +5,6 @@ import { describe, it, expect } from 'vitest'
 import { useState } from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { TripStoreProvider } from '../store/TripStoreProvider'
 import { ExpenseForm } from './ExpenseSection'
 import type { Traveler, Expense, ExpenseFormData, CurrencyMap } from '../types'
 
@@ -60,18 +59,15 @@ function Harness({ initial = emptyForm, isEditing = false, user = null, people =
 }) {
   const [expenseForm, setExpenseForm] = useState<ExpenseFormData>(initial)
   return (
-    <TripStoreProvider
-      travelers={people} expenses={expenses} repayments={[]} user={user as never} isAdmin={false} isOrganizer={false}
+    <ExpenseForm
+      travelers={people} expenses={expenses} user={user}
       currencies={currencies} ratesUpdatedAt={null}
-      cancelExpenseForm={noop} startEditExpense={noop} requestDeleteExpense={noop}
-      requestDeleteTraveler={noop} submitDeposit={() => true}
       expenseForm={expenseForm} setExpenseForm={setExpenseForm}
       isExpenseFormOpen isEditingExpense={isEditing}
       submitExpense={submitExpense}
       toggleParticipant={noop} toggleAllParticipants={noop}
-    >
-      <ExpenseForm />
-    </TripStoreProvider>
+      cancelExpenseForm={noop}
+    />
   )
 }
 

@@ -6,7 +6,7 @@
 import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { ExpenseForm } from '../components/ExpenseSection'
-import { Providers, baseUIForm } from './decorators'
+import { baseExpenseFormProps } from './decorators'
 import * as fx from '../fixtures'
 import type { ExpenseFormData, Traveler, Expense } from '../types'
 
@@ -36,26 +36,24 @@ function InteractiveExpenseForm({ initial, isEditing = false, travelers = fx.tra
     }))
 
   return (
-    <Providers
-      data={{ travelers, expenses, user: myUid ? { uid: myUid } : null }}
-      uiForm={{
-        ...baseUIForm,
-        expenseForm,
-        setExpenseForm,
-        isExpenseFormOpen: true,
-        isEditingExpense: isEditing,
-        submitExpense: e => e.preventDefault(),
-        toggleParticipant,
-        toggleAllParticipants,
-      }}
-    >
-      <ExpenseForm />
-    </Providers>
+    <ExpenseForm
+      {...baseExpenseFormProps}
+      travelers={travelers}
+      expenses={expenses}
+      user={myUid ? { uid: myUid } : null}
+      expenseForm={expenseForm}
+      setExpenseForm={setExpenseForm}
+      isExpenseFormOpen
+      isEditingExpense={isEditing}
+      submitExpense={e => e.preventDefault()}
+      toggleParticipant={toggleParticipant}
+      toggleAllParticipants={toggleAllParticipants}
+    />
   )
 }
 
 const emptyForm: ExpenseFormData = {
-  ...baseUIForm.expenseForm,
+  ...baseExpenseFormProps.expenseForm,
   participants: fx.travelers.map(t => t.id),
   category: 'أخرى',
 }

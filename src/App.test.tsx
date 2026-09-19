@@ -298,6 +298,18 @@ describe('App — رحلة منتهية أو مؤرشفة', () => {
     expect(screen.queryByText(/^هذه الرحلة/)).not.toBeInTheDocument()
   })
 
+  // 🆕 ExpenseForm يأخذ بياناته خصائصَ من App مباشرةً لا من المتجر، فالتوصيل
+  // صار هنا — ولم يكن شيء يحرسه: تمرير قائمة مسافرين فارغة للنموذج نجا من كل
+  // اختبارات هذا الملف (جُرِّب فعلاً قبل كتابة هذا الاختبار). كبسولات «من دفع؟»
+  // تُبنى من خاصية travelers، فظهور الاسم *داخل النافذة* دليل وصولها.
+  it('النموذج المفتوح يستلم مسافري الرحلة من App', async () => {
+    h.travelers = [{ id: 7, name: 'نايف الحربي', shortName: 'نايف', deposited: 0 }]
+    h.isAddingExpense = true
+    render(<App />)
+    const form = await screen.findByRole('dialog')
+    expect(within(form).getAllByText('نايف').length).toBeGreaterThan(0)
+  })
+
   it('رحلة نشطة: شريط الإدخال السريع ظاهر حين يكون النموذج مغلقاً', async () => {
     render(<App />)
     await screen.findByText('أرصدة المسافرين')

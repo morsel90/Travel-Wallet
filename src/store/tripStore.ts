@@ -1,8 +1,7 @@
 import { createContext, useContext } from 'react'
 import { createStore } from 'zustand/vanilla'
 import { useStore } from 'zustand'
-import type { Dispatch, SetStateAction, FormEvent } from 'react'
-import type { Traveler, Expense, Repayment, ExpenseFormData, CurrencyMap, AppUser } from '../types'
+import type { Traveler, Expense, Repayment, CurrencyMap, AppUser } from '../types'
 import type { DepositSubmission } from '../hooks/useDepositActions'
 
 // ─── مخزن Zustand بدل ثلاث React Contexts ────────────────────────────────────
@@ -18,26 +17,30 @@ import type { DepositSubmission } from '../hooks/useDepositActions'
 //   • data    — بيانات للقراءة فقط، تتغير مع Firestore/المصادقة/الأسعار.
 //   • actions — دوال ثابتة الهوية عملياً (useCallback بلا اعتماديات غالباً)،
 //     تتغير فقط حين تتغير قائمة المسافرين النشطين (نادر).
-//   • form    — حالة نموذج المصروف المتقلّبة، تتغير مع كل حرف، ومستهلكها
-//     الوحيد ExpenseForm.
+//
+// 🆕 **وقبلها سؤال: هل يحتاج الحقل أن يكون هنا أصلاً؟** المتجر لمكوّنات
+// *متكرّرة* — صفوف ExpenseListItem داخل Virtuoso وبطاقات TravelerCard — لا
+// يصحّ تمرير الخصائص إليها عبر القائمة، ويجب ألا تُعاد رسمها مع كل حرف. ما له
+// مستهلك واحد يرسمه App.tsx مباشرةً يُمرَّر خاصيةً. هكذا خرجت شريحة `form`
+// الثالثة كلها (مستهلكها الوحيد ExpenseForm)، ومعها cancelExpenseForm
+// وratesUpdatedAt — انظر docs/DECISIONS.md. فلا حالة تتغيّر مع كل حرف هنا بعد
+// اليوم، وهذا بالضبط ما تحرسه القاعدة ١٦.
 
 export interface TripDataSlice {
   travelers: Traveler[]
   expenses: Expense[]
   /** 🆕 قيود السداد غير المحذوفة — لكشف حساب كل مسافر (TravelerProfileModal). */
   repayments: Repayment[]
-  user: AppUser | null| null
+  user: AppUser | null
   isAdmin: boolean
   /** 🆕 منظّم الرحلة الحالية (docs/PLAN-member-management.md المرحلة ٣) —
    *  محسوبة أصلاً في useAppCoordinator، تُضاف هنا لتصل TravelerSection/
    *  TravelerProfileModal (قراءة سجل تعديلات الرصيد — انظر firestore.rules). */
   isOrganizer: boolean
   currencies: CurrencyMap
-  ratesUpdatedAt: Date | null
 }
 
 export interface TripActionsSlice {
-  cancelExpenseForm: () => void
   startEditExpense: (expense: Expense) => void
   requestDeleteExpense: (id: string) => void
   requestDeleteTraveler: (traveler: Traveler) => void
@@ -46,20 +49,9 @@ export interface TripActionsSlice {
   submitDeposit: (traveler: Traveler, submission: DepositSubmission) => boolean
 }
 
-export interface TripFormSlice {
-  expenseForm: ExpenseFormData
-  setExpenseForm: Dispatch<SetStateAction<ExpenseFormData>>
-  isExpenseFormOpen: boolean
-  isEditingExpense: boolean
-  submitExpense: (e: FormEvent<HTMLFormElement>) => void
-  toggleParticipant: (id: number) => void
-  toggleAllParticipants: () => void
-}
-
 export interface TripStoreState {
   data: TripDataSlice
   actions: TripActionsSlice
-  form: TripFormSlice
 }
 
 export type TripStore = ReturnType<typeof createTripStore>
@@ -96,8 +88,4 @@ export function useTripData(): TripDataSlice {
 
 export function useTripActions(): TripActionsSlice {
   return useStore(useTripStore(), s => s.actions)
-}
-
-export function useTripFormState(): TripFormSlice {
-  return useStore(useTripStore(), s => s.form)
 }

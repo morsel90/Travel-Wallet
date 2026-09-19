@@ -26,7 +26,7 @@ import { tripPickerImporters } from '../components/TripPicker'
 // المجموعات الثلاث — لا هذا الملف.
 //
 // ⚠️ ما لا يعيش هنا عمداً:
-//   • مخزن الرحلة (data/actions/form) → store/TripStoreProvider.tsx، لأن
+//   • مخزن الرحلة (data/actions) → store/TripStoreProvider.tsx، لأن
 //     الفصل بينها حسب التقلّب حِمل أداء يجب أن يُقرأ في ملف واحد بالعين
 //     المجرّدة.
 //   • قرار أي شاشة تُعرض → App.tsx، فذلك توجيه لا تركيب.
