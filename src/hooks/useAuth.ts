@@ -5,7 +5,22 @@ import {
   signInWithPopup, signInWithRedirect, getRedirectResult,
   signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut as firebaseSignOut,
 } from 'firebase/auth'
+import * as Sentry from '@sentry/react'
 import { auth } from '../firebase'
+
+/**
+ * 🆕 يُبلّغ Sentry برمز فشل الدخول — **ولا شيء غيره.**
+ *
+ * ⚠️ لم يكن أي فشل في الدخول يُبلَّغ من قبل، فالحالة الصامتة («اختار حسابه ثم
+ * عاد لشاشة الدخول بلا رسالة») كانت غير قابلة للتشخيص إلا ببلاغ شفهي. الرمز
+ * وحده يُرسَل — لا بريد ولا معرّف حساب: لا شيء هنا يعرّف شخصاً.
+ */
+function reportSignInFailure(code: string | undefined, phase: 'popup' | 'redirect' | 'redirect-result' | 'email'): void {
+  Sentry.captureMessage(`sign-in failed: ${code ?? 'unknown'}`, {
+    level: 'warning',
+    tags: { source: 'auth', phase, code: code ?? 'unknown' },
+  })
+}
 
 /**
  * 🆕 يقرأ خريطة `trips` من الـ Custom Claims دفاعياً.
@@ -72,11 +87,30 @@ const UNAUTHORIZED_DOMAIN = 'auth/unauthorized-domain'
 const UNAUTHORIZED_DOMAIN_MESSAGE =
   'الدخول عبر Google لا يعمل من هذا العنوان. افتح التطبيق من عنوانه الأساسي، أو سجّل الدخول عبر البريد الإلكتروني.'
 
+// ⚠️ **الصمت هنا كان يخفي عطلاً حقيقياً.** `auth/popup-closed-by-user` كانت
+// ضمن هذه المجموعة، فكان مَن يختار حسابه في النافذة المنبثقة ثم لا تكتمل جلسته
+// يرى شاشة الدخول نفسها **بلا أي رسالة** — بلاغ مستخدم فعلي. والسبب أن هذا
+// الرمز يُرمى في حالتين لا تُميَّزان من العميل: إغلاق واعٍ للنافذة، وفقدان
+// المتصفح للجلسة بعد اختيار الحساب (تقسيم التخزين لنطاق الـauth الخارجي أو
+// حاجب إعلانات يمنعه). فالباقي هنا هو ما لا يمكن أن يكون عطلاً:
+// `cancelled-popup-request` تُرمى حين تُلغي نافذةٌ أخرى الأولى، و`user-cancelled`
+// رفضٌ صريح للأذونات.
 const USER_CANCELLED_CODES = new Set([
-  'auth/popup-closed-by-user',
   'auth/cancelled-popup-request',
   'auth/user-cancelled',
 ])
+
+// 🆕 لا نعرف أي الحالتين وقعت، فالرسالة تصف ما يراه ولا تدّعي سبباً: أعد
+// المحاولة، أو ادخل بالبريد (لا يخضع للنوافذ المنبثقة ولا لتخزين طرف ثالث).
+const POPUP_INCOMPLETE = 'auth/popup-closed-by-user'
+const POPUP_INCOMPLETE_MESSAGE =
+  'لم يكتمل الدخول عبر Google. أعد المحاولة، أو ادخل عبر البريد الإلكتروني.'
+
+// 🆕 المتصفح يمنع التخزين الذي يحتاجه SDK لإكمال الدخول — إعداد «منع التتبّع»
+// أو نافذة خاصة. الرسالة تسمّي المخرج العامل بدل أن تطلب تغيير إعدادات.
+const WEB_STORAGE_UNSUPPORTED = 'auth/web-storage-unsupported'
+const WEB_STORAGE_MESSAGE =
+  'متصفحك يمنع التخزين اللازم لإكمال الدخول عبر Google. ادخل عبر البريد الإلكتروني.'
 
 function describeEmailSignInError(code: string | undefined, mode: 'signIn' | 'signUp'): string {
   switch (code) {
@@ -185,6 +219,7 @@ export function useAuth(): UseAuth {
     getRedirectResult(auth).catch((err: unknown) => {
       const code = (err as { code?: string })?.code
       if (code && USER_CANCELLED_CODES.has(code)) return
+      reportSignInFailure(code, 'redirect-result')
       setSignInError('تعذّر إكمال تسجيل الدخول. حاول مجدداً.')
     })
   }, [])
@@ -198,7 +233,21 @@ export function useAuth(): UseAuth {
       const code = (err as { code?: string })?.code
 
       if (code && USER_CANCELLED_CODES.has(code)) {
-        // المستخدم أغلق النافذة أو ألغى — ليس خطأً ولا يستحق رسالة حمراء.
+        // نافذة أُلغيت بأخرى، أو رفضٌ صريح للأذونات — ليس عطلاً ولا يستحق رسالة.
+        return
+      }
+
+      reportSignInFailure(code, 'popup')
+
+      // 🆕 اختار حسابه ثم لم تكتمل الجلسة — أو أغلق النافذة. لا سبيل للتمييز،
+      // فالرسالة تصف الحال وتسمّي المخرج بدل أن تصمت (انظر تعليق المجموعة أعلاه).
+      if (code === POPUP_INCOMPLETE) {
+        setSignInError(POPUP_INCOMPLETE_MESSAGE)
+        return
+      }
+
+      if (code === WEB_STORAGE_UNSUPPORTED) {
+        setSignInError(WEB_STORAGE_MESSAGE)
         return
       }
 
@@ -220,6 +269,7 @@ export function useAuth(): UseAuth {
           // 🆕 المسار الأكثر شيوعاً لهذا الخطأ فعلياً: متصفح Gmail المدمج يحجب
           // النافذة المنبثقة، فيُجرَّب التوجيه — وSDK يفحص العنوان قبل أن يغادر.
           const redirectCode = (redirectErr as { code?: string })?.code
+          reportSignInFailure(redirectCode, 'redirect')
           setSignInError(redirectCode === UNAUTHORIZED_DOMAIN
             ? UNAUTHORIZED_DOMAIN_MESSAGE
             : 'تعذّر تسجيل الدخول عبر Google. جرّب متصفحاً آخر (Safari أو Chrome).')
