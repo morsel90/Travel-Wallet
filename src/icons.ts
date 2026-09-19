@@ -62,7 +62,7 @@ export {
   Tag,          // 🆕 محدد الفئة المدمج بجانب الوصف في ExpenseForm (إعادة تصميم Progressive Disclosure)
   CalendarCheck, // 🆕 إغلاق الشهر المحاسبي في الرحلات طويلة المدى (LongTermPanel)
   CalendarClock, // 🆕 رأس قسم «الشهر المحاسبي» (LongTermPanel)
-  DoorOpen,      // 🆕 خروج منتدَب من رحلة طويلة المدى (ExitTravelerModal)
+  DoorOpen,      // 🆕 خروج منتدَب من رحلة طويلة المدى (ExitTravelerConfirm)
   Smartphone,    // 🆕 محفظة رقمية/رقم جوال كبديل للحساب البنكي (UserProfileModal + BankDetailsCard)
   Archive,       // 🆕 صفّ «الرحلات المؤرشفة» القابل للطي في «رحلاتي» (نمط واتساب)
   CalendarRange, // 🆕 مُصفّي الدورة في التقارير/كشف الحساب (الرحلات طويلة المدى)

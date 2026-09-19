@@ -14,9 +14,15 @@
 //   • `depositHistory` — سجلّ التعديلات كان **نسخة ثانية أضعف** من بيانات
 //     معروضة أصلاً: `buildMergedTimeline` يدمج نفس `depositLogs` في كشف الحساب
 //     التفصيلي داخل الملف نفسه، وبنفس حارس الصلاحية (isAdmin||isOrganizer||isSelf).
+//
+// 🆕 **وحالتان أخريان بعدها، لنفس السبب: نافذة تُغلق نفسها لتفتح أخرى.**
+//   • `monthlyRollover` — تأكيد إغلاق الشهر صار خطوة داخل «هذا الشهر»
+//     (LongTermModal)، لا نافذة تحلّ محلّها.
+//   • `exitTraveler` — «تسوية وخروج» صار قسماً داخل ملف المسافر
+//     (TravelerProfileModal)، كما صار «تعديل الرصيد» قبله.
+// ما بقي في الاتحاد وجهاتٌ يفتحها المستخدم عمداً، لا تسليمٌ من نافذة لأخرى.
 // لا تُعِد أيّاً منها كنافذة مستقلّة قبل قراءة docs/DECISIONS.md.
 import { useReducer, useCallback } from 'react'
-import type { TravelerBalance } from '../types'
 
 export type ModalState =
   | { type: 'none' }
@@ -31,11 +37,6 @@ export type ModalState =
   | { type: 'charts' }
   | { type: 'itinerary' }
   | { type: 'longTermPanel' }
-  // 🆕 الرحلات طويلة المدى — لا تُفتح إطلاقاً في رحلة قياسية (App.tsx لا يعرض
-  // القسم الذي يفتحهما أصلاً). التسجيل هنا لأن القاعدة ٧ تفرض أن كل مودال عام
-  // يعيش في هذا الاتحاد لا في حالة منفصلة تسمح بمودالين مفتوحين معاً.
-  | { type: 'monthlyRollover' }
-  | { type: 'exitTraveler'; traveler: TravelerBalance }
 
 type ModalAction =
   | { type: 'OPEN_REPORTS' }
@@ -45,8 +46,6 @@ type ModalAction =
   | { type: 'OPEN_CHARTS' }
   | { type: 'OPEN_ITINERARY' }
   | { type: 'OPEN_LONG_TERM_PANEL' }
-  | { type: 'OPEN_MONTHLY_ROLLOVER' }
-  | { type: 'OPEN_EXIT_TRAVELER';    traveler: TravelerBalance }
   | { type: 'CLOSE' }
 
 const CLOSED: ModalState = { type: 'none' }
@@ -60,8 +59,6 @@ function modalReducer(state: ModalState, action: ModalAction): ModalState {
     case 'OPEN_CHARTS':          return { type: 'charts' }
     case 'OPEN_ITINERARY':       return { type: 'itinerary' }
     case 'OPEN_LONG_TERM_PANEL': return { type: 'longTermPanel' }
-    case 'OPEN_MONTHLY_ROLLOVER': return { type: 'monthlyRollover' }
-    case 'OPEN_EXIT_TRAVELER':   return { type: 'exitTraveler', traveler: action.traveler }
     case 'CLOSE':                return CLOSED
     default:                     return state
   }
@@ -77,8 +74,6 @@ export function useModals() {
   const openCharts         = useCallback(() => dispatch({ type: 'OPEN_CHARTS' }), [])
   const openItinerary      = useCallback(() => dispatch({ type: 'OPEN_ITINERARY' }), [])
   const openLongTermPanel  = useCallback(() => dispatch({ type: 'OPEN_LONG_TERM_PANEL' }), [])
-  const openMonthlyRollover = useCallback(() => dispatch({ type: 'OPEN_MONTHLY_ROLLOVER' }), [])
-  const openExitTraveler   = useCallback((traveler: TravelerBalance) => dispatch({ type: 'OPEN_EXIT_TRAVELER', traveler }), [])
   const closeModal         = useCallback(() => dispatch({ type: 'CLOSE' }), [])
 
   return {
@@ -90,8 +85,6 @@ export function useModals() {
     openCharts,
     openItinerary,
     openLongTermPanel,
-    openMonthlyRollover,
-    openExitTraveler,
     closeModal,
   }
 }
