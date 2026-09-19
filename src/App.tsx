@@ -13,6 +13,7 @@ import UpdatePrompt         from './components/UpdatePrompt'
 import OnboardingBanner     from './components/OnboardingBanner'
 import AuthGate             from './components/AuthGate'
 import NotAMemberScreen     from './components/NotAMemberScreen'
+import TripDeletedScreen    from './components/TripDeletedScreen'
 import InviteJoinScreen     from './components/InviteJoinScreen'
 import TripPicker           from './components/TripPicker'
 import ModalManager         from './components/ModalManager'
@@ -101,6 +102,10 @@ export default function App() {
         onRestoreTrip={picker.onRestoreTrip}
       />
     )
+  } else if (trip.deleted) {
+    // 🆕 قبل فحص العضوية لا بعده: المسؤول يجتاز العضوية لأي معرّف، فبلا هذا
+    // يدخل رحلةً شبحاً. انظر TripDeletedScreen.
+    screen = <TripDeletedScreen onShowMyTrips={picker.show} />
   } else if (!session.isAdmin && !session.joinedTripIds.includes(TRIP_ID)) {
     // 🆕 مستخدم مسجَّل دخوله لكنه ليس عضواً في هذه الرحلة تحديداً — لا رمز رحلة
     // يمكنه تجربته للانضمام ذاتياً، فالمسار الوحيد رابط دعوة من المنظّم.

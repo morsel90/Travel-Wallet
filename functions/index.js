@@ -304,6 +304,15 @@ exports.manageTrip = onCall(
       // إما غير موجود أصلاً أو يحوي مستندات محذوفة ليّناً لا وزن مالي حقيقي
       // لها (checkTripHasProtectedData ضمنت ذلك للتوّ). أما المسار المؤهَّل
       // بالعمر فبياناته حقيقية عمداً — تركها يتيمة يناقض معنى "حذف نهائي".
+      // 🆕 لا وصول يبقى إلى رحلة محذوفة — انظر revokeDeletedTripAccess.
+      try {
+        const cleaned = await revokeDeletedTripAccess(tripId);
+        console.log(`[manageTrip] access revoked for ${tripId}: ${cleaned.revoked} claims, ${cleaned.organizers} organizer profiles`);
+      } catch (err) {
+        console.error(`[manageTrip] access cleanup failed for ${tripId}`, err);
+        Sentry.captureException(err, { tags: { function: 'manageTrip', step: 'revokeDeletedTripAccess' } });
+      }
+
       if (eligibleForAgePurge || eligibleAsSettled) {
         await db.recursiveDelete(db.collection('artifacts').doc(tripId));
         console.log(`[manageTrip] PURGE (${eligibleForAgePurge ? 'age-eligible' : 'settled & closed'}, had real data) on ${tripId} by ${request.auth.uid}`);
@@ -741,6 +750,44 @@ async function callerManagesTrip(tripId, auth) {
 
 // استعلام لا get() بمعرّف واحد — معرّف مستند الدعوة هو التوكن العشوائي نفسه لا
 // tripId، فلا سبيل لمعرفة أي دعوة تخصّ رحلة بعينها إلا بالبحث.
+/**
+ * 🆕 يُزيل كل أثر وصولٍ إلى رحلة حُذفت: روابط دعوتها، وعضويتها من custom claims
+ * **كل** الحسابات، وقيدها في organizesTripIds لدى منظّميها.
+ *
+ * ── لماذا مسح كل الحسابات لا سجلّ الأعضاء وحده ──────────────────────────────
+ * سجلّ `trips/{id}/members` أحدث من العضوية نفسها: حسابات حقبة رمز الرحلة (PIN)
+ * تحمل الـclaim ولا سطر لها فيه. عند حذف travelapp-87206 كان في السجلّ صفر،
+ * وفي الـclaims 218 حساباً. والخطر ليس نظرياً: شاشة الحذف تقول إن المعرّف «يصبح
+ * متاحاً لإنشاء رحلة جديدة»، وisMember() في القواعد تقرأ الـclaim وحده — فرحلةٌ
+ * جديدة بالمعرّف نفسه كانت ستُفتح فوراً لكل من حمل عضوية القديمة.
+ *
+ * ⚠️ بعد الحذف لا قبله، ولا يُفشل الحذف إن فشلت: الحذف هو ما طلبه المستخدم،
+ * وبقايا الوصول إلى رحلة غير موجودة لا تكشف بيانات (لا بيانات). الفشل يُسجَّل
+ * ويُلتقط في Sentry، وscripts/cleanup-deleted-trip-access.mjs يُصلحه لاحقاً.
+ */
+async function revokeDeletedTripAccess(tripId) {
+  await deleteExistingInvites(tripId);
+
+  let pageToken;
+  let revoked = 0;
+  do {
+    const page = await admin.auth().listUsers(1000, pageToken);
+    for (const u of page.users) {
+      const trips = u.customClaims && u.customClaims.trips;
+      if (!trips || !(tripId in trips)) continue;
+      const { [tripId]: _removed, ...rest } = trips;
+      await admin.auth().setCustomUserClaims(u.uid, { ...u.customClaims, trips: rest });
+      revoked++;
+    }
+    pageToken = page.pageToken;
+  } while (pageToken);
+
+  const organizers = await db.collection('users').where('organizesTripIds', 'array-contains', tripId).get();
+  await Promise.all(organizers.docs.map((d) => d.ref.update({ organizesTripIds: FieldValue.arrayRemove(tripId) })));
+
+  return { revoked, organizers: organizers.size };
+}
+
 async function deleteExistingInvites(tripId) {
   const snap = await db.collection('tripInvites').where('tripId', '==', tripId).get();
   if (snap.empty) return;

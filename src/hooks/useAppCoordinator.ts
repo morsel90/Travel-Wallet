@@ -81,7 +81,7 @@ export function useAppCoordinator() {
   // الحقول تُستهلك أيضاً في pickerTrips أدناه — صفّ الرحلة المفتوحة حالياً في
   // «رحلاتي» يعرض هذه النسخة الحيّة بدل لقطة myTrips الثابتة.
   const {
-    tripName, organizerUid, itinerary, itineraryRev, status: tripStatus, statusChangedAt,
+    tripName, deleted: tripDeleted, organizerUid, itinerary, itineraryRev, status: tripStatus, statusChangedAt,
     tripType, currentPeriod, lastClosedPeriod,
   } = useTripConfig(hasAccess ? user : null)
   // 🆕 قراءة حيّة لبيانات بنك منظّم *هذه* الرحلة — المصدر الوحيد المعروض في
@@ -504,7 +504,7 @@ export function useAppCoordinator() {
     // 🆕 `name` مكشوف هنا الآن — الهيدر يعرض اسم الرحلة المفتوحة بدل اسم
     // التطبيق الثابت. القيمة نفسها المستخدَمة في صفّ الرحلة المفتوحة داخل
     // pickerTrips أعلاه، لا مصدر ثانٍ يمكن أن ينحرف عنه.
-    trip: { name: tripName ?? TRIP_ID, itinerary, canAddExpenses, tripClosedNotice, tripType },
+    trip: { name: tripName ?? TRIP_ID, deleted: tripDeleted, itinerary, canAddExpenses, tripClosedNotice, tripType },
     /**
      * 🆕 كل ما تحتاجه واجهة الرحلة الطويلة — **null في الرحلة القياسية**.
      * قيمة واحدة تُفحص في App.tsx (`longTerm && …`) بدل شروط متفرّقة، وهو ما

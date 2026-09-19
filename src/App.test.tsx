@@ -54,6 +54,8 @@ const h = vi.hoisted(() => ({
   // القائمة تصف الرحلة القياسية، ويجب أن تبقى كذلك حرفياً بعد إضافة الرحلات
   // الطويلة. الاختبار الذي يحتاج 'long_term' يضبطها صراحةً.
   tripType: 'standard' as string,
+  // 🆕 الخادم أكّد أن مستند الرحلة غير موجود — انظر TripDeletedScreen.
+  tripDeleted: false,
 }))
 
 const noop = () => {}
@@ -89,6 +91,7 @@ vi.mock('./hooks', async () => {
   }),
   useTripConfig: () => ({
     tripName: 'رحلة الاختبار',
+    deleted: h.tripDeleted,
     organizerUid: 'organizer-1',
     itinerary: [],
     status: h.tripStatus,
@@ -198,6 +201,7 @@ beforeEach(() => {
   h.isAddingExpense = false
   h.isOrganizer = false
   h.tripType = 'standard'
+  h.tripDeleted = false
 })
 
 // ─── ترتيب البوابات ───────────────────────────────────────────────────────────
@@ -245,6 +249,18 @@ describe('App — ترتيب البوابات', () => {
     render(<App />)
     expect(await screen.findByText('أرصدة المسافرين')).toBeInTheDocument()
     expect(screen.queryByText('لست من مسافري هذه الرحلة')).not.toBeInTheDocument()
+  })
+
+  // 🐛 بلاغ صاحب المشروع بعد حذف travelapp-87206: أيقونة الشاشة الرئيسية تحمل
+  // `?trip=` القديم، فيفتح التطبيق «رحلة شبحاً» أو «مزامنة…» لا تنتهي. والمسؤول
+  // تحديداً لأنه يجتاز العضوية لأي معرّف — فالفحص يجب أن يسبقها.
+  it('رحلة حذفها الخادم: «هذه الرحلة حُذفت» — حتى للمسؤول، وبدل الرحلة الشبح', async () => {
+    h.tripDeleted = true
+    h.auth = { ...h.auth, isAdmin: true }
+    render(<App />)
+    expect(await screen.findByText('هذه الرحلة حُذفت')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'رحلاتي' })).toBeInTheDocument()
+    expect(screen.queryByText('أرصدة المسافرين')).not.toBeInTheDocument()
   })
 })
 
