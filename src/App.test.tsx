@@ -165,6 +165,11 @@ vi.mock('./hooks', async () => {
   useSettlementActions: () => ({
     recordingKey: null, recordSettlement: async () => false,
   }),
+  // 🆕 قيود السداد — مستمع فارغ، و«محمَّل» فوراً كي لا يُبقي الشاشة في Skeleton.
+  useRepayments: () => ({
+    repayments: [], setRepayments: () => {}, repaymentsLoaded: true, refreshRepayments: async () => {},
+  }),
+  useRepaymentActions: () => ({ deleteRepayment: () => {}, restoreRepayment: () => {} }),
   }
 })
 

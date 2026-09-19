@@ -2,15 +2,16 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'motion/react'
-import { X, Wallet, Receipt, Scale, Download, Printer, HandCoins, DoorOpen, RefreshCw, Landmark, Pencil, Plus, Minus, Target, Check } from '../../icons'
-import type { Expense, Traveler, TravelerBalance, Settlement, PeriodKey, DepositMode } from '../../types'
+import { X, Wallet, Receipt, Scale, Download, Printer, HandCoins, DoorOpen, RefreshCw, Landmark, Pencil, Plus, Minus, Target, Check, ArrowRightLeft } from '../../icons'
+import type { Expense, Repayment, Traveler, TravelerBalance, Settlement, PeriodKey, DepositMode } from '../../types'
 import type { TimelineRow } from '../../utils/reportData'
-import { buildTravelerReport, buildAccountStatement, buildMergedTimeline } from '../../utils/reportData'
+import { buildTravelerReport, buildAccountStatement, buildMergedTimeline, isCreditKind } from '../../utils/reportData'
 import { useDepositLogs } from '../../hooks/useDepositLogs'
 import { sanitizeAmountInput } from '../../utils/numerals'
 import type { DepositSubmission } from '../../hooks/useDepositActions'
 import { exportTravelerToExcel } from '../../utils/reports'
 import { settlementDirection, filterCycleExpenses, ROLLOVER_CATEGORY } from '../../utils/longTerm'
+import { isInPeriod } from '../../utils/period'
 import { formatPeriodLabel } from '../../utils/period'
 import { PrintableStatement } from '../reports/PrintDocs' // تأكد من صحة مسار استيراد مستند الطباعة
 
@@ -24,6 +25,10 @@ interface LongTermExitProps {
   isBusy: boolean
   onExit: () => void
 }
+
+// مرجع ثابت لقيمة repayments الافتراضية — `= []` تُنشئ مصفوفة جديدة كل عرض فتُبطل
+// كل useMemo تعتمد عليها (نفس ما أمسكه اختبار useBalances).
+const NO_REPAYMENTS: Repayment[] = []
 
 interface TravelerProfileModalProps {
   traveler: Traveler
@@ -57,6 +62,8 @@ interface TravelerProfileModalProps {
    *  الحالية دوماً (انظر currentPeriod أدناه)، وهي الوحيدة المعروضة الآن —
    *  لا مُصفّي يدوي بعد الآن، انظر ReportsView.tsx لعرض دورة سابقة بعينها. */
   periods?: PeriodKey[]
+  /** 🆕 قيود السداد غير المحذوفة — تدخل كشف الحساب ورصيده الجاري. */
+  repayments?: Repayment[]
 }
 
 type TabType = 'summary' | 'statement'
@@ -86,6 +93,7 @@ export default function TravelerProfileModal({
   longTermExit,
   onSubmitDeposit,
   periods,
+  repayments = NO_REPAYMENTS,
 }: TravelerProfileModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab)
 
@@ -130,9 +138,29 @@ export default function TravelerProfileModal({
   // مصروفاً يدخل filterCycleExpenses إطلاقاً) — فمن أضاف إيداعاً هذه الدورة
   // كان يرى "المودَع" في الخلاصة أقلّ من رصيده الحقيقي (المعروض بصحة في كشف
   // الحساب التفصيلي) بقيمة ذلك الإيداع بالضبط، ما بدا له كأن إيداعه اختفى.
-  const periodPocketAndShare = useMemo(() => buildAccountStatement(0, traveler, displayExpenses), [traveler, displayExpenses])
+  // 🆕 اسم طرف السداد — من كل المسافرين (مع المحذوفين إن وُجدوا في القائمة).
+  const nameOf = useMemo(() => {
+    const byId = new Map(allTravelers.map(t => [t.id, t.shortName]))
+    return (id: number) => byId.get(id) ?? '—'
+  }, [allTravelers])
+  // 🆕 سداد هذه الدورة وحدها — السداد في دورة سابقة مُضمَّن أصلاً في المبلغ
+  // المُرحَّل (closeMonth يقرأ الرصيد من readLedger، والسداد جزء منه).
+  const displayRepayments = useMemo(
+    () => (hasPeriods ? repayments.filter(r => isInPeriod(r.date, currentPeriod!)) : repayments),
+    [hasPeriods, repayments, currentPeriod],
+  )
+  const periodPocketAndShare = useMemo(
+    () => buildAccountStatement(0, traveler, displayExpenses, displayRepayments, nameOf),
+    [traveler, displayExpenses, displayRepayments, nameOf],
+  )
+  // ⚠️ 🆕 balance.remaining صار يشمل السداد، فيُطرح صافيه هنا أيضاً — وإلا
+  // ظهر ما استلمه كأنه «مودَع» ناقص، وما سدّده كأنه إيداع جديد في الصندوق.
   const depositedThisCycle = balance.remaining + periodPocketAndShare.totalShare - periodPocketAndShare.totalPaidByPocket
-  const statement = useMemo(() => buildAccountStatement(balance.deposited, traveler, expenses), [balance.deposited, traveler, expenses])
+    - periodPocketAndShare.totalRepaidOut + periodPocketAndShare.totalRepaidIn
+  const statement = useMemo(
+    () => buildAccountStatement(balance.deposited, traveler, expenses, repayments, nameOf),
+    [balance.deposited, traveler, expenses, repayments, nameOf],
+  )
   const pays = useMemo(() => settlements.filter(s => s.fromId === traveler.id), [settlements, traveler.id])
   const receives = useMemo(() => settlements.filter(s => s.toId === traveler.id), [settlements, traveler.id])
   // 🆕 من يرى سجل تعديلات الرصيد: المسؤول أو منظّم الرحلة (يريان سجل أي
@@ -145,8 +173,8 @@ export default function TravelerProfileModal({
   // يبقى الخط البسيط (statement.rows) هو المعروض حين لا تتوفر السجلات بعد
   // (تحميل/بلا صلاحية/خطأ) كي لا يختفي كشف الحساب كاملاً بانتظارها.
   const mergedTimeline = useMemo(
-    () => (canViewDepositLogs && logs && !logsError ? buildMergedTimeline(traveler, expenses, logs) : null),
-    [canViewDepositLogs, logs, logsError, traveler, expenses],
+    () => (canViewDepositLogs && logs && !logsError ? buildMergedTimeline(traveler, expenses, logs, repayments, nameOf) : null),
+    [canViewDepositLogs, logs, logsError, traveler, expenses, repayments, nameOf],
   )
 
   // إعادة حيلة محرك WebKit لتجاوز حظر الطباعة التلقائي في iOS Safari
@@ -341,11 +369,22 @@ export default function TravelerProfileModal({
             <div className="space-y-5">
               {/* 🆕 صيغة الرصيد كاملة حين دفع مصروفاً واحداً على الأقل من جيبه — لا
                   تُعرض لغيره تفادياً لتكرار ما تقوله بطاقات "الخلاصة" أعلاه بالفعل. */}
-              {statement.totalPaidByPocket !== 0 && (
+              {(statement.totalPaidByPocket !== 0 || statement.totalRepaidOut !== 0 || statement.totalRepaidIn !== 0) && (
                 <section className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <KpiCard Icon={Wallet} label="المودَع" value={fmt(statement.opening)} tone="teal" />
-                  <KpiCard Icon={HandCoins} label="دفعه من جيبه" value={fmt(statement.totalPaidByPocket)} tone="teal" />
+                  {statement.totalPaidByPocket !== 0 && (
+                    <KpiCard Icon={HandCoins} label="دفعه من جيبه" value={fmt(statement.totalPaidByPocket)} tone="teal" />
+                  )}
                   <KpiCard Icon={Receipt} label="نصيبه من المصاريف" value={fmt(statement.totalShare)} tone="rose" />
+                  {/* 🆕 صافي السداد بإشارته: موجب = سدّد لغيره، سالب = استلم. */}
+                  {(statement.totalRepaidOut !== 0 || statement.totalRepaidIn !== 0) && (
+                    <KpiCard
+                      Icon={ArrowRightLeft}
+                      label={statement.totalRepaidOut >= statement.totalRepaidIn ? 'سدّد' : 'استلم'}
+                      value={fmt(Math.abs(statement.totalRepaidOut - statement.totalRepaidIn))}
+                      tone="teal"
+                    />
+                  )}
                   <KpiCard Icon={Scale} label="الرصيد" value={fmt(statement.remaining)} tone={statement.remaining < 0 ? 'rose' : 'teal'} />
                 </section>
               )}
@@ -609,6 +648,16 @@ function timelineRowView(row: TimelineRow): TimelineRowView {
       Icon: HandCoins, dot: 'bg-teal-500', amountColor: 'text-teal-600',
       displayAmount: `+${fmt(row.amount)}`, title: row.description,
       subtitle: `${formatRowDate(row.date)} · ${row.category}`, badge: 'دفعها من جيبه',
+    }
+  }
+  // 🆕 السداد — لون مستقل (sky) عن المصروف والإيداع والترحيل، فلا يُقرأ تحويلٌ
+  // بين شخصين كمصروف أو كإيداع في الصندوق. الإشارة من isCreditKind وحدها.
+  if (row.kind === 'repaymentOut' || row.kind === 'repaymentIn') {
+    const credit = isCreditKind(row.kind)
+    return {
+      Icon: ArrowRightLeft, dot: 'bg-sky-500', amountColor: 'text-sky-700',
+      displayAmount: `${credit ? '+' : '−'}${fmt(row.amount)}`, title: row.description,
+      subtitle: formatRowDate(row.date), badge: credit ? 'سدّد' : 'استلم',
     }
   }
   return {

@@ -29,6 +29,7 @@ vi.mock('../firestore', () => ({
   travelersColByTrip: vi.fn((tripId: string) => ({ _tag: 'travelers', tripId })),
   travelerNamesColByTrip: vi.fn((tripId: string) => ({ _tag: 'travelerNames', tripId })),
   depositLogsColByTrip: vi.fn((tripId: string, travelerId: number) => ({ _tag: 'depositLogs', tripId, travelerId })),
+  repaymentsColByTrip: vi.fn((tripId: string) => ({ _tag: 'repayments', tripId })),
 }))
 vi.mock('../utils/haptics', () => ({ haptic: { success: vi.fn(), error: vi.fn() } }))
 // buildTripBackup حقيقية (لها اختباراتها الخاصة في utils/backup.test.ts)؛

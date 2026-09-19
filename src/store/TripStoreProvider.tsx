@@ -1,6 +1,6 @@
 import { useLayoutEffect, useState } from 'react'
 import type { ReactNode, Dispatch, FormEvent, SetStateAction } from 'react'
-import type { Traveler, Expense, ExpenseFormData, CurrencyMap, AppUser } from '../types'
+import type { Traveler, Expense, Repayment, ExpenseFormData, CurrencyMap, AppUser } from '../types'
 import { createTripStore, TripStoreContext } from './tripStore'
 import type { TripActionsSlice } from './tripStore'
 
@@ -39,6 +39,7 @@ interface TripStoreProviderProps {
   // — data
   travelers: Traveler[]
   expenses: Expense[]
+  repayments: Repayment[]
   user: AppUser | null| null
   isAdmin: boolean
   isOrganizer: boolean
@@ -65,7 +66,7 @@ interface TripStoreProviderProps {
 }
 
 export function TripStoreProvider({
-  travelers, expenses, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt,
+  travelers, expenses, repayments, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt,
   cancelExpenseForm, startEditExpense, requestDeleteExpense,
   submitDeposit, requestDeleteTraveler,
   expenseForm, setExpenseForm, isExpenseFormOpen, isEditingExpense,
@@ -79,7 +80,7 @@ export function TripStoreProvider({
   // وحده. التهيئة الكسولة عبر useState هي البديل الذي يوصي به React لهذا
   // الغرض بالضبط، فتزول المخالفات بلا أي تغيير في السلوك.
   const [store] = useState(() => createTripStore({
-    data: { travelers, expenses, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt },
+    data: { travelers, expenses, repayments, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt },
     actions: {
       cancelExpenseForm, startEditExpense, requestDeleteExpense,
       submitDeposit, requestDeleteTraveler,
@@ -92,9 +93,9 @@ export function TripStoreProvider({
 
   useLayoutEffect(() => {
     store.setState({
-      data: { travelers, expenses, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt },
+      data: { travelers, expenses, repayments, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt },
     })
-  }, [store, travelers, expenses, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt])
+  }, [store, travelers, expenses, repayments, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt])
 
   // ⚠️ كل ما فيها دوال، أكثرها useCallback بلا اعتماديات. تتغير عملياً عند
   // تغيّر قائمة المسافرين النشطين فقط (نادر). لا تُضف إليها أي قيمة متغيّرة —

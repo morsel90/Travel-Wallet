@@ -210,6 +210,21 @@ service cloud.firestore {
 
     // التحقّق من بنية سجل تدقيق تعديل الرصيد — غير قابل للتعديل أو الحذف
     // (immutable). changedByUid يجب أن يطابق مُنشئ الطلب الفعلي لمنع انتحال هوية.
+    // 🆕 قيد سداد بين مسافرَين — يطابق buildRepayment في functions/index.js
+    // حقلاً بحقل. لا يُنشئه العميل أبداً (انظر match /repayments)؛ الشكل يُفحص
+    // هنا لأن الحذف الليّن `update` يُقيّم المستند كاملاً بعد التعديل.
+    function isValidRepayment(d) {
+      return d.keys().hasOnly(['fromId', 'toId', 'amount', 'date', 'createdAt', 'createdByUid', 'deletedAt'])
+        && d.fromId is int
+        && d.toId is int
+        && d.fromId != d.toId
+        && isFiniteAmount(d.amount) && d.amount > 0
+        && d.date is string && d.date.size() == 10
+        && d.createdAt is number
+        && d.createdByUid is string
+        && (d.deletedAt == null || d.deletedAt is number);
+    }
+
     function isValidDepositLog(d) {
       return d.keys().hasOnly([
                'travelerId', 'previousDeposited', 'newDeposited', 'delta',
@@ -475,6 +490,25 @@ service cloud.firestore {
                              || isExpenseOwner(resource, appId)
                            );
         allow delete: if false; // 🚫 حظر الحذف الصلب نهائياً لإجبار استخدام الـ Soft Delete
+      }
+
+      // 🆕 السداد بين المسافرين — القيد الثالث في الدفتر (Repayment في src/types.ts).
+      //
+      // ⚠️ الإنشاء للخادم وحده: السقف (لا يدفع المَدين أكثر من دينه) والاتجاه
+      // (من مَدين إلى دائن) لا يُفحصان إلا بجمع الأرصدة من الدفتر كاملاً، والقواعد
+      // لا تستطيع ذلك. فالعميل الذي يكتب قيد سداد مباشرة يستطيع اختراع دين.
+      //
+      // والعميل يملك الحذف الليّن والاستعادة فقط — منظّم الرحلة أو المسؤول، نفس
+      // من يسجّل السداد. `affectedKeys().hasOnly(['deletedAt'])` تمنع تعديل
+      // المبلغ أو الطرفَين عبر «حذف» شكلي.
+      match /repayments/{repaymentId} {
+        allow read:   if isMember(appId) || isAdmin();
+        allow create: if false;
+        allow update: if (isAdmin() || isOrganizer(appId))
+                        && tripAcceptsWrites(appId)
+                        && isValidRepayment(request.resource.data)
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedAt']);
+        allow delete: if false;
       }
 
       // 🆕 tripAcceptsWrites: المسافرون والإيداعات تبقى قابلة للتعديل في الرحلة

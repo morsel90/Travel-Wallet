@@ -28,6 +28,7 @@ const currencies: CurrencyMap = Object.fromEntries(
 export const baseData: TripDataSlice = {
   travelers: fx.travelers,
   expenses: fx.expenses,
+  repayments: [],
   user: null,
   isAdmin: false,
   isOrganizer: false,

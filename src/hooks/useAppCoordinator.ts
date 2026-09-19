@@ -6,6 +6,7 @@ import {
   useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
   useTripAdminActions, useAllTrips, useMyTrips, useTripStats, useMyTripRole, useInviteJoin, useUserProfile,
   useOrganizerBankDetails, useSyncTravelerNameFromProfile, useLongTermActions, useSettlementActions,
+  useRepayments, useRepaymentActions,
   useSyncRecovery,
 } from './index'
 import { useFilteredExpenses } from './useFilteredExpenses'
@@ -74,6 +75,8 @@ export function useAppCoordinator() {
   const { ratesUpdatedAt, CURRENCIES } = useExchangeRates()
   const { expenses,  setExpenses,  expensesLoaded,  refreshExpenses }  = useExpenses(hasAccess ? user : null, { setIsSyncing: setIsExpensesSyncing, setSyncError })
   const { travelers, setTravelers, travelersLoaded, refreshTravelers } = useTravelers(hasAccess ? user : null, setIsTravelersSyncing)
+  // 🆕 قيود السداد — القيد الثالث في الدفتر (انظر Repayment في types.ts).
+  const { repayments, setRepayments, repaymentsLoaded, refreshRepayments } = useRepayments(hasAccess ? user : null)
   // organizerUid للبطاقة البنكية، والمسار للويدجت والتقارير. 🆕 tripName وبقية
   // الحقول تُستهلك أيضاً في pickerTrips أدناه — صفّ الرحلة المفتوحة حالياً في
   // «رحلاتي» يعرض هذه النسخة الحيّة بدل لقطة myTrips الثابتة.
@@ -96,20 +99,24 @@ export function useAppCoordinator() {
   const canAddExpenses = acceptsExpenses(tripStatus)
   const tripClosedNotice = closedTripNotice(tripStatus)
 
-  const isInitialLoading = !expensesLoaded || !travelersLoaded
+  // 🆕 repaymentsLoaded أيضاً: بلاه تُحسب الأرصدة لحظةً بلا السداد، فتومض
+  // تسويةٌ سُدّدت فعلاً ثم تختفي.
+  const isInitialLoading = !expensesLoaded || !travelersLoaded || !repaymentsLoaded
 
   const activeExpenses = useMemo(() => expenses.filter(e => !e.deletedAt), [expenses])
   const activeTravelers = useMemo(() => travelers.filter(t => !t.deletedAt), [travelers])
 
   const deletedExpenses = useMemo(() => expenses.filter(e => e.deletedAt), [expenses])
   const deletedTravelers = useMemo(() => travelers.filter(t => t.deletedAt), [travelers])
+  const activeRepayments = useMemo(() => repayments.filter(r => !r.deletedAt), [repayments])
+  const deletedRepayments = useMemo(() => repayments.filter(r => r.deletedAt), [repayments])
 
   // 🆕 يُصلح اسم مسافري تلقائياً إن اختلف عن بروفايلي — بديل ربط حيّ (كبيانات
   // البنك) اخترناه لتفادي اشتراك منفصل لكل مسافر مربوط بحساب في كل مكان يُعرض
   // فيه اسمه. انظر تعليق الملف. لا شيء يُعرض بسببه — صامت بالكامل.
   useSyncTravelerNameFromProfile(TRIP_ID, hasAccess ? user : null, activeTravelers, profile.profile.displayName)
 
-  const { balances, totalSpent, totalDeposited, totalRemaining } = useBalances(activeTravelers, activeExpenses)
+  const { balances, totalSpent, totalDeposited, totalRemaining } = useBalances(activeTravelers, activeExpenses, activeRepayments)
 
   // 🆕 نموذج الهوية الهجين — بطاقة المستخدم نفسه (إن وُجدت) أولاً في قائمة
   // العرض. ⚠️ لا تُعاد ترتيب `balances` نفسها: تُستهلك في حساب التسويات
@@ -235,8 +242,8 @@ export function useAppCoordinator() {
   // سحب-للتحديث اليدوي (يُبلغ عن الفشل، فالمستخدم طلبه وينتظره) والتعافي
   // التلقائي في useSyncRecovery (يصمت عند الفشل، فالمستخدم لم يطلب شيئاً).
   const refreshFromServer = useCallback(async () => {
-    await Promise.all([refreshExpenses(), refreshTravelers()])
-  }, [refreshExpenses, refreshTravelers])
+    await Promise.all([refreshExpenses(), refreshTravelers(), refreshRepayments()])
+  }, [refreshExpenses, refreshTravelers, refreshRepayments])
 
   const handlePullToRefresh = useCallback(async () => {
     try {
@@ -311,6 +318,7 @@ export function useAppCoordinator() {
   // 🆕 تسجيل التحويلات — نفس السبب ونفس الحدّ: الدفتر لا يُكتب من المتصفح،
   // والفعل متاح لمنظّم الرحلة أو المسؤول وحدهما (callerManagesTrip خادمياً).
   const settlementActions = useSettlementActions({ showToast, handleFirestoreError })
+  const repaymentActions = useRepaymentActions({ setRepayments, showToast, handleFirestoreError })
   const canRecordSettlements = isAdmin || isOrganizer
   const recordTransfer = useCallback((settlement: Settlement) => {
     void settlementActions.recordSettlement(
@@ -483,6 +491,10 @@ export function useAppCoordinator() {
       // 🆕 تسجيل التحويل — undefined لغير المنظّم/المسؤول، فيُخفي الزرّ نفسه.
       onRecordTransfer: canRecordSettlements ? recordTransfer : undefined,
       recordingSettlementKey: settlementActions.recordingKey,
+      // 🆕 قيود السداد المسجّلة — تُعرض تحت التسويات، ويحذفها من يسجّلها.
+      activeRepayments, deletedRepayments,
+      onDeleteRepayment: canRecordSettlements ? repaymentActions.deleteRepayment : undefined,
+      onRestoreRepayment: repaymentActions.restoreRepayment,
       // 🆕 نموذج الهوية الهجين — بطاقتك مثبَّتة أولاً هنا (انظر myBalance
       // وتعليقه أعلاه) — هذا وحده كافٍ الآن، بلا بطاقة ملخّص منفصلة فوقها
       // (MyBalanceBanner، حُذفت — كانت تكرر نفس الرقم بلا معلومة جديدة).

@@ -3,12 +3,12 @@ import { createPortal } from 'react-dom'
 import { motion } from 'motion/react'
 // تمت إعادة استيراد أيقونة Printer
 import { X, Download, Printer, BarChart3, TrendingUp, Wallet, Receipt, Scale, ArrowRightLeft, CalendarRange } from '../../icons'
-import type { Expense, Traveler, TravelerBalance, Settlement, CategoryTotal, ItinerarySegment, PeriodKey } from '../../types'
+import type { Expense, Repayment, Traveler, TravelerBalance, Settlement, CategoryTotal, ItinerarySegment, PeriodKey } from '../../types'
 import { buildDailySummary, buildPeriodOverview, buildCurrentPeriodTravelerSummaries } from '../../utils/reportData'
 import { exportTripToExcel } from '../../utils/reports'
 import { calculateSettlements, calculateCategoryTotals } from '../../utils/calculations'
 import { filterCycleExpenses } from '../../utils/longTerm'
-import { formatPeriodLabel } from '../../utils/period'
+import { formatPeriodLabel, isInPeriod } from '../../utils/period'
 import { PrintableTripReport } from './PrintDocs'
 
 interface ReportsViewProps {
@@ -31,6 +31,8 @@ interface ReportsViewProps {
    * (commit c3acfbf) — الخلاصة للدورة الحالية دوماً، والتفصيلي تراكمي دوماً.
    */
   periods?: PeriodKey[]
+  /** 🆕 قيود السداد غير المحذوفة — قسم في الملخص وورقة في Excel. */
+  repayments?: Repayment[]
   onClose: () => void
 }
 
@@ -38,7 +40,10 @@ type ReportTab = 'current' | 'full' | 'daily'
 
 const fmt = (n: number): string => n.toFixed(2)
 
-function ReportsView({ travelers, expenses, balances, settlements, categoryTotals, itinerary, periods, onClose }: ReportsViewProps) {
+// مرجع ثابت — انظر NO_REPAYMENTS في TravelerProfileModal.
+const NO_REPAYMENTS: Repayment[] = []
+
+function ReportsView({ travelers, expenses, balances, settlements, categoryTotals, itinerary, periods, repayments = NO_REPAYMENTS, onClose }: ReportsViewProps) {
   const hasPeriods = !!periods && periods.length > 0
   // 🆕 آخر عنصر في periods هو الدورة الحالية (المفتوحة) دائماً — نفس مبدأ
   // TravelerProfileModal (ثابتة من بناء listPeriods، تنتهي القائمة عند
@@ -77,14 +82,19 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
     () => (hasPeriods ? filterCycleExpenses(expenses, currentPeriod!) : []),
     [hasPeriods, expenses, currentPeriod],
   )
+  // 🆕 اسم طرف السداد — بالاسم الكامل كبقية التقرير (s.fromName).
+  const nameOf = useMemo(() => {
+    const byId = new Map(travelers.map(t => [t.id, t.name]))
+    return (id: number) => byId.get(id) ?? '—'
+  }, [travelers])
   const currentPeriodBalances = useMemo<TravelerBalance[]>(() => {
     if (!hasPeriods) return []
-    const summaries = buildCurrentPeriodTravelerSummaries(travelers, balances, expenses, currentPeriod!)
+    const summaries = buildCurrentPeriodTravelerSummaries(travelers, balances, expenses, currentPeriod!, repayments)
     return summaries.map(s => {
       const traveler = travelers.find(t => t.id === s.id)
       return { ...(traveler as Traveler), deposited: s.opening, totalExpenses: s.spent, remaining: s.closing }
     })
-  }, [hasPeriods, travelers, balances, expenses, currentPeriod])
+  }, [hasPeriods, travelers, balances, expenses, currentPeriod, repayments])
   const currentSettlements = useMemo(
     () => (hasPeriods ? calculateSettlements(currentPeriodBalances) : []),
     [hasPeriods, currentPeriodBalances],
@@ -159,7 +169,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
 
             <button
               type="button"
-              onClick={() => exportTripToExcel({ expenses, travelers, balances, settlements, periods })}
+              onClick={() => exportTripToExcel({ expenses, travelers, balances, settlements, periods, repayments })}
               disabled={expenses.length === 0}
               className="flex items-center gap-1.5 bg-teal-800/60 hover:bg-teal-800 text-teal-50 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-40"
             >
@@ -204,6 +214,8 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
             caption={`${formatPeriodLabel(currentPeriod!)} · ${currentPeriodExpenses.length} مصروف · ${travelers.length} مسافر · ${currentTotals.days} يوم`}
             settlements={currentSettlements}
             categoryTotals={currentCategoryTotals}
+            repayments={repayments.filter(r => isInPeriod(r.date, currentPeriod!))}
+            nameOf={nameOf}
           />
         )}
 
@@ -226,6 +238,8 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
               caption={`${expenses.length} مصروف · ${travelers.length} مسافر · ${fullTotals.days} يوم`}
               settlements={settlements}
               categoryTotals={categoryTotals}
+              repayments={repayments}
+              nameOf={nameOf}
             />
 
             {hasPeriods && (
@@ -365,7 +379,10 @@ function KpiCard({ Icon, label, value, tone }: { Icon: typeof Wallet; label: str
  *  (الدورة الحالية أو الرحلة كاملة) والتسميات. */
 function SummaryBody({
   depositLabel, remainingLabel, deposited, spent, remaining, caption, settlements, categoryTotals,
+  repayments, nameOf,
 }: {
+  repayments: Repayment[]
+  nameOf: (id: number) => string
   depositLabel: string
   remainingLabel: string
   deposited: number
@@ -405,6 +422,24 @@ function SummaryBody({
           </div>
         )}
       </section>
+
+      {/* 🆕 ما سُدِّد فعلاً — تحت ما بقي مقترحاً، فيقرأ المنظّم الصورة كاملة. */}
+      {repayments.length > 0 && (
+        <section className="bg-white rounded-2xl shadow-xs border border-slate-200 p-5">
+          <h2 className="text-base font-bold text-slate-800 flex items-center gap-2 mb-4">
+            <ArrowRightLeft className="w-5 h-5 text-sky-600" /> السداد المسجّل
+          </h2>
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            {repayments.map(r => (
+              <div key={r.id} className="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <span className="text-sm font-bold text-slate-700">{nameOf(r.fromId)} ← {nameOf(r.toId)}</span>
+                <span className="text-[11px] text-slate-400 tabular-nums" dir="ltr">{r.date}</span>
+                <span className="font-black text-sky-700 tabular-nums text-sm">{fmt(r.amount)} ﷼</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {categoryTotals.length > 0 && (
         <section className="bg-white rounded-2xl shadow-xs border border-slate-200 p-5">

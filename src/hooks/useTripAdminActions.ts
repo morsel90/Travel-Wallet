@@ -25,14 +25,14 @@ import { setDoc, getDoc, getDocs } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, functions } from '../firebase'
 import {
-  tripDocById, expensesColByTrip, travelersColByTrip, travelerNamesColByTrip, depositLogsColByTrip,
+  tripDocById, expensesColByTrip, travelersColByTrip, travelerNamesColByTrip, depositLogsColByTrip, repaymentsColByTrip,
 } from '../firestore'
 import { haptic } from '../utils/haptics'
 import { MAX_SEGMENTS, deriveTripType, normalizeItineraryRev } from '../utils/itinerary'
 import { currentPeriodKey } from '../utils/period'
 import { buildTripBackup, downloadTripBackup, BackupNotPortableError } from '../utils/backup'
 import { TRIP_STATUS_LABEL } from '../types'
-import type { DepositLogEntry, Expense, ItinerarySegment, ToastMessage, Traveler, TripStatus, TripType } from '../types'
+import type { DepositLogEntry, Expense, ItinerarySegment, Repayment, ToastMessage, Traveler, TripStatus, TripType } from '../types'
 import type { TripSummary } from './useAllTrips'
 import { callableMessage } from '../utils/callableErrors'
 
@@ -553,11 +553,13 @@ export function useTripAdminActions({
 
     setIsSaving(true)
     try {
-      const [travelersSnap, expensesSnap, travelerNamesSnap] = await Promise.all([
+      const [travelersSnap, expensesSnap, travelerNamesSnap, repaymentsSnap] = await Promise.all([
         getDocs(travelersColByTrip(trip.id)),
         getDocs(expensesColByTrip(trip.id)),
         getDocs(travelerNamesColByTrip(trip.id)),
+        getDocs(repaymentsColByTrip(trip.id)),
       ])
+      const repayments = repaymentsSnap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Repayment, 'id'>) }))
 
       const travelers = travelersSnap.docs.map(d => d.data() as Traveler)
       const expenses = expensesSnap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Expense, 'id'>) }))
@@ -576,7 +578,7 @@ export function useTripAdminActions({
       const backup = buildTripBackup({
         tripId: trip.id,
         trip: { name: trip.name, itinerary: trip.itinerary, status: trip.status },
-        travelers, expenses, depositLogs, travelerNames,
+        travelers, expenses, depositLogs, travelerNames, repayments,
       })
       downloadTripBackup(backup)
 

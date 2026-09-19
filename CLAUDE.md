@@ -34,7 +34,7 @@
 - 🆕 مسار المصروف الكامل خمس خطوات ظاهرة لا أكثر: المبلغ → ماذا كان؟ → **من دفع؟** → المشاركون → حفظ. العملة والتقسيم غير المتساوي والتاريخ لا تظهر إلا عند طلبها، والفئة تُشتقّ من الوصف (`utils/categoryGuess.ts`) بدل أن تُسأل (see *Design Decisions*)
 - 160+ currencies with live exchange rates (open.er-api.com)
 - Category-based spending breakdown (HTML/CSS charts — no Recharts)
-- 🆕 تسجيل التحويلات: زرّ التسوية يكتب حركة مالية موثّقة (`recordSettlement`) تُصفّي رصيدَي الطرفَين وتُخلّف سطرَي تدقيق — لا تأشيراً محلياً يزول بإعادة التحميل. متاح لمنظّم الرحلة أو المسؤول (see *Design Decisions*)
+- 🆕 تسجيل التحويلات: زرّ التسوية يكتب **قيد سداد** (`repayments/` عبر `recordSettlement`) — القيد الثالث في الدفتر، لا إيداع ولا مصروف: يرفع رصيد الدافع ويخفض رصيد المستلم ولا يمسّ «المودَع» ولا «إجمالي المصروف»، فيصلح لمن دفع من جيبه. يظهر تحت «الأرصدة» ويُحذف منها (يعود الدين)، وفي كشف الحساب والتقارير وExcel والنسخة الاحتياطية وسلة المهملات. متاح لمنظّم الرحلة أو المسؤول (see *Design Decisions*)
 - Per-traveler account statements + PDF printing via Portal
 - Full Excel export (pure-JS OOXML, no external deps)
 - Haptic feedback (Web Vibration API + visual flash for iOS)

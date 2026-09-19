@@ -9,7 +9,7 @@ import {
   calculateTotalSpent,
   calculateTotalDeposited,
 } from './calculations'
-import type { Traveler, TravelerBalance, Expense } from '../types'
+import type { Traveler, TravelerBalance, Expense, Repayment } from '../types'
 
 // ─── قواعد السلامة المالية (Financial Invariants) ─────────────────────────────
 //
@@ -654,3 +654,75 @@ describe('قاعدة ٤ — القيم غير المنتهية محجوزة عن
     ).toBe(300)
   })
 })
+
+// ─── 🆕 القاعدة ٧: السداد ينقل ولا يُنشئ ─────────────────────────────────────
+// قيد السداد (Repayment) حركةٌ بين شخصين: ما يرتفع عند الدافع ينخفض عند
+// المستلم بالضبط. كسر هذه القاعدة يعني أن تسجيل تحويلٍ بنكيٍّ صغير يُغيّر
+// «الرصيد» الإجمالي للرحلة — أي أن الدفتر يخترع مالاً أو يُضيّعه.
+
+/** دفتر عادي + قيود سداد بين مسافرَين مختلفَين منه. */
+const bookWithRepaymentsArb = bookArb.chain(book => {
+  const ids = book.travelers.map(t => t.id)
+  if (ids.length < 2) return fc.constant({ ...book, repayments: [] as Repayment[] })
+  return fc
+    .array(
+      fc.record({
+        pair: fc.uniqueArray(fc.constantFrom(...ids), { minLength: 2, maxLength: 2 }),
+        amount: money(1, 200_000),
+      }),
+      { maxLength: 8 },
+    )
+    .map(rs => ({
+      ...book,
+      repayments: rs.map((r, i): Repayment => ({
+        id: `r${i}`, fromId: r.pair[0], toId: r.pair[1], amount: r.amount,
+        date: '2026-01-01', createdAt: i, createdByUid: 'u',
+      })),
+    }))
+})
+
+describe('قاعدة ٧ — السداد ينقل الرصيد ولا يُنشئه', () => {
+  it('مجموع الأرصدة لا يتغيّر بأي عدد من قيود السداد', () => {
+    fc.assert(
+      fc.property(bookWithRepaymentsArb, ({ travelers, expenses, repayments }) => {
+        const without = calculateBalances(travelers, expenses)
+        const withR = calculateBalances(travelers, expenses, repayments)
+        expect(halalas(sum(withR.map(b => b.remaining)))).toBe(halalas(sum(without.map(b => b.remaining))))
+      }),
+      RUNS,
+    )
+  })
+
+  it('كل مسافر يتحرّك بصافي ما سدّده ناقص ما استلمه — بالهللة', () => {
+    fc.assert(
+      fc.property(bookWithRepaymentsArb, ({ travelers, expenses, repayments }) => {
+        const without = calculateBalances(travelers, expenses)
+        const withR = calculateBalances(travelers, expenses, repayments)
+        for (const b of withR) {
+          const base = without.find(w => w.id === b.id)!
+          const net = sum(repayments.filter(r => r.fromId === b.id).map(r => r.amount))
+            - sum(repayments.filter(r => r.toId === b.id).map(r => r.amount))
+          expect(halalas(b.remaining)).toBe(halalas(base.remaining + net))
+        }
+      }),
+      RUNS,
+    )
+  })
+
+  it('السداد لا يمسّ «المودَع» ولا «نصيبه من المصاريف»', () => {
+    // ⚠️ هذا بالضبط ما انكسر حين كان السداد يُكتب إيداعاً (Bh26: مودَعٌ ‎-170.5)،
+    // وما يعتمد عليه cycleShareBalances في الرحلة الطويلة (نصيب الدورة).
+    fc.assert(
+      fc.property(bookWithRepaymentsArb, ({ travelers, expenses, repayments }) => {
+        const without = calculateBalances(travelers, expenses)
+        const withR = calculateBalances(travelers, expenses, repayments)
+        withR.forEach((b, i) => {
+          expect(b.deposited).toBe(without[i].deposited)
+          expect(halalas(b.totalExpenses)).toBe(halalas(without[i].totalExpenses))
+        })
+      }),
+      RUNS,
+    )
+  })
+})
+

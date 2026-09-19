@@ -74,10 +74,11 @@ interface ModalManagerProps {
   closeModal: () => void
   // التقارير — بيانات العرض فقط (onClose يُدار داخلياً)
   reports: Pick<ComponentProps<typeof ReportsView>,
-    'travelers' | 'expenses' | 'balances' | 'settlements' | 'categoryTotals' | 'itinerary' | 'periods'>
+    'travelers' | 'expenses' | 'balances' | 'settlements' | 'categoryTotals' | 'itinerary' | 'periods' | 'repayments'>
   // سلة المهملات
   trash: Pick<ComponentProps<typeof TrashBinModal>,
-    'deletedExpenses' | 'deletedTravelers' | 'onRestoreExpense' | 'onRestoreTraveler'>
+    'deletedExpenses' | 'deletedTravelers' | 'onRestoreExpense' | 'onRestoreTraveler'
+    | 'deletedRepayments' | 'onRestoreRepayment' | 'allTravelers'>
   /** 🆕 تعديل الرحلة المفتوحة حالياً — undefined لمن لا يملك صلاحيته (لا مسؤول ولا منظّم)،
    * فالمودال لا يُبنى أصلاً له حتى لو تسلّلت حالة modal.type === 'editTrip' بطريقة ما. */
   editTrip?: Omit<ComponentProps<typeof EditTripModal>, 'onClose'>

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import type { DepositLogEntry, Expense, Traveler } from '../types'
-import { buildTravelerReport, buildDailySummary, buildAccountStatement, buildMergedTimeline, buildCurrentPeriodTravelerSummaries, buildPeriodOverview } from './reportData'
+import type { DepositLogEntry, Expense, Repayment, Traveler } from '../types'
+import { buildTravelerReport, buildDailySummary, buildAccountStatement, buildMergedTimeline, buildCurrentPeriodTravelerSummaries, buildPeriodOverview, isCreditKind, statementKindLabel } from './reportData'
 import { calculateBalances } from './calculations'
 import { ROLLOVER_CATEGORY } from './longTerm'
 
@@ -225,3 +225,65 @@ describe('buildPeriodOverview', () => {
     expect(rows[2]).toEqual({ period: '2026-09', label: 'سبتمبر 2026', count: 0, spent: 0 })
   })
 })
+
+// ─── 🆕 السداد في كشف الحساب — سيناريو Bh26 نفسه ────────────────────────────
+// محمد دفع 341 من جيبه عن الاثنين، والدرويش لم يودِع شيئاً: الدرويش عليه 170.5
+// ومحمد له 170.5. ثم سُجّل سداد 170.5 من الدرويش إلى محمد. قبل القيد الثالث كان
+// هذا يُنزل «مودَع» محمد إلى ‎-170.5.
+describe('كشف الحساب مع السداد', () => {
+  const mohammed: Traveler = { id: 10, name: 'محمد العاثم', shortName: 'محمد', deposited: 0, deletedAt: null }
+  const darwish:  Traveler = { id: 11, name: 'الدرويش',     shortName: 'الدرويش', deposited: 0, deletedAt: null }
+  const pocket: Expense[] = [{
+    id: 'p1', date: '2026-09-18', description: 'غداء', amount: 341, originalAmount: 341, currency: 'SAR',
+    exchangeRate: 1, participants: [10, 11], paidBy: 10, createdAt: 1, category: 'طعام وشراب',
+  }]
+  const repayments: Repayment[] = [{
+    id: 'r1', fromId: 11, toId: 10, amount: 170.5, date: '2026-09-18', createdAt: 2, createdByUid: 'u',
+  }]
+  const nameOf = (id: number) => (id === 10 ? 'محمد' : 'الدرويش')
+
+  it('رصيد الكشف يطابق calculateBalances لكلا الطرفين — والنتيجة صفر', () => {
+    const balances = calculateBalances([mohammed, darwish], pocket, repayments)
+    for (const t of [mohammed, darwish]) {
+      const st = buildAccountStatement(t.deposited, t, pocket, repayments, nameOf)
+      expect(st.remaining).toBeCloseTo(balances.find(b => b.id === t.id)!.remaining, 10)
+      expect(st.remaining).toBeCloseTo(0, 10)
+    }
+  })
+
+  it('المودَع يبقى صفراً — لا رصيد سالب ولا إيداع مختلَق', () => {
+    const balances = calculateBalances([mohammed, darwish], pocket, repayments)
+    expect(balances.map(b => b.deposited)).toEqual([0, 0])
+  })
+
+  it('سطر السداد: «سداد إلى …» موجب للدافع، و«سداد من …» سالب للمستلم', () => {
+    const payer = buildAccountStatement(0, darwish, pocket, repayments, nameOf)
+    const receiver = buildAccountStatement(0, mohammed, pocket, repayments, nameOf)
+    const payerRow = payer.rows.find(r => r.kind === 'repaymentOut')!
+    const receiverRow = receiver.rows.find(r => r.kind === 'repaymentIn')!
+    expect(payerRow.description).toBe('سداد إلى محمد')
+    expect(receiverRow.description).toBe('سداد من الدرويش')
+    expect(isCreditKind(payerRow.kind)).toBe(true)
+    expect(isCreditKind(receiverRow.kind)).toBe(false)
+    expect(statementKindLabel('repaymentOut')).toBe('سدّد')
+    expect(statementKindLabel('repaymentIn')).toBe('استلم')
+    expect(payer.totalRepaidOut).toBe(170.5)
+    expect(receiver.totalRepaidIn).toBe(170.5)
+  })
+
+  it('الخط الزمني المدمج يُغلق على الرصيد نفسه — السداد خارج سجلّ الإيداعات', () => {
+    const tl = buildMergedTimeline(mohammed, pocket, [], repayments, nameOf)
+    expect(tl.legacyOpening).toBe(0)
+    expect(tl.closing).toBeCloseTo(0, 10)
+    expect(tl.rows.map(r => r.kind)).toEqual(['paidByPocket', 'share', 'repaymentIn'])
+  })
+
+  it('ملخص الدورة: السداد لا يُحسب «مودَعاً افتتاحياً»', () => {
+    const balances = calculateBalances([mohammed, darwish], pocket, repayments)
+    const [m] = buildCurrentPeriodTravelerSummaries([mohammed], balances, pocket, '2026-09', repayments)
+    // افتتاحي الشهر صفر (لا إيداع، ولا شهر سابق) — لا 170.5 مستعارة من السداد.
+    expect(m.opening).toBeCloseTo(0, 10)
+    expect(m.closing).toBeCloseTo(0, 10)
+  })
+})
+

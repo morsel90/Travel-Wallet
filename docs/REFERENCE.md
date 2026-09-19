@@ -249,6 +249,12 @@ artifacts/{tripId}/public/data/
                                     uniqueness: a write to an existing doc is an
                                     update, so the loser of a race is rejected.
                                     Written with the traveler in one writeBatch.
+  repayments/{docId}             — 🆕 Repayment between two travelers { fromId, toId, amount, date,
+                                    createdAt, createdByUid, deletedAt }. The third ledger entry —
+                                    neither a deposit nor an expense: raises the payer's balance,
+                                    lowers the payee's, touches neither `deposited` nor totals.
+                                    Created by recordSettlement only (`create: if false`); the
+                                    client may change `deletedAt` alone (organizer/admin).
   rateLimits/{uid}               — Rate limit tracking per user
   travelers/{id}/depositLogs/{id} — Immutable deposit audit log (admin-only)
 
@@ -289,15 +295,13 @@ Variables* for why hand-rolled `fetch` made a staging environment impossible.
 import { httpsCallable } from 'firebase/functions'
 import { functions } from './firebase'
 
-// 🆕 hooks/useSettlementActions.ts — records a transfer between two travelers as a
-// documented ledger movement (payer's `deposited` up, payee's down, one audit row each).
-// 🆕 Refused when the payee's `deposited` would go below zero — i.e. his credit came from
-// paying expenses out of pocket (`paidBy`), not from deposits. See DECISIONS.md.
-// Organizer or global admin only; the server re-derives both balances and caps the
-// amount at min(debt, credit), so a stale screen cannot over-transfer.
+// 🆕 hooks/useSettlementActions.ts — records a transfer between two travelers as one
+// `repayments/` entry (no `deposited` change, no expense). Organizer or global admin only.
+// Direction and the min(debt, credit) cap are checked INSIDE a transaction that re-reads
+// travelers + expenses + repayments, so two quick taps cannot record it twice.
 await httpsCallable<
   { tripId: string; fromId: number; toId: number; amount: number },
-  { success: boolean; tripId: string; fromId: number; toId: number; amount: number }
+  { success: boolean; tripId: string; fromId: number; toId: number; amount: number; repaymentId: string }
 >(functions, 'recordSettlement')({ tripId, fromId, toId, amount })
 
 // 🆕 hooks/useInviteJoin.ts — requires a real (non-anonymous) sign-in first;

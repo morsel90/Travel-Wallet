@@ -2,11 +2,11 @@
 // جداول (صفوف خلايا) جاهزة للتصدير إلى Excel. قابلة للاختبار بالكامل عبر Vitest
 // (انظر reports.test.ts). التصدير الفعلي يتم عبر utils/xlsx.ts.
 
-import type { Expense, Traveler, TravelerBalance, Settlement, PeriodKey } from '../types'
+import type { Expense, Repayment, Traveler, TravelerBalance, Settlement, PeriodKey } from '../types'
 import { toDisplayNames } from './participants'
 import { splitByShares } from './calculations'
 import { downloadXlsx, type XlsxCell, type XlsxSheet } from './xlsx'
-import { buildPeriodOverview, type AccountStatement } from './reportData'
+import { buildPeriodOverview, isCreditKind, statementKindLabel, type AccountStatement } from './reportData'
 
 // تقريب لخانتين عشريتين مع إبقاء القيمة رقماً (لتعمل جمعيات Excel عليها).
 const money = (n: number): number => Math.round(n * 100) / 100
@@ -104,17 +104,29 @@ export interface TripExcelParams {
    *  «الملخص اليومي» بورقة «ملخص الفترة» (buildPeriodRows)، مطابقةً لتبويب
    *  التقرير على الشاشة — انظر ReportsView.tsx. */
   periods?: PeriodKey[]
+  /** 🆕 قيود السداد غير المحذوفة — ورقة «السداد» حين توجد. */
+  repayments?: Repayment[]
+}
+
+/** 🆕 ورقة السداد — من، إلى، المبلغ، التاريخ. بالاسم الكامل كورقة التسويات. */
+export function buildRepaymentRows(repayments: Repayment[], travelers: Traveler[]): XlsxCell[][] {
+  const nameOf = (id: number) => travelers.find(t => t.id === id)?.name ?? '—'
+  return [
+    ['التاريخ', 'من سدّد', 'إلى', 'المبلغ (ريال)'],
+    ...repayments.map(r => [r.date, nameOf(r.fromId), nameOf(r.toId), money(r.amount)]),
+  ]
 }
 
 /** يجمّع كل الأوراق ويُنزّل مصنّف Excel واحداً للرحلة — تراكمي دائماً (لا
  *  تصفية بدورة، انظر ReportsView.tsx: زرّا PDF/Excel يصدّران تفصيل الرحلة
  *  الكامل دوماً بصرف النظر عن التبويب المفتوح). */
-export function exportTripToExcel({ expenses, travelers, balances, settlements, periods }: TripExcelParams): void {
+export function exportTripToExcel({ expenses, travelers, balances, settlements, periods, repayments = [] }: TripExcelParams): void {
   const hasPeriods = !!periods && periods.length > 0
   const sheets: XlsxSheet[] = [
     { name: 'المصاريف', rows: buildExpenseRows(expenses, travelers), rtl: true },
     { name: 'ملخص المسافرين', rows: buildTravelerRows(balances), rtl: true },
     { name: 'التسويات', rows: buildSettlementRows(settlements), rtl: true },
+    ...(repayments.length > 0 ? [{ name: 'السداد', rows: buildRepaymentRows(repayments, travelers), rtl: true }] : []),
     hasPeriods
       ? { name: 'الأشهر', rows: buildPeriodRows(expenses, periods!), rtl: true }
       : { name: 'الملخص اليومي', rows: buildDailyRows(expenses), rtl: true },
@@ -142,6 +154,10 @@ export function exportTravelerToExcel({ traveler, balance, statement, filenameSu
     ['اسم المسافر', traveler.name],
     ['إجمالي المودَع', money(balance.deposited)],
     ['نصيبه من المصاريف', money(balance.totalExpenses)],
+    // 🆕 بلا هذين السطرين لا تُفسِّر الخلاصة رصيدَ من دفع من جيبه أو سدّد/استلم.
+    ...(statement && statement.totalPaidByPocket !== 0 ? [['دفعه من جيبه', money(statement.totalPaidByPocket)]] : []),
+    ...(statement && (statement.totalRepaidOut !== 0 || statement.totalRepaidIn !== 0)
+      ? [['صافي السداد (سدّد − استلم)', money(statement.totalRepaidOut - statement.totalRepaidIn)]] : []),
     ['الرصيد', money(balance.remaining)]
   ]
 
@@ -151,9 +167,9 @@ export function exportTravelerToExcel({ traveler, balance, statement, filenameSu
   const statementHeader: XlsxCell[] = ['التاريخ', 'الوصف', 'الفئة', 'الأثر على رصيده (ريال)', 'الرصيد الجاري (ريال)']
   const statementRows: XlsxCell[][] = statement ? statement.rows.map(r => [
     r.date,
-    r.kind === 'paidByPocket' ? `${r.description} (دفعها من جيبه)` : r.description,
+    r.kind === 'share' ? r.description : `${r.description} (${statementKindLabel(r.kind)})`,
     r.category,
-    money(r.kind === 'paidByPocket' ? r.amount : -r.amount),
+    money(isCreditKind(r.kind) ? r.amount : -r.amount),
     money(r.balanceAfter)
   ]) : []
 

@@ -114,6 +114,7 @@ export default function App() {
       <TripStoreProvider
         travelers={ledger.activeTravelers}
         expenses={ledger.activeExpenses}
+        repayments={ledger.activeRepayments}
         user={session.user}
         isAdmin={session.isAdmin}
         isOrganizer={session.isOrganizer}
@@ -273,6 +274,8 @@ export default function App() {
                   hasExpenses={ledger.activeExpenses.length > 0}
                   onRecordTransfer={ledger.onRecordTransfer}
                   recordingKey={ledger.recordingSettlementKey}
+                  repayments={ledger.activeRepayments}
+                  onDeleteRepayment={ledger.onDeleteRepayment}
                 />
 
                 {/* 🆕 تفاصيل حساب المنظّم مباشرة تحت «الأرصدة» لا في عمود جانبي
@@ -319,6 +322,7 @@ export default function App() {
                 categoryTotals: ledger.categoryTotals,
                 itinerary: trip.itinerary,
                 periods: longTerm?.periods,
+                repayments: ledger.activeRepayments,
               }}
               // 🆕 أقسام انتقلت من تدفّق الشاشة إلى نوافذ خلف «المزيد».
               charts={{
@@ -345,6 +349,9 @@ export default function App() {
                 deletedTravelers: ledger.deletedTravelers,
                 onRestoreExpense: expense.handleRestoreExpense,
                 onRestoreTraveler: traveler.handleRestoreTraveler,
+                deletedRepayments: ledger.deletedRepayments,
+                onRestoreRepayment: ledger.onRestoreRepayment,
+                allTravelers: [...ledger.activeTravelers, ...ledger.deletedTravelers],
               }}
               // 🆕 undefined لمن لا يملك صلاحية التعديل أصلاً — لا مسؤول ولا
               // منظّم لهذه الرحلة (تطابق الحارس نفسه في Header/AccountMenu).

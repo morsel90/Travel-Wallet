@@ -23,6 +23,11 @@ export const travelerNameDoc = (shortName: string) =>
 export const depositLogsCol = (travelerId: number) =>
   collection(db, 'artifacts', TRIP_ID, 'public', 'data', 'travelers', String(travelerId), 'depositLogs')
 
+// 🆕 السداد بين المسافرين — القيد الثالث في الدفتر (انظر Repayment في types.ts).
+// يكتبه recordSettlement وحده، والعميل يحذفه/يستعيده ليّناً عبر deletedAt فقط.
+export const repaymentsCol = () => collection(db, 'artifacts', TRIP_ID, 'public', 'data', 'repayments')
+export const repaymentDoc  = (id: string) => doc(db, 'artifacts', TRIP_ID, 'public', 'data', 'repayments', id)
+
 // 🆕 مستند تتبّع حد المعدّل (Rate Limiting) لإضافة المصاريف — واحد لكل مستخدم
 // (uid)، يُحدَّث بذرّية مع كل مصروف جديد (انظر handleAddExpense في
 // hooks/useExpenseActions.ts وfirestore.rules: withinExpenseRateLimit/isValidRateLimitWrite)
@@ -68,6 +73,8 @@ export const travelersColByTrip = (tripId: string) =>
   collection(db, 'artifacts', tripId, 'public', 'data', 'travelers')
 export const travelerNamesColByTrip = (tripId: string) =>
   collection(db, 'artifacts', tripId, 'public', 'data', 'travelerNames')
+export const repaymentsColByTrip = (tripId: string) =>
+  collection(db, 'artifacts', tripId, 'public', 'data', 'repayments')
 export const depositLogsColByTrip = (tripId: string, travelerId: number) =>
   collection(db, 'artifacts', tripId, 'public', 'data', 'travelers', String(travelerId), 'depositLogs')
 
