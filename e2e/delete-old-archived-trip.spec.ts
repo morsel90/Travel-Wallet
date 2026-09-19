@@ -83,6 +83,7 @@ test('رحلة مؤرشفة حديثاً (أقل من 90 يوماً) ببيان�
   await page.getByLabel(/للتأكيد، اكتب معرّف الرحلة/).fill(RECENT_TRIP_ID)
   await page.getByRole('button', { name: 'حذف الرحلة نهائياً' }).click()
 
-  // الرفض المعتاد — نفس حماية delete-empty-trip.spec.ts، غير مُتجاوَزة هنا.
-  await expect(page.getByText(/لأنها تحوي مسافرين أو مصاريف/)).toBeVisible()
+  // الرفض باقٍ، وسببه صار أدقّ: المسافر مودَعٌ له 500 بلا مصاريف، أي له رصيد
+  // لم يُسوَّ — فلا يؤهّلها مسار «منتهية ومسوّاة» (settledClosureBlock) أيضاً.
+  await expect(page.getByText(/قبل تسوية حساباتها/)).toBeVisible()
 })

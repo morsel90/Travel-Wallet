@@ -13,6 +13,7 @@ import { useState, useCallback } from 'react'
 import { httpsCallable } from 'firebase/functions'
 import { auth, functions } from '../firebase'
 import { haptic } from '../utils/haptics'
+import { callableMessage } from '../utils/callableErrors'
 import type { ToastMessage } from '../types'
 
 /** يطابق ما تقرأه recordSettlement في functions/index.js حرفاً بحرف. */
@@ -74,9 +75,8 @@ export function useSettlementActions({
       // نشطة) — تُعرض كما هي. نفس معالجة useLongTermActions ولنفس السبب:
       // الخادم وحده يعرف *لماذا* رُفض التحويل.
       haptic.error()
-      const message = (err as { message?: string })?.message
-      const code = (err as { code?: string })?.code
-      if (typeof code === 'string' && code.startsWith('functions/') && message) {
+      const message = callableMessage(err)
+      if (message) {
         showToast({ text: message, type: 'error' }, 6000)
       } else {
         handleFirestoreError(err, 'تعذّر تسجيل التحويل — تحقّق من اتصالك.')

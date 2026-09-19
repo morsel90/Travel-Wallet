@@ -10,7 +10,7 @@
 // في طرف واحد — إيداع للمَدين بلا خصم من الدائن، وهو أسهل خطأ يُرتكب هنا —
 // لاختفت البطاقة ولبدت أرصدة الأفراد سليمة، ولانكشف الخلل في هذا المجموع وحده.
 import { test, expect } from '@playwright/test'
-import { seedTrip } from './utils/seed'
+import { seedTrip, adminFirestore } from './utils/seed'
 import { openTripAsAdmin, addTraveler, addExpense } from './utils/flows'
 
 const CREDS = {
@@ -63,4 +63,45 @@ test('تسجيل التحويل يُصفّي الرصيدَين ويبقى بع�
 
   // ولم يدخل الدفتر ريال واحد ولم يخرج منه: نفس المجموع قبل التحويل.
   await expect(page.getByText('الرصيد 300.00 ﷼')).toBeVisible()
+})
+
+// 🐛 ما حدث فعلاً على Bh26: الدائن صار دائناً بدفع مصاريف **من جيبه** (paidBy)
+// لا بإيداع، فخصم التحويل من «المودَع» أنزله إلى ‎-170.5 — رقم تشترط القواعد
+// ألا يكون (`isFiniteAmount: >= 0`). الحارس يرفض بدل أن يكتب دفتراً فاسداً،
+// والاختبار يثبت الأمرين: الرفض، وأن **لا شيء** كُتب.
+const POCKET = {
+  tripId: 'e2e-settlement-pocket',
+  memberEmail: 'e2e-member-pocket@test.local',
+  memberPassword: 'E2eTestPass!1',
+  adminEmail: 'e2e-admin-pocket@test.local',
+  adminPassword: 'E2eTestPass!1',
+}
+
+test('دائنٌ دفع من جيبه: التسجيل يُرفض بسبب مفهوم، ولا يُكتب أي رصيد', async ({ page }) => {
+  await seedTrip(POCKET)
+  const root = adminFirestore().collection('artifacts').doc(POCKET.tripId).collection('public').doc('data')
+  await root.collection('travelers').doc('1').set({ id: 1, name: 'راشد الدافع', shortName: 'راشد', deposited: 0, deletedAt: null })
+  await root.collection('travelers').doc('2').set({ id: 2, name: 'سالم المدين', shortName: 'سالم', deposited: 0, deletedAt: null })
+  // 200 دفعها راشد من جيبه عن الاثنين → راشد له 100، وسالم عليه 100، ولا أحد أودع شيئاً.
+  await root.collection('expenses').doc('p1').set({
+    date: '2026-09-18', description: 'غداء', amount: 200, originalAmount: 200, currency: 'SAR', exchangeRate: 1,
+    participants: [1, 2], paidBy: 1, category: 'طعام وشراب', createdAt: Date.now(), deletedAt: null,
+  })
+
+  await openTripAsAdmin(page, POCKET)
+  const panel = page.locator('#settlements-section')
+  await expect(panel).toContainText('100.00')
+
+  await panel.getByRole('button', { name: 'تسجيل التحويل' }).click()
+  await panel.getByRole('button', { name: /تأكيد تسجيل 100\.00/ }).click()
+
+  await expect(page.getByText(/أتى من مصاريف دفعها من جيبه/)).toBeVisible()
+  // التسوية باقية كما هي — لم يُسجَّل شيء.
+  await expect(panel).toContainText('100.00')
+
+  // ⚠️ تحقّق سلبي حقيقي: لا رصيد تغيّر ولا سطر تدقيق كُتب — المعاملة أُلغيت كاملة.
+  const [rashed, salem] = await Promise.all([root.collection('travelers').doc('1').get(), root.collection('travelers').doc('2').get()])
+  expect(rashed.data()?.deposited).toBe(0)
+  expect(salem.data()?.deposited).toBe(0)
+  expect((await root.collection('travelers').doc('2').collection('depositLogs').get()).size).toBe(0)
 })

@@ -17,6 +17,7 @@ import { httpsCallable } from 'firebase/functions'
 import { auth, functions } from '../firebase'
 import { haptic } from '../utils/haptics'
 import { formatPeriodLabel } from '../utils/period'
+import { callableMessage } from '../utils/callableErrors'
 import type { PeriodKey, RolloverResult, ToastMessage } from '../types'
 
 // عقود الاستدعاء — تطابق ما تقرأه الدالتان في functions/index.js
@@ -61,11 +62,9 @@ function showCallableError(
   handleFirestoreError: UseLongTermActionsParams['handleFirestoreError'],
 ): void {
   haptic.error()
-  const message = (err as { message?: string })?.message
-  const code = (err as { code?: string })?.code
-  const isFunctionsError = typeof code === 'string' && code.startsWith('functions/')
+  const message = callableMessage(err)
 
-  if (isFunctionsError && message) showToast({ text: message, type: 'error' }, 6000)
+  if (message) showToast({ text: message, type: 'error' }, 6000)
   else handleFirestoreError(err, fallback)
 }
 

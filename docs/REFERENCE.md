@@ -291,6 +291,8 @@ import { functions } from './firebase'
 
 // 🆕 hooks/useSettlementActions.ts — records a transfer between two travelers as a
 // documented ledger movement (payer's `deposited` up, payee's down, one audit row each).
+// 🆕 Refused when the payee's `deposited` would go below zero — i.e. his credit came from
+// paying expenses out of pocket (`paidBy`), not from deposits. See DECISIONS.md.
 // Organizer or global admin only; the server re-derives both balances and caps the
 // amount at min(debt, credit), so a stale screen cannot over-transfer.
 await httpsCallable<

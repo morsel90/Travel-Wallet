@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { callableErrorCode, describeInviteError } from './callableErrors'
+import { callableErrorCode, callableMessage, describeInviteError } from './callableErrors'
 
 const err = (code: string) => Object.assign(new Error(code), { code })
 
@@ -69,5 +69,36 @@ describe('describeInviteError', () => {
     const missing = describeInviteError(err('functions/permission-denied'))
     const revoked = describeInviteError(err('functions/permission-denied'))
     expect(missing).toEqual(revoked)
+  })
+})
+
+// 🆕 الشكل هنا منقول حرفياً عمّا يُعيده SDK فايربيس 12.19 فعلاً — قِيس باستدعاء
+// حقيقي بلا تسجيل دخول: «يجب تسجيل الدخول أولاً. [401]».
+const fnErr = (code: string, message: string) => Object.assign(new Error(message), { code })
+
+describe('callableMessage', () => {
+  it('يُسقط رمز HTTP الذي يُلحقه SDK بنهاية الرسالة', () => {
+    expect(callableMessage(fnErr('functions/unauthenticated', 'يجب تسجيل الدخول أولاً. [401]')))
+      .toBe('يجب تسجيل الدخول أولاً.')
+    expect(callableMessage(fnErr('functions/failed-precondition', 'لا يمكن حذف "Bh26" قبل تسوية حساباتها. [400]')))
+      .toBe('لا يمكن حذف "Bh26" قبل تسوية حساباتها.')
+  })
+
+  it('يترك الرسالة بلا لاحقة كما هي', () => {
+    expect(callableMessage(fnErr('functions/not-found', 'الرحلة غير موجودة.'))).toBe('الرحلة غير موجودة.')
+  })
+
+  it('لا يمسّ أقواساً معقوفة داخل النص — اللاحقة وحدها في النهاية', () => {
+    expect(callableMessage(fnErr('functions/internal', 'الحقل [amount] غير صالح [400]'))).toBe('الحقل [amount] غير صالح')
+  })
+
+  it('خطأ ليس من دالة سحابية لا يُعرض نصّه — يذهب إلى معالج الشبكة العام', () => {
+    expect(callableMessage(Object.assign(new Error('x'), { code: 'permission-denied' }))).toBeNull()
+    expect(callableMessage(new Error('boom'))).toBeNull()
+    expect(callableMessage(null)).toBeNull()
+  })
+
+  it('رسالة فارغة بعد إسقاط اللاحقة ليست رسالة', () => {
+    expect(callableMessage(fnErr('functions/internal', '[500]'))).toBeNull()
   })
 })
