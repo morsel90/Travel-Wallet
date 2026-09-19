@@ -47,7 +47,10 @@
 │   │   ├── useDebounce.ts        # Generic debounce hook
 │   │   ├── useHeaderCollapse.ts  # Scroll direction tracking for sticky header
 │   │   ├── useDialogA11y.ts     # 🆕 Escape / focus trap / focus enter + restore — used by Modal.tsx
-│   │   └── useAppCoordinator.ts  # 🆕 All hook wiring + derived values — the seam App.tsx used to be
+│   │   ├── useAppSession.ts      # 🆕 Coordinator group 1: auth, profile, access, invite link, password reset
+│   │   ├── useAppTrip.ts         # 🆕 Coordinator group 2: current trip config/role/lifecycle, trip edit, "my trips" picker
+│   │   ├── useTripWorkspace.ts   # 🆕 Coordinator group 3: ledger data, derived numbers, sync, write actions, long-term
+│   │   └── useAppCoordinator.ts  # 🆕 Aggregation only: shared toast/errors/modals + session → trip → workspace
 │   │
 │   ├── context/
 │   │   ├── DataContext.ts        # Read-only data context
@@ -157,7 +160,7 @@
 | File | Purpose |
 |---|---|
 | `src/App.tsx` | 🆕 Two jobs only: **routing** (auth gate → invite screen → picker → membership check → app, in that order) and **composition**. No hook wiring, no context values, no layout. |
-| `src/hooks/useAppCoordinator.ts` | 🆕 Every hook call and derived value, returned as named groups (`session`, `ledger`, `trip`, `rates`, `status`, `picker`, …). Order inside is load-bearing — later hooks consume earlier results. |
+| `src/hooks/useAppCoordinator.ts` | 🆕 Aggregation only. Owns what all three groups share (toast, `syncError`/`handleFirestoreError`, modals), then calls `useAppSession` → `useAppTrip` → `useTripWorkspace`, passing each one's inputs by name — so the cross-group dependencies are readable in one place. Returns named groups (`session`, `ledger`, `trip`, `rates`, `status`, `picker`, …) that are a contract with `App.tsx`, not a mirror of the three hooks. Order inside each group hook is load-bearing. |
 | `src/components/AppProviders.tsx` | 🆕 Builds and provides the three context values. Read `context/UIContext.ts` before touching it — the volatility split is a performance guarantee whose breakage is silent. |
 | `src/types.ts` | All interfaces: `Traveler`, `Expense`, `ExpenseFormData`, `Settlement`, `ToastMessage`, etc. |
 | `src/hooks/useExpenseActions.ts` | All expense CRUD: form submission, quick add, optimistic updates, retry logic, rate limiting. |

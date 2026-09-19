@@ -1,21 +1,10 @@
-import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import * as Sentry from '@sentry/react'
-import type { ToastMessage, Traveler, Settlement } from '../types'
-import {
-  useAuth, usePasswordReset, useModals, useExchangeRates, useExpenses, useTravelers, useBalances,
-  useOnlineStatus, useExpenseActions, useTravelerActions, useDepositActions, useTripConfig,
-  useTripAdminActions, useAllTrips, useMyTrips, useTripStats, useMyTripRole, useInviteJoin, useUserProfile,
-  useOrganizerBankDetails, useSyncTravelerNameFromProfile, useLongTermActions, useSettlementActions,
-  useRepayments, useRepaymentActions,
-  useSyncRecovery,
-} from './index'
-import { useFilteredExpenses } from './useFilteredExpenses'
-import { calculateBalances, calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from '../utils/calculations'
-import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from '../utils/tripId'
-import { acceptsExpenses, closedTripNotice } from '../utils/tripStatus'
-import { isLongTerm } from '../utils/tripType'
-import { formatPeriodLabel, listPeriods } from '../utils/period'
-import { planRollover, describeExitBlock, filterCycleExpenses, calculateCycleWallet } from '../utils/longTerm'
+import type { ToastMessage } from '../types'
+import { useModals } from './index'
+import { useAppSession } from './useAppSession'
+import { useAppTrip } from './useAppTrip'
+import { useTripWorkspace } from './useTripWorkspace'
 import { describeWriteError, writeErrorCode } from '../utils/writeErrors'
 import { onIdle, preloadAll } from '../utils/preload'
 import { modalImporters } from '../components/ModalManager'
@@ -23,7 +12,18 @@ import { tripPickerImporters } from '../components/TripPicker'
 
 // ─── منسّق التطبيق ────────────────────────────────────────────────────────────
 //
-// كل تركيب الخطافات وما يُشتق منها، في مكان واحد. App.tsx بعده تركيب مرئي خالص.
+// تجميع لا أكثر. مسار التطبيق كله ثلاث خطوات تُقرأ من أعلى لأسفل:
+//
+//   session   → useAppSession     من أنا، وهل أدخل هذه الرحلة؟
+//   trip      → useAppTrip        أيّ رحلة، ومن يديرها؟ (+ قائمة «رحلاتي»)
+//   workspace → useTripWorkspace  ما بداخلها: الدفتر وأرقامه وأفعاله
+//
+// كل خطوة تستهلك ناتج ما قبلها بحقول مسمّاة صراحةً في الاستدعاء — فالاعتماديات
+// بين المجموعات مرئية هنا في سطر واحد لكل منها، لا مدفونة في ٦٠٠ سطر.
+//
+// الذي يعيش هنا فعلاً هو ما تحتاجه الثلاث معاً: التوست، وخطأ المزامنة
+// ومعالج أخطاء الكتابة، والمودالات. وفيما عدا ذلك، مكان أي خطاف جديد إحدى
+// المجموعات الثلاث — لا هذا الملف.
 //
 // ⚠️ ما لا يعيش هنا عمداً:
 //   • مخزن الرحلة (data/actions/form) → store/TripStoreProvider.tsx، لأن
@@ -31,9 +31,8 @@ import { tripPickerImporters } from '../components/TripPicker'
 //     المجرّدة.
 //   • قرار أي شاشة تُعرض → App.tsx، فذلك توجيه لا تركيب.
 //
-// ⚠️ الترتيب داخل هذه الدالة ليس اعتباطياً: عدة خطافات تستهلك ناتج ما قبلها
-// (hasAccess قبل useExpenses، activeTravelers قبل useExpenseActions...). لا
-// تُعِد ترتيبها لأغراض تجميلية.
+// ⚠️ شكل الناتج (session/ledger/trip/...) عقد مع App.tsx، لا انعكاس للمجموعات
+// الثلاث: `session.isOrganizer` مثلاً مصدره useAppTrip. غيّر أحدهما دون الآخر.
 
 // 🆕 كل الأجزاء المؤجّلة في التطبيق، للتحميل المسبق الهادئ بعد أول عرض.
 // كل مالك جزء مؤجّل يُصدّر مستورداته بنفسه، فمن يضيف جزءاً يضيفه في ملفه.
@@ -43,170 +42,8 @@ import { tripPickerImporters } from '../components/TripPicker'
 const LAZY_IMPORTERS = [...modalImporters, ...tripPickerImporters]
 
 export function useAppCoordinator() {
-  // 🆕 علم مستقل لكل مستمع بدل علم واحد مشترك بينهما. المشترك كان يكذب: كلاهما
-  // يرفعه عند الاشتراك ويُنزله في معالج لقطته، فأيّ المجموعتين وصلت أولاً
-  // تُطفئ الشارة بينما الأخرى ما زالت في قراءتها الأولى — ولأن كليهما يستخدم
-  // includeMetadataChanges، كان أي حدث بيانات-وصفية من إحداهما يُطفئها أيضاً.
-  // فتقول الواجهة "تمّت المزامنة" والبيانات قديمة فعلاً، وهو ما يجعل أي تأخّر
-  // حقيقي يبدو عطلاً عشوائياً بلا تفسير.
-  const [isExpensesSyncing, setIsExpensesSyncing] = useState(false)
-  const [isTravelersSyncing, setIsTravelersSyncing] = useState(false)
-  const isSyncing = isExpensesSyncing || isTravelersSyncing
+  // ─── المشترك بين المجموعات الثلاث ──────────────────────────────────────────
   const [syncError, setSyncError] = useState<string | null>(null)
-
-  const {
-    user, isAdmin, authLoading, joinedTripIds,
-    signInError, isSigningIn, signInWithGoogle, signInWithEmail, signOut,
-  } = useAuth()
-  const isOnline = useOnlineStatus()
-  // 🆕 بروفايل المستخدم العام (اسم/بنك) — يُدار من شاشة بروفايل منفصلة
-  // (ModalManager). هو المصدر الوحيد لبيانات بنك أي رحلة ينظّمها هذا المستخدم
-  // (انظر useOrganizerBankDetails أدناه). لا يحتاج hasAccess: مستقل عن أي
-  // رحلة، ومتاح لأي مستخدم مسجّل دخوله حتى قبل الانضمام لأي رحلة.
-  const profile = useUserProfile(user)
-  // 🆕 لا رمز رحلة بعد الآن — الوصول عضوية مباشرة (claim) أو صلاحية مسؤول
-  // عالمية، بلا خطوة تحقّق وسيطة. انظر docs/DECISIONS.md.
-  const hasAccess = isAdmin || (!authLoading && joinedTripIds.includes(TRIP_ID))
-
-  // 🆕 شاشة «رحلاتي» — تُعرض حين يُفتح التطبيق بلا `?trip=`، أي بلا رحلة مقصودة.
-  const [showTripPicker, setShowTripPicker] = useState(false)
-  const { trips: myTrips, loading: myTripsLoading, error: myTripsError } = useMyTrips(joinedTripIds, user)
-
-  const { ratesUpdatedAt, CURRENCIES } = useExchangeRates()
-  const { expenses,  setExpenses,  expensesLoaded,  refreshExpenses }  = useExpenses(hasAccess ? user : null, { setIsSyncing: setIsExpensesSyncing, setSyncError })
-  const { travelers, setTravelers, travelersLoaded, refreshTravelers } = useTravelers(hasAccess ? user : null, setIsTravelersSyncing)
-  // 🆕 قيود السداد — القيد الثالث في الدفتر (انظر Repayment في types.ts).
-  const { repayments, setRepayments, repaymentsLoaded, refreshRepayments } = useRepayments(hasAccess ? user : null)
-  // organizerUid للبطاقة البنكية، والمسار للويدجت والتقارير. 🆕 tripName وبقية
-  // الحقول تُستهلك أيضاً في pickerTrips أدناه — صفّ الرحلة المفتوحة حالياً في
-  // «رحلاتي» يعرض هذه النسخة الحيّة بدل لقطة myTrips الثابتة.
-  const {
-    tripName, deleted: tripDeleted, organizerUid, itinerary, itineraryRev, status: tripStatus, statusChangedAt,
-    tripType, currentPeriod, lastClosedPeriod,
-  } = useTripConfig(hasAccess ? user : null)
-  // 🆕 قراءة حيّة لبيانات بنك منظّم *هذه* الرحلة — المصدر الوحيد المعروض في
-  // BankDetailsCard. organizerUid قد يكون undefined (رحلة قديمة بلا منظّم
-  // معروف)، وuseOrganizerBankDetails تتعامل مع ذلك بحالة فارغة فوراً بلا اشتراك.
-  const organizerBank = useOrganizerBankDetails(organizerUid)
-
-  // 🆕 المرحلة ٣ — «هل أنا منظّم هذه الرحلة؟» قراءة ذاتية واحدة، لا تُستهلك
-  // إلا حين لا يكون المستخدم مسؤولاً عالمياً أصلاً (المسؤول يرى كل شيء بلا هذا).
-  const isOrganizer = useMyTripRole(TRIP_ID, !isAdmin && hasAccess ? user : null)
-
-  // 🆕 دورة حياة الرحلة. ⚠️ هذه إخفاء وتفسير فقط — الحماية الحقيقية في
-  // firestore.rules (tripAcceptsExpenses/tripAcceptsWrites). الغرض ألا يضغط
-  // المستخدم زراً سترفضه القواعد بخطأ صلاحيات غامض.
-  const canAddExpenses = acceptsExpenses(tripStatus)
-  const tripClosedNotice = closedTripNotice(tripStatus)
-
-  // 🆕 repaymentsLoaded أيضاً: بلاه تُحسب الأرصدة لحظةً بلا السداد، فتومض
-  // تسويةٌ سُدّدت فعلاً ثم تختفي.
-  const isInitialLoading = !expensesLoaded || !travelersLoaded || !repaymentsLoaded
-
-  const activeExpenses = useMemo(() => expenses.filter(e => !e.deletedAt), [expenses])
-  const activeTravelers = useMemo(() => travelers.filter(t => !t.deletedAt), [travelers])
-
-  const deletedExpenses = useMemo(() => expenses.filter(e => e.deletedAt), [expenses])
-  const deletedTravelers = useMemo(() => travelers.filter(t => t.deletedAt), [travelers])
-  const activeRepayments = useMemo(() => repayments.filter(r => !r.deletedAt), [repayments])
-  const deletedRepayments = useMemo(() => repayments.filter(r => r.deletedAt), [repayments])
-
-  // 🆕 يُصلح اسم مسافري تلقائياً إن اختلف عن بروفايلي — بديل ربط حيّ (كبيانات
-  // البنك) اخترناه لتفادي اشتراك منفصل لكل مسافر مربوط بحساب في كل مكان يُعرض
-  // فيه اسمه. انظر تعليق الملف. لا شيء يُعرض بسببه — صامت بالكامل.
-  useSyncTravelerNameFromProfile(TRIP_ID, hasAccess ? user : null, activeTravelers, profile.profile.displayName)
-
-  const { balances, totalSpent, totalDeposited, totalRemaining } = useBalances(activeTravelers, activeExpenses, activeRepayments)
-
-  // 🆕 نموذج الهوية الهجين — بطاقة المستخدم نفسه (إن وُجدت) أولاً في قائمة
-  // العرض. ⚠️ لا تُعاد ترتيب `balances` نفسها: تُستهلك في حساب التسويات
-  // (calculateSettlements لا يهمّها الترتيب) وتصدير Excel وطباعة تقرير الرحلة
-  // (ترتيبها هناك تاريخي/حسب Firestore، وإعادة ترتيبه أثر جانبي غير مقصود على
-  // مسارات لا علاقة لها بهذه الميزة). القائمة المُعاد ترتيبها لعرض
-  // TravelersPanel وحدها.
-  const myBalance = useMemo(
-    () => (user ? balances.find(b => b.uid === user.uid) ?? null : null),
-    [balances, user],
-  )
-  const travelersPanelBalances = useMemo(
-    () => (myBalance ? [myBalance, ...balances.filter(b => b !== myBalance)] : balances),
-    [balances, myBalance],
-  )
-
-  // ─── 🆕 الرحلات طويلة المدى ───────────────────────────────────────────────
-  //
-  // ⚠️ كل ما يلي **مشتق من `balances` القائمة أصلاً** — لا حساب مالي جديد على
-  // العميل، ولا مصدر رقم ثانٍ يمكن أن ينحرف عن الأول. وهذا ممكن لأن الدفتر
-  // تراكمي: الإغلاق يُصفّر الشهر ويعيد فتحه بنفس القيمة، فالرصيد التراكمي *هو*
-  // رصيد الشهر الجاري في رحلة تُغلق شهورها بانتظام (انظر utils/longTerm.ts).
-  const isLongTermTrip = isLongTerm(tripType)
-
-  // منظّم الرحلة أو المسؤول — نفس الحدّ الذي تفرضه callerManagesTrip خادمياً.
-  const canManageLongTerm = isLongTermTrip && (isAdmin || isOrganizer)
-
-  const periodExpenses = useMemo(
-    () => (isLongTermTrip ? filterCycleExpenses(activeExpenses, currentPeriod) : []),
-    [isLongTermTrip, activeExpenses, currentPeriod],
-  )
-  const periodTotal = useMemo(
-    () => periodExpenses.reduce((sum, e) => sum + (Number.isFinite(e.amount) ? e.amount : 0), 0),
-    [periodExpenses],
-  )
-  const rolloverPlan = useMemo(
-    () => (isLongTermTrip ? planRollover(balances) : []),
-    [isLongTermTrip, balances],
-  )
-  // 🆕 قائمة الفترات لمُصفّي الدورة في التقارير/كشف الحساب — تصاعدياً، من أول
-  // نشاط حتى الشهر المفتوح حالياً (انظر listPeriods في utils/period.ts).
-  const periods = useMemo(
-    () => (isLongTermTrip ? listPeriods(activeExpenses, currentPeriod) : []),
-    [isLongTermTrip, activeExpenses, currentPeriod],
-  )
-
-  // 🆕 محفظة الدورة الحالية — للهيدر ولبطاقة كل مسافر. **لا حساب مالي جديد**:
-  // حصة كل مسافر من مصاريف الدورة (periodExpenses، مُصفّاة أصلاً من مصاريف
-  // الترحيل) تُشتق بإعادة استدعاء calculateBalances نفسها على مسافرين
-  // بـ deposited=0 — فتصير totalExpenses حصته من هذا الشهر وحده بنفس منطق
-  // splitByShares/paidBy المستخدَم في كل مكان آخر، لا نسخة مكرَّرة منه.
-  const cycleShareBalances = useMemo(
-    () => (isLongTermTrip
-      ? calculateBalances(activeTravelers.map(t => ({ ...t, deposited: 0 })), periodExpenses)
-      : []),
-    [isLongTermTrip, activeTravelers, periodExpenses],
-  )
-  const cycleWallet = useMemo(
-    () => (isLongTermTrip ? calculateCycleWallet(totalRemaining, periodTotal) : 0),
-    [isLongTermTrip, totalRemaining, periodTotal],
-  )
-  const cycleWallets = useMemo(() => {
-    if (!isLongTermTrip) return {}
-    const map: Record<number, number> = {}
-    balances.forEach(b => {
-      const share = cycleShareBalances.find(c => c.id === b.id)?.totalExpenses ?? 0
-      map[b.id] = calculateCycleWallet(b.remaining, share)
-    })
-    return map
-  }, [isLongTermTrip, balances, cycleShareBalances])
-
-  /**
-   * 🆕 حارس خروج العضو — يُمرَّر إلى useTravelerActions **فقط في الرحلة
-   * الطويلة**، فمسار الرحلة القياسية لا يستقبل شيئاً ولا يتغيّر بحرف.
-   */
-  const describeExitBlockFor = useMemo(() => {
-    if (!isLongTermTrip) return undefined
-    return (travelerId: number): string | null => {
-      const target = balances.find(b => b.id === travelerId)
-      if (!target) return null
-      return describeExitBlock(tripType, target.name, target.remaining)
-    }
-  }, [isLongTermTrip, balances, tripType])
-
-  const settlements    = useMemo(() => calculateSettlements(balances), [balances])
-  const categoryTotals = useMemo(() => calculateCategoryTotals(activeExpenses), [activeExpenses])
-  const spendingTrend  = useMemo(() => calculateSpendingTrend(activeExpenses), [activeExpenses])
-
-  const filter = useFilteredExpenses(activeExpenses, activeTravelers)
-
   const [toast, setToast] = useState<ToastMessage | null>(null)
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -220,15 +57,6 @@ export function useAppCoordinator() {
     }
   }, [])
 
-  // 🆕 رابط دعوة بنقرة واحدة (?invite=TOKEN) — يُستهلك مرة واحدة عند تحميل
-  // الصفحة، قبل أي شيء آخر. النجاح إعادة توجيه كاملة (لا حالة تُستهلك هنا)،
-  // والفشل يُنظّف الرابط ويعرض توستاً ثم يُكمل التدفّق المعتاد (رحلاتي/بوابة الرمز).
-  const inviteJoin = useInviteJoin(user, showToast)
-
-  // 🆕 لـ`AuthGate` وحدها — سطح تسجيل الدخول الوحيد في التطبيق بعد حذف
-  // «الدخول بحساب آخر» ونافذته. انظر usePasswordReset.ts وdocs/DECISIONS.md.
-  const passwordReset = usePasswordReset({ showToast })
-
   // 🆕 يعتمد على كود خطأ Firestore لا على البحث في نص الرسالة: النص غير موثوق
   // (يتغيّر بين إصدارات SDK وقد يكون مترجَماً)، والكود ثابت ومحدَّد.
   // fallback يُستخدم فقط حين لا يكون الخطأ من Firestore أصلاً — انظر utils/writeErrors.ts.
@@ -238,222 +66,21 @@ export function useAppCoordinator() {
     setSyncError(code ? describeWriteError(err, 'generic').text : fallback)
   }, [])
 
-  // جلب طازج من الخادم متجاوزاً الكاش — مشترك بين طريقين مختلفَي النية:
-  // سحب-للتحديث اليدوي (يُبلغ عن الفشل، فالمستخدم طلبه وينتظره) والتعافي
-  // التلقائي في useSyncRecovery (يصمت عند الفشل، فالمستخدم لم يطلب شيئاً).
-  const refreshFromServer = useCallback(async () => {
-    await Promise.all([refreshExpenses(), refreshTravelers(), refreshRepayments()])
-  }, [refreshExpenses, refreshTravelers, refreshRepayments])
+  // ─── المسار: الجلسة ← الرحلة ← مساحة العمل ─────────────────────────────────
+  const session = useAppSession({ showToast })
 
-  const handlePullToRefresh = useCallback(async () => {
-    try {
-      await refreshFromServer()
-    } catch (err) {
-      handleFirestoreError(err, 'تعذر تحديث البيانات — تحقّق من اتصالك وحاول مجدداً.')
-    }
-  }, [refreshFromServer, handleFirestoreError])
-
-  // 🆕 كتابات محلية لم يؤكّدها الخادم بعد (`_pending` مشتقّ من
-  // hasPendingWrites في المستمعَين). القراءة من الخادم أثناءها **تمحوها من
-  // الشاشة**: getDocsFromServer يتجاوز الكاش المحلي، فيعود بحالة الخادم التي
-  // لا تتضمّنها بعد، وsetExpenses/setTravelers يستبدلان القائمة بها — فيختفي
-  // مصروف أُضيف للتوّ ويظهر رصيد خاطئ حتى تصل لقطة onSnapshot التالية.
-  //
-  // سحب-للتحديث يحمل نفس الخطر أصلاً، لكنه إجراء يطلبه المستخدم في لحظة
-  // يختارها هو وينتظر نتيجته؛ أما التعافي فتلقائي وقد يقع في منتصف إدخال
-  // سريع للبيانات. لذا نمتنع عنه ما دامت هناك كتابة معلّقة — ووجودها دليل
-  // بذاته على أن الاتصال حيّ، أي أن لا شيء نتعافى منه أصلاً.
-  const hasUnconfirmedWrites = expenses.some(e => e._pending) || travelers.some(t => t._pending)
-
-  // 🆕 التعافي من المزامنة الصامتة: onSnapshot فوريّ ما دام الاتصال حيّاً، لكن
-  // الجوال يجمّد تبويب PWA في الخلفية أو يتخلّص منه بلا أي حدث يعرفه المتصفح —
-  // فيبقى ما تراه قديماً بلا مؤشر. هذا يفرض قراءة طازجة عند العودة. انظر
-  // التعليق الكامل والقياسات في useSyncRecovery.ts.
-  //
-  // ⚠️ سحب-للتحديث لا يغني عنه: إيماءة لمس بحتة (onTouchStart في
-  // PullToRefresh.tsx) ولا تعمل إلا عند قمة الصفحة — فلا وجود لها على سطح
-  // المكتب أصلاً، وتتطلب أن يشكّ المستخدم في البيانات ليسحبها.
-  useSyncRecovery(hasAccess && !hasUnconfirmedWrites, refreshFromServer)
-
-  const expense = useExpenseActions({
-    activeTravelers, user, isAdmin, setExpenses, showToast, handleFirestoreError, setSyncError,
-    isFirstExpense: activeExpenses.length === 0,
+  const trip = useAppTrip({
+    user: session.user, isAdmin: session.isAdmin, hasAccess: session.hasAccess,
+    authLoading: session.authLoading, joinedTripIds: session.joinedTripIds,
+    showToast, handleFirestoreError,
   })
 
-  const traveler = useTravelerActions({
-    travelers, activeTravelers, user, setTravelers, showToast, handleFirestoreError, setSyncError,
-    closeModal: modals.closeModal,
-    describeExitBlockFor,
+  const workspace = useTripWorkspace({
+    user: session.user, isAdmin: session.isAdmin, hasAccess: session.hasAccess,
+    profileDisplayName: session.profile.profile.displayName,
+    config: trip.config, isOrganizer: trip.isOrganizer,
+    modals, showToast, handleFirestoreError, setSyncError,
   })
-
-  const deposit = useDepositActions({ user, setTravelers, showToast, handleFirestoreError })
-
-  // إدارة الرحلات — لا نشترك في قائمة الرحلات إلا للمسؤول: استعلام القائمة على
-  // trips/ يرضيه isAdmin() وحده، فطلبه لعضو عادي مجرّد خطأ صلاحيات في الكونسول.
-  const { trips, loading: tripsLoading, error: tripsError } = useAllTrips(isAdmin)
-
-  // منظّم لا يستطيع استعلام trips/ (isAdmin() وحده يرضيه)، فبدل ذلك نبني
-  // ملخّص رحلته الوحيدة من useTripConfig — وهو أصلاً حيّ (onSnapshot) ومسموح
-  // له بقراءته (isMember). 🆕 يُستهلك الآن من قِبل المسؤول أيضاً — كلاهما يعدّل
-  // فقط عبر اسم الرحلة في الهيدر (Header.tsx)، أي الرحلة المفتوحة حالياً حصراً
-  // (انظر tripEdit أدناه وcomponents/modals/EditTripModal.tsx).
-  const organizerTripId = isOrganizer ? TRIP_ID : null
-  const currentTripSummary = useMemo(() => ({
-    id: TRIP_ID,
-    name: tripName ?? TRIP_ID,
-    organizerUid,
-    itinerary: itinerary ?? [],
-    itineraryRev,
-    status: tripStatus,
-    statusChangedAt,
-    tripType,
-  }), [tripName, organizerUid, itinerary, itineraryRev, tripStatus, statusChangedAt, tripType])
-
-  const tripAdmin = useTripAdminActions({ isAdmin, organizerTripId, showToast, handleFirestoreError })
-
-  // 🆕 استدعاءات الرحلة الطويلة (closeMonth/exitTraveler) — لا كتابة Firestore
-  // هنا إطلاقاً؛ انظر تعليق الملف في hooks/useLongTermActions.ts.
-  const longTermActions = useLongTermActions({ showToast, handleFirestoreError })
-
-  // 🆕 تسجيل التحويلات — نفس السبب ونفس الحدّ: الدفتر لا يُكتب من المتصفح،
-  // والفعل متاح لمنظّم الرحلة أو المسؤول وحدهما (callerManagesTrip خادمياً).
-  const settlementActions = useSettlementActions({ showToast, handleFirestoreError })
-  const repaymentActions = useRepaymentActions({ setRepayments, showToast, handleFirestoreError })
-  const canRecordSettlements = isAdmin || isOrganizer
-  const recordTransfer = useCallback((settlement: Settlement) => {
-    void settlementActions.recordSettlement(
-      TRIP_ID, settlement.fromId, settlement.toId, settlement.amount, settlement.toName,
-    )
-  }, [settlementActions])
-
-  const confirmRollover = useCallback(async () => {
-    const result = await longTermActions.closeMonth(TRIP_ID, currentPeriod)
-    // المودال يُغلق عند النجاح وحده: الفشل يترك المنظّم أمام نفس الشاشة مع
-    // رسالة السبب، بدل أن تختفي الشاشة ويبقى هو في حيرة مما جرى.
-    if (result) modals.closeModal()
-  }, [longTermActions, currentPeriod, modals])
-
-  /**
-   * 🆕 نقطة دخول واحدة لإخراج عضو، تتفرّع بحسب نوع الرحلة.
-   *
-   * ⚠️ وُجدت هذه الدالة لأن أول تنفيذ ترك **طريقاً مسدوداً**: بطاقة المسافر
-   * (المكان الذي يقصده المستخدم بالعادة) كانت تفتح تأكيد الحذف المعتاد، فيمنعه
-   * الحارس برسالة «سوِّ حسابه أولاً» تشير إلى زرّ في قسم آخر — رسالة تقول «لا»
-   * ولا تأخذك إلى «نعم». رصده المالك فوراً بسؤاله «أين حذف مسافر أراد المغادرة؟».
-   *
-   * الآن نفس البطاقة تفتح نافذة «تسوية وخروج» مباشرةً في الرحلة الطويلة. وحارس
-   * describeExitBlockFor يبقى في useTravelerActions كشبكة أمان لأي مسار آخر
-   * يستدعي confirmDeleteTraveler — لم يُحذف، لأنه لم يكن خطأً، بل ناقصاً.
-   *
-   * 🆕 وما كان في الرحلة القياسية نافذة تأكيد صار حذفاً مباشراً — الفرق الوحيد
-   * في هذه الدالة منذ كُتبت. التفرّع نفسه لم يتغيّر: القياسية تحذف، والطويلة
-   * تفتح نافذة الخروج (تسوية مالية حقيقية لا تراجع عنها بتنبيه).
-   */
-  // ⚠️ مُفكَّكة لا `traveler.confirmDeleteTraveler`: مرجع هذه الدالة وحده ثابت
-  // (useCallback)، بينما كائن `traveler` يُعاد بناؤه كل رسمة — ووضعه في قائمة
-  // الاعتماديات كان يُفقد `requestDeleteTraveler` ثباتها، وهي تعيش في شريحة
-  // `actions` من المتجر حيث الثبات هو الشرط (القاعدة ١٦).
-  const { confirmDeleteTraveler } = traveler
-  const requestDeleteTraveler = useCallback((target: Traveler) => {
-    if (!isLongTermTrip) {
-      // 🆕 حذف مباشر بلا نافذة تأكيد: ليّن، ويحمل تنبيهُه «تراجع»، ويبقى في
-      // سلة المهملات بعدها — انظر confirmDeleteTraveler في useTravelerActions.
-      confirmDeleteTraveler(target.id)
-      return
-    }
-    // الرصيد لازم لنافذة الخروج (تعرض المبلغ والاتجاه). غيابه من balances
-    // يعني مسافراً لم يُحسب بعد — نمرّره برصيد صفر فتتصرّف النافذة كحساب مسوّى،
-    // والخادم يبقى الحكم الفعلي على أي حال.
-    const withBalance = balances.find(b => b.id === target.id)
-    modals.openExitTraveler(withBalance ?? { ...target, totalExpenses: 0, remaining: 0 })
-  }, [isLongTermTrip, balances, modals, confirmDeleteTraveler])
-
-  const confirmExitTraveler = useCallback(async (travelerId: number, settle: boolean) => {
-    const ok = await longTermActions.exitTraveler(TRIP_ID, travelerId, settle)
-    if (ok) modals.closeModal()
-  }, [longTermActions, modals])
-
-  // ─── شاشة «رحلاتي» ────────────────────────────────────────────────────────
-  // 🆕 المسؤول يرى كل الرحلات (استعلام القائمة يرضيه isAdmin وحده)، والعضو
-  // العادي يرى ما انضم له فقط. بدون هذا التفريق كانت الشاشة تختفي عن المسؤول
-  // تماماً: هو يتجاوز رمز الرحلة أصلاً فقد لا يملك خريطة trips في توكنه إطلاقاً.
-  //
-  // 🆕 المؤرشفة تُطوى في قسم منفصل قابل للفتح — نمط «الدردشات المؤرشفة» في
-  // واتساب: لا تختفي نهائياً (كانت كذلك سابقاً، فلا سبيل للوصول لرحلة مؤرشفة
-  // لا تملك رابطها المباشر) ولا تزدحم مع القائمة النشطة يومياً. تبقى الرحلة
-  // المفتوحة حالياً في القائمة الرئيسية دائماً ولو كانت مؤرشفة، وإلا اختفت من
-  // تحت المستخدم بينما هو داخلها.
-  //
-  // ⚠️ للتنقّل المحض فقط (فتح/إنشاء/استعادة) — لا تعديل من هنا. تعديل أي رحلة
-  // يمرّ عبر اسمها في الهيدر بعد فتحها (انظر tripEdit أدناه).
-  const pickerAllTrips = useMemo(
-    () => (isAdmin
-      ? trips.map(t => ({ id: t.id, name: t.name, status: t.status }))
-      : myTrips),
-    [isAdmin, trips, myTrips],
-  )
-  const pickerTrips = useMemo(
-    () => pickerAllTrips.filter(t => t.status !== 'archived' || t.id === TRIP_ID),
-    [pickerAllTrips],
-  )
-  const archivedTrips = useMemo(
-    () => pickerAllTrips.filter(t => t.status === 'archived' && t.id !== TRIP_ID),
-    [pickerAllTrips],
-  )
-  const pickerLoading = isAdmin ? tripsLoading : myTripsLoading
-  const pickerError   = isAdmin ? tripsError   : myTripsError
-
-  // 🆕 رقما البطاقة — عدد المسافرين وإجمالي المصروف، ولا ثالث لهما (انظر
-  // useTripStats.ts وTripPicker.tsx). يُجلبان لكل ما تعرضه الشاشة فعلاً، بما
-  // فيه المؤرشف: قائمة المؤرشف مطويّة لكنها قصيرة، وتأجيل جلبها حتى فتحها
-  // يوفّر أقل بكثير مما يكلّفه تسريب حالة الطيّ من TripPicker إلى هنا.
-  //
-  // ⚠️ المسؤول يرى كل رحلات النظام (useAllTrips)، فعدد الاستعلامات هنا ينمو
-  // بعددها. مقبول لأن البطاقات نفسها تُرسم كلها أصلاً، ولأن التجميع خادمي لا
-  // يقرأ المستندات — لكنه الموضع الذي يستحقّ النظر أولاً إن كبر عدد الرحلات.
-  const pickerStatIds = useMemo(
-    () => [...pickerTrips, ...archivedTrips].map(t => t.id),
-    [pickerTrips, archivedTrips],
-  )
-  const tripStats = useTripStats(pickerStatIds, user)
-
-  // تُعرض حين فُتح التطبيق بلا `?trip=` — أي بلا رحلة مقصودة — أو حين طلبها
-  // المستخدم صراحةً من الهيدر. اختيار رحلة ينقل إلى `?trip=X` فيصبح المعرّف
-  // صريحاً ولا تظهر الشاشة مجدداً.
-  //
-  // ⚠️ لا نشترط عضوية الرحلة الافتراضية هنا: كان ذلك يخفي الشاشة عن كل عضو في
-  // الرحلة الافتراضية (وهم الأغلبية)، فلا يراها أحد عملياً — القاعدة ١٧.
-  //
-  // 🆕 ولا نشترط pickerTrips.length > 0 بعد الآن: قبل الإنشاء الذاتي كانت
-  // شاشة فارغة عديمة الفائدة لعضو بلا أي رحلة (0 عناصر، لا فعل ممكن)، فسقط
-  // للمسار الأعمّ (NotAMemberScreen). أما الآن فحالتها الفارغة نفسها تحمل زرّ
-  // «إنشاء رحلة جديدة» — وهذا بالضبط أول مكان يحتاجه عضو جديد لا رحلة له
-  // إطلاقاً، فإخفاؤها عنه بالذات كان يقفل الباب الوحيد الذي فتحته هذه الميزة.
-  const isPickerVisible =
-    showTripPicker ||
-    (!HAS_EXPLICIT_TRIP_ID && !authLoading && !pickerLoading)
-
-  const hasUnsavedData = useCallback(() => {
-    const hasExpenseData = expense.isAddingExpense && (
-      expense.newExpense.description.trim() !== '' ||
-      expense.newExpense.amount !== '' ||
-      expense.newExpense.currency !== 'SAR' ||
-      expense.newExpense.exchangeRate !== '1'
-    )
-    const hasTravelerData = traveler.isAddingTraveler && (
-      traveler.newTravelerName.trim() !== '' ||
-      traveler.newTravelerDeposit !== ''
-    )
-    // ⚠️ **لا فرع ثالث لتعديل الرصيد بعد الآن، وهذا ليس سهواً.** كان حقل
-    // المبلغ يعيش هنا فيُقاس، وصار يعيش في `DepositEditor` داخل ملف المسافر
-    // (انظر useDepositActions.ts). ومسوّدة نصف مكتوبة في حقل *مضمَّن* داخل
-    // نافذة مفتوحة لا تُقارَن بنموذج قائم بذاته: تحديث التطبيق سيُغلق النافذة
-    // بأكملها على أي حال. المقياس هنا لنماذج الإدخال المستقلّة وحدها.
-    return hasExpenseData || hasTravelerData
-  }, [
-    expense.isAddingExpense, expense.newExpense,
-    traveler.isAddingTraveler, traveler.newTravelerName, traveler.newTravelerDeposit,
-  ])
 
   // 🆕 سحب الأجزاء المؤجّلة بهدوء بعد أن يصبح التطبيق تفاعلياً، حتى تكون حاضرة
   // إن انقطع الاتصال لاحقاً. لولا هذا، أول مصروف يُسجَّل في رحلة أثناء الانقطاع
@@ -463,6 +90,7 @@ export function useAppCoordinator() {
   // ⚠️ موضعه هنا يضمن أنه يسبق أي `return` مشروط في App (قواعد الـ Hooks) —
   // وهذا سبب إضافي لبقاء التوجيه في App والتركيب هنا.
   // ولا نسحب شيئاً قبل ثبوت الوصول: لا معنى لتحميل مودالات لمن لم يجتز البوابة.
+  const { hasAccess } = session
   useEffect(() => {
     if (!hasAccess) return
     return onIdle(() => preloadAll(LAZY_IMPORTERS))
@@ -470,136 +98,49 @@ export function useAppCoordinator() {
 
   return {
     /** 🆕 رابط دعوة بنقرة واحدة — App.tsx يعرض InviteJoinScreen طالما 'joining' أو 'needsName'. */
-    invite: inviteJoin,
+    invite: session.invite,
     /** المصادقة والوصول وحالة الشبكة. */
     session: {
-      user, isAdmin, hasAccess, isOnline,
-      authLoading, joinedTripIds,
+      user: session.user, isAdmin: session.isAdmin, hasAccess, isOnline: session.isOnline,
+      authLoading: session.authLoading, joinedTripIds: session.joinedTripIds,
       // 🆕 لا PIN بعد الآن — تسجيل الدخول (AuthGate) هو الحارس الوحيد المتبقي.
-      signInError, isSigningIn, signInWithGoogle, signInWithEmail,
+      signInError: session.signInError, isSigningIn: session.isSigningIn,
+      signInWithGoogle: session.signInWithGoogle, signInWithEmail: session.signInWithEmail,
       // 🆕 الخروج من نفس خطّاف الدخول — لا خطّاف مصادقة ثانٍ بعد اليوم.
-      signOut,
-      /** 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — يُستهلك في canManageLongTerm أدناه. */
-      isOrganizer,
+      signOut: session.signOut,
+      /** 🆕 منظّم الرحلة الحالية (لا مسؤول عالمي) — مصدره useAppTrip. */
+      isOrganizer: trip.isOrganizer,
     },
-    /** الأرقام المشتقّة — مدخلات كل ما يُعرض ويُصدَّر. */
-    ledger: {
-      isInitialLoading,
-      activeExpenses, activeTravelers, deletedExpenses, deletedTravelers,
-      balances, totalSpent, totalDeposited, totalRemaining,
-      settlements, categoryTotals, spendingTrend,
-      // 🆕 تسجيل التحويل — undefined لغير المنظّم/المسؤول، فيُخفي الزرّ نفسه.
-      onRecordTransfer: canRecordSettlements ? recordTransfer : undefined,
-      recordingSettlementKey: settlementActions.recordingKey,
-      // 🆕 قيود السداد المسجّلة — تُعرض تحت التسويات، ويحذفها من يسجّلها.
-      activeRepayments, deletedRepayments,
-      onDeleteRepayment: canRecordSettlements ? repaymentActions.deleteRepayment : undefined,
-      onRestoreRepayment: repaymentActions.restoreRepayment,
-      // 🆕 نموذج الهوية الهجين — بطاقتك مثبَّتة أولاً هنا (انظر myBalance
-      // وتعليقه أعلاه) — هذا وحده كافٍ الآن، بلا بطاقة ملخّص منفصلة فوقها
-      // (MyBalanceBanner، حُذفت — كانت تكرر نفس الرقم بلا معلومة جديدة).
-      travelersPanelBalances,
-    },
-    /** إعدادات الرحلة الحالية ودورة حياتها. */
-    // 🆕 `name` مكشوف هنا الآن — الهيدر يعرض اسم الرحلة المفتوحة بدل اسم
-    // التطبيق الثابت. القيمة نفسها المستخدَمة في صفّ الرحلة المفتوحة داخل
-    // pickerTrips أعلاه، لا مصدر ثانٍ يمكن أن ينحرف عنه.
-    trip: { name: tripName ?? TRIP_ID, deleted: tripDeleted, itinerary, canAddExpenses, tripClosedNotice, tripType },
-    /**
-     * 🆕 كل ما تحتاجه واجهة الرحلة الطويلة — **null في الرحلة القياسية**.
-     * قيمة واحدة تُفحص في App.tsx (`longTerm && …`) بدل شروط متفرّقة، وهو ما
-     * يجعل «الرحلة القياسية لا تتأثر» حقيقةً بنيوية لا وعداً في تعليق.
-     */
-    longTerm: isLongTermTrip ? {
-      period: currentPeriod,
-      periodLabel: formatPeriodLabel(currentPeriod),
-      lastClosedPeriod,
-      periodTotal,
-      periodCount: periodExpenses.length,
-      // 🆕 محفظة الدورة الحالية — إجمالية (الهيدر) وبِحسب كل مسافر (بطاقته).
-      // انظر تعليق useMemo أعلاه لماذا هي اشتقاق لا حساب مالي جديد.
-      cycleWallet,
-      cycleWallets,
-      // 🆕 لمُصفّي الدورة في التقارير/كشف الحساب — انظر ReportsView.tsx وTravelerProfileModal.tsx.
-      periods,
-      movements: rolloverPlan,
-      canManage: canManageLongTerm,
-      isClosingMonth: longTermActions.isClosingMonth,
-      isExitingTraveler: longTermActions.isExitingTraveler,
-      organizerUid,
-      openRollover: modals.openMonthlyRollover,
-      onConfirmRollover: confirmRollover,
-      onConfirmExit: confirmExitTraveler,
-    } : null,
+    ledger: workspace.ledger,
+    trip: trip.trip,
+    longTerm: workspace.longTerm,
     /** 🆕 بيانات بنك منظّم الرحلة الحالية — حيّة من users/{organizerUid}. */
-    organizerBank,
-    /** أسعار الصرف الحيّة — تُقرأ من DataContext في نموذج المصروف. */
-    rates: { currencies: CURRENCIES, ratesUpdatedAt },
+    organizerBank: trip.organizerBank,
+    rates: workspace.rates,
     /** حالة المزامنة والتنبيهات. */
     status: {
-      isSyncing, syncError, toast, handlePullToRefresh, hasUnsavedData,
+      isSyncing: workspace.isSyncing, syncError, toast,
+      handlePullToRefresh: workspace.handlePullToRefresh,
+      hasUnsavedData: workspace.hasUnsavedData,
       // 🆕 مُصدَّرة لاستخدامها خارج هذا الملف عند الحاجة إلى توست من مكوّن لا
       // يملك مساراً خادمياً خاصاً به يُطلقه بنفسه (مثال: نسخ رابط دعوة احتياطياً
       // حين لا يدعم الجهاز Web Share API — انظر TripDetailPanel.tsx).
       showToast,
     },
-    /** شاشة «رحلاتي» — تنقّل بحت (فتح/إنشاء/استعادة)، بلا تعديل من القائمة. */
-    picker: {
-      trips: pickerTrips, archivedTrips, loading: pickerLoading, error: pickerError,
-      // 🆕 خريطة الإحصاءات منفصلة عن قائمة الرحلات لأنها تصل بعدها (وقد لا تصل
-      // بلا اتصال) — الرحلة الغائبة منها تُرسم بالاسم والحالة وحدهما.
-      stats: tripStats,
-      isVisible: isPickerVisible,
-      show: () => setShowTripPicker(true),
-      // 🆕 الإنشاء الذاتي (نموذج واتساب) — أي مستخدم مسجّل دخوله، لا المسؤول
-      // فقط. نفس دالة tripAdmin.createTrip المستخدمة في تعديل الرحلة؛ الحدّ
-      // الحقيقي (جلسة حقيقية، حدّ زمني) خادمي بالكامل في manageTrip.
-      onCreateTrip: tripAdmin.createTrip,
-      // 🆕 يظهر معرّف كل رحلة تحت اسمها (المسؤول يتصفّح رحلات لا يعرفها
-      // بالاسم فقط)، ويتيح تبويب «استعادة من نسخة احتياطية» عند الإنشاء.
-      isAdmin,
-      isSaving: tripAdmin.isSaving,
-      onRestoreTrip: tripAdmin.restoreTrip,
-    },
-    /**
-     * 🆕 تعديل الرحلة *المفتوحة حالياً* — يُفتح بالضغط على اسمها في الهيدر
-     * (Header.tsx)، لا من قائمة «رحلاتي». لتعديل رحلة أخرى يفتحها المستخدم
-     * أولاً من «رحلاتي» (المسؤول يرى كل الرحلات هناك ويمكنه الدخول لأيّ منها)
-     * ثم يعدّلها من هنا بعد أن تصبح هي المفتوحة. انظر docs/DECISIONS.md.
-     */
-    tripEdit: {
-      canEdit: isAdmin || isOrganizer,
-      trip: currentTripSummary,
-      viewerRole: isAdmin ? 'admin' as const : 'organizer' as const,
-      isSaving: tripAdmin.isSaving,
-      onSaveTripName: tripAdmin.saveTripName,
-      onSaveItinerary: tripAdmin.saveItinerary,
-      onSaveTripStatus: tripAdmin.saveTripStatus,
-      onSaveTripType: tripAdmin.saveTripType,
-      onDeleteTrip: tripAdmin.deleteTrip,
-      onRemoveMember: tripAdmin.removeMember,
-      onSetMemberRole: tripAdmin.setMemberRole,
-      onLinkTravelerAccount: tripAdmin.linkTravelerAccount,
-      onExportBackup: tripAdmin.exportBackup,
-      onCreateInvite: tripAdmin.createInvite,
-      onRevokeInvite: tripAdmin.revokeInvite,
-    },
+    picker: trip.picker,
+    tripEdit: trip.tripEdit,
     /** 🆕 بروفايل المستخدم العام — لشاشة البروفايل، وهو مصدر بيانات البنك
      * الوحيد لأي رحلة ينظّمها هذا المستخدم (انظر organizerBank أعلاه). */
-    profile: profile.profile,
-    isSavingProfile: profile.isSaving,
-    saveProfile: profile.saveProfile,
-    filter,
+    profile: session.profile.profile,
+    isSavingProfile: session.profile.isSaving,
+    saveProfile: session.profile.saveProfile,
+    filter: workspace.filter,
     modals,
-    /**
-     * 🆕 يُمرَّر إلى TripStoreProvider — انظر تعليق الدالة أعلاه. الرحلة
-     * القياسية تحذف مباشرةً (تنبيه «تراجع»)، والطويلة تفتح نافذة الخروج.
-     */
-    requestDeleteTraveler,
+    requestDeleteTraveler: workspace.requestDeleteTraveler,
     /** 🆕 يُمرَّر إلى AuthGate — استرداد كلمة المرور قبل تسجيل الدخول. */
-    passwordReset,
-    expense,
-    traveler,
-    deposit,
+    passwordReset: session.passwordReset,
+    expense: workspace.expense,
+    traveler: workspace.traveler,
+    deposit: workspace.deposit,
   }
 }
