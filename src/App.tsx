@@ -311,6 +311,9 @@ export default function App() {
                   longTermExit={longTerm ? {
                     canManage: longTerm.canManage,
                     isBusy: longTerm.isClosingMonth || longTerm.isExitingTraveler,
+                    isExiting: longTerm.isExitingTraveler,
+                    organizerUid: longTerm.organizerUid,
+                    onConfirmExit: longTerm.onConfirmExit,
                   } : undefined}
                   cycleWallets={longTerm?.cycleWallets}
                   periods={longTerm?.periods}
@@ -356,7 +359,12 @@ export default function App() {
                 canManage: longTerm.canManage,
                 isBusy: longTerm.isClosingMonth || longTerm.isExitingTraveler,
                 hasActiveTravelers: ledger.activeTravelers.length > 0,
-                onCloseMonth: longTerm.openRollover,
+                // 🆕 تأكيد الإغلاق خطوة داخل نفس النافذة — انظر LongTermModal.tsx.
+                rollover: {
+                  movements: longTerm.movements,
+                  isClosingMonth: longTerm.isClosingMonth,
+                  onConfirm: longTerm.onConfirmRollover,
+                },
               } : undefined}
               trash={{
                 deletedExpenses: ledger.deletedExpenses,
@@ -388,17 +396,6 @@ export default function App() {
                 // الرحلة المفتوحة حذفت نفسها — إعادة توجيه كاملة بلا `?trip=`
                 // بدل إبقاء المستخدم على شاشة تشير لمستند لم يعد موجوداً.
                 onDeleted: () => { window.location.href = appHomeUrl() },
-              } : undefined}
-              // 🆕 غير مُمرَّرة إطلاقاً في الرحلة القياسية — وهو ما يجعل
-              // مودالَي الترحيل/الخروج غير قابلين للعرض فيها بنيوياً، لا بشرط.
-              longTerm={longTerm ? {
-                period: longTerm.period,
-                movements: longTerm.movements,
-                isClosingMonth: longTerm.isClosingMonth,
-                isExitingTraveler: longTerm.isExitingTraveler,
-                organizerUid: longTerm.organizerUid,
-                onConfirmRollover: longTerm.onConfirmRollover,
-                onConfirmExit: longTerm.onConfirmExit,
               } : undefined}
             />
   

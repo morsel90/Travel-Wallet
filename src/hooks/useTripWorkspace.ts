@@ -45,10 +45,9 @@ export function useTripWorkspace({
 }: UseTripWorkspaceArgs) {
   const { tripType, currentPeriod, lastClosedPeriod, organizerUid } = config
   // ⚠️ مُفكَّكة لا `modals.closeModal`: كل دالة في useModals ثابتة (useCallback
-  // بلا اعتماديات)، لكن كائن `modals` نفسه يُبنى من جديد في كل رسمة. وضعه في
-  // قائمة اعتماديات كان يُفقد requestDeleteTraveler ثباتها — وهي في شريحة
-  // `actions` من المتجر (القاعدة ١٦). انظر useTripWorkspace.test.ts.
-  const { openExitTraveler, closeModal, openMonthlyRollover } = modals
+  // بلا اعتماديات)، لكن كائن `modals` نفسه يُبنى من جديد في كل رسمة، فوضعه في
+  // قائمة اعتماديات يُفقد ما يعتمد عليه ثباته. انظر useTripWorkspace.test.ts.
+  const { closeModal } = modals
 
   // 🆕 علم مستقل لكل مستمع بدل علم واحد مشترك بينهما. المشترك كان يكذب: كلاهما
   // يرفعه عند الاشتراك ويُنزله في معالج لقطته، فأيّ المجموعتين وصلت أولاً
@@ -247,44 +246,32 @@ export function useTripWorkspace({
   }, [longTermActions, currentPeriod, closeModal])
 
   /**
-   * 🆕 نقطة دخول واحدة لإخراج عضو، تتفرّع بحسب نوع الرحلة.
+   * 🆕 حذف مسافر من بطاقته — حذف ليّن مباشر، بلا نافذة تأكيد: يحمل تنبيهُه
+   * «تراجع»، ويبقى في سلة المهملات بعدها (انظر confirmDeleteTraveler).
    *
-   * ⚠️ وُجدت هذه الدالة لأن أول تنفيذ ترك **طريقاً مسدوداً**: بطاقة المسافر
-   * (المكان الذي يقصده المستخدم بالعادة) كانت تفتح تأكيد الحذف المعتاد، فيمنعه
-   * الحارس برسالة «سوِّ حسابه أولاً» تشير إلى زرّ في قسم آخر — رسالة تقول «لا»
-   * ولا تأخذك إلى «نعم». رصده المالك فوراً بسؤاله «أين حذف مسافر أراد المغادرة؟».
-   *
-   * الآن نفس البطاقة تفتح نافذة «تسوية وخروج» مباشرةً في الرحلة الطويلة. وحارس
-   * describeExitBlockFor يبقى في useTravelerActions كشبكة أمان لأي مسار آخر
-   * يستدعي confirmDeleteTraveler — لم يُحذف، لأنه لم يكن خطأً، بل ناقصاً.
-   *
-   * 🆕 وما كان في الرحلة القياسية نافذة تأكيد صار حذفاً مباشراً — الفرق الوحيد
-   * في هذه الدالة منذ كُتبت. التفرّع نفسه لم يتغيّر: القياسية تحذف، والطويلة
-   * تفتح نافذة الخروج (تسوية مالية حقيقية لا تراجع عنها بتنبيه).
+   * ⚠️ **كانت تتفرّع بحسب نوع الرحلة، ولم تعد.** في الرحلة الطويلة كانت تفتح
+   * نافذة «تسوية وخروج» عبر اتحاد ModalState. صار الخروج قسماً داخل ملف
+   * المسافر (TravelerProfileModal)، وزرّ الحذف في بطاقة الرحلة الطويلة يفتح
+   * الملف على ذلك القسم مباشرةً (TravelerSection.tsx) فلا يصل إلى هنا أصلاً.
+   * وحارس describeExitBlockFor باقٍ في useTravelerActions شبكةَ أمان لأي مسار
+   * آخر يحاول حذف منتدَب برصيد غير مسوّى.
    */
   // ⚠️ مُفكَّكة لا `traveler.confirmDeleteTraveler`: مرجع هذه الدالة وحده ثابت
   // (useCallback)، بينما كائن `traveler` يُعاد بناؤه كل رسمة — ووضعه في قائمة
   // الاعتماديات كان يُفقد `requestDeleteTraveler` ثباتها، وهي تعيش في شريحة
   // `actions` من المتجر حيث الثبات هو الشرط (القاعدة ١٦).
   const { confirmDeleteTraveler } = traveler
-  const requestDeleteTraveler = useCallback((target: Traveler) => {
-    if (!isLongTermTrip) {
-      // 🆕 حذف مباشر بلا نافذة تأكيد: ليّن، ويحمل تنبيهُه «تراجع»، ويبقى في
-      // سلة المهملات بعدها — انظر confirmDeleteTraveler في useTravelerActions.
-      confirmDeleteTraveler(target.id)
-      return
-    }
-    // الرصيد لازم لنافذة الخروج (تعرض المبلغ والاتجاه). غيابه من balances
-    // يعني مسافراً لم يُحسب بعد — نمرّره برصيد صفر فتتصرّف النافذة كحساب مسوّى،
-    // والخادم يبقى الحكم الفعلي على أي حال.
-    const withBalance = balances.find(b => b.id === target.id)
-    openExitTraveler(withBalance ?? { ...target, totalExpenses: 0, remaining: 0 })
-  }, [isLongTermTrip, balances, openExitTraveler, confirmDeleteTraveler])
+  const requestDeleteTraveler = useCallback(
+    (target: Traveler) => confirmDeleteTraveler(target.id),
+    [confirmDeleteTraveler],
+  )
 
-  const confirmExitTraveler = useCallback(async (travelerId: number, settle: boolean) => {
-    const ok = await longTermActions.exitTraveler(TRIP_ID, travelerId, settle)
-    if (ok) closeModal()
-  }, [longTermActions, closeModal])
+  // 🆕 يُعيد نجاح العملية بدل إغلاق مودال: التأكيد قسم داخل ملف المسافر، وملف
+  // المسافر حالة محلّية في بطاقته لا في اتحاد ModalState — فهي من تُغلقه.
+  const confirmExitTraveler = useCallback(
+    (travelerId: number, settle: boolean) => longTermActions.exitTraveler(TRIP_ID, travelerId, settle),
+    [longTermActions],
+  )
 
   const hasUnsavedData = useCallback(() => {
     const hasExpenseData = expense.isAddingExpense && (
@@ -350,7 +337,6 @@ export function useTripWorkspace({
       isClosingMonth: longTermActions.isClosingMonth,
       isExitingTraveler: longTermActions.isExitingTraveler,
       organizerUid,
-      openRollover: openMonthlyRollover,
       onConfirmRollover: confirmRollover,
       onConfirmExit: confirmExitTraveler,
     } : null,

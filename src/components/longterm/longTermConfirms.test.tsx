@@ -7,8 +7,8 @@
 // ما يتغيّر بعده دالتا التجهيز renderRollover/renderExit وحدهما.
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import MonthlyRolloverModal from '../modals/MonthlyRolloverModal'
-import ExitTravelerModal from '../modals/ExitTravelerModal'
+import { RolloverConfirm } from './RolloverConfirm'
+import { ExitTravelerConfirm } from './ExitTravelerConfirm'
 import type { RolloverMovement, TravelerBalance } from '../../types'
 
 const movements: RolloverMovement[] = [
@@ -21,9 +21,9 @@ function renderRollover(over: Partial<{ movements: RolloverMovement[]; isSubmitt
   const onConfirm = vi.fn()
   const onCancel = vi.fn()
   render(
-    <MonthlyRolloverModal
+    <RolloverConfirm
       period="2026-08" movements={over.movements ?? movements} isSubmitting={over.isSubmitting ?? false}
-      onConfirm={onConfirm} onClose={onCancel}
+      onConfirm={onConfirm} onCancel={onCancel}
     />,
   )
   return { onConfirm, onCancel }
@@ -37,9 +37,9 @@ function renderExit(t: TravelerBalance, over: Partial<{ isSubmitting: boolean; o
   const onConfirm = vi.fn()
   const onCancel = vi.fn()
   render(
-    <ExitTravelerModal
+    <ExitTravelerConfirm
       traveler={t} isSubmitting={over.isSubmitting ?? false} organizerUid={over.organizerUid ?? null}
-      onConfirm={onConfirm} onClose={onCancel}
+      onConfirm={onConfirm} onCancel={onCancel}
     />,
   )
   return { onConfirm, onCancel }

@@ -221,3 +221,51 @@ describe('TravelerProfileModal — محرّر الرصيد المضمّن', () =
     expect(screen.getByRole('button', { name: 'تعديل الرصيد' })).toBeInTheDocument()
   })
 })
+
+// ─── 🆕 الخروج قسمٌ داخل الملف، لا نافذة فوق نافذة ───────────────────────────
+// كان الملف يُغلق نفسه ليفتح ExitTravelerModal. محتوى التأكيد مثبَّت في
+// longterm/longTermConfirms.test.tsx؛ هنا ما يخصّ مكانه: يحلّ محلّ الزرّ، في
+// نفس النافذة، ويعود منه الإلغاء إلى الملف كما كان.
+describe('TravelerProfileModal — تأكيد الخروج في الرحلة الطويلة', () => {
+  const exit = (over: Record<string, unknown> = {}) => ({
+    canManage: true, isBusy: false, isExiting: false, organizerUid: null,
+    onConfirm: vi.fn(), ...over,
+  })
+
+  it('الزرّ يكشف التأكيد في نفس النافذة ويحلّ محلّه — لا زرّان متشابهان معاً', () => {
+    const longTermExit = exit()
+    const onClose = vi.fn()
+    renderModal({ initialTab: 'summary', longTermExit, onClose })
+    fireEvent.click(screen.getByRole('button', { name: 'تسوية وخروج من الرحلة' }))
+
+    // الملف نفسه باقٍ — لم يُغلق ليُفسح لنافذة أخرى كما كان.
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'الخلاصة والتسويات' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'تسوية وخروج من الرحلة' })).not.toBeInTheDocument()
+    // أحمد له 800 — التأكيد يسمّي المبلغ ويُرسل settle=true.
+    expect(screen.getByText(/له 800\.00 ريال/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'تسوية وخروج' }))
+    expect(longTermExit.onConfirm).toHaveBeenCalledWith(true)
+  })
+
+  it('الإلغاء يعيد الزرّ ولا يُغلق الملف', () => {
+    const onClose = vi.fn()
+    renderModal({ initialTab: 'summary', longTermExit: exit(), onClose })
+    fireEvent.click(screen.getByRole('button', { name: 'تسوية وخروج من الرحلة' }))
+    fireEvent.click(screen.getByRole('button', { name: 'إلغاء' }))
+
+    expect(screen.getByRole('button', { name: 'تسوية وخروج من الرحلة' })).toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('initiallyOpen: يُفتح الملف والتأكيد ظاهر أصلاً — مسار زرّ الحذف في البطاقة', () => {
+    renderModal({ initialTab: 'summary', longTermExit: exit({ initiallyOpen: true }) })
+    expect(screen.getByRole('button', { name: 'تسوية وخروج' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'تسوية وخروج من الرحلة' })).not.toBeInTheDocument()
+  })
+
+  it('في الرحلة القياسية (بلا longTermExit) لا شيء من هذا يظهر', () => {
+    renderModal({ initialTab: 'summary' })
+    expect(screen.queryByRole('button', { name: /خروج/ })).not.toBeInTheDocument()
+  })
+})

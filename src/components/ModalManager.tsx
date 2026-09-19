@@ -29,8 +29,6 @@ const importTrashBinModal       = () => import('./modals/TrashBinModal')
 const importEditTripModal       = () => import('./modals/EditTripModal')
 // 🆕 الرحلات طويلة المدى — مؤجّلان كغيرهما، ولا يُحمَّلان إطلاقاً في رحلة
 // قياسية لأن ما يفتحهما (LongTermPanel) لا يُعرض فيها أصلاً.
-const importMonthlyRolloverModal = () => import('./modals/MonthlyRolloverModal')
-const importExitTravelerModal    = () => import('./modals/ExitTravelerModal')
 // 🆕 الثلاثة الآتية كانت أقساماً في تدفّق الشاشة الرئيسية وانتقلت خلف زرّ
 // «المزيد» (MoreMenu.tsx). ChartsModal يستورد ChartsSection استيراداً ثابتاً
 // فيسافران معاً في حزمة واحدة — وهذا ما يُبقي التحميل المسبق (chartsImporters
@@ -42,8 +40,6 @@ const importLongTermModal  = () => import('./modals/LongTermModal')
 const ReportsView         = lazy(importReportsView)
 const TrashBinModal       = lazy(importTrashBinModal)
 const EditTripModal       = lazy(importEditTripModal)
-const MonthlyRolloverModal = lazy(importMonthlyRolloverModal)
-const ExitTravelerModal    = lazy(importExitTravelerModal)
 const ChartsModal          = lazy(importChartsModal)
 const ItineraryModal       = lazy(importItineraryModal)
 const LongTermModal        = lazy(importLongTermModal)
@@ -62,8 +58,6 @@ export const modalImporters = [
   importReportsView,
   importTrashBinModal,
   importEditTripModal,
-  importMonthlyRolloverModal,
-  importExitTravelerModal,
   importChartsModal,
   importItineraryModal,
   importLongTermModal,
@@ -87,30 +81,17 @@ interface ModalManagerProps {
   /** 🆕 «مسار الرحلة» — يجمع المقطع القادم وقائمة المقاطع الكاملة. */
   itinerary: Omit<ComponentProps<typeof ItineraryModal>, 'onClose'>
   /**
-   * 🆕 الرحلات طويلة المدى — **اختياري عمداً**: الرحلة القياسية لا تمرّره
-   * إطلاقاً، فلا يمكن أن يُفتح أي من مودالَي الترحيل/الخروج فيها ولو تسلّلت
-   * حالة مودال بطريقة ما. غيابه هو التعطيل، لا شرطٌ في مكان بعيد.
+   * 🆕 «الشهر المحاسبي» كنافذة، ومعها تأكيد إغلاقه كخطوة داخلها — **اختياري
+   * عمداً**: الرحلة القياسية لا تمرّره إطلاقاً، فلا تُفتح ولو تسلّلت حالة
+   * مودال بطريقة ما. غيابه هو التعطيل، لا شرطٌ في مكان بعيد.
    */
-  longTerm?: {
-    period: ComponentProps<typeof MonthlyRolloverModal>['period']
-    movements: ComponentProps<typeof MonthlyRolloverModal>['movements']
-    isClosingMonth: boolean
-    isExitingTraveler: boolean
-    /** منظّم الرحلة الحالية — يمرَّر لـExitTravelerModal لمنع إخراجه نفسه. */
-    organizerUid?: string | null
-    onConfirmRollover: () => void
-    onConfirmExit: (travelerId: number, settle: boolean) => void
-  }
-  /** 🆕 «الشهر المحاسبي» كنافذة — نفس شرط `longTerm` أعلاه: غيابه هو التعطيل. */
   longTermPanel?: Omit<ComponentProps<typeof LongTermModal>, 'onClose'>
 }
 
 export default function ModalManager({
   modal, closeModal, reports, trash, editTrip,
-  charts, itinerary, longTerm, longTermPanel,
+  charts, itinerary, longTermPanel,
 }: ModalManagerProps) {
-  // اشتقاق الحمولة من الحالة كثابت محلي — يضمن حفظ التضييق (narrowing) داخل الإغلاقات
-  const exitTarget = modal.type === 'exitTraveler' ? modal.traveler : null
 
   return (
     <>
@@ -158,34 +139,6 @@ export default function ModalManager({
         {longTermPanel && modal.type === 'longTermPanel' && (
           <Suspense key="long-term-panel" fallback={<ModalFallback />}>
             <LongTermModal {...longTermPanel} onClose={closeModal} />
-          </Suspense>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {longTerm && modal.type === 'monthlyRollover' && (
-          <Suspense key="monthly-rollover" fallback={<ModalFallback />}>
-            <MonthlyRolloverModal
-              period={longTerm.period}
-              movements={longTerm.movements}
-              isSubmitting={longTerm.isClosingMonth}
-              onConfirm={longTerm.onConfirmRollover}
-              onClose={closeModal}
-            />
-          </Suspense>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {longTerm && exitTarget && (
-          <Suspense key="exit-traveler" fallback={<ModalFallback />}>
-            <ExitTravelerModal
-              traveler={exitTarget}
-              isSubmitting={longTerm.isExitingTraveler}
-              organizerUid={longTerm.organizerUid}
-              onConfirm={(settle) => longTerm.onConfirmExit(exitTarget.id, settle)}
-              onClose={closeModal}
-            />
           </Suspense>
         )}
       </AnimatePresence>

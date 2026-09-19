@@ -1,32 +1,37 @@
 // 🆕 تأكيد إغلاق الشهر وترحيل الأرصدة — الرحلات طويلة المدى وحدها.
 //
+// 🆕 **خطوة داخل نافذة «هذا الشهر» لا نافذة مستقلّة** (LongTermModal يبدّل
+// محتواه إليها). كانت MonthlyRolloverModal: زرّ الإغلاق يُغلق نافذة الشهر
+// ليفتح هذه مكانها — تسليم من نافذة إلى نافذة، وحالة في اتحاد ModalState
+// لا يفتحها شيء سوى ذلك الزرّ. انظر docs/DECISIONS.md.
+//
 // ⚠️ ما يُعرض هنا **معاينة محلية لا أمر تنفيذ**: تُبنى من planRollover على
 // الأرصدة المعروضة أصلاً في الشاشة. الخطة المنفَّذة تُحسب من جديد داخل
 // closeMonth على بيانات الخادم لحظة الضغط، ولا يُرسَل من هنا سوى معرّف الرحلة
 // والشهر. أي اختلاف بين المعروض والمنفَّذ يعني أن أحدهم سجّل مصروفاً في هذه
 // الأثناء — وهو سبب وجيه لأن يكون الخادم هو الحاسب لا المتصفح.
-import { Modal } from '../Modal'
 import { formatPeriodLabel, nextPeriod } from '../../utils/period'
 import { countRolloverMovements } from '../../utils/longTerm'
 import { CalendarCheck, Loader2, AlertTriangle } from '../../icons'
 import type { PeriodKey, RolloverMovement } from '../../types'
 
-interface MonthlyRolloverModalProps {
+interface RolloverConfirmProps {
   period: PeriodKey
   movements: RolloverMovement[]
   isSubmitting: boolean
   onConfirm: () => void
-  onClose: () => void
+  /** يعود إلى عرض الشهر داخل نفس النافذة — لا يُغلقها. */
+  onCancel: () => void
 }
 
-export default function MonthlyRolloverModal({
-  period, movements, isSubmitting, onConfirm, onClose,
-}: MonthlyRolloverModalProps) {
+export function RolloverConfirm({
+  period, movements, isSubmitting, onConfirm, onCancel,
+}: RolloverConfirmProps) {
   const opening = nextPeriod(period)
   const affected = countRolloverMovements(movements)
 
   return (
-    <Modal onClose={onClose} maxWidth="max-w-md" label={`إغلاق ${formatPeriodLabel(period)}`}>
+    <div>
       <h3 className="font-bold mb-1 flex items-center gap-2">
         <CalendarCheck className="w-4 h-4 text-indigo-600" />
         إغلاق {formatPeriodLabel(period)}
@@ -83,13 +88,13 @@ export default function MonthlyRolloverModal({
         </button>
         <button
           type="button"
-          onClick={onClose}
+          onClick={onCancel}
           disabled={isSubmitting}
           className="flex-1 bg-slate-100 text-slate-700 py-2 rounded-xl font-bold disabled:opacity-50"
         >
           إلغاء
         </button>
       </div>
-    </Modal>
+    </div>
   )
 }

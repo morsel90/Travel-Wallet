@@ -11,9 +11,14 @@ import TravelerProfileModal from './modals/TravelerProfileModal'
  *  البطاقة لا تعرض زرّ خروج بعد الآن: مُمرَّرة إلى TravelerProfileModal التي
  *  تعرضه أسفل «الخلاصة والتسويات» — راجع فتحه (منظّم مصروفاته ثم يقرر)
  *  وموقعه الطبيعي لخروج ذاتي مستقبلاً حين يُربط حساب المنتدَب بمصادقة حقيقية. */
-interface LongTermExitProps {
+export interface LongTermExitProps {
   canManage: boolean
   isBusy: boolean
+  /** خروج جارٍ فعلاً — أضيق من isBusy (التي تشمل إغلاق الشهر). */
+  isExiting: boolean
+  organizerUid?: string | null
+  /** 🆕 يُعيد نجاح العملية — البطاقة تُغلق ملف المسافر عنده. */
+  onConfirmExit: (travelerId: number, settle: boolean) => Promise<boolean>
 }
 
 interface TravelerCardProps {
@@ -47,10 +52,13 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
   // (لصاحب البطاقة وحده) فيفتح مباشرة على "كشف الحساب التفصيلي".
   const [showProfile, setShowProfile] = useState(false)
   const [profileInitialTab, setProfileInitialTab] = useState<'summary' | 'statement'>('summary')
+  // 🆕 يُفتح الملف وتأكيد الخروج ظاهر أصلاً — زرّ الحذف في بطاقة الرحلة الطويلة.
+  const [profileStartsWithExit, setProfileStartsWithExit] = useState(false)
 
   const openStatement = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
     setProfileInitialTab('statement')
+    setProfileStartsWithExit(false)
     setShowProfile(true)
   }, [])
   
@@ -69,7 +77,7 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
   return (
     <>
       <div
-        onClick={() => { setProfileInitialTab('summary'); setShowProfile(true) }}
+        onClick={() => { setProfileInitialTab('summary'); setProfileStartsWithExit(false); setShowProfile(true) }}
         // 🆕 لا حدّ افتراضي — بطاقة عائمة تعتمد على shadow-xs/hover:shadow-md وحده
         // للتمايز عن خلفية الصفحة الرمادية، لا خطاً محيطاً. isMine يبقى استثناءً
         // مقصوداً: حدّ تيل واضح تمييزٌ دلالي («بطاقتك أنت»)، لا خط فاصل قائمة.
@@ -166,7 +174,20 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
             ) : (
                <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); requestDeleteTraveler(traveler); }}
+                // 🆕 في الرحلة الطويلة الحذف *هو* الخروج (تسوية مالية حقيقية)،
+                // فيفتح ملف المسافر على قسمه مباشرةً بدل نافذة مستقلّة. ضغطة
+                // واحدة كما كانت — المالك سأل يوماً «أين حذف مسافر أراد
+                // المغادرة؟»، فلا يجوز أن يبتعد خطوة. انظر docs/DECISIONS.md.
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (longTermExit) {
+                    setProfileInitialTab('summary')
+                    setProfileStartsWithExit(true)
+                    setShowProfile(true)
+                  } else {
+                    requestDeleteTraveler(traveler)
+                  }
+                }}
                 title="حذف المسافر"
                 className="p-1.5 bg-slate-50 hover:bg-rose-50 text-slate-500 hover:text-rose-600 rounded-lg transition-colors"
               >
@@ -197,10 +218,15 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
           longTermExit={longTermExit ? {
             canManage: longTermExit.canManage,
             isBusy: longTermExit.isBusy,
-            // 🆕 يُغلق ملف المسافر أولاً بدل ترك نافذة التأكيد فوق نافذة أخرى —
-            // فرصده هنا سواء أنجح الخروج أو أُلغي، بلا حاجة لانتظار تحديث
-            // القائمة (onSnapshot) ليختفي الملف من تلقاء نفسه.
-            onExit: () => { setShowProfile(false); requestDeleteTraveler(traveler) },
+            isExiting: longTermExit.isExiting,
+            organizerUid: longTermExit.organizerUid,
+            initiallyOpen: profileStartsWithExit,
+            // 🆕 التأكيد قسم داخل الملف، فالملف يبقى مفتوحاً حتى تنجح العملية —
+            // ويُغلق عندها هنا، بلا انتظار onSnapshot ليُسقط البطاقة (ومعها
+            // الملف) من القائمة. عند الفشل يبقى على التأكيد مع رسالة السبب.
+            onConfirm: settle => {
+              void longTermExit.onConfirmExit(traveler.id, settle).then(ok => { if (ok) setShowProfile(false) })
+            },
           } : undefined}
         />
       )}

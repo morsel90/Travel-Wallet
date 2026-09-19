@@ -3,18 +3,40 @@
 // LongTermPanel نفسه لم يتغيّر بحرف — يُغلَّف هنا فقط. سبب الغلاف بدل نقل
 // محتواه: القسم يبقى صالحاً كما هو لو أُعيد يوماً إلى الشاشة، والميزة كلها
 // تبقى معزولة في مجلّدها كما ينصّ تعليق LongTermPanel.tsx.
+//
+// 🆕 **تأكيد الإغلاق خطوة داخل هذه النافذة، لا نافذة تحلّ محلّها.** كان زرّ
+// «إغلاق الشهر» يُغلق هذه النافذة ليفتح MonthlyRolloverModal — حالة في اتحاد
+// ModalState لا يفتحها شيء سوى هذا الزرّ. الآن يتبدّل المحتوى وحده: العرض ←
+// التأكيد ← (إلغاء: عودة للعرض | نجاح: تُغلق النافذة من onConfirmRollover في
+// useTripWorkspace، وعند الفشل تبقى على التأكيد مع رسالة السبب).
+import { useState } from 'react'
+import type { ComponentProps } from 'react'
 import { X } from '../../icons'
 import { Modal } from '../Modal'
 import { LongTermPanel } from '../longterm/LongTermPanel'
-import type { ComponentProps } from 'react'
+import { RolloverConfirm } from '../longterm/RolloverConfirm'
+import { formatPeriodLabel } from '../../utils/period'
+import type { RolloverMovement } from '../../types'
 
-interface LongTermModalProps extends ComponentProps<typeof LongTermPanel> {
+interface LongTermModalProps extends Omit<ComponentProps<typeof LongTermPanel>, 'onCloseMonth'> {
+  /** معاينة الترحيل وتنفيذه — تُعرض بعد «إغلاق الشهر» داخل نفس النافذة. */
+  rollover: {
+    movements: RolloverMovement[]
+    isClosingMonth: boolean
+    onConfirm: () => void
+  }
   onClose: () => void
 }
 
-export default function LongTermModal({ onClose, ...panel }: LongTermModalProps) {
+export default function LongTermModal({ onClose, rollover, ...panel }: LongTermModalProps) {
+  const [confirming, setConfirming] = useState(false)
+
   return (
-    <Modal onClose={onClose} label="هذا الشهر" maxWidth="max-w-lg">
+    <Modal
+      onClose={onClose}
+      label={confirming ? `إغلاق ${formatPeriodLabel(panel.period)}` : 'هذا الشهر'}
+      maxWidth="max-w-lg"
+    >
       <div className="flex items-center justify-end mb-1">
         <button
           type="button"
@@ -26,9 +48,17 @@ export default function LongTermModal({ onClose, ...panel }: LongTermModalProps)
         </button>
       </div>
 
-      {/* إغلاق الشهر يُغلق النافذة أيضاً: مودال التأكيد (MonthlyRolloverModal)
-          يحلّ محلّها، ومودالان مفتوحان معاً يخالفان عقد ModalState الموحّد. */}
-      <LongTermPanel {...panel} onCloseMonth={() => { onClose(); panel.onCloseMonth() }} />
+      {confirming ? (
+        <RolloverConfirm
+          period={panel.period}
+          movements={rollover.movements}
+          isSubmitting={rollover.isClosingMonth}
+          onConfirm={rollover.onConfirm}
+          onCancel={() => setConfirming(false)}
+        />
+      ) : (
+        <LongTermPanel {...panel} onCloseMonth={() => setConfirming(true)} />
+      )}
     </Modal>
   )
 }

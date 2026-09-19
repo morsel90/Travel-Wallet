@@ -1,5 +1,5 @@
 // TravelerProfileModal.tsx
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'motion/react'
 import { X, Wallet, Receipt, Scale, Download, Printer, HandCoins, DoorOpen, RefreshCw, Landmark, Pencil, Plus, Minus, Target, Check, ArrowRightLeft } from '../../icons'
@@ -13,6 +13,7 @@ import { exportTravelerToExcel } from '../../utils/reports'
 import { settlementDirection, filterCycleExpenses, ROLLOVER_CATEGORY } from '../../utils/longTerm'
 import { isInPeriod } from '../../utils/period'
 import { formatPeriodLabel } from '../../utils/period'
+import { ExitTravelerConfirm } from '../longterm/ExitTravelerConfirm'
 import { PrintableStatement } from '../reports/PrintDocs' // تأكد من صحة مسار استيراد مستند الطباعة
 
 /** 🆕 حاضرة فقط في الرحلة الطويلة (مصدرها useAppCoordinator.longTerm عبر
@@ -23,7 +24,14 @@ import { PrintableStatement } from '../reports/PrintDocs' // تأكد من صح�
 interface LongTermExitProps {
   canManage: boolean
   isBusy: boolean
-  onExit: () => void
+  /** خروج جارٍ فعلاً — يعطّل زرّي التأكيد ويُظهر «جارٍ التنفيذ». */
+  isExiting: boolean
+  /** منظّم الرحلة الحالية — لمنع إخراجه نفسه (انظر ExitTravelerConfirm). */
+  organizerUid?: string | null
+  /** 🆕 يُفتح الملف والتأكيد ظاهر أصلاً — من زرّ الحذف في بطاقة الرحلة الطويلة. */
+  initiallyOpen?: boolean
+  /** `settle` صحيحة حين يختار المنظّم تسوية الرصيد ضمن نفس العملية. */
+  onConfirm: (settle: boolean) => void
 }
 
 // مرجع ثابت لقيمة repayments الافتراضية — `= []` تُنشئ مصفوفة جديدة كل عرض فتُبطل
@@ -96,6 +104,15 @@ export default function TravelerProfileModal({
   repayments = NO_REPAYMENTS,
 }: TravelerProfileModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab)
+  // 🆕 تأكيد الخروج قسمٌ هنا لا نافذة فوق نافذة — نفس ما صار إليه «تعديل
+  // الرصيد» (DepositEditor). كان الملف يُغلق نفسه ليفتح ExitTravelerModal.
+  const [exitOpen, setExitOpen] = useState(!!longTermExit?.initiallyOpen)
+  const exitRef = useRef<HTMLElement>(null)
+  // القسم أسفل «الخلاصة والتسويات»، فمن فتحه من زرّ البطاقة لا يراه دون تمرير.
+  // `?.` على الدالة: jsdom لا يعرّف scrollIntoView.
+  useEffect(() => {
+    if (exitOpen) exitRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' })
+  }, [exitOpen])
 
   const nameById = useMemo(() => {
     const m = new Map<number, string>()
@@ -245,6 +262,7 @@ export default function TravelerProfileModal({
               <button
                 type="button"
                 onClick={onClose}
+                aria-label="إغلاق ملف المسافر"
                 className="p-2 rounded-xl bg-teal-800/60 hover:bg-teal-800 text-teal-50 transition-colors flex items-center justify-center min-h-[36px] min-w-[36px]"
               >
                 <X className="w-4 h-4" />
@@ -346,19 +364,34 @@ export default function TravelerProfileModal({
                   سيفتحه العضو نفسه مستقبلاً حين يُربط حسابه ويصير قادراً على
                   مراجعة مصروفاته ثم تسوية حسابه والخروج ذاتياً. */}
               {longTermExit?.canManage && (
-                <section className="bg-white rounded-2xl shadow-xs border border-rose-200 p-4">
-                  <button
-                    type="button"
-                    onClick={longTermExit.onExit}
-                    disabled={longTermExit.isBusy}
-                    className="w-full flex items-center justify-center gap-2 bg-rose-50 hover:bg-rose-600 disabled:opacity-40 text-rose-700 hover:text-white font-bold text-sm py-3 rounded-xl transition-colors"
-                  >
-                    <DoorOpen className="w-4 h-4" />
-                    {settlementDirection(balance.remaining) === 'settled' ? 'إخراج من الرحلة' : 'تسوية وخروج من الرحلة'}
-                  </button>
-                  <p className="text-[11px] text-slate-500 mt-2 text-center leading-relaxed">
-                    يُسوَّى حسابه فوراً ويخرج من قائمة المسافرين النشطين — سجلّه المالي يبقى محفوظاً.
-                  </p>
+                <section ref={exitRef} className="bg-white rounded-2xl shadow-xs border border-rose-200 p-4">
+                  {/* ⚠️ التأكيد **يحلّ محلّ** الزرّ لا يُضاف تحته: «تسوية وخروج من
+                      الرحلة» و«تسوية وخروج» معاً في نفس النافذة زرّان يتطابق
+                      أحدهما جزئياً مع الآخر — التباس للمستخدم، ولمحدِّدات e2e. */}
+                  {exitOpen ? (
+                    <ExitTravelerConfirm
+                      traveler={balance}
+                      isSubmitting={longTermExit.isExiting}
+                      organizerUid={longTermExit.organizerUid}
+                      onConfirm={longTermExit.onConfirm}
+                      onCancel={() => setExitOpen(false)}
+                    />
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setExitOpen(true)}
+                        disabled={longTermExit.isBusy}
+                        className="w-full flex items-center justify-center gap-2 bg-rose-50 hover:bg-rose-600 disabled:opacity-40 text-rose-700 hover:text-white font-bold text-sm py-3 rounded-xl transition-colors"
+                      >
+                        <DoorOpen className="w-4 h-4" />
+                        {settlementDirection(balance.remaining) === 'settled' ? 'إخراج من الرحلة' : 'تسوية وخروج من الرحلة'}
+                      </button>
+                      <p className="text-[11px] text-slate-500 mt-2 text-center leading-relaxed">
+                        يُسوَّى حسابه فوراً ويخرج من قائمة المسافرين النشطين — سجلّه المالي يبقى محفوظاً.
+                      </p>
+                    </>
+                  )}
                 </section>
               )}
             </div>

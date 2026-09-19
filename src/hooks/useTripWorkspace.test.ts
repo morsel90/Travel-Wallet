@@ -181,31 +181,40 @@ describe('useTripWorkspace — الرحلة القياسية مقابل الطو
     expect(result.current.modals.modal.type).toBe('none')
   })
 
-  it('حذف مسافر في الطويلة: نافذة «تسوية وخروج» برصيده الفعلي، بلا حذف', () => {
+  // 🆕 كانت تفتح نافذة «تسوية وخروج» في الطويلة. صار الخروج قسماً في ملف
+  // المسافر تفتحه البطاقة نفسها (TravelerSection.tsx)، فلا تفرّع هنا بعد اليوم:
+  // الحذف ليّن في الحالتين، وحارس الرصيد غير المسوّى داخل confirmDeleteTraveler
+  // (describeExitBlockFor) يبقى شبكة الأمان لأي مسار آخر.
+  it('حذف مسافر في الطويلة: نفس الحذف الليّن، بلا أي نافذة من اتحاد المودالات', () => {
     const { result } = setup({ tripType: 'long_term' })
     act(() => result.current.workspace.requestDeleteTraveler(ahmed))
-    expect(h.confirmDeleteTraveler).not.toHaveBeenCalled()
-    const { modal } = result.current.modals
-    expect(modal.type).toBe('exitTraveler')
-    // أودع 300 وعليه نصف عشاء بـ200 → رصيده 200.
-    if (modal.type === 'exitTraveler') expect(modal.traveler.remaining).toBe(200)
+    expect(h.confirmDeleteTraveler).toHaveBeenCalledWith(1)
+    expect(result.current.modals.modal.type).toBe('none')
   })
 
-  it('مسافر غائب عن الأرصدة يصل النافذة برصيد صفر لا undefined', () => {
-    const { result } = setup({ tripType: 'long_term' })
-    const ghost: Traveler = { id: 99, name: 'جديد', shortName: 'جديد', deposited: 0 }
-    act(() => result.current.workspace.requestDeleteTraveler(ghost))
-    const { modal } = result.current.modals
-    if (modal.type !== 'exitTraveler') throw new Error('النافذة لم تُفتح')
-    expect(modal.traveler).toMatchObject({ id: 99, totalExpenses: 0, remaining: 0 })
-  })
-
-  it('إغلاق الشهر يُغلق النافذة عند النجاح وحده', async () => {
+  it('تأكيد الخروج يُعيد نجاحه للمستدعي ولا يمسّ حالة المودالات', async () => {
     const { result } = setup({ tripType: 'long_term', isOrganizer: true })
-    act(() => result.current.workspace.longTerm?.openRollover())
+    act(() => result.current.modals.openLongTermPanel())
+
+    let ok: boolean | undefined
+    await act(async () => { ok = await result.current.workspace.longTerm!.onConfirmExit(1, true) })
+    expect(h.exitTraveler).toHaveBeenCalledWith('trip-1', 1, true)
+    expect(ok).toBe(false)
+
+    h.exitTraveler.mockResolvedValue(true)
+    await act(async () => { ok = await result.current.workspace.longTerm!.onConfirmExit(1, true) })
+    expect(ok).toBe(true)
+    // ملف المسافر حالة محلّية في بطاقته — هو من يُغلق، لا closeModal.
+    expect(result.current.modals.modal.type).toBe('longTermPanel')
+  })
+
+  it('إغلاق الشهر يُغلق نافذة «هذا الشهر» عند النجاح وحده', async () => {
+    const { result } = setup({ tripType: 'long_term', isOrganizer: true })
+    // 🆕 التأكيد خطوة داخل هذه النافذة (LongTermModal)، لا نافذة مستقلّة.
+    act(() => result.current.modals.openLongTermPanel())
     await act(() => result.current.workspace.longTerm!.onConfirmRollover())
     expect(h.closeMonth).toHaveBeenCalledWith('trip-1', '2026-08')
-    expect(result.current.modals.modal.type).toBe('monthlyRollover')
+    expect(result.current.modals.modal.type).toBe('longTermPanel')
 
     h.closeMonth.mockResolvedValue({ ok: true })
     await act(() => result.current.workspace.longTerm!.onConfirmRollover())
