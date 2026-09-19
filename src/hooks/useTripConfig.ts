@@ -23,6 +23,15 @@ import type { ItinerarySegment, PeriodKey, TripStatus, TripType } from '../types
 
 export interface TripConfig {
   tripName: string | null
+  /**
+   * 🆕 الخادم أكّد أن مستند الرحلة غير موجود — حُذفت، أو المعرّف لم يوجد قط.
+   *
+   * ⚠️ **من الخادم وحده، لا من الكاش المحلي** (`!snap.metadata.fromCache`): أول
+   * لقطة بلا اتصال قد تأتي من كاش لم يحمل المستند بعد، فتبدو رحلةٌ حقيقية
+   * «محذوفة» لحظةً. خطأٌ في هذا الاتجاه يطرد المستخدم من رحلته، وخطأٌ في الاتجاه
+   * الآخر يُبقي شاشة تحميل — والثاني أهون بكثير.
+   */
+  deleted: boolean
   /** 🆕 uid منظّم الرحلة الحالي — غيابه يعني رحلة قديمة بلا منظّم معروف بعد. */
   organizerUid?: string
   itinerary?: ItinerarySegment[]
@@ -55,6 +64,7 @@ export interface TripConfig {
 
 const FALLBACK_CONFIG: TripConfig = {
   tripName: null,
+  deleted: false,
   itineraryRev: 0,
   status: 'active',
   // ⚠️ رحلة بلا مستند إعدادات هي رحلة قياسية بالتعريف — لا واجهة ترحيل لها.
@@ -76,13 +86,17 @@ export function useTripConfig(user: User | null): TripConfig {
       return
     }
 
+    // ⚠️ includeMetadataChanges: حين يؤكّد الخادم ما قاله الكاش («غير موجود»)
+    // لا تتغيّر البيانات بل fromCache وحده — وبلا هذا الخيار لا يصل ذلك
+    // التأكيد أبداً، فتبقى `deleted` false وتبقى رحلةٌ محذوفة شاشةَ تحميل.
     const unsub = onSnapshot(
       tripConfigDoc(),
+      { includeMetadataChanges: true },
       snap => {
         // 🆕 لا يوجد مستند إعدادات لهذه الرحلة بعد — نستمر بالقيم الافتراضية
         // بصمت (متوقّع تماماً للرحلة الافتراضية قبل تشغيل سكربت الترحيل)
         if (!snap.exists()) {
-          setConfig(FALLBACK_CONFIG)
+          setConfig(snap.metadata.fromCache ? FALLBACK_CONFIG : { ...FALLBACK_CONFIG, deleted: true })
           return
         }
 
@@ -105,6 +119,7 @@ export function useTripConfig(user: User | null): TripConfig {
 
         setConfig({
           tripName: typeof data.name === 'string' ? data.name : null,
+          deleted: false,
           organizerUid: typeof data.organizerUid === 'string' ? data.organizerUid : undefined,
           itinerary: itinerary.length > 0 ? itinerary : undefined,
           itineraryRev: normalizeItineraryRev(data.itineraryRev),

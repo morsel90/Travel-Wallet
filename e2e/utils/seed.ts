@@ -94,6 +94,11 @@ export function adminFirestore() {
   return getFirestore(adminApp())
 }
 
+/** 🆕 Auth الإداري للمحاكي — لفحص custom claims بعد عملية خادمية (حذف رحلة مثلاً). */
+export function adminAuth() {
+  return getAuth(adminApp())
+}
+
 export interface SeedTripOptions {
   /** معرّف رحلة فريد لهذا الملف الاختباري — تجنّب مشاركته بين ملفات مختلفة (Playwright يشغّل الملفات بالتوازي). */
   tripId: string

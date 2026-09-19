@@ -8,7 +8,7 @@
 // ⚠️ الاختباران معاً هما الدليل، لا الأول وحده: الثاني هو الرحلة نفسها **قبل**
 // التسوية، فيثبت أن الحذف فتحته التسويةُ لا شيءٌ آخر (الحالة، أو غياب فحص).
 import { test, expect } from '@playwright/test'
-import { seedBareAdmin, adminFirestore } from './utils/seed'
+import { seedBareAdmin, seedBareUser, adminFirestore, adminAuth } from './utils/seed'
 import { signInWithEmail, openTripDetailFromHeader } from './utils/flows'
 
 const CREDS = {
@@ -52,6 +52,13 @@ test.beforeAll(async () => {
 test('رحلة منتهية ومسوّاة بقيد سداد — تُحذف فوراً وتُحذف بياناتها فعلاً', async ({ page }) => {
   await seedCompletedTrip(SETTLED_TRIP_ID, true)
 
+  // 🆕 عضوٌ يحمل عضوية الرحلة (claim) بلا سطر في سجلّ الأعضاء — تماماً كحسابات
+  // حقبة رمز الرحلة التي بقيت 218 منها بعد حذف travelapp-87206 — ودعوةٌ حيّة لها.
+  // ومعهما عضويةٌ في رحلة أخرى يجب أن تبقى كما هي.
+  const memberUid = await seedBareUser('e2e-delete-settled-member@test.local', 'E2eTestPass!1')
+  await adminAuth().setCustomUserClaims(memberUid, { trips: { [SETTLED_TRIP_ID]: true, 'e2e-other-live-trip': true } })
+  await adminFirestore().collection('tripInvites').doc('e2eDeleteSettledInviteToken1').set({ tripId: SETTLED_TRIP_ID, createdAt: Date.now() })
+
   await page.goto(`/?trip=${SETTLED_TRIP_ID}`)
   await signInWithEmail(page, CREDS.email, CREDS.password)
   await openTripDetailFromHeader(page)
@@ -68,6 +75,17 @@ test('رحلة منتهية ومسوّاة بقيد سداد — تُحذف فو
   expect((await adminFirestore().collection('trips').doc(SETTLED_TRIP_ID).get()).exists).toBe(false)
   expect((await dataRoot(SETTLED_TRIP_ID).collection('expenses').doc('e1').get()).exists).toBe(false)
   expect((await dataRoot(SETTLED_TRIP_ID).collection('repayments').doc('r1').get()).exists).toBe(false)
+
+  // 🆕 ولا وصول يبقى: لا عضوية في الـclaims، ولا رابط دعوة. وإلا فتحت رحلةٌ جديدة
+  // بالمعرّف نفسه لكل حامل عضوية القديمة، وضمّ الرابطُ أحداً إلى رحلة غير موجودة.
+  await expect.poll(async () => (await adminAuth().getUser(memberUid)).customClaims?.trips)
+    .toEqual({ 'e2e-other-live-trip': true })
+  expect((await adminFirestore().collection('tripInvites').doc('e2eDeleteSettledInviteToken1').get()).exists).toBe(false)
+
+  // 🆕 ورابط الرحلة المحذوفة (أيقونة شاشة رئيسية قديمة) يقول الحقيقة بدل رحلة شبح.
+  await page.goto(`/?trip=${SETTLED_TRIP_ID}`)
+  await expect(page.getByText('هذه الرحلة حُذفت')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'رحلاتي' })).toBeVisible()
 })
 
 test('الرحلة نفسها قبل التسوية تُرفض — برسالة تسمّي المخرج، وبلا رمز HTTP في نهايتها', async ({ page }) => {
