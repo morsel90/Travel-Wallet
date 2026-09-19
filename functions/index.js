@@ -245,7 +245,8 @@ exports.manageTrip = onCall(
     const tripRef = db.collection('trips').doc(tripId);
     const existing = await tripRef.get();
 
-    // ── الحذف: للرحلات الفارغة، أو المؤرشفة منذ مدة كافية ───────────────────
+    // ── الحذف: للرحلات الفارغة، أو المؤرشفة منذ مدة كافية، أو 🆕 المنتهية ─────
+    //    المسوّاة (انظر settledClosureBlock)
     //
     // ⚠️ لماذا خادميًا ولماذا بشرط الخلو:
     //   • firestore.rules تُبقي `allow delete: if false` على trips/{tripId}
@@ -273,12 +274,14 @@ exports.manageTrip = onCall(
       }
 
       const eligibleForAgePurge = isEligibleForAgePurgeJs(existing.data());
+      // 🆕 المسار الثالث — رحلة انتهت وتساوت حساباتها. انظر settledClosureBlock.
+      let eligibleAsSettled = false;
       if (!eligibleForAgePurge) {
-        const { hasProtectedData, reason } = await checkTripHasProtectedData(tripId);
+        const { hasProtectedData } = await checkTripHasProtectedData(tripId);
         if (hasProtectedData) {
-          throw new HttpsError('failed-precondition', reason === 'depositLogs'
-            ? `لا يمكن حذف "${tripId}" — لبعض مسافريها (حتى المحذوفين منهم) سجلّ إيداع فعلي، وسجلّات الإيداع لا تُحذف أبداً حمايةً للسجلّات المالية.`
-            : `لا يمكن حذف "${tripId}" لأنها تحوي مسافرين أو مصاريف. الحذف متاح للرحلات الفارغة فقط حمايةً للسجلّات المالية.`);
+          const block = await settledClosureBlock(tripId, existing.data());
+          if (block) throw new HttpsError('failed-precondition', block);
+          eligibleAsSettled = true;
         }
       }
 
@@ -301,9 +304,9 @@ exports.manageTrip = onCall(
       // إما غير موجود أصلاً أو يحوي مستندات محذوفة ليّناً لا وزن مالي حقيقي
       // لها (checkTripHasProtectedData ضمنت ذلك للتوّ). أما المسار المؤهَّل
       // بالعمر فبياناته حقيقية عمداً — تركها يتيمة يناقض معنى "حذف نهائي".
-      if (eligibleForAgePurge) {
+      if (eligibleForAgePurge || eligibleAsSettled) {
         await db.recursiveDelete(db.collection('artifacts').doc(tripId));
-        console.log(`[manageTrip] PURGE (age-eligible, had real data) on ${tripId} by ${request.auth.uid}`);
+        console.log(`[manageTrip] PURGE (${eligibleForAgePurge ? 'age-eligible' : 'settled & closed'}, had real data) on ${tripId} by ${request.auth.uid}`);
       } else {
         console.log(`[manageTrip] delete on ${tripId} by ${request.auth.uid}`);
       }
@@ -787,6 +790,34 @@ function isEligibleForAgePurgeJs(tripData, now = Date.now()) {
   return tripData.status === 'archived'
     && typeof tripData.statusChangedAt === 'number'
     && now - tripData.statusChangedAt > TRIP_PURGE_ELIGIBLE_MS;
+}
+
+/**
+ * 🆕 هل تُحذف رحلة فيها سجلّات مالية الآن؟ يُعيد **سبب الرفض** نصّاً، أو null
+ * إن كانت مؤهَّلة.
+ *
+ * ── لماذا مسار ثالث بجانب «فارغة» و«مؤرشفة منذ ٩٠ يوماً» ─────────────────────
+ * بلاغ صاحب المشروع: رحلة يوم واحد تسوّت حساباتها بتحويل بنكي في مساء اليوم
+ * نفسه، ثم تعذّر حذفها أربعة أشهر. الـ٩٠ يوماً تحمي من **حذف دينٍ لم يُدفع**،
+ * ورحلة كل أرصدتها صفر لا دين فيها أصلاً: سجلّاتها أدّت غرضها حين تساوت
+ * الحسابات. فالشرط هنا هو ما تحميه المدة نفسها لا المدة:
+ *   • **ليست نشطة** — رحلة جارية قد يُضاف إليها مصروف بعد دقيقة فيعود الدين.
+ *   • **كل رصيد صفر** — نفس ROLLOVER_EPSILON (هللة) التي تعتبر بها الواجهة
+ *     الحسابات «مصفّاة»، فما تقول الشاشة إنه مسوّى هو ما يقبله الخادم.
+ *
+ * ⚠️ الرصيد يُحسب هنا من الدفتر نفسه (readLedger) لا من إدخال العميل: ما يقرّر
+ * حذف سجلّات مالية لا يصحّ أن يعتمد على رقم أرسلته الواجهة.
+ */
+async function settledClosureBlock(tripId, tripData) {
+  if ((tripData.status || 'active') === 'active') {
+    return `لا يمكن حذف "${tripId}" وهي نشطة وفيها مسافرون أو مصاريف. غيّر حالتها إلى «منتهية» أولاً، وسوِّ الحسابات، ثم احذفها.`;
+  }
+  const { remaining } = await readLedger(tripId);
+  const open = [...remaining.values()].filter((v) => settlementDirectionJs(Math.round(v * 100) / 100) !== 'settled').length;
+  if (open > 0) {
+    return `لا يمكن حذف "${tripId}" قبل تسوية حساباتها — ${open === 1 ? 'مسافر واحد رصيده' : `${open} من المسافرين أرصدتهم`} غير صفري. سجّل التحويلات من قسم «الأرصدة»، ثم احذفها.`;
+  }
+  return null;
 }
 
 function randomTravelerId() {
@@ -2124,9 +2155,26 @@ exports.recordSettlement = onCall(
       }
 
       const fromNew = Math.round((fromDeposited + transfer) * 100) / 100;
-      // الخصم لا يُقصَر عند الصفر هنا: سقف `toBalance` أعلاه يضمن
-      // `transfer <= toDeposited` أصلاً، والقصر كان سيكتب سطراً يخالف delta.
       const toNew = Math.round((toDeposited - transfer) * 100) / 100;
+
+      // 🐛 **كان التعليق هنا يَعِد بما لا يتحقّق:** «سقف toBalance يضمن
+      // transfer <= toDeposited». يصحّ ذلك فقط حين يأتي رصيد الدائن من إيداعه.
+      // لكنّ الدائن في هذا الدفتر يصير دائناً أيضاً بدفع مصاريف من جيبه
+      // (`paidBy`)، فرصيده قد يتجاوز ما أودعه — وحينها يصير المودَع سالباً.
+      // حدث ذلك فعلاً في الإنتاج (Bh26: ‎-170.5). والسالب يكسر ثلاثة أشياء:
+      //   • `isFiniteAmount` في القواعد تشترط `>= 0`، فمستند المسافر يصير
+      //     مرفوضاً لأي تعديل لاحق من الواجهة (حذف ليّن مثلاً).
+      //   • `replayDepositLogs` تقصر الخصم عند الصفر، فلا يعود سجلّ التدقيق
+      //     يطابق الرصيد.
+      //   • «المودَع» يُعرض سالباً، وهو ليس إيداعاً أصلاً بل استرداد.
+      // الرفض هنا حارس لا حلّ: تمثيل «استرداد ما دُفع من الجيب» قرار نموذج
+      // بيانات لم يُتّخذ بعد. رفضٌ صادق خيرٌ من دفترٍ فاسد.
+      if (toNew < -ROLLOVER_EPSILON) {
+        throw new HttpsError(
+          'failed-precondition',
+          `لا يمكن تسجيل هذا التحويل بعد: رصيد ${to.name} أتى من مصاريف دفعها من جيبه لا من إيداعه، والتطبيق لا يسجّل هذا النوع من الاسترداد حتى الآن. التحويل الفعلي صحيح — يبقى خارج التطبيق مؤقتاً.`,
+        );
+      }
 
       tx.update(fromRef, { deposited: fromNew });
       tx.update(toRef, { deposited: toNew });

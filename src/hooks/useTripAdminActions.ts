@@ -34,6 +34,7 @@ import { buildTripBackup, downloadTripBackup, BackupNotPortableError } from '../
 import { TRIP_STATUS_LABEL } from '../types'
 import type { DepositLogEntry, Expense, ItinerarySegment, ToastMessage, Traveler, TripStatus, TripType } from '../types'
 import type { TripSummary } from './useAllTrips'
+import { callableMessage } from '../utils/callableErrors'
 
 // عقد استدعاء manageTrip — يطابق ما تقرأه الدالة في functions/index.js
 interface ManageTripRequest {
@@ -310,11 +311,9 @@ export function useTripAdminActions({
       haptic.error()
       // الدالة ترسل رسائل عربية مفهومة (معرّف مكرر، رحلة غير فارغة…) وتصل في
       // message ضمن FunctionsError — نعرضها كما هي.
-      const message = (err as { message?: string })?.message
-      const isFunctionsError = typeof (err as { code?: string })?.code === 'string'
-        && String((err as { code?: string }).code).startsWith('functions/')
+      const message = callableMessage(err)
 
-      if (isFunctionsError && message) {
+      if (message) {
         showToast({ text: message, type: 'error' }, 4000)
       } else {
         handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
@@ -383,11 +382,9 @@ export function useTripAdminActions({
       return true
     } catch (err) {
       haptic.error()
-      const message = (err as { message?: string })?.message
-      const isFunctionsError = typeof (err as { code?: string })?.code === 'string'
-        && String((err as { code?: string }).code).startsWith('functions/')
+      const message = callableMessage(err)
 
-      if (isFunctionsError && message) {
+      if (message) {
         showToast({ text: message, type: 'error' }, 4000)
       } else {
         handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
@@ -425,11 +422,9 @@ export function useTripAdminActions({
       return true
     } catch (err) {
       haptic.error()
-      const message = (err as { message?: string })?.message
-      const isFunctionsError = typeof (err as { code?: string })?.code === 'string'
-        && String((err as { code?: string }).code).startsWith('functions/')
+      const message = callableMessage(err)
 
-      if (isFunctionsError && message) {
+      if (message) {
         showToast({ text: message, type: 'error' }, 4000)
       } else {
         handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
@@ -460,11 +455,9 @@ export function useTripAdminActions({
       return data.token ?? null
     } catch (err) {
       haptic.error()
-      const message = (err as { message?: string })?.message
-      const isFunctionsError = typeof (err as { code?: string })?.code === 'string'
-        && String((err as { code?: string }).code).startsWith('functions/')
+      const message = callableMessage(err)
 
-      if (isFunctionsError && message) {
+      if (message) {
         showToast({ text: message, type: 'error' }, 4000)
       } else {
         handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
@@ -495,11 +488,9 @@ export function useTripAdminActions({
       return true
     } catch (err) {
       haptic.error()
-      const message = (err as { message?: string })?.message
-      const isFunctionsError = typeof (err as { code?: string })?.code === 'string'
-        && String((err as { code?: string }).code).startsWith('functions/')
+      const message = callableMessage(err)
 
-      if (isFunctionsError && message) {
+      if (message) {
         showToast({ text: message, type: 'error' }, 4000)
       } else {
         handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
@@ -536,11 +527,9 @@ export function useTripAdminActions({
       return true
     } catch (err) {
       haptic.error()
-      const message = (err as { message?: string })?.message
-      const isFunctionsError = typeof (err as { code?: string })?.code === 'string'
-        && String((err as { code?: string }).code).startsWith('functions/')
+      const message = callableMessage(err)
 
-      if (isFunctionsError && message) {
+      if (message) {
         showToast({ text: message, type: 'error' }, 4000)
       } else {
         handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
@@ -645,11 +634,9 @@ export function useTripAdminActions({
       haptic.error()
       // رسائل restoreTrip العربية (رحلة غير فارغة، بنية نسخة غير صالحة…) تصل
       // كما وصلت رسائل manageTrip/manageMember — نعرضها كما هي.
-      const message = (err as { message?: string })?.message
-      const isFunctionsError = typeof (err as { code?: string })?.code === 'string'
-        && String((err as { code?: string }).code).startsWith('functions/')
+      const message = callableMessage(err)
 
-      if (isFunctionsError && message) {
+      if (message) {
         showToast({ text: message, type: 'error' }, 5000)
       } else {
         handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')

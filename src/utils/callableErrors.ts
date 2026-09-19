@@ -24,6 +24,27 @@ export function callableErrorCode(err: unknown): string {
   return code.includes('/') ? code.split('/').pop() ?? '' : code
 }
 
+/**
+ * 🆕 نصّ الخادم لخطأ دالة سحابية، جاهزاً للعرض — أو null إن لم يكن الخطأ منها.
+ *
+ * ⚠️ SDK فايربيس (12.x) **يُلحق رمز HTTP بنهاية الرسالة**: الخادم يرمي
+ * «يجب تسجيل الدخول أولاً.» فيصل إلى العميل «يجب تسجيل الدخول أولاً. [401]».
+ * رُصد في بلاغ صاحب المشروع («السبب مبهم غير معروف ٤٠٠»)، وقِيس باستدعاء
+ * مباشر للـSDK. الرقم لا يعني شيئاً للمستخدم، ويُوحي بعطل تقني حيث الرسالة
+ * نفسها رفضٌ مقصود ومشروح.
+ *
+ * كانت تسعة مواضع تكرّر فحص `functions/` وتعرض `message` كما هو، فحملت كلها
+ * الرقم. هذه الدالة هي الموضع الوحيد الذي يعرف شكل خطأ الدالة وشكل اللاحقة.
+ */
+export function callableMessage(err: unknown): string | null {
+  if (typeof err !== 'object' || err === null) return null
+  const { code, message } = err as { code?: unknown; message?: unknown }
+  if (typeof code !== 'string' || !code.startsWith('functions/')) return null
+  if (typeof message !== 'string') return null
+  const text = message.replace(/\s*\[\d{3}\]\s*$/, '').trim()
+  return text || null
+}
+
 export interface CallableErrorDescription {
   /** النص المعروض للمستخدم. */
   text: string

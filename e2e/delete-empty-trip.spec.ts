@@ -51,7 +51,8 @@ test('مسؤول يحذف مصروفاً ونفسه من مسافري رحلة �
   await openTripDetailFromHeader(page)
   await page.getByLabel(/للتأكيد، اكتب معرّف الرحلة/).fill(TRIP_ID)
   await page.getByRole('button', { name: 'حذف الرحلة نهائياً' }).click()
-  await expect(page.getByText(/لأنها تحوي مسافرين أو مصاريف/)).toBeVisible()
+  // 🆕 الرفض نفسه باقٍ، والرسالة صارت تسمّي المخرج: الرحلة نشطة.
+  await expect(page.getByText(/وهي نشطة وفيها مسافرون أو مصاريف/)).toBeVisible()
 
   // ⚠️ تحقّق سلبي حقيقي (القاعدة ١٨): الرحلة لم تُحذف فعلاً، لا تزال قابلة للإدارة.
   //

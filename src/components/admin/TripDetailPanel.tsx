@@ -595,9 +595,9 @@ export default function TripDetailPanel({
             <div className="text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-1.5">
               <p className="font-bold">لا يمكن التراجع عن هذا الإجراء.</p>
               <p>
-                يُحذف مستند الرحلة نهائياً. الحذف متاح <span className="font-bold">للرحلات الفارغة فقط</span> —
-                أي التي لا تحوي أي مسافر أو مصروف — حمايةً للسجلات المالية وسجلات الإيداع
-                التي لا يمكن استرجاعها.
+                تُحذف الرحلة وكل بياناتها نهائياً. الحذف متاح للرحلة <span className="font-bold">الفارغة</span>،
+                أو <span className="font-bold">المنتهية التي سُوّيت حساباتها</span> — حين لا يبقى على أحد
+                دين. نزّل نسخة احتياطية أعلاه قبل الحذف إن أردت الاحتفاظ بسجلّاتها.
               </p>
               <p>بعد الحذف يصبح المعرّف <span dir="ltr" className="font-mono">{trip.id}</span> متاحاً لإنشاء رحلة جديدة به.</p>
             </div>
