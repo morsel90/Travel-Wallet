@@ -10,25 +10,11 @@
 // state إضافية كانت ستُعيد المحاولة عند كل إعادة رسم بسبب تغيّر مرجع showToast.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as Sentry from '@sentry/react'
-import { httpsCallable } from 'firebase/functions'
 import type { User } from 'firebase/auth'
-import { functions } from '../firebase'
+import { callable } from './callables'
 import { INVITE_TOKEN, tripUrl } from '../utils/tripId'
 import { describeInviteError } from '../utils/callableErrors'
 import type { ToastMessage } from '../types'
-
-interface JoinViaInviteRequest { inviteToken: string }
-interface JoinViaInviteResponse {
-  success: boolean
-  tripId: string
-  // 🆕 صحيحة فقط حين زوّدت joinViaInvite ملف مسافر جديداً بلا اسم عرض حقيقي —
-  // انظر تعليقها في functions/index.js. اختيارية للتوافق مع نشر خادمي أقدم
-  // (لا يرسلها بعد) — غيابها يُعامَل كـ false، أي لا نموذج اسم.
-  needsName?: boolean
-}
-
-interface UpdateMyTravelerNameRequest { tripId: string; name: string }
-interface UpdateMyTravelerNameResponse { success: boolean }
 
 export type InviteJoinStatus = 'idle' | 'joining' | 'needsName' | 'done'
 
@@ -73,7 +59,7 @@ export function useInviteJoin(
     if (!INVITE_TOKEN || attemptedRef.current || !user) return
     attemptedRef.current = true
 
-    const join = httpsCallable<JoinViaInviteRequest, JoinViaInviteResponse>(functions, 'joinViaInvite')
+    const join = callable('joinViaInvite')
     join({ inviteToken: INVITE_TOKEN })
       .then(async ({ data }) => {
         // التوكن الجديد يحمل claim العضوية التي منحتها الدالة للتوّ — نفس ما
@@ -110,7 +96,7 @@ export function useInviteJoin(
     if (!pendingTripId || !user || !trimmed) return
 
     setIsSubmittingName(true)
-    const update = httpsCallable<UpdateMyTravelerNameRequest, UpdateMyTravelerNameResponse>(functions, 'updateMyTravelerName')
+    const update = callable('updateMyTravelerName')
     update({ tripId: pendingTripId, name: trimmed })
       .catch((err: unknown) => {
         console.error('[useInviteJoin] تعذّر حفظ اسم المسافر:', err)

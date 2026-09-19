@@ -37,7 +37,9 @@
 │   │   ├── useDepositActions.ts  # Deposit form + balance update & audit log write
 │   │   ├── useFilteredExpenses.ts # Search + sort with debounce
 │   │   ├── useTripConfig.ts      # Trip name + bank details + itinerary (live onSnapshot)
-│   │   ├── useTripAdminActions.ts # Admin **or trip organizer** writes to trips/{tripId} (merge-only) + manageTrip/manageMember calls
+│   │   ├── useTripAdminActions.ts # Admin **or trip organizer** writes to trips/{tripId} (merge-only, via `write()`) + Cloud Function calls (via `call()`)
+│   │   ├── callables.ts          # 🆕 Every Cloud Function contract (request/response) + typed `callable(name)` — the only `httpsCallable` in the client
+│   │   ├── readTripBackup.ts     # 🆕 Reads a whole trip into a `TripBackup` — data only, no React; used by `exportBackup`
 │   │   ├── useAllTrips.ts        # Live list of every trip (admin-only query)
 │   │   ├── useMyTrips.ts         # 🆕 Trips this user joined — one getDoc each (a list query is admin-only)
 │   │   ├── useMyTripRole.ts      # 🆕 "Am I this trip's organizer?" — one self-read; permission-denied just means no

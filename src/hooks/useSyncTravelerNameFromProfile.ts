@@ -15,13 +15,9 @@
 // فقط؛ المسار اليدوي (لا يوجد اليوم) أو محاولة لاحقة عند تغيّر البروفايل مجدداً
 // كافيان.
 import { useEffect, useRef } from 'react'
-import { httpsCallable } from 'firebase/functions'
 import type { User } from 'firebase/auth'
-import { functions } from '../firebase'
+import { callable } from './callables'
 import type { Traveler } from '../types'
-
-interface UpdateMyTravelerNameRequest { tripId: string; name: string }
-interface UpdateMyTravelerNameResponse { success: boolean }
 
 export function useSyncTravelerNameFromProfile(
   tripId: string,
@@ -43,9 +39,7 @@ export function useSyncTravelerNameFromProfile(
     if (lastAttemptedRef.current === trimmedProfileName) return
     lastAttemptedRef.current = trimmedProfileName
 
-    const update = httpsCallable<UpdateMyTravelerNameRequest, UpdateMyTravelerNameResponse>(
-      functions, 'updateMyTravelerName',
-    )
+    const update = callable('updateMyTravelerName')
     update({ tripId, name: trimmedProfileName }).catch((err: unknown) => {
       console.error('[useSyncTravelerNameFromProfile] تعذّرت مزامنة اسم المسافر من البروفايل:', err)
     })

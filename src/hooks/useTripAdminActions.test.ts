@@ -1,8 +1,10 @@
-// اختبارات مسار إزالة العضو وحده من useTripAdminActions — بقية الدوال تكتب
-// مباشرةً عبر القواعد وتغطّيها اختبارات firestore.rules.
+// اختبارات useTripAdminActions — عقد كل دالة من جهة العميل: الرفض المحلي،
+// الرسائل ومدّاتها، وما يُعاد. الحدّ الحقيقي للصلاحيات خادمي، وتغطّيه اختبارات
+// firestore.rules ودوال functions/.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useTripAdminActions } from './useTripAdminActions'
+import { haptic } from '../utils/haptics'
 
 const mocks = vi.hoisted(() => ({
   setDoc: vi.fn(),
@@ -684,5 +686,264 @@ describe('linkTravelerAccount — رسائل الرفض الخادمية تصل 
     mocks.callable.mockRejectedValueOnce(new Error('boom'))
     await act(async () => { await result.current.linkTravelerAccount('trip-1', 5, 'u1') })
     expect(result.current.isSaving).toBe(false)
+  })
+})
+
+// ─── تثبيت سلوك قبل توحيد مسار الدوال السحابية (القاعدة ٢١) ──────────────────
+//
+// كُتبت هذه الكتلة **قبل** استخراج `call()` المشتركة، وأُثبتت خضراء على الكود
+// القديم الذي يكرّر نفس الكتلة سبع مرات. تثبّت ما يختلف بين الدوال بالضبط
+// (نصّ الرفض ومدّته، توست النجاح ومدّته، مدّة توست الخطأ، ما تُعيده عند
+// الفشل) — وهو بالتحديد ما يضيع بصمت حين تُوحَّد سبع نسخ في واحدة.
+
+
+type Actions = ReturnType<typeof useTripAdminActions>
+const ORGANIZER_ONLY = 'هذا الإجراء متاح لمنظّم الرحلة فقط.'
+const NOT_ORGANIZER_POWER = 'هذا الإجراء ليس من صلاحيات منظّم الرحلة.'
+const NETWORK_FALLBACK = 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.'
+
+interface CallableCase {
+  name: string
+  run: (a: Actions) => Promise<unknown>
+  /** ما يُعيده الخادم عند النجاح. */
+  data?: unknown
+  success: { toast: [unknown, number?] | null; returns: unknown }
+  /** من يُرفض محلياً، وبأي رسالة. null = لا رفض محلي (الإنشاء الذاتي). */
+  denied: { as: [boolean, string | null]; toast: [unknown, number] } | null
+  failure: { errorMs: number; returns: unknown }
+}
+
+const CALLABLES: CallableCase[] = [
+  {
+    name: 'createTrip',
+    run: a => a.createTrip('trip-9', 'رحلة'),
+    success: { toast: [{ text: 'تم إنشاء الرحلة "trip-9"', type: 'success' }], returns: true },
+    denied: null,
+    failure: { errorMs: 4000, returns: false },
+  },
+  {
+    name: 'deleteTrip',
+    run: a => a.deleteTrip('trip-1'),
+    success: { toast: [{ text: 'تم حذف الرحلة "trip-1"', type: 'success' }], returns: true },
+    denied: { as: [false, 'trip-1'], toast: [{ text: NOT_ORGANIZER_POWER, type: 'error' }, 3000] },
+    failure: { errorMs: 4000, returns: false },
+  },
+  {
+    name: 'removeMember',
+    run: a => a.removeMember('trip-1', 'u1'),
+    success: {
+      toast: [{ text: 'تمت الإزالة. قد يبقى وصوله فعّالاً حتى ساعة حتى تنتهي صلاحية جلسته.', type: 'success' }, 6000],
+      returns: true,
+    },
+    denied: { as: [false, null], toast: [{ text: ORGANIZER_ONLY, type: 'error' }, 3000] },
+    failure: { errorMs: 4000, returns: false },
+  },
+  {
+    name: 'setMemberRole (organizer)',
+    run: a => a.setMemberRole('trip-1', 'u1', 'organizer'),
+    success: { toast: [{ text: 'صار هذا المسافر منظّماً لهذه الرحلة.', type: 'success' }], returns: true },
+    denied: {
+      as: [false, 'trip-1'],
+      toast: [{ text: 'تغيير دور المنظّم ليس من صلاحيات منظّم الرحلة.', type: 'error' }, 3000],
+    },
+    failure: { errorMs: 4000, returns: false },
+  },
+  {
+    name: 'setMemberRole (member)',
+    run: a => a.setMemberRole('trip-1', 'u1', 'member'),
+    success: { toast: [{ text: 'أُلغي دور المنظّم عن هذا المسافر.', type: 'success' }], returns: true },
+    denied: {
+      as: [false, 'trip-1'],
+      toast: [{ text: 'تغيير دور المنظّم ليس من صلاحيات منظّم الرحلة.', type: 'error' }, 3000],
+    },
+    failure: { errorMs: 4000, returns: false },
+  },
+  {
+    name: 'createInvite',
+    run: a => a.createInvite('trip-1'),
+    data: { success: true, token: 'TOKEN' },
+    // ⚠️ لا توست ولا اهتزاز عند النجاح: المستدعي يبني رابط المشاركة فوراً.
+    success: { toast: null, returns: 'TOKEN' },
+    denied: { as: [false, null], toast: [{ text: ORGANIZER_ONLY, type: 'error' }, 3000] },
+    failure: { errorMs: 4000, returns: null },
+  },
+  {
+    name: 'revokeInvite',
+    run: a => a.revokeInvite('trip-1'),
+    success: { toast: [{ text: 'تم إبطال رابط الدعوة.', type: 'success' }], returns: true },
+    denied: { as: [false, null], toast: [{ text: ORGANIZER_ONLY, type: 'error' }, 3000] },
+    failure: { errorMs: 4000, returns: false },
+  },
+  {
+    name: 'linkTravelerAccount',
+    run: a => a.linkTravelerAccount('trip-1', 1, 'u1'),
+    success: { toast: [{ text: 'تم ربط المسافر بحسابه.', type: 'success' }], returns: true },
+    denied: { as: [false, null], toast: [{ text: ORGANIZER_ONLY, type: 'error' }, 3000] },
+    failure: { errorMs: 4000, returns: false },
+  },
+  {
+    name: 'restoreTrip',
+    run: a => a.restoreTrip('trip-1', {}),
+    data: { success: true, tripId: 'trip-1', restored: { travelers: 2, expenses: 3, depositLogs: 4 } },
+    success: {
+      toast: [{ text: 'تمت الاستعادة — 2 مسافراً، 3 مصروفاً، 4 سجلّ إيداع.', type: 'success' }, 5000],
+      returns: true,
+    },
+    denied: { as: [false, 'trip-1'], toast: [{ text: NOT_ORGANIZER_POWER, type: 'error' }, 3000] },
+    // ⚠️ 5000 لا 4000 — رسائل رفض الاستعادة أطول (بنية النسخة، رحلة غير فارغة).
+    failure: { errorMs: 5000, returns: false },
+  },
+]
+
+async function run(c: CallableCase, as: [boolean, string | null] = [true, null]) {
+  const { result } = setup(...as)
+  let returned: unknown
+  await act(async () => { returned = await c.run(result.current) })
+  return { returned, isSaving: result.current.isSaving }
+}
+
+describe.each(CALLABLES)('عقد الدوال السحابية — $name', c => {
+  it('النجاح: التوست ومدّته، والاهتزاز، وما يُعاد', async () => {
+    if (c.data) mocks.callable.mockResolvedValue({ data: c.data })
+    const { returned, isSaving } = await run(c)
+
+    expect(returned).toEqual(c.success.returns)
+    expect(isSaving).toBe(false)
+    if (c.success.toast) {
+      expect(showToast).toHaveBeenCalledTimes(1)
+      expect(showToast).toHaveBeenCalledWith(...c.success.toast)
+      expect(haptic.success).toHaveBeenCalledTimes(1)
+    } else {
+      expect(showToast).not.toHaveBeenCalled()
+      expect(haptic.success).not.toHaveBeenCalled()
+    }
+  })
+
+  it('يجدّد التوكن مرة واحدة قبل الاستدعاء (للمسؤول)', async () => {
+    if (c.data) mocks.callable.mockResolvedValue({ data: c.data })
+    await run(c)
+    expect(mocks.getIdToken).toHaveBeenCalledTimes(1)
+    expect(mocks.getIdToken).toHaveBeenCalledWith(true)
+  })
+
+  it('رفض الخادم: رسالته كما هي بمدّتها، وما يُعاد', async () => {
+    mocks.callable.mockRejectedValue(Object.assign(new Error('رسالة الخادم [400]'), { code: 'functions/failed-precondition' }))
+    const { returned, isSaving } = await run(c)
+
+    expect(returned).toEqual(c.failure.returns)
+    expect(isSaving).toBe(false)
+    expect(showToast).toHaveBeenCalledWith({ text: 'رسالة الخادم', type: 'error' }, c.failure.errorMs)
+    expect(haptic.error).toHaveBeenCalledTimes(1)
+    expect(handleFirestoreError).not.toHaveBeenCalled()
+  })
+
+  it('خطأ ليس من الدالة: يمرّ لمعالج أخطاء Firestore بالنص الاحتياطي', async () => {
+    const err = new Error('network')
+    mocks.callable.mockRejectedValue(err)
+    const { returned } = await run(c)
+
+    expect(returned).toEqual(c.failure.returns)
+    expect(handleFirestoreError).toHaveBeenCalledWith(err, NETWORK_FALLBACK)
+    expect(showToast).not.toHaveBeenCalled()
+  })
+
+  it('بلا مستخدم: لا استدعاء، ويمرّ لمعالج أخطاء Firestore', async () => {
+    mocks.currentUser = null
+    const { returned, isSaving } = await run(c)
+
+    expect(returned).toEqual(c.failure.returns)
+    expect(isSaving).toBe(false)
+    expect(mocks.callable).not.toHaveBeenCalled()
+    expect(handleFirestoreError).toHaveBeenCalledWith(expect.any(Error), NETWORK_FALLBACK)
+  })
+
+  if (c.denied) {
+    const denied = c.denied
+    it('الرفض المحلي: نصّه ومدّته، بلا استدعاء ولا اهتزاز ولا علم حفظ', async () => {
+      const { returned } = await run(c, denied.as)
+
+      expect(returned).toEqual(c.failure.returns)
+      expect(showToast).toHaveBeenCalledTimes(1)
+      expect(showToast).toHaveBeenCalledWith(...denied.toast)
+      expect(mocks.callable).not.toHaveBeenCalled()
+      expect(mocks.getIdToken).not.toHaveBeenCalled()
+      expect(haptic.error).not.toHaveBeenCalled()
+    })
+  }
+})
+
+describe('createTrip — التوكن بعد الإنشاء الذاتي', () => {
+  it('غير المسؤول يجدّد التوكن مرّة ثانية بعد الإنشاء — ليحمل claim العضوية الجديد', async () => {
+    const { result } = setup(false, null)
+    await act(async () => { await result.current.createTrip('trip-9', 'رحلة') })
+
+    expect(mocks.getIdToken).toHaveBeenCalledTimes(2)
+    // الثاني بعد الاستدعاء لا قبله — وإلا لم يكن الـ claim قد مُنح بعد.
+    expect(mocks.getIdToken.mock.invocationCallOrder[1]).toBeGreaterThan(mocks.callable.mock.invocationCallOrder[0])
+  })
+
+  it('لا تجديد ثانياً إن فشل الإنشاء', async () => {
+    mocks.callable.mockRejectedValue(new Error('boom'))
+    const { result } = setup(false, null)
+    await act(async () => { await result.current.createTrip('trip-9', 'رحلة') })
+
+    expect(mocks.getIdToken).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('الكتابة المباشرة — ما لم يكن مغطّى', () => {
+  it('saveTripName: يكتب الاسم مقصوصاً بـ merge ويؤكّد', async () => {
+    const { result } = setup()
+    let ok
+    await act(async () => { ok = await result.current.saveTripName('trip-1', '  رحلة تركيا  ') })
+
+    expect(ok).toBe(true)
+    expect(mocks.setDoc).toHaveBeenCalledWith(expect.anything(), { name: 'رحلة تركيا' }, { merge: true })
+    expect(showToast).toHaveBeenCalledWith({ text: 'تم حفظ اسم الرحلة', type: 'success' })
+  })
+
+  it('saveTripStatus: الحالة وتاريخ تغييرها في كتابة واحدة، والرسالة تسمّي الحالة', async () => {
+    const { result } = setup()
+    await act(async () => { await result.current.saveTripStatus('trip-1', 'archived') })
+
+    expect(mocks.setDoc).toHaveBeenCalledTimes(1)
+    expect(mocks.setDoc).toHaveBeenCalledWith(
+      expect.anything(), { status: 'archived', statusChangedAt: expect.any(Number) }, { merge: true },
+    )
+    expect(showToast.mock.calls[0][0].text).toContain('«')
+  })
+
+  it('رفض محلي لمن ليس منظّم هذه الرحلة: نصّه ومدّته، بلا كتابة', async () => {
+    const { result } = setup(false, 'other-trip')
+    let ok
+    await act(async () => { ok = await result.current.saveTripName('trip-1', 'اسم') })
+
+    expect(ok).toBe(false)
+    expect(mocks.setDoc).not.toHaveBeenCalled()
+    expect(showToast).toHaveBeenCalledWith({ text: ORGANIZER_ONLY, type: 'error' }, 3000)
+  })
+
+  it('saveItinerary: رفضٌ لأن غيرك حفظ قبلك يُقال كذلك — لا «لا تملك الصلاحية»', async () => {
+    mocks.setDoc.mockRejectedValue(Object.assign(new Error('denied'), { code: 'permission-denied' }))
+    mocks.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ itineraryRev: 5 }) })
+    const { result } = setup()
+    let ok
+    await act(async () => { ok = await result.current.saveItinerary('trip-1', [], 'standard', 3) })
+
+    expect(ok).toBe(false)
+    expect(showToast).toHaveBeenCalledWith(
+      { text: expect.stringContaining('عدّل أحدهم مسار الرحلة قبلك'), type: 'error' }, 6000,
+    )
+    expect(handleFirestoreError).not.toHaveBeenCalled()
+  })
+
+  it('saveItinerary: رفضٌ والنسخة لم تتغيّر ⇒ خطأ صلاحيات عادي عبر المعالج', async () => {
+    const err = Object.assign(new Error('denied'), { code: 'permission-denied' })
+    mocks.setDoc.mockRejectedValue(err)
+    mocks.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ itineraryRev: 3 }) })
+    const { result } = setup()
+    await act(async () => { await result.current.saveItinerary('trip-1', [], 'standard', 3) })
+
+    expect(handleFirestoreError).toHaveBeenCalledWith(err, 'تعذّر حفظ مسار الرحلة.')
   })
 })
