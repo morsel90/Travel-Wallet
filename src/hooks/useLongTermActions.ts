@@ -13,24 +13,12 @@
 // تُكتب. المستمعون الحيّون (onSnapshot) يُحدّثون الشاشة بعد نجاح الاستدعاء بلا
 // أي عمل إضافي هنا.
 import { useState, useCallback } from 'react'
-import { httpsCallable } from 'firebase/functions'
-import { auth, functions } from '../firebase'
+import { auth } from '../firebase'
+import { callable } from './callables'
 import { haptic } from '../utils/haptics'
 import { formatPeriodLabel } from '../utils/period'
 import { callableMessage } from '../utils/callableErrors'
 import type { PeriodKey, RolloverResult, ToastMessage } from '../types'
-
-// عقود الاستدعاء — تطابق ما تقرأه الدالتان في functions/index.js
-interface CloseMonthRequest { tripId: string; period: PeriodKey }
-interface ExitTravelerRequest { tripId: string; travelerId: number; settle: boolean }
-interface ExitTravelerResponse {
-  success: boolean
-  tripId: string
-  travelerId: number
-  /** المبلغ الذي سُوّي فعلاً (صفر إن كان الحساب مسوّى أصلاً). */
-  settledAmount: number
-  direction: 'credit' | 'debt' | 'settled'
-}
 
 interface UseLongTermActionsParams {
   showToast: (msg: ToastMessage, durationMs?: number) => void
@@ -79,12 +67,12 @@ export function useLongTermActions({
     try {
       // تحديث التوكن قبل الاستدعاء — الدالة تفحص دور المنظّم من سجلّ العضوية
       // لا من التوكن، لكن التوكن هو ما يُثبت الهوية أصلاً. نفس ترتيب
-      // callManageTrip في useTripAdminActions.ts.
+      // call() في useTripAdminActions.ts.
       const user = auth.currentUser
       if (!user) throw new Error('غير مسجّل الدخول.')
       await user.getIdToken(true)
 
-      const call = httpsCallable<CloseMonthRequest, RolloverResult>(functions, 'closeMonth')
+      const call = callable('closeMonth')
       const { data } = await call({ tripId, period })
 
       haptic.success()
@@ -110,7 +98,7 @@ export function useLongTermActions({
       if (!user) throw new Error('غير مسجّل الدخول.')
       await user.getIdToken(true)
 
-      const call = httpsCallable<ExitTravelerRequest, ExitTravelerResponse>(functions, 'exitTraveler')
+      const call = callable('exitTraveler')
       const { data } = await call({ tripId, travelerId, settle })
 
       haptic.success()

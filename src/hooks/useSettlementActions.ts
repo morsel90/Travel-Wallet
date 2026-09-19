@@ -10,28 +10,11 @@
 // التنفيذ، وعرض اختفاء التسوية قبل وصول النتيجة يعني احتمال إظهار دفترٍ لم
 // يُكتب. المستمعون الحيّون (onSnapshot) يُحدّثون الشاشة بعد النجاح بلا عمل هنا.
 import { useState, useCallback } from 'react'
-import { httpsCallable } from 'firebase/functions'
-import { auth, functions } from '../firebase'
+import { auth } from '../firebase'
+import { callable } from './callables'
 import { haptic } from '../utils/haptics'
 import { callableMessage } from '../utils/callableErrors'
 import type { ToastMessage } from '../types'
-
-/** يطابق ما تقرأه recordSettlement في functions/index.js حرفاً بحرف. */
-interface RecordSettlementRequest {
-  tripId: string
-  fromId: number
-  toId: number
-  amount: number
-}
-
-interface RecordSettlementResponse {
-  success: boolean
-  tripId: string
-  fromId: number
-  toId: number
-  /** المبلغ كما سجّله الخادم بعد التقريب — لا كما أرسله العميل. */
-  amount: number
-}
 
 interface UseSettlementActionsParams {
   showToast: (msg: ToastMessage, durationMs?: number) => void
@@ -62,9 +45,7 @@ export function useSettlementActions({
       // يُثبت الهوية أصلاً — نفس ترتيب useLongTermActions.
       await user.getIdToken(true)
 
-      const call = httpsCallable<RecordSettlementRequest, RecordSettlementResponse>(
-        functions, 'recordSettlement',
-      )
+      const call = callable('recordSettlement')
       const { data } = await call({ tripId, fromId, toId, amount })
 
       haptic.success()

@@ -22,68 +22,19 @@
 // مستند الرحلة إطلاقاً. انظر docs/DECISIONS.md.
 import { useState, useCallback } from 'react'
 import * as Sentry from '@sentry/react'
-import { setDoc, getDoc, getDocs } from 'firebase/firestore'
-import { httpsCallable } from 'firebase/functions'
-import { auth, functions } from '../firebase'
-import {
-  tripDocById, expensesColByTrip, travelersColByTrip, travelerNamesColByTrip, depositLogsColByTrip, repaymentsColByTrip,
-} from '../firestore'
+import { setDoc, getDoc } from 'firebase/firestore'
+import { auth } from '../firebase'
+import { tripDocById } from '../firestore'
 import { haptic } from '../utils/haptics'
 import { MAX_SEGMENTS, deriveTripType, normalizeItineraryRev } from '../utils/itinerary'
 import { currentPeriodKey } from '../utils/period'
-import { buildTripBackup, downloadTripBackup, BackupNotPortableError } from '../utils/backup'
+import { downloadTripBackup, BackupNotPortableError } from '../utils/backup'
 import { TRIP_STATUS_LABEL } from '../types'
-import type { DepositLogEntry, Expense, ItinerarySegment, Repayment, ToastMessage, Traveler, TripStatus, TripType } from '../types'
+import type { ItinerarySegment, ToastMessage, TripStatus, TripType } from '../types'
 import type { TripSummary } from './useAllTrips'
 import { callableMessage } from '../utils/callableErrors'
-
-// عقد استدعاء manageTrip — يطابق ما تقرأه الدالة في functions/index.js
-interface ManageTripRequest {
-  mode: 'create' | 'delete'
-  tripId: string
-  name: string
-}
-interface ManageTripResponse { success: boolean; tripId: string }
-
-// 🆕 عقد استدعاء manageMember — 'remove' (المسؤول أو منظّم الرحلة) و
-// 🆕 'setRole' (المسؤول العالمي حصراً — المرحلة ٣، انظر functions/index.js)
-type ManageMemberRequest =
-  | { mode: 'remove'; tripId: string; uid: string }
-  | { mode: 'setRole'; tripId: string; uid: string; role: 'organizer' | 'member' }
-interface ManageMemberResponse {
-  success: boolean
-  uid: string
-  tripId: string
-  /** false إن لم يكن عضواً في الـ claims أصلاً — نُظِّف سطر السجلّ فقط. (mode: 'remove' فقط) */
-  claimRemoved?: boolean
-  /** true إن كان المستهدَف مسؤولاً: صلاحيته عالمية ولا تمرّ بعضوية الرحلة. (mode: 'remove' فقط) */
-  stillHasAccess?: boolean
-}
-
-// 🆕 عقد استدعاء manageInvite — 'create' (يحذف أي رابط سابق لنفس الرحلة وينشئ
-// توكناً جديداً) و'revoke' (يحذف الرابط النشط بلا استبدال). كلاهما متاح للمسؤول
-// أو منظّم *هذه* الرحلة تحديداً — نفس شرط canAct أدناه، والفحص الحقيقي خادمي
-// بالكامل في manageInvite. انظر functions/index.js.
-interface ManageInviteRequest { mode: 'create' | 'revoke'; tripId: string }
-interface ManageInviteResponse { success: boolean; token?: string }
-
-// 🆕 عقد استدعاء linkTravelerAccount — نموذج الهوية الهجين. متاح للمسؤول أو
-// منظّم *هذه* الرحلة تحديداً (نفس شرط canAct)؛ الفحص الحقيقي (المسافر غير
-// مربوط بالفعل، والحساب المستهدَف غير مربوط بمسافر آخر) خادمي بالكامل. انظر
-// functions/index.js.
-interface LinkTravelerAccountRequest { tripId: string; travelerId: number; targetUid: string }
-interface LinkTravelerAccountResponse { success: boolean; tripId: string; travelerId: number; targetUid: string }
-
-// 🆕 عقد استدعاء restoreTrip — docs/PLAN-backup-recovery.md المرحلة ٢.
-// backup: unknown عمداً — الشكل الحقيقي (TripBackup) يُتحقَّق منه خادمياً
-// بالكامل (Admin SDK يتجاوز القواعد)، فلا قيمة في تضييق النوع هنا فقط ليُخدَع
-// لاحقاً بملف عُدِّل يدوياً بشكل يطابق TripBackup ظاهرياً لكنه فاسد فعلياً.
-interface RestoreTripRequest { tripId: string; backup: unknown }
-interface RestoreTripResponse {
-  success: boolean
-  tripId: string
-  restored: { travelers: number; expenses: number; depositLogs: number }
-}
+import { readTripBackup } from './readTripBackup'
+import { callable, type CallableName, type CallableRequest, type CallableResponse } from './callables'
 
 // 🆕 نصّا الرفض المحلي — مختلفان عمداً (القاعدة ٢٤): الأول لما يملكه المنظّم في
 // رحلته لكن ليس في هذه، والثاني لما ليس من صلاحيات المنظّم أصلاً.
@@ -299,11 +250,11 @@ export function useTripAdminActions({
   //
   // تُعيد `{ data }` عند النجاح أو null عند أي فشل (رفض محلي، رفض الخادم، شبكة)
   // — والتوست في كل حالات الفشل مسؤوليتها هي، لا المستدعي.
-  const call = useCallback(async <Req, Res>(
-    name: string,
-    request: Req,
-    opts: CallOptions<Res>,
-  ): Promise<{ data: Res } | null> => {
+  const call = useCallback(async <N extends CallableName>(
+    name: N,
+    request: CallableRequest<N>,
+    opts: CallOptions<CallableResponse<N>>,
+  ): Promise<{ data: CallableResponse<N> } | null> => {
     // فحص واجهة فقط — الحدّ الحقيقي خادمي بالكامل في كل دالة.
     if (!opts.allowed) {
       showToast({ text: opts.deniedText, type: 'error' }, 3000)
@@ -317,7 +268,7 @@ export function useTripAdminActions({
       // تحديث التوكن ليحمل الـ claims الحالية — الدالة تعيد فحصها خادمياً.
       await user.getIdToken(true)
 
-      const { data } = await httpsCallable<Req, Res>(functions, name)(request)
+      const { data } = await callable(name)(request)
 
       if (opts.refreshTokenAfter) await user.getIdToken(true)
 
@@ -347,7 +298,7 @@ export function useTripAdminActions({
   // الإنشاء متاح لأي حساب حقيقي مسجّل دخوله (نموذج واتساب)، والحدّ الحقيقي
   // (جلسة غير مجهولة، حدّ زمني) خادمي بالكامل.
   const createTrip = useCallback(async (tripId: string, name: string) =>
-    (await call<ManageTripRequest, ManageTripResponse>('manageTrip', { mode: 'create', tripId, name }, {
+    (await call('manageTrip', { mode: 'create', tripId, name }, {
       allowed: true,
       deniedText: NOT_ORGANIZER_POWER,
       // 🆕 الإنشاء الذاتي (غير المسؤول) يمنح المُنشئ claim عضوية *جديداً* داخل
@@ -363,7 +314,7 @@ export function useTripAdminActions({
   // الاسم فارغ: الحذف لا يحتاجه، والدالة الخادمية لا تفرضه في هذا الوضع.
   // ورسالة «الرحلة ليست فارغة» تأتي من الخادم وتُعرض كما هي (انظر call).
   const deleteTrip = useCallback(async (tripId: string) =>
-    (await call<ManageTripRequest, ManageTripResponse>('manageTrip', { mode: 'delete', tripId, name: '' }, {
+    (await call('manageTrip', { mode: 'delete', tripId, name: '' }, {
       allowed: isAdmin,
       deniedText: NOT_ORGANIZER_POWER,
       onSuccess: () => [{ text: `تم حذف الرحلة "${tripId}"`, type: 'success' }],
@@ -373,7 +324,7 @@ export function useTripAdminActions({
   // 🆕 المرحلة ٣: متاحة للمسؤول أو منظّم هذه الرحلة تحديداً — الفحص الحقيقي
   // (منظّم لا يزيل مسؤولاً ولا منظّماً آخر) يبقى خادمياً بالكامل في manageMember.
   const removeMember = useCallback(async (tripId: string, uid: string) =>
-    (await call<ManageMemberRequest, ManageMemberResponse>('manageMember', { mode: 'remove', tripId, uid }, {
+    (await call('manageMember', { mode: 'remove', tripId, uid }, {
       allowed: canAct(tripId),
       deniedText: ORGANIZER_ONLY,
       // ⚠️ الرسالة تقول الحقيقة كاملةً بدل «تمت الإزالة» المطمئنة:
@@ -397,7 +348,7 @@ export function useTripAdminActions({
   // 🆕 تعيين/إلغاء دور «منظّم الرحلة» — المسؤول العالمي حصراً (functions/index.js
   // يفرض هذا خادمياً أيضاً؛ لا يجوز لمنظّم تفويض دوره لآخر — انظر التعليق هناك).
   const setMemberRole = useCallback(async (tripId: string, uid: string, role: 'organizer' | 'member') =>
-    (await call<ManageMemberRequest, ManageMemberResponse>('manageMember', { mode: 'setRole', tripId, uid, role }, {
+    (await call('manageMember', { mode: 'setRole', tripId, uid, role }, {
       allowed: isAdmin,
       deniedText: 'تغيير دور المنظّم ليس من صلاحيات منظّم الرحلة.',
       onSuccess: () => [{
@@ -409,14 +360,14 @@ export function useTripAdminActions({
   // 🆕 رابط دعوة — createInvite يُعيد توكناً يستهلكه المستدعي فوراً (بناء رابط
   // المشاركة)، فلا توست ولا اهتزاز عند نجاحه: المستدعي هو من يُعلن النتيجة.
   const createInvite = useCallback(async (tripId: string) =>
-    (await call<ManageInviteRequest, ManageInviteResponse>('manageInvite', { mode: 'create', tripId }, {
+    (await call('manageInvite', { mode: 'create', tripId }, {
       allowed: canAct(tripId),
       deniedText: ORGANIZER_ONLY,
       onSuccess: () => null,
     }))?.data.token ?? null, [call, canAct])
 
   const revokeInvite = useCallback(async (tripId: string) =>
-    (await call<ManageInviteRequest, ManageInviteResponse>('manageInvite', { mode: 'revoke', tripId }, {
+    (await call('manageInvite', { mode: 'revoke', tripId }, {
       allowed: canAct(tripId),
       deniedText: ORGANIZER_ONLY,
       onSuccess: () => [{ text: 'تم إبطال رابط الدعوة.', type: 'success' }],
@@ -425,7 +376,7 @@ export function useTripAdminActions({
   // 🆕 ربط مسافر شبح بحساب — رسالة الخطأ الأشيع (مسافر مربوط بالفعل، أو
   // الحساب مربوط بمسافر آخر) خادمية بالكامل وتُعرض كما هي.
   const linkTravelerAccount = useCallback(async (tripId: string, travelerId: number, targetUid: string) =>
-    (await call<LinkTravelerAccountRequest, LinkTravelerAccountResponse>(
+    (await call(
       'linkTravelerAccount', { tripId, travelerId, targetUid }, {
         allowed: canAct(tripId),
         deniedText: ORGANIZER_ONLY,
@@ -433,11 +384,8 @@ export function useTripAdminActions({
       },
     )) !== null, [call, canAct])
 
-  // 🆕 تنزيل نسخة احتياطية — قراءة فقط، بلا مسار كتابة جديد ولا دالة سحابية:
-  // isAdmin() في القواعد يمنح قراءة expenses/travelers/depositLogs لأي رحلة،
-  // لا الرحلة النشطة وحدها (نفس أساس فحص الخلوّ قبل الحذف). depositLogs تُجلب
-  // لكل مسافر على حدة (subcollection تحت كل مستند مسافر) بالتوازي — كلفة عدد
-  // القراءات مقبولة لأنه إجراء يدوي نادر، لا مسار ساخن.
+  // 🆕 تنزيل نسخة احتياطية — قراءة فقط، بلا مسار كتابة جديد ولا دالة سحابية.
+  // القراءة والتجميع في readTripBackup.ts؛ هنا الصلاحية والرسائل وحدها.
   const exportBackup = useCallback(async (trip: TripSummary): Promise<boolean> => {
     if (!isAdmin) {
       showToast({ text: NOT_ORGANIZER_POWER, type: 'error' }, 3000)
@@ -446,38 +394,12 @@ export function useTripAdminActions({
 
     setIsSaving(true)
     try {
-      const [travelersSnap, expensesSnap, travelerNamesSnap, repaymentsSnap] = await Promise.all([
-        getDocs(travelersColByTrip(trip.id)),
-        getDocs(expensesColByTrip(trip.id)),
-        getDocs(travelerNamesColByTrip(trip.id)),
-        getDocs(repaymentsColByTrip(trip.id)),
-      ])
-      const repayments = repaymentsSnap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Repayment, 'id'>) }))
-
-      const travelers = travelersSnap.docs.map(d => d.data() as Traveler)
-      const expenses = expensesSnap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Expense, 'id'>) }))
-      const travelerNames = travelerNamesSnap.docs.map(d => ({
-        shortName: d.id,
-        travelerId: (d.data() as { travelerId: number }).travelerId,
-      }))
-
-      const depositLogsByTraveler = await Promise.all(
-        travelers.map(t => getDocs(depositLogsColByTrip(trip.id, t.id))),
-      )
-      const depositLogs = depositLogsByTraveler.flatMap(snap =>
-        snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<DepositLogEntry, 'id'>) })),
-      )
-
-      const backup = buildTripBackup({
-        tripId: trip.id,
-        trip: { name: trip.name, itinerary: trip.itinerary, status: trip.status },
-        travelers, expenses, depositLogs, travelerNames, repayments,
-      })
+      const backup = await readTripBackup(trip)
       downloadTripBackup(backup)
 
       haptic.success()
       showToast({
-        text: `تم تنزيل نسخة احتياطية لـ"${trip.name}" — ${travelers.length} مسافراً و${expenses.length} مصروفاً.`,
+        text: `تم تنزيل نسخة احتياطية لـ"${trip.name}" — ${backup.travelers.length} مسافراً و${backup.expenses.length} مصروفاً.`,
         type: 'success',
       }, 4000)
       return true
@@ -504,7 +426,7 @@ export function useTripAdminActions({
   // كل التحقق الفعلي خادمي — انظر restoreTrip في functions/index.js؛ العميل هنا
   // لا يفحص شكل backup إطلاقاً.
   const restoreTrip = useCallback(async (tripId: string, backup: unknown) =>
-    (await call<RestoreTripRequest, RestoreTripResponse>('restoreTrip', { tripId, backup }, {
+    (await call('restoreTrip', { tripId, backup }, {
       allowed: isAdmin,
       deniedText: NOT_ORGANIZER_POWER,
       onSuccess: ({ restored }) => [{
