@@ -578,6 +578,7 @@ Three independent systems that must be deployed separately:
 |---|---|---|
 | Frontend | `vercel --prod` | SPA hosted on Vercel |
 | Firestore Rules | `firebase deploy --only firestore:rules` | Security rules |
+| 🆕 Firestore Indexes | `firebase deploy --only firestore:indexes` | `firestore.indexes.json` — composite indexes **and** the `rateLimits.expireAt` TTL override. ⚠️ **The emulator never enforces composite indexes**, so a query that needs one passes every unit, rules and E2E test and fails only in production (`failed-precondition`). Any new query that combines a range filter on one field with ordering or aggregation on another needs an entry here. The file is the whole truth: anything deployed but missing from it gets flagged for deletion on the next deploy. |
 | Cloud Functions | `firebase deploy --only functions` | `manageTrip`, `manageInvite`, `joinViaInvite`, `updateMyTravelerName`, `linkTravelerAccount`, `manageMember`, `restoreTrip`, 🆕 `recordSettlement` |
 
 **Important:** Always create the trip via `scripts/create-trip.mjs` before deploying rules that depend on it existing.
