@@ -1181,3 +1181,67 @@ describe('حماية افتراضية لأي مسار غير معرَّف', () =
     await assertFails(setDoc(doc(adminDb(), 'someRandomCollection', 'x'), { a: 1 }))
   })
 })
+
+// ─── 🆕 السداد بين المسافرين — repayments ───────────────────────────────────
+// الإنشاء للخادم وحده (recordSettlement)، والعميل يملك الحذف الليّن/الاستعادة
+// فقط. أخطر ما يُمنع هنا: عضوٌ يكتب قيد سداد مباشرة فيخترع ديناً أو يمحوه،
+// أو «يحذف» قيداً بتحديثٍ يغيّر مبلغه معه.
+describe('السداد بين المسافرين — repayments', () => {
+  const repaymentDoc = (db: Firestore, id = 'r1', tripId = TRIP_ID) =>
+    doc(db, 'artifacts', tripId, 'public', 'data', 'repayments', id)
+  const validRepayment = {
+    fromId: 2, toId: 1, amount: 170.5, date: '2026-09-18', createdAt: 1_700_000_000_000,
+    createdByUid: 'organizer-1', deletedAt: null,
+  }
+  const seedRepayment = (data: Record<string, unknown> = validRepayment) =>
+    seed(db => setDoc(repaymentDoc(db), data))
+
+  it('العضو يقرأ السداد — كشف حسابه ورصيده يعتمدان عليه', async () => {
+    await seedRepayment()
+    await assertSucceeds(getDoc(repaymentDoc(memberDb())))
+  })
+
+  it('غير العضو لا يقرأ، ولا عضو رحلة أخرى', async () => {
+    await seedRepayment()
+    await assertFails(getDoc(repaymentDoc(strangerDb())))
+    await assertFails(getDoc(repaymentDoc(otherTripMemberDb())))
+  })
+
+  it('لا أحد يُنشئ قيد سداد من المتصفح — ولا المسؤول', async () => {
+    // السقف والاتجاه يحتاجان جمع الأرصدة من الدفتر كاملاً، والقواعد لا تستطيع.
+    await assertFails(setDoc(repaymentDoc(memberDb()), validRepayment))
+    await seedOrganizer('organizer-1')
+    await assertFails(setDoc(repaymentDoc(organizerDb()), validRepayment))
+    await assertFails(setDoc(repaymentDoc(adminDb()), validRepayment))
+  })
+
+  it('المنظّم والمسؤول يحذفان ليّناً ويستعيدان — deletedAt وحده', async () => {
+    await seedRepayment()
+    await seedOrganizer('organizer-1')
+    await assertSucceeds(updateDoc(repaymentDoc(organizerDb()), { deletedAt: 1_700_000_000_500 }))
+    await assertSucceeds(updateDoc(repaymentDoc(adminDb()), { deletedAt: null }))
+  })
+
+  it('العضو العادي لا يحذف ولا يستعيد', async () => {
+    await seedRepayment()
+    await assertFails(updateDoc(repaymentDoc(memberDb()), { deletedAt: 1_700_000_000_500 }))
+  })
+
+  it('«حذفٌ» يغيّر المبلغ أو الطرفَين معه يُرفض — حتى للمسؤول', async () => {
+    await seedRepayment()
+    await assertFails(updateDoc(repaymentDoc(adminDb()), { deletedAt: 1_700_000_000_500, amount: 1 }))
+    await assertFails(updateDoc(repaymentDoc(adminDb()), { toId: 3 }))
+  })
+
+  it('الحذف الصلب ممنوع دائماً', async () => {
+    await seedRepayment()
+    await assertFails(deleteDoc(repaymentDoc(adminDb())))
+  })
+
+  it('رحلة مؤرشفة لا يُعدَّل سدادها — كبقية حركاتها المالية', async () => {
+    await seedRepayment()
+    await seed(db => setDoc(tripConfigDoc(db), { name: 'رحلة', status: 'archived' }))
+    await assertFails(updateDoc(repaymentDoc(adminDb()), { deletedAt: 1_700_000_000_500 }))
+  })
+})
+

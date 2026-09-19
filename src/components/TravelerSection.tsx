@@ -30,7 +30,7 @@ interface TravelerCardProps {
 // مكوّن عرض بطاقة رصيد المسافر المنفرد (Traveler Card)
 export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods }: TravelerCardProps) => {
   // جلبنا settlements و travelers لدعم بيانات النافذة المنبثقة
-  const { isAdmin, isOrganizer, expenses, travelers, user } = useTripData()
+  const { isAdmin, isOrganizer, expenses, repayments, travelers, user } = useTripData()
   // 🆕 نموذج الهوية الهجين: تمييز بطاقة المستخدم نفسه بين بطاقات بقية المسافرين
   // — traveler.uid يُقارَن لا يُفترض، فمن دون حساب (تصفّح محلي) أو مسافر غير
   // مربوط لا يرى الشارة على أي بطاقة، وهذا صحيح ومقصود.
@@ -183,6 +183,7 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
           traveler={baseTraveler}
           balance={traveler}
           expenses={expenses}
+          repayments={repayments}
           settlements={[]}
           periods={periods}
           allTravelers={travelers}

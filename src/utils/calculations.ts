@@ -1,4 +1,4 @@
-import type { Traveler, TravelerBalance, Expense, Settlement, CategoryTotal, SpendingTrendPoint } from '../types'
+import type { Traveler, TravelerBalance, Expense, Repayment, Settlement, CategoryTotal, SpendingTrendPoint } from '../types'
 import { matchesTraveler } from './participants'
 
 // ─── دوال حساب نقية (Pure) ────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ export function splitByShares(
  * @param {Expense[]} expenses - قائمة جميع المصاريف المسجلة.
  * @returns {TravelerBalance[]} مصفوفة ببيانات المسافرين موضح فيها ما أنفقه كل شخص وما تبقى له/عليه.
  */
-export function calculateBalances(travelers: Traveler[], expenses: Expense[]): TravelerBalance[] {
+export function calculateBalances(travelers: Traveler[], expenses: Expense[], repayments: Repayment[] = []): TravelerBalance[] {
   // 🆕 الرصيد المُودَع يُطهَّر هنا كما تُطهَّر المبالغ في splitEven/splitByShares.
   //
   // ⚠️ كان `remaining: t.deposited` مباشرةً — وهي آخر ثغرة في القاعدة ٤: مستندٌ
@@ -134,6 +134,19 @@ export function calculateBalances(travelers: Traveler[], expenses: Expense[]): T
         t.remaining     -= shares[i]
       }
     })
+  })
+
+  // 🆕 السداد — القيد الثالث: ينقل الرصيد بين طرفَين ولا يمسّ `deposited` ولا
+  // `totalExpenses`. فمجموع remaining لا يتغيّر (ما يرتفع عند الدافع ينخفض عند
+  // المستلم)، و«نصيبه من المصاريف» يبقى نصيبه فعلاً — وهو ما يعتمد عليه
+  // cycleShareBalances في الرحلة الطويلة. المحذوف ليّناً يُستبعد عند المستدعي
+  // (activeRepayments)، تماماً كالمصاريف.
+  repayments.forEach(r => {
+    const amount = Number.isFinite(r.amount) ? r.amount : 0
+    const from = balances.find(b => b.id === r.fromId)
+    const to   = balances.find(b => b.id === r.toId)
+    if (from) from.remaining += amount
+    if (to)   to.remaining   -= amount
   })
 
   return balances

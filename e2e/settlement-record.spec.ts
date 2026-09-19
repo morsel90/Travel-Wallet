@@ -55,7 +55,8 @@ test('تسجيل التحويل يُصفّي الرصيدَين ويبقى بع�
   await page.reload()
   await expect(page.locator('#settlements-section')).toContainText('الحسابات مصفّاة')
 
-  // فيصل: أودع 100+100 = 200، ونصيبه 200 → صفر. منى: 600−100 = 500، ونصيبها 200 → 300.
+  // فيصل: أودع 100 وسدّد 100، ونصيبه 200 → صفر. منى: أودعت 600 واستلمت 100، ونصيبها 200 → 300.
+  // 🆕 «المودَع» نفسه لم يتغيّر لأيٍّ منهما — السداد قيدٌ مستقل (repayments/).
   await expect(page.locator('div.group').filter({ hasText: 'فيصل الشمري' })
     .getByText('0.00', { exact: true })).toBeVisible()
   await expect(page.locator('div.group').filter({ hasText: 'منى الدوسري' })
@@ -65,10 +66,11 @@ test('تسجيل التحويل يُصفّي الرصيدَين ويبقى بع�
   await expect(page.getByText('الرصيد 300.00 ﷼')).toBeVisible()
 })
 
-// 🐛 ما حدث فعلاً على Bh26: الدائن صار دائناً بدفع مصاريف **من جيبه** (paidBy)
-// لا بإيداع، فخصم التحويل من «المودَع» أنزله إلى ‎-170.5 — رقم تشترط القواعد
-// ألا يكون (`isFiniteAmount: >= 0`). الحارس يرفض بدل أن يكتب دفتراً فاسداً،
-// والاختبار يثبت الأمرين: الرفض، وأن **لا شيء** كُتب.
+// 🐛 ما حدث فعلاً على Bh26، وكان سبب القيد الثالث: الدائن صار دائناً بدفع
+// مصاريف **من جيبه** (paidBy) لا بإيداع. حين كان السداد يُكتب تعديلاً على
+// «المودَع» نزل مودَعه إلى ‎-170.5، ثم صار يُرفض. الآن السداد قيد مستقل:
+// التسجيل ينجح، و«المودَع» لا يُمسّ، والتسوية تختفي — وهذه هي الحالة الأشيع
+// في رحلة قصيرة: واحدٌ يدفع والبقية يسدّدونه.
 const POCKET = {
   tripId: 'e2e-settlement-pocket',
   memberEmail: 'e2e-member-pocket@test.local',
@@ -77,7 +79,7 @@ const POCKET = {
   adminPassword: 'E2eTestPass!1',
 }
 
-test('دائنٌ دفع من جيبه: التسجيل يُرفض بسبب مفهوم، ولا يُكتب أي رصيد', async ({ page }) => {
+test('دائنٌ دفع من جيبه: السداد يُسجَّل دون أن يمسّ المودَع، وحذفه يُعيد التسوية', async ({ page }) => {
   await seedTrip(POCKET)
   const root = adminFirestore().collection('artifacts').doc(POCKET.tripId).collection('public').doc('data')
   await root.collection('travelers').doc('1').set({ id: 1, name: 'راشد الدافع', shortName: 'راشد', deposited: 0, deletedAt: null })
@@ -94,14 +96,27 @@ test('دائنٌ دفع من جيبه: التسجيل يُرفض بسبب مفه
 
   await panel.getByRole('button', { name: 'تسجيل التحويل' }).click()
   await panel.getByRole('button', { name: /تأكيد تسجيل 100\.00/ }).click()
+  await expect(panel).toContainText('الحسابات مصفّاة')
 
-  await expect(page.getByText(/أتى من مصاريف دفعها من جيبه/)).toBeVisible()
-  // التسوية باقية كما هي — لم يُسجَّل شيء.
-  await expect(panel).toContainText('100.00')
+  // القيد ظاهر تحت التسويات حيث سُجّل — وإلا لم يُعرف أنه سُجّل ولا صُحِّح.
+  await expect(panel).toContainText('السداد المسجّل (1)')
 
-  // ⚠️ تحقّق سلبي حقيقي: لا رصيد تغيّر ولا سطر تدقيق كُتب — المعاملة أُلغيت كاملة.
+  // ⚠️ تحقّق سلبي حقيقي: «المودَع» لم يُمسّ (كان يصير ‎-100 لراشد)، ولا سطر
+  // تدقيق إيداع كُتب، وقيدٌ واحد في repayments/ بطرفَيه ومبلغه.
   const [rashed, salem] = await Promise.all([root.collection('travelers').doc('1').get(), root.collection('travelers').doc('2').get()])
   expect(rashed.data()?.deposited).toBe(0)
   expect(salem.data()?.deposited).toBe(0)
-  expect((await root.collection('travelers').doc('2').collection('depositLogs').get()).size).toBe(0)
+  expect((await root.collection('travelers').doc('1').collection('depositLogs').get()).size).toBe(0)
+  const repayments = await root.collection('repayments').get()
+  expect(repayments.size).toBe(1)
+  expect(repayments.docs[0].data()).toMatchObject({ fromId: 2, toId: 1, amount: 100, deletedAt: null })
+
+  // ── التراجع: حذف القيد يُعيد الدين إلى القائمة، ليُسجَّل من جديد إن لزم ──────
+  await panel.getByRole('button', { name: 'حذف سداد سالم إلى راشد' }).click()
+  await panel.getByRole('button', { name: 'تأكيد الحذف' }).click()
+  await expect(panel.getByRole('button', { name: 'تسجيل التحويل' })).toBeVisible()
+  await expect(panel).not.toContainText('السداد المسجّل')
+  // حذفٌ ليّن لا صلب: القيد باقٍ في سلة المهملات بـ deletedAt.
+  await expect.poll(async () => (await root.collection('repayments').doc(repayments.docs[0].id).get()).data()?.deletedAt)
+    .toEqual(expect.any(Number))
 })

@@ -10,7 +10,7 @@
 //   - rateLimits — حالة تشغيلية عابرة، لا بيانات
 //   - trips/{tripId}/members — فهرس إداري لا مصدر صلاحية؛ استعادته لا تُعيد
 //     لأحد وصوله (العضوية الفعلية في custom claims حساب كل عضو لا Firestore)
-import type { DepositLogEntry, Expense, ItinerarySegment, Traveler, TripStatus } from '../types'
+import type { DepositLogEntry, Expense, ItinerarySegment, Repayment, Traveler, TripStatus } from '../types'
 
 // 🆕 الملف مستقل عن Firestore — وهذا شرط يُفحَص عند التصدير، لا افتراض.
 //
@@ -90,6 +90,12 @@ export interface TripBackup {
   depositLogs: DepositLogEntry[]
   /** حجوزات الأسماء المختصرة — travelerNames/{shortName} → { travelerId } في Firestore. */
   travelerNames: Array<{ shortName: string; travelerId: number }>
+  /**
+   * 🆕 قيود السداد — اختياري في الملف لا في التصدير: النسخ السابقة لهذه الميزة
+   * لا تحمله، وschemaVersion يبقى 1 لأن الإضافة لا تكسر قراءة أيّ ملف قديم.
+   * restoreTrip يعامل الغياب كقائمة فارغة.
+   */
+  repayments?: Repayment[]
 }
 
 export interface BuildTripBackupParams {
@@ -99,6 +105,7 @@ export interface BuildTripBackupParams {
   expenses: Expense[]
   depositLogs: DepositLogEntry[]
   travelerNames: Array<{ shortName: string; travelerId: number }>
+  repayments?: Repayment[]
 }
 
 /** دالة نقية — لا قراءة Firestore هنا، فقط تجميع الشكل النهائي. ترمي
@@ -113,6 +120,13 @@ export function buildTripBackup(params: BuildTripBackupParams): TripBackup {
     expenses: params.expenses,
     depositLogs: params.depositLogs,
     travelerNames: params.travelerNames,
+    // المفاتيح بأسمائها لا نسخاً للكائن: هذه بالضبط ما يقبله isValidRepaymentJs
+    // عند الاستعادة (hasOnlyKeys)، و`_pending` حقل عرض لا بيانات — لو تسرّب إلى
+    // الملف لرفضت الاستعادةُ النسخةَ كلها.
+    repayments: (params.repayments ?? []).map(r => ({
+      id: r.id, fromId: r.fromId, toId: r.toId, amount: r.amount, date: r.date,
+      createdAt: r.createdAt, createdByUid: r.createdByUid, deletedAt: r.deletedAt ?? null,
+    })),
   }
   const hit = findNonPortableValue(backup)
   if (hit) throw new BackupNotPortableError(hit.path, hit.found)

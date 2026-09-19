@@ -2,7 +2,7 @@ import { createContext, useContext } from 'react'
 import { createStore } from 'zustand/vanilla'
 import { useStore } from 'zustand'
 import type { Dispatch, SetStateAction, FormEvent } from 'react'
-import type { Traveler, Expense, ExpenseFormData, CurrencyMap, AppUser } from '../types'
+import type { Traveler, Expense, Repayment, ExpenseFormData, CurrencyMap, AppUser } from '../types'
 import type { DepositSubmission } from '../hooks/useDepositActions'
 
 // ─── مخزن Zustand بدل ثلاث React Contexts ────────────────────────────────────
@@ -24,6 +24,8 @@ import type { DepositSubmission } from '../hooks/useDepositActions'
 export interface TripDataSlice {
   travelers: Traveler[]
   expenses: Expense[]
+  /** 🆕 قيود السداد غير المحذوفة — لكشف حساب كل مسافر (TravelerProfileModal). */
+  repayments: Repayment[]
   user: AppUser | null| null
   isAdmin: boolean
   /** 🆕 منظّم الرحلة الحالية (docs/PLAN-member-management.md المرحلة ٣) —

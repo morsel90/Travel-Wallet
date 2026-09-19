@@ -1,13 +1,18 @@
 import { useState } from 'react'
 import { X } from '../../icons'
 import { Modal } from '../Modal'
-import type { Expense, Traveler } from '../../types'
+import type { Expense, Repayment, Traveler } from '../../types'
 
 interface TrashBinModalProps {
   deletedExpenses: Expense[]
   deletedTravelers: Traveler[]
   onRestoreExpense: (id: string) => void
   onRestoreTraveler: (id: number) => void
+  /** 🆕 قيود السداد المحذوفة — تبويب ثالث. اختياري: غيابه يُبقي التبويبين كما كانا. */
+  deletedRepayments?: Repayment[]
+  onRestoreRepayment?: (id: string) => void
+  /** كل المسافرين (مع المحذوفين) — لتسمية طرفَي السداد. */
+  allTravelers?: Traveler[]
   onClose: () => void
 }
 
@@ -16,9 +21,13 @@ export default function TrashBinModal({
   deletedTravelers,
   onRestoreExpense,
   onRestoreTraveler,
+  deletedRepayments = [],
+  onRestoreRepayment,
+  allTravelers = [],
   onClose
 }: TrashBinModalProps) {
-  const [activeTab, setActiveTab] = useState<'expenses' | 'travelers'>('expenses')
+  const [activeTab, setActiveTab] = useState<'expenses' | 'travelers' | 'repayments'>('expenses')
+  const nameOf = (id: number) => allTravelers.find(t => t.id === id)?.shortName ?? '—'
 
   return (
     <Modal maxWidth="max-w-2xl" onClose={onClose} label="سلة المهملات">
@@ -61,11 +70,49 @@ export default function TrashBinModal({
         >
           المسافرون المحذوفون ({deletedTravelers.length})
         </button>
+        {onRestoreRepayment && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('repayments')}
+            className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+              activeTab === 'repayments' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-500 hover:bg-slate-100'
+            }`}
+          >
+            السداد المحذوف ({deletedRepayments.length})
+          </button>
+        )}
       </div>
 
       {/* قائمة العناصر القابلة للتمرير الداخلي المحمي */}
       <div className="overflow-y-auto max-h-[50dvh] space-y-2.5 pl-1" dir="rtl">
-        {activeTab === 'expenses' ? (
+        {activeTab === 'repayments' && onRestoreRepayment ? (
+          deletedRepayments.length === 0 ? (
+            <div className="text-center text-slate-400 py-12 text-sm font-medium">لا يوجد سداد محذوف</div>
+          ) : (
+            deletedRepayments.map(r => (
+              <div key={r.id} className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex justify-between items-center gap-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-bold text-slate-800">سداد: {nameOf(r.fromId)} ← {nameOf(r.toId)}</p>
+                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <span>{r.date}</span>
+                    <span>•</span>
+                    <span className="text-teal-700 font-bold">{r.amount.toFixed(2)} ريال</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onRestoreRepayment(r.id)}
+                  className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-100 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs shrink-0"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 9H18" />
+                  </svg>
+                  استعادة
+                </button>
+              </div>
+            ))
+          )
+        ) : activeTab === 'expenses' ? (
           deletedExpenses.length === 0 ? (
             <div className="text-center text-slate-400 py-12 text-sm font-medium">لا توجد مصاريف محذوفة</div>
           ) : (

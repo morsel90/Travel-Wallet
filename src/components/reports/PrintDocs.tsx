@@ -3,7 +3,7 @@
 // على الطباعة الأصلية للمتصفح لضمان تشكيل عربي مثالي (المتصفح يرسم النص).
 
 import type { Traveler, TravelerBalance, Settlement, CategoryTotal, Expense, ItinerarySegment, PeriodKey } from '../../types'
-import { buildDailySummary, buildPeriodOverview, type AccountStatement, type MergedTimeline } from '../../utils/reportData'
+import { buildDailySummary, buildPeriodOverview, isCreditKind, statementKindLabel, type AccountStatement, type MergedTimeline } from '../../utils/reportData'
 
 const fmt = (n: number): string => n.toFixed(2)
 
@@ -269,20 +269,29 @@ interface StatementProps {
 
 export const PrintableStatement = ({ tripName, generatedAt, traveler, statement, timeline, canViewDepositLogs }: StatementProps) => (
   <DocFrame title={`كشف حساب — ${traveler.name}`} subtitle={tripName} generatedAt={generatedAt}>
-    <div className={`grid ${statement.totalPaidByPocket !== 0 ? 'grid-cols-4' : 'grid-cols-3'} gap-2 text-center print:break-inside-avoid`}>
-      {[
+    {(() => {
+      const repaidNet = statement.totalRepaidOut - statement.totalRepaidIn
+      const cells: [string, string][] = [
         ['المودَع', fmt(statement.opening)],
         // 🆕 لا تُعرض لمن لم يدفع من جيبه قط — نفس منطق TravelerProfileModal.
-        ...(statement.totalPaidByPocket !== 0 ? [['دفعه من جيبه', fmt(statement.totalPaidByPocket)]] : []),
+        ...(statement.totalPaidByPocket !== 0 ? [['دفعه من جيبه', fmt(statement.totalPaidByPocket)] as [string, string]] : []),
         ['إجمالي نصيبه', fmt(statement.totalShare)],
+        // 🆕 صافي السداد — وإلا لم تتّسق الخانات مع «الرصيد» لمن سدّد أو استلم.
+        ...(statement.totalRepaidOut !== 0 || statement.totalRepaidIn !== 0
+          ? [[repaidNet >= 0 ? 'سدّد' : 'استلم', fmt(Math.abs(repaidNet))] as [string, string]] : []),
         ['الرصيد', fmt(statement.remaining)],
-      ].map(([label, value]) => (
+      ]
+      return (
+    <div className={`grid ${cells.length === 5 ? 'grid-cols-5' : cells.length === 4 ? 'grid-cols-4' : 'grid-cols-3'} gap-2 text-center print:break-inside-avoid`}>
+      {cells.map(([label, value]) => (
         <div key={label} className="border border-slate-300 rounded p-2">
           <div className="text-[10px] text-slate-500">{label}</div>
           <div className="font-black text-teal-800" dir="ltr">{value}</div>
         </div>
       ))}
     </div>
+      )
+    })()}
 
     {/* 🆕 canViewDepositLogs && timeline: جدول واحد مدمج (مصاريف + تعديلات
         رصيد) بعمود "النوع" — بدل جدولين منفصلين. غير ذلك (لا صلاحية/دورة
@@ -306,10 +315,10 @@ export const PrintableStatement = ({ tripName, generatedAt, traveler, statement,
             {timeline.rows.map(r => (
               <tr key={r.id}>
                 <td className={td}>{r.date}</td>
-                <td className={td}>{r.kind === 'deposit' ? (MODE_LABELS[r.mode] ?? r.mode) : r.kind === 'paidByPocket' ? 'دفعها من جيبه' : 'نصيبه من مصروف'}</td>
+                <td className={td}>{r.kind === 'deposit' ? (MODE_LABELS[r.mode] ?? r.mode) : statementKindLabel(r.kind)}</td>
                 <td className={td}>{r.kind === 'deposit' ? (r.reason ?? '—') : `${r.description} (${r.category})`}</td>
                 <td className={td} dir="ltr">
-                  {r.kind === 'deposit' ? `${r.delta >= 0 ? '+' : ''}${fmt(r.delta)}` : `${r.kind === 'paidByPocket' ? '+' : '−'}${fmt(r.amount)}`}
+                  {r.kind === 'deposit' ? `${r.delta >= 0 ? '+' : ''}${fmt(r.delta)}` : `${isCreditKind(r.kind) ? '+' : '−'}${fmt(r.amount)}`}
                 </td>
                 <td className={td} dir="ltr">{fmt(r.balanceAfter)}</td>
               </tr>
@@ -334,9 +343,9 @@ export const PrintableStatement = ({ tripName, generatedAt, traveler, statement,
           {statement.rows.map(r => (
             <tr key={r.id}>
               <td className={td}>{r.date}</td>
-              <td className={td}>{r.description}{r.kind === 'paidByPocket' ? ' (دفعها من جيبه)' : ''}</td>
+              <td className={td}>{r.description}{r.kind !== 'share' ? ` (${statementKindLabel(r.kind)})` : ''}</td>
               <td className={td}>{r.category}</td>
-              <td className={td} dir="ltr">{r.kind === 'paidByPocket' ? '+' : '−'}{fmt(r.amount)}</td>
+              <td className={td} dir="ltr">{isCreditKind(r.kind) ? '+' : '−'}{fmt(r.amount)}</td>
               <td className={td} dir="ltr">{fmt(r.balanceAfter)}</td>
             </tr>
           ))}

@@ -2,12 +2,12 @@
 // تكمّل reports.ts (الذي يبني صفوف Excel)، لكن هذه تُعيد كائنات مُهيكلة تناسب
 // عرض واجهة صفحة التقارير (ReportsView).
 
-import type { DepositLogEntry, DepositMode, Expense, PeriodKey, Traveler, TravelerBalance } from '../types'
+import type { DepositLogEntry, DepositMode, Expense, PeriodKey, Repayment, Traveler, TravelerBalance } from '../types'
 import { splitByShares } from './calculations'
 import { matchesTraveler } from './participants'
 import { filterCycleExpenses } from './longTerm'
 import { replayDepositLogs } from './deposits'
-import { formatPeriodLabel } from './period'
+import { formatPeriodLabel, isInPeriod } from './period'
 
 export interface TravelerReportLine {
   id: string
@@ -86,8 +86,12 @@ export interface StatementRow {
   date: string
   description: string
   category: string
-  /** 🆕 'share': حصته من مصروف شارك فيه (يُخصم). 'paidByPocket': ما دفعه من جيبه لمصروف (يُضاف). انظر Expense.paidBy. */
-  kind: 'share' | 'paidByPocket'
+  /**
+   * 🆕 'share': حصته من مصروف شارك فيه (يُخصم). 'paidByPocket': ما دفعه من جيبه لمصروف (يُضاف). انظر Expense.paidBy.
+   * 🆕 'repaymentOut': سدّد لمسافر آخر (يُضاف — دينه نقص). 'repaymentIn': استلم سداداً (يُخصم — حقّه نقص). انظر Repayment.
+   * الإشارة تُقرأ من `isCreditKind` وحدها، لا من مقارنة نصية مكرّرة في كل عارض.
+   */
+  kind: 'share' | 'paidByPocket' | 'repaymentOut' | 'repaymentIn'
   /** القيمة المطلقة للحركة — أثرها على الرصيد الجاري يُقرأ من `kind` لا من إشارة العدد. */
   amount: number
   balanceAfter: number
@@ -99,8 +103,53 @@ export interface AccountStatement {
   totalShare: number
   /** 🆕 إجمالي ما دفعه هذا المسافر من جيبه لمصاريف (Expense.paidBy = هويته) — صفر لمن لم يدفع من جيبه قط. */
   totalPaidByPocket: number
-  /** المودَع + دفعه من جيبه − إجمالي حصصه — نفس صيغة TravelerBalance.remaining في calculateBalances تماماً؛ الحقلان يجب أن يتطابقا دائماً لنفس المسافر. */
+  /** 🆕 ما سدّده لغيره (Repayment.fromId = هويته). */
+  totalRepaidOut: number
+  /** 🆕 ما استلمه من غيره (Repayment.toId = هويته). */
+  totalRepaidIn: number
+  /** المودَع + دفعه من جيبه − حصصه + ما سدّده − ما استلمه — نفس صيغة TravelerBalance.remaining في calculateBalances تماماً؛ الحقلان يجب أن يتطابقا دائماً لنفس المسافر. */
   remaining: number
+}
+
+/** 🆕 هل هذا النوع يرفع الرصيد؟ المصدر الوحيد للإشارة في كشف الحساب وطباعته وExcel. */
+export function isCreditKind(kind: StatementRow['kind']): boolean {
+  return kind === 'paidByPocket' || kind === 'repaymentOut'
+}
+
+/** 🆕 وسم نوع السطر — موحّد بين الطباعة وExcel بدل ثلاثيّات مكرّرة في كلٍّ منهما. */
+export function statementKindLabel(kind: StatementRow['kind']): string {
+  switch (kind) {
+    case 'paidByPocket': return 'دفعها من جيبه'
+    case 'repaymentOut': return 'سدّد'
+    case 'repaymentIn':  return 'استلم'
+    default:             return 'نصيبه من مصروف'
+  }
+}
+
+/** 🆕 الاسم المعروض لطرف سداد — يُمرَّر من المستدعي لأنه وحده يملك قائمة المسافرين. */
+export type TravelerNameOf = (id: number) => string
+
+interface RepaymentEntry { r: Repayment; kind: 'repaymentOut' | 'repaymentIn' }
+
+/** قيود السداد التي هذا المسافر أحد طرفَيها. */
+function collectRepaymentEntries(traveler: Traveler, repayments: Repayment[]): RepaymentEntry[] {
+  const entries: RepaymentEntry[] = []
+  for (const r of repayments) {
+    if (r.fromId === traveler.id) entries.push({ r, kind: 'repaymentOut' })
+    else if (r.toId === traveler.id) entries.push({ r, kind: 'repaymentIn' })
+  }
+  return entries
+}
+
+function repaymentRow(e: RepaymentEntry, nameOf: TravelerNameOf): Omit<StatementRow, 'balanceAfter'> {
+  return {
+    id: `${e.r.id}:${e.kind}`,
+    date: e.r.date,
+    description: e.kind === 'repaymentOut' ? `سداد إلى ${nameOf(e.r.toId)}` : `سداد من ${nameOf(e.r.fromId)}`,
+    category: 'سداد',
+    kind: e.kind,
+    amount: Number.isFinite(e.r.amount) ? e.r.amount : 0,
+  }
 }
 
 /**
@@ -144,27 +193,37 @@ function collectExpenseEntries(traveler: Traveler, expenses: Expense[]): Expense
   return entries
 }
 
-export function buildAccountStatement(deposited: number, traveler: Traveler, expenses: Expense[]): AccountStatement {
-  const entries = collectExpenseEntries(traveler, expenses).sort((a, b) => a.exp.createdAt - b.exp.createdAt)
+export function buildAccountStatement(
+  deposited: number,
+  traveler: Traveler,
+  expenses: Expense[],
+  repayments: Repayment[] = [],
+  nameOf: TravelerNameOf = () => '—',
+): AccountStatement {
+  const items = [
+    ...collectExpenseEntries(traveler, expenses).map(({ exp, kind, amount }) => ({
+      ts: exp.createdAt,
+      row: { id: `${exp.id}:${kind}`, date: exp.date, description: exp.description, category: exp.category || 'أخرى', kind, amount },
+    })),
+    ...collectRepaymentEntries(traveler, repayments).map(e => ({ ts: e.r.createdAt, row: repaymentRow(e, nameOf) })),
+  ].sort((a, b) => a.ts - b.ts)
 
   let balance = deposited
-  const rows: StatementRow[] = entries.map(({ exp, kind, amount }) => {
-    balance += kind === 'paidByPocket' ? amount : -amount
-    return {
-      id: `${exp.id}:${kind}`,
-      date: exp.date,
-      description: exp.description,
-      category: exp.category || 'أخرى',
-      kind,
-      amount,
-      balanceAfter: balance,
-    }
+  const rows: StatementRow[] = items.map(({ row }) => {
+    balance += isCreditKind(row.kind) ? row.amount : -row.amount
+    return { ...row, balanceAfter: balance }
   })
 
-  const totalShare = entries.filter(e => e.kind === 'share').reduce((s, e) => s + e.amount, 0)
-  const totalPaidByPocket = entries.filter(e => e.kind === 'paidByPocket').reduce((s, e) => s + e.amount, 0)
+  const sumOf = (k: StatementRow['kind']) => rows.filter(r => r.kind === k).reduce((s, r) => s + r.amount, 0)
+  const totalShare = sumOf('share')
+  const totalPaidByPocket = sumOf('paidByPocket')
+  const totalRepaidOut = sumOf('repaymentOut')
+  const totalRepaidIn = sumOf('repaymentIn')
 
-  return { opening: deposited, rows, totalShare, totalPaidByPocket, remaining: deposited + totalPaidByPocket - totalShare }
+  return {
+    opening: deposited, rows, totalShare, totalPaidByPocket, totalRepaidOut, totalRepaidIn,
+    remaining: deposited + totalPaidByPocket - totalShare + totalRepaidOut - totalRepaidIn,
+  }
 }
 
 export interface DepositTimelineRow {
@@ -226,12 +285,25 @@ function localDateFromTimestamp(ts: number): string {
  * (periodOpeningBalance يقرأ مصروف ترحيل، لا deposited) — يُستدعى فقط في
  * العرض غير المُصفَّى بدورة. انظر TravelerProfileModal.
  */
-export function buildMergedTimeline(traveler: Traveler, expenses: Expense[], logs: DepositLogEntry[]): MergedTimeline {
+export function buildMergedTimeline(
+  traveler: Traveler,
+  expenses: Expense[],
+  logs: DepositLogEntry[],
+  repayments: Repayment[] = [],
+  nameOf: TravelerNameOf = () => '—',
+): MergedTimeline {
   const expenseItems = collectExpenseEntries(traveler, expenses).map(({ exp, kind, amount }) => ({
     ts: exp.createdAt,
-    signedAmount: kind === 'paidByPocket' ? amount : -amount,
+    signedAmount: isCreditKind(kind) ? amount : -amount,
     row: { id: `${exp.id}:${kind}`, date: exp.date, description: exp.description, category: exp.category || 'أخرى', kind, amount } satisfies Omit<StatementRow, 'balanceAfter'>,
   }))
+
+  // 🆕 السداد لا يمسّ `deposited`، فلا يدخل في legacyOpening أدناه — طرفٌ مستقل
+  // عن سجلّ الإيداعات تماماً كالمصاريف، فالدمج يبقى متلسكباً بالحجة نفسها.
+  const repaymentItems = collectRepaymentEntries(traveler, repayments).map(e => {
+    const row = repaymentRow(e, nameOf)
+    return { ts: e.r.createdAt, signedAmount: isCreditKind(row.kind) ? row.amount : -row.amount, row }
+  })
 
   const depositItems = logs.map(log => ({
     ts: log.createdAt,
@@ -239,7 +311,7 @@ export function buildMergedTimeline(traveler: Traveler, expenses: Expense[], log
     row: { id: log.id, date: localDateFromTimestamp(log.createdAt), kind: 'deposit' as const, mode: log.mode, reason: log.reason, delta: log.delta } satisfies Omit<DepositTimelineRow, 'balanceAfter'>,
   }))
 
-  const items = [...expenseItems, ...depositItems].sort((a, b) => a.ts - b.ts)
+  const items = [...expenseItems, ...repaymentItems, ...depositItems].sort((a, b) => a.ts - b.ts)
 
   const legacyOpeningRaw = traveler.deposited - replayDepositLogs(logs)
   const legacyOpening = Math.abs(legacyOpeningRaw) < LEGACY_EPSILON ? 0 : legacyOpeningRaw
@@ -296,17 +368,21 @@ export function buildCurrentPeriodTravelerSummaries(
   liveBalances: TravelerBalance[],
   allExpenses: Expense[],
   period: PeriodKey,
+  allRepayments: Repayment[] = [],
 ): PeriodTravelerSummary[] {
   const periodExpenses = filterCycleExpenses(allExpenses, period)
+  // 🆕 سداد هذه الدورة وحدها — ما سبقها مُضمَّن في المبلغ المُرحَّل أصلاً.
+  const periodRepayments = allRepayments.filter(r => isInPeriod(r.date, period))
   return travelers.map(t => {
     const remaining = liveBalances.find(b => b.id === t.id)?.remaining ?? 0
     // opening=0 هنا وسيط حسابي بحت (لا معنى مالياً له وحده) — نصيبه ودفعه من
     // جيبه هذه الدورة فقط هما المطلوبان لاشتقاق opening الحقيقي جبرياً أدناه.
-    const statement = buildAccountStatement(0, t, periodExpenses)
+    const statement = buildAccountStatement(0, t, periodExpenses, periodRepayments)
     return {
       id: t.id,
       name: t.name,
-      opening: remaining + statement.totalShare - statement.totalPaidByPocket,
+      // ⚠️ 🆕 remaining يشمل السداد، فيُطرح صافيه — وإلا صار ما استلمه نقصاً في «الافتتاحي».
+      opening: remaining + statement.totalShare - statement.totalPaidByPocket - statement.totalRepaidOut + statement.totalRepaidIn,
       hasKnownOpening: true,
       spent: statement.totalShare,
       paidByPocket: statement.totalPaidByPocket,

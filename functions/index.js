@@ -668,6 +668,24 @@ function isValidExpenseJs(d) {
 // ⚠️ نفس ملاحظة isValidExpenseJs أعلاه: 'id' مسموح هنا لأن هذا شكل
 // DepositLogEntry في النسخة الاحتياطية (به id)، لا شكل مستند Firestore
 // (بلا id) — يُنزَع قبل الكتابة الفعلية.
+/**
+ * 🆕 قيد سداد داخل نسخة احتياطية — نفس شكل isValidRepayment في القواعد، مع
+ * `id` (النسخة تحمل معرّف المستند). Admin SDK يتجاوز القواعد، فهذا الفحص هو
+ * الحارس الوحيد لما يُكتب عند الاستعادة.
+ */
+function isValidRepaymentJs(d) {
+  if (!isPlainObject(d)) return false;
+  if (!hasOnlyKeys(d, ['id', 'fromId', 'toId', 'amount', 'date', 'createdAt', 'createdByUid', 'deletedAt'])) return false;
+  if (typeof d.id !== 'string' || !d.id) return false;
+  if (!Number.isInteger(d.fromId) || !Number.isInteger(d.toId) || d.fromId === d.toId) return false;
+  if (typeof d.amount !== 'number' || !Number.isFinite(d.amount) || d.amount <= 0) return false;
+  if (typeof d.date !== 'string' || d.date.length !== 10) return false;
+  if (typeof d.createdAt !== 'number' || !Number.isFinite(d.createdAt)) return false;
+  if (typeof d.createdByUid !== 'string') return false;
+  if (d.deletedAt != null && typeof d.deletedAt !== 'number') return false;
+  return true;
+}
+
 function isValidDepositLogJs(d) {
   if (!isPlainObject(d)) return false;
   if (!hasOnlyKeys(d, [
@@ -1233,6 +1251,9 @@ exports.restoreTrip = onCall(
     const expenses = Array.isArray(backup.expenses) ? backup.expenses : [];
     const depositLogs = Array.isArray(backup.depositLogs) ? backup.depositLogs : [];
     const travelerNames = Array.isArray(backup.travelerNames) ? backup.travelerNames : [];
+    // 🆕 اختياري: النسخ السابقة للسداد لا تحمل الحقل، وتُستعاد كما كانت تماماً.
+    // ⚠️ ولا يُتجاهَل إن وُجد: رحلة تُستعاد بلا سدادها تُظهر ديوناً سُدّدت فعلاً.
+    const repayments = Array.isArray(backup.repayments) ? backup.repayments : [];
 
     if (!travelers.every(isValidTravelerJs)) {
       throw new HttpsError('invalid-argument', 'أحد المسافرين داخل النسخة غير صالح.');
@@ -1242,6 +1263,9 @@ exports.restoreTrip = onCall(
     }
     if (!depositLogs.every(isValidDepositLogJs)) {
       throw new HttpsError('invalid-argument', 'أحد سجلّات الإيداع داخل النسخة غير صالح.');
+    }
+    if (!repayments.every(isValidRepaymentJs)) {
+      throw new HttpsError('invalid-argument', 'أحد قيود السداد داخل النسخة غير صالح.');
     }
 
     // ⚠️ سلامة مرجعية داخل النسخة نفسها — أبعد ممّا تتحقق منه firestore.rules
@@ -1256,6 +1280,9 @@ exports.restoreTrip = onCall(
     }
     if (!depositLogs.every((l) => travelerIds.has(l.travelerId))) {
       throw new HttpsError('invalid-argument', 'سجلّ إيداع يشير لمسافر غير موجود في النسخة.');
+    }
+    if (!repayments.every((r) => travelerIds.has(r.fromId) && travelerIds.has(r.toId))) {
+      throw new HttpsError('invalid-argument', 'قيد سداد يشير لمسافر غير موجود في النسخة.');
     }
 
     // ── الرحلة الهدف: غير موجودة، أو موجودة وفارغة تماماً ──────────────────
@@ -1303,6 +1330,10 @@ exports.restoreTrip = onCall(
         data: rest,
       });
     }
+    for (const r of repayments) {
+      const { id, ...rest } = r;
+      ops.push({ ref: dataRoot.collection('repayments').doc(id), data: { ...rest, deletedAt: rest.deletedAt ?? null } });
+    }
 
     const BATCH_LIMIT = 500;
     let written = 0;
@@ -1337,12 +1368,12 @@ exports.restoreTrip = onCall(
 
     console.log(
       `[restoreTrip] restored ${tripId} by ${request.auth.uid}: ` +
-      `${travelers.length} travelers, ${expenses.length} expenses, ${depositLogs.length} depositLogs`
+      `${travelers.length} travelers, ${expenses.length} expenses, ${depositLogs.length} depositLogs, ${repayments.length} repayments`
     );
     return {
       success: true,
       tripId,
-      restored: { travelers: travelers.length, expenses: expenses.length, depositLogs: depositLogs.length },
+      restored: { travelers: travelers.length, expenses: expenses.length, depositLogs: depositLogs.length, repayments: repayments.length },
     };
   })
 );
@@ -1599,7 +1630,7 @@ function splitBySharesJs(total, participantIds, shares) {
  * يُهمَل نصيبه هنا فيظهر رصيد ذلك المسافر **أعلى** مما هو — ونحن نُرحّل رصيداً
  * أعلى، لا أقل. أي أن أسوأ أثر ممكن هو ترحيل زائد مرئي ومراجَع، لا نقص صامت.
  */
-function calculateRemainingByTravelerJs(travelers, expenses) {
+function calculateRemainingByTravelerJs(travelers, expenses, repayments = []) {
   const remaining = new Map();
   travelers.forEach((t) => {
     remaining.set(t.id, Number.isFinite(t.deposited) ? t.deposited : 0);
@@ -1616,6 +1647,15 @@ function calculateRemainingByTravelerJs(travelers, expenses) {
     participants.forEach((p, i) => {
       if (remaining.has(p)) remaining.set(p, remaining.get(p) - shares[i]);
     });
+  });
+
+  // 🆕 السداد — نظير الحلقة نفسها في calculateBalances (src/utils/calculations.ts).
+  // ⚠️ أيّ فرق بين النسختين يعني أن الخادم يرى رصيداً غير الذي تعرضه الشاشة:
+  // فيرفض تسوية تقول الواجهة إنها مستحقّة، أو يحذف رحلة تقول إنها غير مسوّاة.
+  repayments.forEach((r) => {
+    const amt = Number.isFinite(r.amount) ? r.amount : 0;
+    if (remaining.has(r.fromId)) remaining.set(r.fromId, remaining.get(r.fromId) + amt);
+    if (remaining.has(r.toId)) remaining.set(r.toId, remaining.get(r.toId) - amt);
   });
 
   return remaining;
@@ -1673,15 +1713,19 @@ function tripDataRoot(tripId) {
  */
 async function readLedger(tripId) {
   const dataRoot = tripDataRoot(tripId);
-  const [travelersSnap, expensesSnap] = await Promise.all([
+  const [travelersSnap, expensesSnap, repaymentsSnap] = await Promise.all([
     dataRoot.collection('travelers').get(),
     dataRoot.collection('expenses').get(),
+    dataRoot.collection('repayments').get(),
   ]);
 
   const travelers = travelersSnap.docs.map((d) => d.data()).filter((t) => !t.deletedAt);
   const expenses = expensesSnap.docs.map((d) => d.data()).filter((e) => !e.deletedAt);
+  // 🆕 السداد جزء من الرصيد — closeMonth وexitTraveler وsettledClosureBlock كلها
+  // تقرأ من هنا، فيدخل الحساب في الثلاثة معاً بلا تعديل أيٍّ منها.
+  const repayments = repaymentsSnap.docs.map((d) => d.data()).filter((r) => !r.deletedAt);
 
-  return { travelers, expenses, remaining: calculateRemainingByTravelerJs(travelers, expenses) };
+  return { travelers, expenses, repayments, remaining: calculateRemainingByTravelerJs(travelers, expenses, repayments) };
 }
 
 /**
@@ -1706,6 +1750,25 @@ function buildAdjustmentExpense(traveler, amount, date, description, actorUid) {
     createdAt: Date.now(),
     // من ضغط الزرّ فعلاً — لا هوية خدمية مخترعة. نفس مبدأ isOwnCreation:
     // حقل يوثّق «من سجّل هذا» ولا يصدق لا يوثّق شيئاً.
+    createdByUid: actorUid,
+    deletedAt: null,
+  };
+}
+
+/**
+ * 🆕 يبني قيد سداد مطابقاً لـ isValidRepayment في firestore.rules حقلاً بحقل —
+ * رغم أن Admin SDK يتجاوز القواعد: مستند لا يمرّ بها لا يمكن حذفه ليّناً
+ * لاحقاً من الواجهة (`allow update` تُقيّم الشكل الكامل). نفس مبدأ
+ * buildAdjustmentExpense.
+ */
+function buildRepayment(fromId, toId, amount, actorUid) {
+  const today = new Date();
+  return {
+    fromId,
+    toId,
+    amount,
+    date: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
+    createdAt: Date.now(),
     createdByUid: actorUid,
     deletedAt: null,
   };
@@ -2046,20 +2109,27 @@ exports.exitTraveler = onCall(
  * أحدٌ على جهاز آخر. المستخدم يقرأ «تم التحويل ✓» فيفهم أن التحويل سُجِّل،
  * والدفتر لا يعرف عنه شيئاً — أسوأ من زرٍّ غائب.
  *
- * ── لماذا `deposited` لا علَمٌ باسم «مُحوَّل» ───────────────────────────────
+ * ── لماذا قيد «سداد» لا علَمٌ باسم «مُحوَّل» ────────────────────────────────
  * التسويات **مشتقّة** من الأرصدة لا مخزّنة (calculateSettlements)، فأي علَم
- * يُخزَّن على «فلان → فلان بمبلغ س» يتقادم مع أول مصروف جديد: يبقى التأشير
- * معلّقاً على مبلغ لم يعد قائماً. أما الحركة الحقيقية فتُغيّر الرصيدَين
- * نفسيهما: المَدين دفع نقداً فصار كأنه أودع أكثر، والدائن استلم فصار كأنه
- * أودع أقل. مجموع المُودَع لا يتغيّر (تحويل لا إيداع جديد)، والتسوية تختفي
- * من القائمة لأن الرصيدَين صارا صحيحَين — لا لأن أحداً أشّر عليها.
+ * يُخزَّن على «فلان → فلان بمبلغ س» يتقادم مع أول مصروف جديد. أما القيد
+ * فيُغيّر الرصيدَين نفسيهما، فتختفي التسوية لأن الحسابات صحّت، لا لأن أحداً
+ * أشّر عليها.
+ *
+ * ── ولماذا قيد ثالث لا تعديل على `deposited` 🆕 ───────────────────────────
+ * النسخة الأولى (#106) رفعت «مودَع» المَدين وخفّضت «مودَع» الدائن. وافترضت أن
+ * الدائن دائنٌ بإيداعه، لكنّه في هذا الدفتر يصير دائناً أيضاً بدفع مصاريف من
+ * جيبه (`paidBy`)، فنزل «مودَعه» تحت الصفر: ‎-170.5 في Bh26، في رحلة يوم دفع
+ * فيها صاحبها كل شيء من جيبه — وهي الحالة الأكثر شيوعاً لا الاستثناء. والسالب
+ * يخالف `isFiniteAmount` في القواعد ويكسر `replayDepositLogs`. ولا يصلح
+ * مصروفاً أيضاً: كان سيُضخّم «إجمالي المصروف» ويظهر في مخطط الفئات. فالسداد
+ * صار قيداً مستقلاً في `repayments/`: يرفع رصيد الدافع ويخفض رصيد المستلم، ولا
+ * يمسّ مودَعاً ولا مصروفاً. انظر docs/DECISIONS.md.
  *
  * ── ولماذا دالة سحابية لا كتابة من المتصفح ─────────────────────────────────
- * `travelers.update` و`depositLogs.create` كلاهما `isAdmin()` في
- * firestore.rules، ومنظّم الرحلة — وهو من يدير التحويلات فعلاً — لا يملك
- * المسار. الخيار الآخر كان توسيع القاعدتين له، وهو يمنحه تعديل أي حقل في أي
- * مستند مسافر (الاسم، الحذف الليّن) لا الرصيد وحده. الدالة تمنحه فعلاً واحداً
- * محدوداً بحدود يفحصها الخادم.
+ * `repayments.create` مغلق على العميل كلياً (`if false`): السقف والاتجاه
+ * لا يُفحصان إلا على الدفتر كاملاً، والقواعد لا تستطيع جمع الأرصدة. فالدالة
+ * تمنح منظّم الرحلة فعلاً واحداً محدوداً بحدود يفحصها الخادم، والواجهة لا
+ * تملك إلا الحذف الليّن للقيد واستعادته.
  */
 exports.recordSettlement = onCall(
   { region: 'us-central1', maxInstances: 5, secrets: [SENTRY_DSN] },
@@ -2101,95 +2171,64 @@ exports.recordSettlement = onCall(
       throw new HttpsError('failed-precondition', 'الرحلة ليست نشطة — لا يمكن تسجيل حركات مالية جديدة فيها.');
     }
 
-    const { travelers, remaining } = await readLedger(tripId);
-    const from = travelers.find((t) => t.id === fromId);
-    const to = travelers.find((t) => t.id === toId);
-    if (!from || !to) {
-      throw new HttpsError('not-found', 'أحد طرفَي التحويل غير موجود في الرحلة (أو أُخرج منها).');
-    }
-
-    const fromBalance = Math.round((remaining.get(fromId) ?? 0) * 100) / 100;
-    const toBalance = Math.round((remaining.get(toId) ?? 0) * 100) / 100;
     const transfer = Math.round(amount * 100) / 100;
-
-    // الاتجاه يُفحَص ولا يُصحَّح: تحويلٌ مقلوب الاتجاه يُبعِد الرصيدَين عن
-    // الصفر بدل تقريبهما، وتصحيحه صامتاً يعني تسجيل عكس ما ضُغط عليه.
-    if (settlementDirectionJs(fromBalance) !== 'debt') {
-      throw new HttpsError('failed-precondition', `${from.name} ليس مديناً — لا تحويل مطلوب منه.`);
-    }
-    if (settlementDirectionJs(toBalance) !== 'credit') {
-      throw new HttpsError('failed-precondition', `${to.name} ليس دائناً — لا تحويل مستحقّ له.`);
-    }
-
-    // سقف مزدوج: لا يدفع المَدين أكثر من عجزه، ولا يستلم الدائن أكثر من حقّه.
-    // تجاوز أيٍّ منهما يقلب إشارة رصيد الطرف الآخر، أي يخلق ديناً لم يوجد.
-    const maxTransfer = Math.round(Math.min(-fromBalance, toBalance) * 100) / 100;
-    if (transfer > maxTransfer + ROLLOVER_EPSILON) {
-      throw new HttpsError(
-        'failed-precondition',
-        `أقصى تحويل ممكن من ${from.name} إلى ${to.name} هو ${maxTransfer.toFixed(2)} ريال.`,
-      );
-    }
-
-    const actor = { uid: request.auth.uid, email: request.auth.token.email || '' };
     const dataRoot = tripDataRoot(tripId);
-    const fromRef = dataRoot.collection('travelers').doc(String(fromId));
-    const toRef = dataRoot.collection('travelers').doc(String(toId));
+    const repaymentRef = dataRoot.collection('repayments').doc();
 
-    await db.runTransaction(async (tx) => {
-      const [fromFresh, toFresh] = await Promise.all([tx.get(fromRef), tx.get(toRef)]);
-      if (!fromFresh.exists || fromFresh.data().deletedAt || !toFresh.exists || toFresh.data().deletedAt) {
-        throw new HttpsError('failed-precondition', 'أُخرج أحد طرفَي التحويل للتو من جهاز آخر.');
+    // ⚠️ **كل الفحص داخل المعاملة، على قراءة جديدة للدفتر كاملاً.** ضغطتان
+    // متلاحقتان (أو جهازان) كانتا ستمرّان بالسقف نفسه لو قُرئت الأرصدة قبل
+    // المعاملة، فيُسجَّل السداد مرتين — أي «يدفع» المَدين ضعف دينه. Firestore يُعيد
+    // المعاملة إن تغيّر أيّ مستند قرأته قبل الكتابة، فالسقف يُحسب دائماً على آخر
+    // حالة حقيقية. (النسخة السابقة قارنت `deposited` قبل وبعد؛ السداد لا يمسّه،
+    // فالمقارنة لم تعد تكشف شيئاً.)
+    const names = await db.runTransaction(async (tx) => {
+      const [travelersSnap, expensesSnap, repaymentsSnap] = await Promise.all([
+        tx.get(dataRoot.collection('travelers')),
+        tx.get(dataRoot.collection('expenses')),
+        tx.get(dataRoot.collection('repayments')),
+      ]);
+      const travelers = travelersSnap.docs.map((d) => d.data()).filter((t) => !t.deletedAt);
+      const expenses = expensesSnap.docs.map((d) => d.data()).filter((e) => !e.deletedAt);
+      const repayments = repaymentsSnap.docs.map((d) => d.data()).filter((r) => !r.deletedAt);
+      const remaining = calculateRemainingByTravelerJs(travelers, expenses, repayments);
+
+      const from = travelers.find((t) => t.id === fromId);
+      const to = travelers.find((t) => t.id === toId);
+      if (!from || !to) {
+        throw new HttpsError('not-found', 'أحد طرفَي التحويل غير موجود في الرحلة (أو أُخرج منها).');
       }
 
-      const fromDeposited = Number.isFinite(fromFresh.data().deposited) ? fromFresh.data().deposited : 0;
-      const toDeposited = Number.isFinite(toFresh.data().deposited) ? toFresh.data().deposited : 0;
+      const fromBalance = Math.round((remaining.get(fromId) ?? 0) * 100) / 100;
+      const toBalance = Math.round((remaining.get(toId) ?? 0) * 100) / 100;
 
-      // ⚠️ الحارس الذي يمنع التسجيل المزدوج: الأرصدة أعلاه قُرئت قبل المعاملة،
-      // فضغطتان متلاحقتان (أو جهازان) كانتا ستمرّان بالسقف نفسه وتكتبان الحركة
-      // مرتين — أي يدفع المَدين ضعف ما يدين به. نفس دور إعادة القراءة في
-      // exitTraveler، وبمقارنةٍ صريحة هنا لأن الرصيد رقم لا وجودُ مستند.
-      if (Math.abs(fromDeposited - (Number.isFinite(from.deposited) ? from.deposited : 0)) > ROLLOVER_EPSILON
-        || Math.abs(toDeposited - (Number.isFinite(to.deposited) ? to.deposited : 0)) > ROLLOVER_EPSILON) {
-        throw new HttpsError('aborted', 'تغيّرت الأرصدة قبل لحظة — أعد المحاولة لتُحسب من جديد.');
+      // الاتجاه يُفحَص ولا يُصحَّح: تحويلٌ مقلوب الاتجاه يُبعِد الرصيدَين عن
+      // الصفر بدل تقريبهما، وتصحيحه صامتاً يعني تسجيل عكس ما ضُغط عليه.
+      if (settlementDirectionJs(fromBalance) !== 'debt') {
+        throw new HttpsError('failed-precondition', `${from.name} ليس مديناً — لا تحويل مطلوب منه.`);
+      }
+      if (settlementDirectionJs(toBalance) !== 'credit') {
+        throw new HttpsError('failed-precondition', `${to.name} ليس دائناً — لا تحويل مستحقّ له.`);
       }
 
-      const fromNew = Math.round((fromDeposited + transfer) * 100) / 100;
-      const toNew = Math.round((toDeposited - transfer) * 100) / 100;
-
-      // 🐛 **كان التعليق هنا يَعِد بما لا يتحقّق:** «سقف toBalance يضمن
-      // transfer <= toDeposited». يصحّ ذلك فقط حين يأتي رصيد الدائن من إيداعه.
-      // لكنّ الدائن في هذا الدفتر يصير دائناً أيضاً بدفع مصاريف من جيبه
-      // (`paidBy`)، فرصيده قد يتجاوز ما أودعه — وحينها يصير المودَع سالباً.
-      // حدث ذلك فعلاً في الإنتاج (Bh26: ‎-170.5). والسالب يكسر ثلاثة أشياء:
-      //   • `isFiniteAmount` في القواعد تشترط `>= 0`، فمستند المسافر يصير
-      //     مرفوضاً لأي تعديل لاحق من الواجهة (حذف ليّن مثلاً).
-      //   • `replayDepositLogs` تقصر الخصم عند الصفر، فلا يعود سجلّ التدقيق
-      //     يطابق الرصيد.
-      //   • «المودَع» يُعرض سالباً، وهو ليس إيداعاً أصلاً بل استرداد.
-      // الرفض هنا حارس لا حلّ: تمثيل «استرداد ما دُفع من الجيب» قرار نموذج
-      // بيانات لم يُتّخذ بعد. رفضٌ صادق خيرٌ من دفترٍ فاسد.
-      if (toNew < -ROLLOVER_EPSILON) {
+      // سقف مزدوج: لا يدفع المَدين أكثر من عجزه، ولا يستلم الدائن أكثر من حقّه.
+      // تجاوز أيٍّ منهما يقلب إشارة رصيد الطرف الآخر، أي يخلق ديناً لم يوجد.
+      const maxTransfer = Math.round(Math.min(-fromBalance, toBalance) * 100) / 100;
+      if (transfer > maxTransfer + ROLLOVER_EPSILON) {
         throw new HttpsError(
           'failed-precondition',
-          `لا يمكن تسجيل هذا التحويل بعد: رصيد ${to.name} أتى من مصاريف دفعها من جيبه لا من إيداعه، والتطبيق لا يسجّل هذا النوع من الاسترداد حتى الآن. التحويل الفعلي صحيح — يبقى خارج التطبيق مؤقتاً.`,
+          `أقصى تحويل ممكن من ${from.name} إلى ${to.name} هو ${maxTransfer.toFixed(2)} ريال.`,
         );
       }
 
-      tx.update(fromRef, { deposited: fromNew });
-      tx.update(toRef, { deposited: toNew });
-      tx.set(
-        fromRef.collection('depositLogs').doc(),
-        buildDepositLog(fromId, fromDeposited, fromNew, `تحويل إلى ${to.name}`, actor, 'add'),
-      );
-      tx.set(
-        toRef.collection('depositLogs').doc(),
-        buildDepositLog(toId, toDeposited, toNew, `استلام من ${from.name}`, actor, 'subtract'),
-      );
+      // ✅ قيدٌ واحد، ولا شيء غيره: لا `deposited` يتغيّر ولا مصروف يُنشأ. لهذا
+      // يستوي أن يكون رصيد المستلم من إيداعه أو من مصاريف دفعها من جيبه — وهي
+      // الحالة التي أنزلت «المودَع» تحت الصفر حين كان السداد يُكتب إيداعاً.
+      tx.set(repaymentRef, buildRepayment(fromId, toId, transfer, request.auth.uid));
+      return { fromName: from.name, toName: to.name };
     });
 
-    console.log(`[recordSettlement] ${tripId}: ${fromId} → ${toId} بمبلغ ${transfer}`);
+    console.log(`[recordSettlement] ${tripId}: ${fromId} (${names.fromName}) → ${toId} (${names.toName}) بمبلغ ${transfer}`);
 
-    return { success: true, tripId, fromId, toId, amount: transfer };
+    return { success: true, tripId, fromId, toId, amount: transfer, repaymentId: repaymentRef.id };
   }),
 );

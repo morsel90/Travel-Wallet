@@ -61,7 +61,7 @@ function Harness({ initial = emptyForm, isEditing = false, user = null, people =
   const [expenseForm, setExpenseForm] = useState<ExpenseFormData>(initial)
   return (
     <TripStoreProvider
-      travelers={people} expenses={expenses} user={user as never} isAdmin={false} isOrganizer={false}
+      travelers={people} expenses={expenses} repayments={[]} user={user as never} isAdmin={false} isOrganizer={false}
       currencies={currencies} ratesUpdatedAt={null}
       cancelExpenseForm={noop} startEditExpense={noop} requestDeleteExpense={noop}
       requestDeleteTraveler={noop} submitDeposit={() => true}

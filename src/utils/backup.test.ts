@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import { buildTripBackup, backupFilename, findNonPortableValue, BackupNotPortableError, BACKUP_SCHEMA_VERSION } from './backup'
 import { calculateBalances, calculateSettlements } from './calculations'
-import type { Traveler, Expense, DepositLogEntry } from '../types'
+import type { Traveler, Expense, DepositLogEntry, Repayment } from '../types'
 
 const traveler: Traveler = { id: 1, name: 'أحمد', shortName: 'أحمد', deposited: 500 }
 const expense: Expense = {
@@ -115,3 +115,24 @@ describe('backupFilename', () => {
     expect(name).toMatch(/^نسخة-احتياطية-trip-1-\d{4}-\d{2}-\d{2}\.json$/)
   })
 })
+
+// 🆕 السداد في النسخة الاحتياطية — نسخةٌ بلا سدادها تُستعاد برحلة تُظهر ديوناً
+// سُدّدت فعلاً.
+describe('buildTripBackup — السداد', () => {
+  const base = { tripId: 'trip-1', trip, travelers: [traveler], expenses: [], depositLogs: [], travelerNames: [] }
+
+  it('يحمل قيود السداد بالمفاتيح التي تقبلها الاستعادة وحدها — بلا _pending', () => {
+    const r: Repayment = {
+      id: 'r1', fromId: 1, toId: 2, amount: 50, date: '2026-09-19', createdAt: 5, createdByUid: 'u1', _pending: true,
+    }
+    const backup = buildTripBackup({ ...base, repayments: [r] })
+    expect(backup.repayments).toEqual([{
+      id: 'r1', fromId: 1, toId: 2, amount: 50, date: '2026-09-19', createdAt: 5, createdByUid: 'u1', deletedAt: null,
+    }])
+  })
+
+  it('غياب السداد يُنتج قائمة فارغة لا حقلاً غائباً', () => {
+    expect(buildTripBackup(base).repayments).toEqual([])
+  })
+})
+

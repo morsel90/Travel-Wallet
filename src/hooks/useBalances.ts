@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { Traveler, TravelerBalance, Expense } from '../types'
+import type { Traveler, TravelerBalance, Expense, Repayment } from '../types'
 import {
   calculateBalances,
   calculateTotalSpent,
@@ -16,9 +16,13 @@ export interface UseBalances {
   totalRemaining: number
 }
 
-export function useBalances(travelers: Traveler[], expenses: Expense[]): UseBalances {
+// ⚠️ مرجع ثابت لا `= []` في التوقيع: القيمة الافتراضية تُنشئ مصفوفة جديدة في كل
+// عرض، فتتغيّر اعتمادية useMemo ويُعاد الحساب كل مرة — أمسكه اختبار «نفس المرجع».
+const NO_REPAYMENTS: Repayment[] = []
+
+export function useBalances(travelers: Traveler[], expenses: Expense[], repayments: Repayment[] = NO_REPAYMENTS): UseBalances {
   return useMemo<UseBalances>(() => {
-    const balances        = calculateBalances(travelers, expenses)
+    const balances        = calculateBalances(travelers, expenses, repayments)
     const totalSpent      = calculateTotalSpent(expenses)
     const totalDeposited  = calculateTotalDeposited(travelers)
     // ⚠️ **إصلاح: لا `totalDeposited − totalSpent`** — تلك تتجاهل مصاريف
@@ -33,5 +37,5 @@ export function useBalances(travelers: Traveler[], expenses: Expense[]): UseBala
     // ينحرف عن الأرقام المعروضة فعلياً لكل مسافر.
     const totalRemaining = balances.reduce((sum, b) => sum + b.remaining, 0)
     return { balances, totalSpent, totalDeposited, totalRemaining }
-  }, [travelers, expenses])
+  }, [travelers, expenses, repayments])
 }
