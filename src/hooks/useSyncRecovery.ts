@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 // ─── useSyncRecovery ──────────────────────────────────────────────────────────
-// 🆕 يفرض قراءة طازجة من الخادم حين يعود التطبيق للواجهة أو تعود الشبكة.
+// 🆕 يفرض قراءة طازجة من الخادم حين يعود التطبيق للواجهة.
 //
 // **لماذا يلزم هذا أصلاً، ما دام onSnapshot "فورياً":** لأن الفورية مشروطة
 // ببقاء اتصال الشبكة حيّاً، وهو شرط لا يصمد على الجوال. مع
@@ -17,7 +17,16 @@ import { useEffect, useRef } from 'react'
 // ⚠️ الانقطاع "النظيف" (الذي يُطلق فيه المتصفح حدثي offline/online) ليس
 // المشكلة ولم يكن قط: الـ SDK يستمع لحدث online بنفسه ويستأنف خلال ~93 ms
 // (مقاس). هذا الخطاف موجود للحالات التي **لا يُعلن عنها المتصفح**: نوم الجهاز،
-// تبديل الشبكة، تجميد تبويب. لذا لا يكفي الاعتماد على حدث online وحده هنا.
+// تبديل الشبكة، تجميد تبويب.
+//
+// 🆕 **ولذلك لا يستمع لحدث online إطلاقاً بعد اليوم.** كان يستمع له أيضاً،
+// فيُطلق قراءة كاملة من الخادم في اللحظة التي يعيد فيها الـ SDK نفسه تشغيل
+// اتصاله — قُرئ ذلك من كود الـ SDK المثبّت لا افتُرض: BrowserConnectivityMonitor
+// يستمع لـ online ويستدعي restartNetwork (@firebase/firestore 4.17.2). فكانت
+// القراءة تكراراً لما يفعله الـ SDK، تحمل خطر محو الكتابات المعلّقة (أدناه)
+// بلا مقابل. أما visibilitychange فالـ SDK يستمع له لغرض آخر فقط: أن يطلب
+// التبويب الظاهر ملكية الاتصال ويُعيد محاولة عمليات القرص — لا يعيد تشغيل
+// الاتصال، ولا يتحقّق أنه ما زال حيّاً. تلك الفجوة وحدها ما يسدّه هذا الخطاف.
 //
 // ⚠️ هذا ليس طابور إعادة محاولة فوق طابور Firestore — الممنوع صراحةً في
 // docs/DECISIONS.md. لا يُعيد أي كتابة ولا يحتفظ بأي حمولة؛ كل ما يفعله هو
@@ -72,8 +81,7 @@ export function useSyncRecovery(enabled: boolean, refresh: () => Promise<void>):
     if (!enabled) return
 
     const recover = () => {
-      // حدث online والتطبيق في الخلفية لا يستحق قراءة الآن — حين يعود
-      // المستخدم فعلاً سيُطلق visibilitychange نفس المسار.
+      // visibilitychange يُطلق عند الإخفاء أيضاً — وذاك لا يستحق قراءة.
       if (document.visibilityState !== 'visible') return
       if (inFlightRef.current) return
 
@@ -97,10 +105,6 @@ export function useSyncRecovery(enabled: boolean, refresh: () => Promise<void>):
     }
 
     document.addEventListener('visibilitychange', recover)
-    window.addEventListener('online', recover)
-    return () => {
-      document.removeEventListener('visibilitychange', recover)
-      window.removeEventListener('online', recover)
-    }
+    return () => document.removeEventListener('visibilitychange', recover)
   }, [enabled, refresh])
 }

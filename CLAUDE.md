@@ -46,7 +46,7 @@
 - 🆕 Trip lifecycle advances itself: `active → completed → archived` derived from the itinerary, never deletion
 - 🆕 Backup & restore: export a trip's full data, and re-create it from that backup (`restoreTrip`)
 - 🆕 Optimistic locking on the itinerary (`itineraryRev`) — concurrent editors can no longer silently overwrite each other
-- 🆕 Sync recovery: a fresh server read when the app returns to the foreground or the network comes back (see `docs/DECISIONS.md`)
+- 🆕 Sync recovery: a fresh server read when the app returns to the foreground — 🆕 and *only* then, not on the browser's `online` event, which the Firestore SDK already handles itself (see `docs/DECISIONS.md`)
 - 🆕 Error tracking via Sentry (client + Cloud Functions) — entirely optional, absent by default
 
 ---

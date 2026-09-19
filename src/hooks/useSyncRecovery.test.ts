@@ -30,14 +30,17 @@ describe('useSyncRecovery', () => {
     expect(refresh).toHaveBeenCalledTimes(1)
   })
 
-  it('يجلب من الخادم عند عودة الشبكة', () => {
+  // 🆕 كان يجلب عند عودة الشبكة أيضاً — حُذف عمداً: الـ SDK يستمع لـ online
+  // بنفسه ويعيد تشغيل اتصاله (restartNetwork)، فالقراءة كانت تكراراً بلا
+  // مقابل يحمل خطر محو الكتابات المعلّقة. انظر تعليق useSyncRecovery.ts.
+  it('لا يجلب عند عودة الشبكة — ذاك من عمل الـ SDK نفسه', () => {
     const refresh = vi.fn().mockResolvedValue(undefined)
     renderHook(() => useSyncRecovery(true, refresh))
 
     passCooldown()
     act(() => window.dispatchEvent(new Event('online')))
 
-    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(refresh).not.toHaveBeenCalled()
   })
 
   it('لا يجلب شيئاً مباشرة بعد التركيب — المستمعون قرأوا للتوّ', () => {
@@ -67,7 +70,7 @@ describe('useSyncRecovery', () => {
     // ثلاث عودات سريعة متتالية — لا تُطلق أي قراءة إضافية
     act(() => document.dispatchEvent(new Event('visibilitychange')))
     act(() => document.dispatchEvent(new Event('visibilitychange')))
-    act(() => window.dispatchEvent(new Event('online')))
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
     expect(refresh).toHaveBeenCalledTimes(1)
 
     // وبعد انقضاء المهلة تُطلق مجدداً
@@ -76,13 +79,12 @@ describe('useSyncRecovery', () => {
     expect(refresh).toHaveBeenCalledTimes(2)
   })
 
-  it('لا يجلب والتطبيق في الخلفية — حتى لو عادت الشبكة', () => {
+  it('لا يجلب عند الإخفاء — visibilitychange يُطلق في الاتجاهين', () => {
     const refresh = vi.fn().mockResolvedValue(undefined)
     renderHook(() => useSyncRecovery(true, refresh))
 
     passCooldown()
     setVisibility('hidden')
-    act(() => window.dispatchEvent(new Event('online')))
     act(() => document.dispatchEvent(new Event('visibilitychange')))
     expect(refresh).not.toHaveBeenCalled()
 
@@ -136,7 +138,6 @@ describe('useSyncRecovery', () => {
 
     passCooldown()
     act(() => document.dispatchEvent(new Event('visibilitychange')))
-    act(() => window.dispatchEvent(new Event('online')))
 
     expect(refresh).not.toHaveBeenCalled()
   })
