@@ -1,5 +1,6 @@
-// اختبارات مسار إزالة العضو وحده من useTripAdminActions — بقية الدوال تكتب
-// مباشرةً عبر القواعد وتغطّيها اختبارات firestore.rules.
+// اختبارات useTripAdminActions — عقد كل دالة من جهة العميل: الرفض المحلي،
+// الرسائل ومدّاتها، وما يُعاد. الحدّ الحقيقي للصلاحيات خادمي، وتغطّيه اختبارات
+// firestore.rules ودوال functions/.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useTripAdminActions } from './useTripAdminActions'
