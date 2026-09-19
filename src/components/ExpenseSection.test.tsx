@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { TripStoreProvider } from '../store/TripStoreProvider'
 import { ExpenseListItem } from './ExpenseSection'
-import type { Traveler, Expense, ExpenseFormData } from '../types'
+import type { Traveler, Expense } from '../types'
 
 const travelers: Traveler[] = [
   { id: 1, name: 'محمد', shortName: 'محمد', deposited: 0 },
@@ -19,21 +19,13 @@ const baseExpense: Expense = {
   participants: [1, 2, 3], createdAt: Date.now(),
 }
 
-const baseExpenseForm: ExpenseFormData = {
-  date: '2026-08-26', description: '', amount: '', currency: 'SAR', exchangeRate: '1',
-  participants: [], category: 'مطاعم', splitMode: 'equal', shares: {}, paidBy: 'fund',
-}
-
 function renderItem(expense: Expense) {
   return render(
     <TripStoreProvider
       travelers={travelers} expenses={[expense]} repayments={[]} user={null} isAdmin={false} isOrganizer={false}
-      currencies={{}} ratesUpdatedAt={null}
-      cancelExpenseForm={() => {}} startEditExpense={() => {}} requestDeleteExpense={() => {}}
+      currencies={{}}
+      startEditExpense={() => {}} requestDeleteExpense={() => {}}
       requestDeleteTraveler={() => {}} submitDeposit={() => true}
-      expenseForm={baseExpenseForm} setExpenseForm={() => {}}
-      isExpenseFormOpen={false} isEditingExpense={false}
-      submitExpense={() => {}} toggleParticipant={() => {}} toggleAllParticipants={() => {}}
     >
       <ExpenseListItem expense={expense} />
     </TripStoreProvider>,

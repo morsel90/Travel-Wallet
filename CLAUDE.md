@@ -129,7 +129,7 @@
 - `UIActionsContext` — handler functions only; identity is stable in practice
 - `UIFormContext` — the volatile expense-form state, and the handlers bound to it
 
-🆕 The UI split is load-bearing for performance, not cosmetic — see *Design Decisions* below. Only three components read context at all: `TravelerSection`, `ExpenseSection`, `ChartsSection`.
+🆕 The UI split is load-bearing for performance, not cosmetic — see *Design Decisions* below. 🆕 The contexts are now one Zustand store (`src/store/tripStore.ts`) with **two** slices, `data` and `actions` — the volatile form slice left for `ExpenseForm`'s props (see `docs/DECISIONS.md`). Only two components read it, both repeated per row/card: `ExpenseListItem` and `TravelerCard`.
 
 **Trip identification:** `TRIP_ID` from `?trip=xyz` query param → used to build Firestore paths at `artifacts/{TRIP_ID}/public/data/{expenses|travelers|rateLimits}/...`
 

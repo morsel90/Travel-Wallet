@@ -1,9 +1,9 @@
 import { memo, useRef, useState, useCallback, useMemo } from 'react'
-import type { TouchEvent as ReactTouchEvent } from 'react'
+import type { TouchEvent as ReactTouchEvent, Dispatch, SetStateAction, FormEvent } from 'react'
 import { Plus, Pencil, Trash2, X, Loader2, Users, ChevronDown, Tag } from '../icons'
-import type { Expense } from '../types'
+import type { AppUser, CurrencyMap, Expense, ExpenseFormData, Traveler } from '../types'
 import { Modal } from './Modal'
-import { useTripData, useTripActions, useTripFormState } from '../store/tripStore'
+import { useTripData, useTripActions } from '../store/tripStore'
 import { toDisplayNames } from '../utils/participants'
 import { EXPENSE_CATEGORIES } from '../constants'
 import { splitByShares } from '../utils/calculations'
@@ -20,19 +20,42 @@ const convertArabicNumerals = (str: string): string => {
 // السعودي. تُدمج معها لاحقاً العملات المستخدمة فعلياً في هذه الرحلة (مرتّبة بالتكرار).
 const PINNED_CURRENCIES = ['SAR', 'USD', 'EUR', 'AED', 'GBP']
 
-// 1️⃣ مكوّن نموذج تفاصيل المصروف الكامل (Fintech Style)
-export const ExpenseForm = memo(() => {
-  const { travelers, currencies, ratesUpdatedAt, expenses, user } = useTripData()
+/**
+ * 🆕 كل شيء خصائص من App.tsx، لا من المتجر. هذا المكوّن نسخة واحدة يرسمها
+ * App.tsx مباشرةً، فلا شيء يُمرَّر عبر طبقات ليحتاج حالة عامة — والمتجر مكانه
+ * المكوّنات المتكرّرة (ExpenseListItem/TravelerCard) وحدها. كانت حالة النموذج
+ * المتقلّبة تمرّ App → TripStoreProvider → useLayoutEffect → المتجر → هنا، أي
+ * دورة رسم ثانية مع كل حرف لإيصال قيمة يملكها الأب أصلاً. انظر docs/DECISIONS.md.
+ *
+ * ⚠️ memo() باقية وضرورية: App يُعاد رسمه لأسباب لا تخصّ النموذج (توست، حالة
+ * مزامنة، لقطة Firestore)، وكل الخصائص هنا ثابتة الهوية ما لم تتغيّر فعلاً.
+ */
+export interface ExpenseFormProps {
+  travelers: Traveler[]
+  /** لترتيب كبسولات "من دفع؟" (الأحدث دفعاً) والعملات المستخدمة في الرحلة. */
+  expenses: Expense[]
+  currencies: CurrencyMap
+  ratesUpdatedAt: Date | null
+  user: AppUser | null
+  isExpenseFormOpen: boolean
+  expenseForm: ExpenseFormData
+  setExpenseForm: Dispatch<SetStateAction<ExpenseFormData>>
+  isEditingExpense: boolean
+  submitExpense: (e: FormEvent<HTMLFormElement>) => void
+  toggleParticipant: (id: number) => void
+  toggleAllParticipants: () => void
+  cancelExpenseForm: () => void
+}
 
-  // هذا المكوّن وحده يستهلك مفتاح النموذج المتقلب — وهو نسخة واحدة، فإعادة رسمه
-  // مع كل حرف صحيحة ومطلوبة. أما زر الإلغاء فإجراء ثابت يأتي من مفتاح آخر.
-  const {
-    isExpenseFormOpen,
-    expenseForm, setExpenseForm,
-    isEditingExpense, submitExpense,
-    toggleParticipant, toggleAllParticipants,
-  } = useTripFormState()
-  const { cancelExpenseForm } = useTripActions()
+// 1️⃣ مكوّن نموذج تفاصيل المصروف الكامل (Fintech Style)
+export const ExpenseForm = memo(({
+  travelers, currencies, ratesUpdatedAt, expenses, user,
+  isExpenseFormOpen,
+  expenseForm, setExpenseForm,
+  isEditingExpense, submitExpense,
+  toggleParticipant, toggleAllParticipants,
+  cancelExpenseForm,
+}: ExpenseFormProps) => {
 
   // 🆕 الفئة تُشتقّ من الوصف (utils/categoryGuess.ts) ما لم يغيّرها المستخدم يدوياً
   // ولو مرة — عندها يتوقف الاشتقاق لبقية عمر النموذج فلا يُلغي اختياره الصريح مع
@@ -215,7 +238,7 @@ export const ExpenseForm = memo(() => {
   // وحدها. عند إضافة مصروف جديد (لا تعديل)، expenseForm.participants يأتي من
   // useState(emptyExpenseForm) بمُهيِّئ كسول يُستدعى مرة واحدة، وقد يقرأ
   // activeTravelers قبل اكتمال أول تحميل من Firestore فيبقى []، بينما
-  // travelers (من useTripData) يتحدّث لاحقاً فيصير غير مساوٍ لـ 0 — فيُقيَّم
+  // travelers (من خصائص App) يتحدّث لاحقاً فيصير غير مساوٍ لـ 0 — فيُقيَّم
   // isSplitExpanded خطأً كـ true عند كل فتح أول لنموذج جديد، رغم أن الحقول
   // تُصحَّح صحيحة بعد ذلك (سباق تزامن رُصد فعلياً عبر اختبار E2E). أما عند
   // التعديل (startEditExpense) فـ participants يُضبَط مباشرة ومتزامناً مع نفس

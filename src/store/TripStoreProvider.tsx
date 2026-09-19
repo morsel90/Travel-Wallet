@@ -1,6 +1,6 @@
 import { useLayoutEffect, useState } from 'react'
-import type { ReactNode, Dispatch, FormEvent, SetStateAction } from 'react'
-import type { Traveler, Expense, Repayment, ExpenseFormData, CurrencyMap, AppUser } from '../types'
+import type { ReactNode } from 'react'
+import type { Traveler, Expense, Repayment, CurrencyMap, AppUser } from '../types'
 import { createTripStore, TripStoreContext } from './tripStore'
 import type { TripActionsSlice } from './tripStore'
 
@@ -11,18 +11,21 @@ import type { TripActionsSlice } from './tripStore'
 // بديل مباشر لـ components/AppProviders.tsx (React Context سابقاً). نفس توقيع
 // الـ props تماماً؛ App.tsx لا يحتاج أي تعديل غير اسم المكوّن والاستيراد.
 //
-// ⚠️ خطافات القراءة (useTripData/useTripActions/useTripFormState) تعيش في
+// ⚠️ خطافات القراءة (useTripData/useTripActions) تعيش في
 // store/tripStore.ts لا هنا — ملف يُصدّر مكوّناً وخطافات معاً يُعطّل Fast
 // Refresh. المكوّنات المستهلِكة تستورد الخطافات من tripStore.ts مباشرة.
 //
-// القيمة الثلاث تُبنى في هذا الملف وحده، وهذا مقصود — نفس سبب AppProviders.tsx
-// القديم: مقارنة الحقول الثلاثة ممكنة بالعين المجرّدة بدل أن تكون متباعدة.
+// القيمتان تُبنيان في هذا الملف وحده، وهذا مقصود — نفس سبب AppProviders.tsx
+// القديم: مقارنة الشريحتين ممكنة بالعين المجرّدة بدل أن تكونا متباعدتين.
+//
+// 🆕 كانت ثلاثاً: شريحة `form` (حالة نموذج المصروف، تتغيّر مع كل حرف) خرجت
+// إلى خصائص ExpenseForm مباشرةً من App.tsx — مستهلكها الوحيد نسخة واحدة يرسمها
+// App نفسه، فلا مكان لها في حالة عامة. انظر store/tripStore.ts.
 //
 // آلية المزامنة: نسخة Zustand واحدة لكل تركيب (مُهيّئ useState الكسول، لا
 // Singleton عالمي — انظر docs/DECISIONS.md لسبب ذلك)، مُهيَّأة من أول رسم
-// مباشرة (بلا فليكر فراغ أولي)، ثم ثلاث useLayoutEffect منفصلة (واحدة لكل
-// مفتاح) تُحدّث المخزن فقط حين تتغيّر مدخلات ذلك المفتاح تحديداً — بنفس
-// مصفوفات الاعتماديات التي كانت تستخدمها useMemo الثلاث في AppProviders.tsx
+// مباشرة (بلا فليكر فراغ أولي)، ثم useLayoutEffect منفصلة لكل مفتاح تُحدّث المخزن فقط حين تتغيّر مدخلات ذلك المفتاح تحديداً — بنفس
+// مصفوفات الاعتماديات التي كانت تستخدمها useMemo في AppProviders.tsx
 // القديم.
 //
 // useLayoutEffect لا setState أثناء الرسم مباشرة: الكتابة إلى مخزن خارجي أثناء
@@ -40,37 +43,23 @@ interface TripStoreProviderProps {
   travelers: Traveler[]
   expenses: Expense[]
   repayments: Repayment[]
-  user: AppUser | null| null
+  user: AppUser | null
   isAdmin: boolean
   isOrganizer: boolean
   currencies: CurrencyMap
-  ratesUpdatedAt: Date | null
 
   // — actions
-  cancelExpenseForm: () => void
   startEditExpense: (expense: Expense) => void
   requestDeleteExpense: (id: string) => void
   submitDeposit: TripActionsSlice['submitDeposit']
   requestDeleteTraveler: (traveler: Traveler) => void
 
-  // — form
-  expenseForm: ExpenseFormData
-  setExpenseForm: Dispatch<SetStateAction<ExpenseFormData>>
-  isExpenseFormOpen: boolean
-  isEditingExpense: boolean
-  submitExpense: (e: FormEvent<HTMLFormElement>) => void
-  toggleParticipant: (id: number) => void
-  toggleAllParticipants: () => void
-
   children: ReactNode
 }
 
 export function TripStoreProvider({
-  travelers, expenses, repayments, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt,
-  cancelExpenseForm, startEditExpense, requestDeleteExpense,
-  submitDeposit, requestDeleteTraveler,
-  expenseForm, setExpenseForm, isExpenseFormOpen, isEditingExpense,
-  submitExpense, toggleParticipant, toggleAllParticipants,
+  travelers, expenses, repayments, user, isAdmin, isOrganizer, currencies,
+  startEditExpense, requestDeleteExpense, submitDeposit, requestDeleteTraveler,
   children,
 }: TripStoreProviderProps) {
   // 🆕 مُهيّئ useState الكسول لا `useRef.current ??=`. السلوك واحد بالحرف
@@ -80,45 +69,24 @@ export function TripStoreProvider({
   // وحده. التهيئة الكسولة عبر useState هي البديل الذي يوصي به React لهذا
   // الغرض بالضبط، فتزول المخالفات بلا أي تغيير في السلوك.
   const [store] = useState(() => createTripStore({
-    data: { travelers, expenses, repayments, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt },
-    actions: {
-      cancelExpenseForm, startEditExpense, requestDeleteExpense,
-      submitDeposit, requestDeleteTraveler,
-    },
-    form: {
-      expenseForm, setExpenseForm, isExpenseFormOpen, isEditingExpense,
-      submitExpense, toggleParticipant, toggleAllParticipants,
-    },
+    data: { travelers, expenses, repayments, user, isAdmin, isOrganizer, currencies },
+    actions: { startEditExpense, requestDeleteExpense, submitDeposit, requestDeleteTraveler },
   }))
 
   useLayoutEffect(() => {
     store.setState({
-      data: { travelers, expenses, repayments, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt },
+      data: { travelers, expenses, repayments, user, isAdmin, isOrganizer, currencies },
     })
-  }, [store, travelers, expenses, repayments, user, isAdmin, isOrganizer, currencies, ratesUpdatedAt])
+  }, [store, travelers, expenses, repayments, user, isAdmin, isOrganizer, currencies])
 
   // ⚠️ كل ما فيها دوال، أكثرها useCallback بلا اعتماديات. تتغير عملياً عند
   // تغيّر قائمة المسافرين النشطين فقط (نادر). لا تُضف إليها أي قيمة متغيّرة —
   // سيُبطل ذلك الفصل بصمت ويعيد إعادة الرسم الواسعة عند كل ضغطة مفتاح.
   useLayoutEffect(() => {
     store.setState({
-      actions: {
-        cancelExpenseForm, startEditExpense, requestDeleteExpense,
-        submitDeposit, requestDeleteTraveler,
-      },
+      actions: { startEditExpense, requestDeleteExpense, submitDeposit, requestDeleteTraveler },
     })
-  }, [store, cancelExpenseForm, startEditExpense, requestDeleteExpense, submitDeposit, requestDeleteTraveler])
-
-  // وهذه تتغير مع كل حرف يُكتب في نموذج المصروف — وهذا صحيح ومقصود: مستهلكها
-  // الوحيد ExpenseForm، وهو نسخة واحدة يجب أن تعكس ما يُكتب فيها فوراً.
-  useLayoutEffect(() => {
-    store.setState({
-      form: {
-        expenseForm, setExpenseForm, isExpenseFormOpen, isEditingExpense,
-        submitExpense, toggleParticipant, toggleAllParticipants,
-      },
-    })
-  }, [store, expenseForm, setExpenseForm, isExpenseFormOpen, isEditingExpense, submitExpense, toggleParticipant, toggleAllParticipants])
+  }, [store, startEditExpense, requestDeleteExpense, submitDeposit, requestDeleteTraveler])
 
   return (
     <TripStoreContext.Provider value={store}>

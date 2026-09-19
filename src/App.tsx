@@ -124,19 +124,10 @@ export default function App() {
         isAdmin={session.isAdmin}
         isOrganizer={session.isOrganizer}
         currencies={rates.currencies}
-        ratesUpdatedAt={rates.ratesUpdatedAt}
-        cancelExpenseForm={expense.cancelExpenseForm}
         startEditExpense={expense.startEditExpense}
         requestDeleteExpense={expense.requestDeleteExpense}
         submitDeposit={deposit.submitDeposit}
         requestDeleteTraveler={requestDeleteTraveler}
-        expenseForm={expense.newExpense}
-        setExpenseForm={expense.setNewExpense}
-        isExpenseFormOpen={expense.isAddingExpense}
-        isEditingExpense={!!expense.editingExpense}
-        submitExpense={expense.handleAddExpense}
-        toggleParticipant={expense.toggleParticipant}
-        toggleAllParticipants={expense.toggleAllParticipants}
       >
         <ErrorBoundary fallback={<AppErrorFallback />}>
           {/* ⚠️ pb-24 في كل العروض — لا `md:pb-8`. شريط الإدخال السريع
@@ -244,7 +235,25 @@ export default function App() {
                     نفسها ليكتشف الإزالة ويُشغّل حركة الخروج — نفس نمط ModalManager.tsx. */}
                 {trip.canAddExpenses && (
                   <AnimatePresence>
-                    {expense.isAddingExpense && <ExpenseForm />}
+                    {/* 🆕 خصائص مباشرة لا المتجر: نسخة واحدة يرسمها App نفسه —
+                        انظر تعليق ExpenseFormProps في ExpenseSection.tsx. */}
+                    {expense.isAddingExpense && (
+                      <ExpenseForm
+                        travelers={ledger.activeTravelers}
+                        expenses={ledger.activeExpenses}
+                        currencies={rates.currencies}
+                        ratesUpdatedAt={rates.ratesUpdatedAt}
+                        user={session.user}
+                        isExpenseFormOpen={expense.isAddingExpense}
+                        expenseForm={expense.newExpense}
+                        setExpenseForm={expense.setNewExpense}
+                        isEditingExpense={!!expense.editingExpense}
+                        submitExpense={expense.handleAddExpense}
+                        toggleParticipant={expense.toggleParticipant}
+                        toggleAllParticipants={expense.toggleAllParticipants}
+                        cancelExpenseForm={expense.cancelExpenseForm}
+                      />
+                    )}
                   </AnimatePresence>
                 )}
 

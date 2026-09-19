@@ -2,8 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { memo } from 'react'
 import { render, act } from '@testing-library/react'
 import { TripStoreProvider } from './TripStoreProvider'
-import { useTripData, useTripActions, useTripFormState } from './tripStore'
-import type { ExpenseFormData } from '../types'
+import { useTripData, useTripActions } from './tripStore'
 
 // ─── إثبات عزل إعادة الرسم — النسخة المؤتمتة من الفحص اليدوي بـ DevTools ─────
 //
@@ -18,20 +17,12 @@ import type { ExpenseFormData } from '../types'
 // عادي بلا علاقة بالمخزن. بلا memo، كل مسبار يُعاد رسمه مع كل rerender لأي سبب،
 // فيُخفي فرق الاشتراك الذي يفحصه هذا الاختبار تحديداً.
 
-const baseExpenseForm: ExpenseFormData = {
-  date: '2026-08-22', description: '', amount: '', currency: 'SAR', exchangeRate: '1',
-  participants: [], category: 'مطاعم', splitMode: 'equal', shares: {}, paidBy: 'fund',
-}
-
 function baseProps(overrides: Partial<Parameters<typeof TripStoreProvider>[0]> = {}) {
   return {
     travelers: [], expenses: [], repayments: [], user: null, isAdmin: false, isOrganizer: false,
-    currencies: {}, ratesUpdatedAt: null,
-    cancelExpenseForm: () => {}, startEditExpense: () => {}, requestDeleteExpense: () => {},
+    currencies: {},
+    startEditExpense: () => {}, requestDeleteExpense: () => {},
     requestDeleteTraveler: () => {}, submitDeposit: () => true,
-    expenseForm: baseExpenseForm, setExpenseForm: () => {},
-    isExpenseFormOpen: false, isEditingExpense: false,
-    submitExpense: () => {}, toggleParticipant: () => {}, toggleAllParticipants: () => {},
     ...overrides,
   }
 }
@@ -42,16 +33,10 @@ const DataProbe = memo(({ onRender }: { onRender: () => void }) => {
   return <span data-testid="data-probe">{String(data.isAdmin)}</span>
 })
 
-const FormProbe = memo(({ onRender }: { onRender: () => void }) => {
-  const form = useTripFormState()
-  onRender()
-  return <span data-testid="form-probe">{form.expenseForm.description}</span>
-})
-
 const ActionsProbe = memo(({ onRender }: { onRender: () => void }) => {
   const actions = useTripActions()
   onRender()
-  return <span data-testid="actions-probe">{typeof actions.cancelExpenseForm}</span>
+  return <span data-testid="actions-probe">{typeof actions.startEditExpense}</span>
 })
 
 // ⚠️ عداد عادي، لا useRef — هذا الملف يشغّله كود الاختبار نفسه، لا مكوّن React،
@@ -71,9 +56,9 @@ describe('TripStoreProvider — عزل إعادة الرسم', () => {
     expect(getByTestId('data-probe').textContent).toBe('true')
   })
 
-  it('تحديث form فقط لا يُعيد رسم مسبار مشترك في data', () => {
+  it('تحديث actions فقط لا يُعيد رسم مسبار مشترك في data', () => {
     const dataCounter = createRenderCounter()
-    const formCounter = createRenderCounter()
+    const actionsCounter = createRenderCounter()
     // ⚠️ props ثابتة واحدة، نُبدّل حقلاً واحداً فقط لاحقاً — لا نستدعي baseProps()
     // مرتين: هي تُنشئ مصفوفات/دوال جديدة الهوية في كل استدعاء (تماماً كما لولا
     // useMemo في useAppCoordinator الحقيقي)، وهذا يُغيّر مدخلات useLayoutEffect
@@ -83,7 +68,7 @@ describe('TripStoreProvider — عزل إعادة الرسم', () => {
     const { rerender } = render(
       <TripStoreProvider {...props}>
         <DataProbe onRender={dataCounter.increment} />
-        <FormProbe onRender={formCounter.increment} />
+        <ActionsProbe onRender={actionsCounter.increment} />
       </TripStoreProvider>,
     )
     // ⚠️ التركيب الأول يُنتج رسمتين لكل مسبار: الأولى من قيمة المخزن الابتدائية
@@ -92,51 +77,46 @@ describe('TripStoreProvider — عزل إعادة الرسم', () => {
     // متوقَّع وموثَّق (انظر تعليق TripStoreProvider.tsx وdocs/DECISIONS.md)، ولا
     // يخالف ضمان العزل: ما يهمّنا هنا هو السلوك بعد استقرار التركيب، لا لحظته.
     const dataRendersAfterMount = dataCounter.get()
-    const formRendersAfterMount = formCounter.get()
+    const actionsRendersAfterMount = actionsCounter.get()
 
     act(() => {
       rerender(
-        <TripStoreProvider {...props} expenseForm={{ ...baseExpenseForm, description: 'قهوة' }}>
+        <TripStoreProvider {...props} startEditExpense={() => {}}>
           <DataProbe onRender={dataCounter.increment} />
-          <FormProbe onRender={formCounter.increment} />
+          <ActionsProbe onRender={actionsCounter.increment} />
         </TripStoreProvider>,
       )
     })
 
     expect(dataCounter.get()).toBe(dataRendersAfterMount)
-    expect(formCounter.get()).toBe(formRendersAfterMount + 1)
+    expect(actionsCounter.get()).toBe(actionsRendersAfterMount + 1)
   })
 
-  it('تحديث data فقط لا يُعيد رسم مسبار مشترك في form أو actions', () => {
+  it('تحديث data فقط لا يُعيد رسم مسبار مشترك في actions', () => {
     const dataCounter = createRenderCounter()
-    const formCounter = createRenderCounter()
     const actionsCounter = createRenderCounter()
     const props = baseProps()
 
     const { rerender } = render(
       <TripStoreProvider {...props}>
         <DataProbe onRender={dataCounter.increment} />
-        <FormProbe onRender={formCounter.increment} />
         <ActionsProbe onRender={actionsCounter.increment} />
       </TripStoreProvider>,
     )
     // انظر التعليق في الاختبار السابق — رسمتان بعد التركيب الأول متوقّعتان.
     const dataRendersAfterMount = dataCounter.get()
-    const formRendersAfterMount = formCounter.get()
     const actionsRendersAfterMount = actionsCounter.get()
 
     act(() => {
       rerender(
         <TripStoreProvider {...props} isAdmin={true}>
           <DataProbe onRender={dataCounter.increment} />
-          <FormProbe onRender={formCounter.increment} />
-          <ActionsProbe onRender={actionsCounter.increment} />
+            <ActionsProbe onRender={actionsCounter.increment} />
         </TripStoreProvider>,
       )
     })
 
     expect(dataCounter.get()).toBe(dataRendersAfterMount + 1)
-    expect(formCounter.get()).toBe(formRendersAfterMount)
     expect(actionsCounter.get()).toBe(actionsRendersAfterMount)
   })
 
