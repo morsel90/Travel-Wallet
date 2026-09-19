@@ -1,33 +1,38 @@
 // 🆕 خروج منتدَب من رحلة طويلة المدى — بحساب مسوّى إلزاماً.
 //
+// 🆕 **قسم داخل ملف المسافر لا نافذة مستقلّة** (TravelerProfileModal يعرضه مكان
+// زرّ الخروج). كانت ExitTravelerModal: الملف يُغلق نفسه ليفتح هذه — نافذة
+// محلّية خارج اتحاد ModalState تسلّم المستخدم لنافذة داخله. نفس السبب الذي
+// جعل «تعديل الرصيد» قسماً مضمّناً في الملف نفسه. انظر docs/DECISIONS.md.
+//
 // ⚠️ **هذه الشاشة هي «الإرشاد» المطلوب، لا الحارس.** الحارس في exitTraveler
 // (functions/index.js) التي تُعيد حساب الرصيد خادمياً وترفض بنفس الصياغة. ما
 // تضيفه الشاشة أن المنظّم يرى المبلغ واتجاهه قبل أن يقرّر، وأن التسوية والخروج
 // يقعان بضغطة واحدة في معاملة واحدة بدل خطوتين قد تنقطع إحداهما.
-import { Modal } from '../Modal'
 import { settlementDirection, describeOrganizerExitBlock } from '../../utils/longTerm'
 import { DoorOpen, Loader2, AlertTriangle } from '../../icons'
 import type { TravelerBalance } from '../../types'
 
-interface ExitTravelerModalProps {
+interface ExitTravelerConfirmProps {
   traveler: TravelerBalance
   isSubmitting: boolean
   /** منظّم الرحلة الحالية (trips/{tripId}.organizerUid) — لمنع إخراج نفسه. */
   organizerUid?: string | null
   /** `settle` صحيحة حين يختار المنظّم تسوية الرصيد ضمن نفس العملية. */
   onConfirm: (settle: boolean) => void
-  onClose: () => void
+  /** يعود إلى الملف كما كان — لا يُغلقه. */
+  onCancel: () => void
 }
 
-export default function ExitTravelerModal({
-  traveler, isSubmitting, organizerUid, onConfirm, onClose,
-}: ExitTravelerModalProps) {
+export function ExitTravelerConfirm({
+  traveler, isSubmitting, organizerUid, onConfirm, onCancel,
+}: ExitTravelerConfirmProps) {
   const direction = settlementDirection(traveler.remaining)
   const amount = Math.abs(traveler.remaining).toFixed(2)
   const organizerBlock = describeOrganizerExitBlock(traveler.uid, organizerUid, traveler.name)
 
   return (
-    <Modal onClose={onClose} maxWidth="max-w-sm" label={`إخراج ${traveler.name}`}>
+    <div>
       <h3 className="font-bold mb-1 flex items-center gap-2">
         <DoorOpen className="w-4 h-4 text-rose-600" /> إخراج {traveler.name}
       </h3>
@@ -76,13 +81,13 @@ export default function ExitTravelerModal({
         )}
         <button
           type="button"
-          onClick={onClose}
+          onClick={onCancel}
           disabled={isSubmitting}
           className="flex-1 bg-slate-100 text-slate-700 py-2 rounded-xl font-bold disabled:opacity-50"
         >
           {organizerBlock ? 'حسناً' : 'إلغاء'}
         </button>
       </div>
-    </Modal>
+    </div>
   )
 }

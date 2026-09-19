@@ -1,6 +1,6 @@
 import type { Dispatch, FormEvent, SetStateAction } from 'react'
 import type { Traveler, TravelerBalance, PeriodKey } from '../types'
-import { TravelerCard, AddTravelerForm } from './TravelerSection'
+import { TravelerCard, AddTravelerForm, type LongTermExitProps } from './TravelerSection'
 import { TravelerCardSkeleton } from './Skeleton'
 import EmptyState from './EmptyState'
 import { Users, Plus } from '../icons'
@@ -15,12 +15,6 @@ export interface TravelerFormProps {
   onCancel: () => void
 }
 
-/** 🆕 مصدرها useAppCoordinator.longTerm — undefined في الرحلة القياسية، فلا
- *  تُمرَّر شيئاً إلى TravelerCard ولا يظهر زرّ الخروج بحرف. */
-interface LongTermExitProps {
-  canManage: boolean
-  isBusy: boolean
-}
 
 interface TravelersPanelProps {
   isInitialLoading: boolean
@@ -30,6 +24,8 @@ interface TravelersPanelProps {
   isAddingTraveler: boolean
   onStartAddTraveler: () => void
   travelerForm: TravelerFormProps
+  /** 🆕 مصدرها useAppCoordinator.longTerm — undefined في الرحلة القياسية، فلا
+   *  تُمرَّر شيئاً إلى TravelerCard ولا يظهر قسم الخروج بحرف. */
   longTermExit?: LongTermExitProps
   /** 🆕 محفظة الدورة الحالية لكل مسافر (id → قيمة) — مصدرها
    *  useAppCoordinator.longTerm.cycleWallets، undefined/فارغة في الرحلة
