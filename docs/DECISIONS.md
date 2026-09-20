@@ -842,6 +842,24 @@ Product feedback after the entry above shipped: the profile modal's own header b
 
 **Render isolation was proven, not assumed, at three levels.** `src/store/tripStore.test.ts` unit-tests the store factory alone — updating one key leaves the other two keys' object identity untouched. `src/store/TripStoreProvider.test.tsx` mounts real `memo()`-wrapped probe components (mirroring `ExpenseListItem`/`TravelerCard`, which are themselves `memo()`-wrapped — a bare, unmemoized probe re-renders on every parent re-render regardless of the store, which isn't the thing being tested) and counts renders directly: a `form`-only prop change leaves a `data`-subscribed probe's render count untouched, and vice versa. Both were live-verified afterward too — the dev server boots to `AuthGate` with no console errors, and the Storybook multi-card story above shows the per-mount-store decision actually holding in the one scenario a singleton would have broken.
 
+### 🆕 TypeScript stays on 5.9 — measured against 7.0.2 rather than assumed, and the blocker is the compiler API, not our code
+
+**Asked whether to upgrade to TypeScript 7.0.2 (and Storybook 10.6.0).** Storybook needed nothing: `package.json` declares `^10.5.7` and the caret had already resolved it to 10.6.0, the current release — the "old" number was the declared range, not the running version.
+
+**TypeScript 7 was measured, not guessed.** Its compiler was installed in a scratch directory outside the repo and run against the project's three tsconfigs, touching neither `package.json` nor `node_modules`:
+
+| | 5.9.3 | 7.0.2 |
+|---|---|---|
+| `tsconfig.json` | 0 errors, **3.912 s** | 0 errors, **0.385 s** |
+| `tests/tsconfig.json` | 0 errors | 0 errors |
+| `e2e/tsconfig.json` | 0 errors | 0 errors |
+
+**So the codebase is already compatible, and roughly 10× faster to check. The blocker is elsewhere, and it is structural:** the 7.0.2 npm package no longer ships the JavaScript compiler API. Its `lib/` holds three files (`tsc.js`, `getExePath.js`, `version.cjs`), `require('typescript')` fails with `MODULE_NOT_FOUND`, the `"."` export points at a file carrying only the version string, and the API now lives behind paths explicitly marked **`unstable`** (`typescript/unstable/sync`, `unstable/ast`, …). The package is a 3.5 MB wrapper around a native executable delivered in per-platform packages.
+
+**That explains the ecosystem state instead of merely noting it.** `typescript-eslint` does not shell out to `tsc`; it calls the compiler API to type-aware-lint, which is why its latest release (8.70.0) caps `peer typescript` at `>=4.8.4 <6.1.0` — and why `npm i -D typescript@7` fails to resolve here at all (this project deliberately dropped `legacy-peer-deps`, and CI runs `npm ci` then lint). The same applies to `react-docgen-typescript` under `@storybook/react-vite`, which reads component types through that API. Two tools, both waiting on an API its own authors still call unstable.
+
+**Decided: stay on 5.9, and do not add 7 as a second, faster typecheck alongside it.** Saving 3.5 seconds is not worth two sources of truth about types — the same reasoning applied all through the store and coordinator work above. **The signal to re-evaluate is specific and checkable in one command:** `npm view typescript-eslint peerDependencies` accepting `>=7`. When it does, this entry is the whole investigation already done — the code needs no changes.
+
 ### 🆕 Two more states left `ModalState`: a confirmation belongs inside the window it confirms
 
 **Asked by an outside reviewer: does everything need to be a modal?** The premise needed checking first. Of the three exceptions to the union the reviewer cited, two no longer existed — the admin sign-in modal went with «الدخول بحساب آخر», and expense deletion became a soft delete with an «تراجع» toast — because `CLAUDE.md`'s "Modal state" paragraph still described them. And the reviewer's proposal had already been applied three times (`deleteTraveler`, `deposit`, `depositHistory`, documented in `useModals.ts`).
