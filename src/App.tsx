@@ -184,11 +184,6 @@ export default function App() {
                 onOpenItinerary: modals.openItinerary,
                 onOpenLongTerm:  longTerm ? modals.openLongTermPanel : undefined,
                 onOpenTripAdmin: tripEdit.canEdit ? modals.openEditTrip : undefined,
-                // المسؤول العالمي وحده — نفس حارس القسم داخل TripDetailPanel،
-                // فلا يظهر بند لمنظّم سيصطدم بمنع من القواعد بعد ضغطه.
-                onExportBackup: session.isAdmin
-                  ? () => { void tripEdit.onExportBackup(tripEdit.trip) }
-                  : undefined,
                 onOpenTrashBin: session.isAdmin ? modals.openTrashBin : undefined,
               }}
               onStatClick={(stat) => {
@@ -221,7 +216,7 @@ export default function App() {
                     يُفعل يومياً، ثم ما يُسأل عنه عند التصفية، ثم من يخصّهم.
                     ⚠️ كل ما عداها خلف اسم الرحلة في الهيدر («المزيد») — المسار
                     كاملاً، والإحصائيات، والشهر المحاسبي، والتقارير، وسلة
-                    المهملات، وإدارة الرحلة والنسخة الاحتياطية. طلب صاحب
+                    المهملات، وإدارة الرحلة (وفيها النسخة الاحتياطية). طلب صاحب
                     الحساب صراحةً تقليل الحمل البصري؛ انظر MoreMenu.tsx
                     وdocs/DECISIONS.md.
                     🆕 والاستثناء الوحيد شريطُ المقطع القادم أدناه: سطرٌ واحد

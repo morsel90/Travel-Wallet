@@ -18,7 +18,7 @@
 // ← الأرصدة ← المسافرون، وكل ما عداها هنا. انظر docs/DECISIONS.md.
 //
 // ⚠️ ورقة سفلية (Modal) لا قائمة منسدلة كـAccountMenu: العناصر هنا أكثر
-// (حتى سبعة)، ونصفها مشروط بالصلاحية أو بنوع الرحلة، فقائمة منسدلة ضيّقة
+// (حتى ستة)، ونصفها مشروط بالصلاحية أو بنوع الرحلة، فقائمة منسدلة ضيّقة
 // بارتفاع متغيّر كانت ستتجاوز حافة الشاشة على الجوال. Modal يوفّر أيضاً
 // حصر التركيز وEscape والسحب-للإغلاق بلا أي كود إضافي هنا (useDialogA11y).
 //
@@ -30,7 +30,7 @@ import { Modal } from './Modal'
 import { haptic } from '../utils/haptics'
 import {
   BarChart3, PieChart, Route, CalendarClock,
-  Settings, Download, Trash2, X,
+  Settings, Trash2, X,
 } from '../icons'
 
 export interface MoreMenuActions {
@@ -41,8 +41,6 @@ export interface MoreMenuActions {
   onOpenLongTerm?: () => void
   /** مسؤول أو منظّم هذه الرحلة — undefined لغيرهما. */
   onOpenTripAdmin?: () => void
-  /** المسؤول العالمي وحده (نفس حارس القسم داخل TripDetailPanel). */
-  onExportBackup?: () => void
   /** المسؤول وحده — الاستعادة محكومة بـ isAdmin في القواعد. */
   onOpenTrashBin?: () => void
 }
@@ -70,24 +68,51 @@ export default function MoreMenuSheet({ onClose, ...actions }: MoreMenuSheetProp
     action()
   }
 
-  // الترتيب مقصود: الأكثر طلباً أولاً، وأفعال الإدارة النادرة/الخطرة آخراً.
-  const items: Item[] = [
-    { key: 'reports',   label: 'التقارير',        hint: 'ملخص، كشوف، تصدير Excel وطباعة', Icon: BarChart3,     action: actions.onOpenReports },
-    { key: 'charts',    label: 'الإحصائيات',      hint: 'التوزيع حسب الفئة والتطور الزمني', Icon: PieChart,      action: actions.onOpenCharts },
-    { key: 'itinerary', label: 'مسار الرحلة',     hint: 'المقطع القادم وكل مقاطع التنقّل',  Icon: Route,         action: actions.onOpenItinerary },
+  // 🆕 مجموعتان لا قائمة مسطّحة: ما يخصّ كل عضو أولاً، ثم أفعال الإدارة
+  // النادرة/الخطرة تحت عنوان مستقلّ — فلا يختلط «التقارير» بـ«سلة المهملات».
+  // «هذا الشهر» أولاً حين يوجد: في الرحلة الطويلة هو ما يُفتح كل يوم.
+  //
+  // ⚠️ «نسخة احتياطية» حُذفت من هنا (2026-09-21): كانت تكراراً حرفياً لقسم
+  // «تنزيل نسخة احتياطية» داخل إدارة الرحلة ← إعدادات الرحلة، بنفس الحارس
+  // (المسؤول العالمي). فعلٌ نادر لا يستحقّ بنداً في الصفّ الأول.
+  const viewItems: Item[] = [
     ...(actions.onOpenLongTerm
       ? [{ key: 'longTerm', label: 'هذا الشهر', hint: 'مصاريف الشهر وإغلاقه', Icon: CalendarClock, action: actions.onOpenLongTerm }]
       : []),
+    { key: 'reports',   label: 'التقارير',    hint: 'ملخص، كشوف، تصدير Excel وطباعة', Icon: BarChart3, action: actions.onOpenReports },
+    { key: 'charts',    label: 'الإحصائيات',  hint: 'التوزيع حسب الفئة والتطور الزمني', Icon: PieChart,  action: actions.onOpenCharts },
+    { key: 'itinerary', label: 'مسار الرحلة', hint: 'المقطع القادم وكل مقاطع التنقّل',  Icon: Route,     action: actions.onOpenItinerary },
+  ]
+  const adminItems: Item[] = [
     ...(actions.onOpenTripAdmin
-      ? [{ key: 'admin', label: 'إدارة الرحلة', hint: 'الاسم، المسار، المسافرون وروابط الدعوة', Icon: Settings, action: actions.onOpenTripAdmin }]
-      : []),
-    ...(actions.onExportBackup
-      ? [{ key: 'backup', label: 'نسخة احتياطية', hint: 'تنزيل كل بيانات الرحلة كملف JSON', Icon: Download, action: actions.onExportBackup }]
+      ? [{ key: 'admin', label: 'إدارة الرحلة', hint: 'الإعدادات، المسار، المسافرون وروابط الدعوة', Icon: Settings, action: actions.onOpenTripAdmin }]
       : []),
     ...(actions.onOpenTrashBin
       ? [{ key: 'trash', label: 'سلة المهملات', hint: 'استعادة مصروف أو مسافر محذوف', Icon: Trash2, action: actions.onOpenTrashBin }]
       : []),
   ]
+
+  const renderItem = ({ key, label, hint, Icon, action }: Item) => (
+    <button
+      key={key}
+      type="button"
+      onClick={run(action)}
+      // 🆕 الاسم الوصولي هو التسمية وحدها. بدونه يُحسَب من نصّ الزرّ
+      // كاملاً، فيسمع قارئ الشاشة «التقاريرملخص، كشوف، تصدير Excel
+      // وطباعة» جملةً واحدة ملتصقة — الوصف مفيد للعين، ومُربِك حين
+      // يُقرأ كاسمٍ للبند.
+      aria-label={label}
+      className="w-full flex items-center gap-3 p-3 rounded-2xl text-right hover:bg-slate-50 active:bg-slate-100 transition-colors min-h-[44px]"
+    >
+      <span className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+        <Icon className="w-5 h-5" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-bold text-slate-800">{label}</span>
+        <span className="block text-[11px] text-slate-400 truncate">{hint}</span>
+      </span>
+    </button>
+  )
 
   return (
     <Modal onClose={onClose} label="المزيد" maxWidth="max-w-md">
@@ -103,29 +128,15 @@ export default function MoreMenuSheet({ onClose, ...actions }: MoreMenuSheetProp
         </button>
       </div>
 
-      <div className="space-y-1.5">
-        {items.map(({ key, label, hint, Icon, action }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={run(action)}
-            // 🆕 الاسم الوصولي هو التسمية وحدها. بدونه يُحسَب من نصّ الزرّ
-            // كاملاً، فيسمع قارئ الشاشة «التقاريرملخص، كشوف، تصدير Excel
-            // وطباعة» جملةً واحدة ملتصقة — الوصف مفيد للعين، ومُربِك حين
-            // يُقرأ كاسمٍ للبند.
-            aria-label={label}
-            className="w-full flex items-center gap-3 p-3 rounded-2xl text-right hover:bg-slate-50 active:bg-slate-100 transition-colors min-h-[44px]"
-          >
-            <span className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
-              <Icon className="w-5 h-5" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-bold text-slate-800">{label}</span>
-              <span className="block text-[11px] text-slate-400 truncate">{hint}</span>
-            </span>
-          </button>
-        ))}
-      </div>
+      <div className="space-y-1.5">{viewItems.map(renderItem)}</div>
+
+      {/* المجموعة الثانية تغيب كلها — بعنوانها — لمن لا صلاحية له. */}
+      {adminItems.length > 0 && (
+        <div role="group" aria-labelledby="more-admin-heading" className="mt-3 pt-3 border-t border-slate-100 space-y-1.5">
+          <h3 id="more-admin-heading" className="px-3 text-[11px] font-bold text-slate-400">الإدارة</h3>
+          {adminItems.map(renderItem)}
+        </div>
+      )}
     </Modal>
   )
 }
