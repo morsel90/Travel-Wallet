@@ -29,7 +29,7 @@
 - 🆕 Per-user profile (`users/{uid}`: name + bank details) auto-fills bank details on trip creation, editable per trip afterward
 - Real-time Firestore listeners with optimistic updates
 - Offline-first: `persistentLocalCache` + `persistentMultipleTabManager`
-- 🆕 Main screen is three sections only — Expenses → Balances (who-pays-whom) → Travelers; everything else (reports, charts, itinerary, monthly cycle, trip admin, backup, trash) lives behind a "More" bottom sheet opened by **tapping the trip name** in the header (no separate ⋯ button; WhatsApp/Slack pattern) (see *Design Decisions*)
+- 🆕 Main screen is three sections only — Expenses → Balances (who-pays-whom) → Travelers; everything else (reports, charts, itinerary, monthly cycle, trip admin (which holds backup), trash) lives behind a "More" bottom sheet opened by **tapping the trip name** in the header (no separate ⋯ button; WhatsApp/Slack pattern) (see *Design Decisions*)
 - Smart input bar for quick expense entry (bottom-fixed) — مبلغ + وصف فقط، والفئة تُشتقّ من الوصف
 - 🆕 مسار المصروف الكامل خمس خطوات ظاهرة لا أكثر: المبلغ → ماذا كان؟ → **من دفع؟** → المشاركون → حفظ. العملة والتقسيم غير المتساوي والتاريخ لا تظهر إلا عند طلبها، والفئة تُشتقّ من الوصف (`utils/categoryGuess.ts`) بدل أن تُسأل (see *Design Decisions*)
 - 160+ currencies with live exchange rates (open.er-api.com)

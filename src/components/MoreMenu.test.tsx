@@ -67,4 +67,29 @@ describe('MoreMenuSheet — ورقة «المزيد»', () => {
     render(<MoreMenuSheet {...memberActions} onOpenLongTerm={vi.fn()} />)
     expect(screen.getByText('هذا الشهر')).toBeInTheDocument()
   })
+
+  it('الترتيب: «هذا الشهر» أولاً، وأفعال الإدارة في مجموعة مستقلّة آخراً', () => {
+    render(
+      <MoreMenuSheet
+        {...memberActions}
+        onOpenLongTerm={vi.fn()}
+        onOpenTripAdmin={vi.fn()}
+        onOpenTrashBin={vi.fn()}
+      />,
+    )
+    const labels = screen.getAllByRole('button').map(b => b.getAttribute('aria-label'))
+    expect(labels).toEqual([
+      'إغلاق المزيد',
+      'هذا الشهر', 'التقارير', 'الإحصائيات', 'مسار الرحلة',
+      'إدارة الرحلة', 'سلة المهملات',
+    ])
+    expect(screen.getByRole('group', { name: 'الإدارة' })).toBeInTheDocument()
+    // «نسخة احتياطية» مكانها إدارة الرحلة ← إعدادات الرحلة، لا هنا.
+    expect(screen.queryByText('نسخة احتياطية')).not.toBeInTheDocument()
+  })
+
+  it('لا عنوان «الإدارة» لمن لا صلاحية إدارية له', () => {
+    render(<MoreMenuSheet {...memberActions} />)
+    expect(screen.queryByRole('group', { name: 'الإدارة' })).not.toBeInTheDocument()
+  })
 })
