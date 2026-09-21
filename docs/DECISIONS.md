@@ -842,6 +842,31 @@ Product feedback after the entry above shipped: the profile modal's own header b
 
 **Render isolation was proven, not assumed, at three levels.** `src/store/tripStore.test.ts` unit-tests the store factory alone — updating one key leaves the other two keys' object identity untouched. `src/store/TripStoreProvider.test.tsx` mounts real `memo()`-wrapped probe components (mirroring `ExpenseListItem`/`TravelerCard`, which are themselves `memo()`-wrapped — a bare, unmemoized probe re-renders on every parent re-render regardless of the store, which isn't the thing being tested) and counts renders directly: a `form`-only prop change leaves a `data`-subscribed probe's render count untouched, and vice versa. Both were live-verified afterward too — the dev server boots to `AuthGate` with no console errors, and the Storybook multi-card story above shows the per-mount-store decision actually holding in the one scenario a singleton would have broken.
 
+### 🆕 Biome was measured on this repo and rejected — its headline feature is a liability here, and its migration tool fails on our config
+
+**Proposed as the first candidate for a full switch**, on three standard arguments: all-in-one (ESLint + Prettier in one tool), a mature `biome migrate eslint` path, and 97%+ Prettier compatibility to avoid diff noise. All three were tested against this repository with Biome 2.5.14, in a throwaway git worktree, touching nothing in `main`.
+
+| Measured | Result |
+|---|---|
+| `biome migrate eslint` | **Failed** — circular structure in `eslint-plugin-storybook`'s flat config; nothing was translated |
+| Formatter, default config | **199 files** changed, +30219/−23043 |
+| Formatter, tuned to this project's style (2 spaces, single quotes, no semicolons, 120 cols) | **167 of 198 files**, +7367/−4647 |
+| Lint speed | ESLint **3.08 s** (whole project) vs Biome **0.145 s** (`src`) |
+| Lint noise | 8 diagnostics on `src` |
+| The Firebase boundary (guideline 26) | **Enforceable** — verified with a deliberate violation (2 errors) and the negative case (silent inside `src/hooks`) |
+
+**Argument 1 fails on a decision this project already made.** Prettier was not overlooked here, it was **deleted on purpose** (2026-09-12) and the code is hand-aligned — `eslint.config.js` turns `no-multi-spaces` off explicitly for that reason. So half of "all-in-one" is unwanted, and the numbers above say what adopting it would cost: 167 files rewritten even after tuning Biome to our style. Disable the formatter and the all-in-one argument evaporates: what remains is a linter swap.
+
+**Argument 2 fails outright**, and it fails *because of our config*, not Biome's maturity in general: the migration is manual here.
+
+**Argument 3 measures fidelity to a tool we rejected.** "Prevents git diff noise" is true for a repo already formatted by Prettier and exactly inverted for a hand-formatted one.
+
+**What is genuinely good, and was verified rather than assumed:** the speed is real (≈20×), the core rules exist (`noRestrictedImports`, `useExhaustiveDependencies`, `useHookAtTopLevel`, `useComponentExportOnlyModules`, `noExplicitAny`), and the architectural guard that matters most — Firebase confined to `src/hooks/` — is expressible with `patterns` plus per-path `overrides`, proven with a positive and a negative probe.
+
+**The two gaps that decide it.** `eslint-plugin-storybook` has no Biome equivalent, so the stories lose their lint coverage. More important, **`eslint-plugin-react-hooks` 7.x's React Compiler rule set has no equivalent** — and guideline 25 in `CONTRIBUTING.md` commits to *not adding new violations to the existing 18*, i.e. the intended direction is turning those rules on. Switching to Biome closes that door. (One thing could not be measured: whether Biome's recommended set is rule-for-rule equivalent to `typescript-eslint`'s. On a clean repo both emit zero, so only rule *presence* is measurable, not parity.)
+
+**Decided: stay on ESLint.** The gain is three seconds on a command run a handful of times a day; the cost is a formatter that rewrites 84% of the files or is switched off, two rule sets lost, and a manual migration. **What would change it:** Biome shipping the React Compiler rules and Storybook rules, or lint time becoming an actual bottleneck — three seconds is not one.
+
 ### 🆕 TypeScript stays on 5.9 — measured against 7.0.2 rather than assumed, and the blocker is the compiler API, not our code
 
 **Asked whether to upgrade to TypeScript 7.0.2 (and Storybook 10.6.0).** Storybook needed nothing: `package.json` declares `^10.5.7` and the caret had already resolved it to 10.6.0, the current release — the "old" number was the declared range, not the running version.
