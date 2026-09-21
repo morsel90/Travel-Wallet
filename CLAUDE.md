@@ -56,7 +56,7 @@
 | Layer | Technology | Version |
 |---|---|---|
 | Framework | React | ^19.3.0 |
-| Language | TypeScript | ^5.3.3 |
+| Language | TypeScript | ^5.9.3 (🆕 **not** 7.x — see *Design Decisions*) |
 | Bundler | Vite (Rolldown) | ^8.3.0 |
 | State | React Context (DataContext + UIActionsContext + UIFormContext) | — |
 | Styling | Tailwind CSS | ^4.3.3 |
@@ -70,8 +70,8 @@
 | Testing (unit) | Vitest + React Testing Library | ^5.0.0 |
 | Testing (rules) | @firebase/rules-unit-testing + Firestore emulator | ^5.0.2 |
 | Testing (E2E) | Playwright (chromium) + Auth/Firestore/Functions emulators | ^1.63.0 |
-| Component workshop | Storybook (react-vite) | ^10.6.0 |
-| Linting | ESLint (flat config) + Prettier | ^10.10.0 |
+| Component workshop | Storybook (react-vite) | ^10.5.7 (resolves to 10.6.0) |
+| Linting | ESLint (flat config) — 🆕 no Prettier, removed 2026-09-12 | ^10.10.0 |
 | Deployment (frontend) | Vercel SPA | — |
 | Deployment (backend) | Firebase CLI | — |
 
