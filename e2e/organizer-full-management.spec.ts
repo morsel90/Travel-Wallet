@@ -8,7 +8,7 @@
 //   • تعديل مصروف غيره يترك «عدّله فلان» عليه.
 //   • حذف مسافر ليّن، و«تراجع» يعيده.
 import { test, expect } from '@playwright/test'
-import { adminFirestore, seedBareUser } from './utils/seed'
+import { adminAuth, adminFirestore, seedBareUser } from './utils/seed'
 import { signInWithEmail, addTraveler, editExpenseAmount, expenseCard, openFromMoreMenu, openTripDetailFromHeader } from './utils/flows'
 
 const CREDS = { email: 'e2e-organizer-full@test.local', password: 'E2eTestPass!1' }
@@ -22,7 +22,7 @@ test.beforeAll(async () => {
   await seedBareUser(CREDS.email, CREDS.password)
 })
 
-test('المنظّم يضيف مسافراً بمودَع، يعدّل مصروف غيره، ويحذف مسافراً ويستعيده — بلا مسؤول', async ({ page }) => {
+test('المنظّم يضيف مسافراً بمودَع، يعدّل مصروف غيره، ويحذف مسافراً ويستعيده — بلا مسؤول', async ({ page, browser }) => {
   const organizerUid = await seedBareUser(CREDS.email, CREDS.password)
 
   await page.goto('/')
@@ -110,6 +110,21 @@ test('المنظّم يضيف مسافراً بمودَع، يعدّل مصرو�
   expect((await tripRef.get()).data()?.organizerUid).toBe(organizerUid)
   expect((await tripRef.collection('members').doc(organizerUid).get()).data()?.role).toBe('organizer')
   await expect(rowOf(ASSISTANT_EMAIL).getByText('منظّم مساعد')).toBeVisible()
+
+  // 🆕 حذف الرحلة لمنشئها وحده: ظاهر هنا للمنشئ، وغائب عن المساعد في جلسته.
+  await page.getByRole('button', { name: 'إعدادات الرحلة' }).click()
+  await expect(page.getByRole('button', { name: 'حذف الرحلة نهائياً' })).toBeVisible()
+  await page.getByRole('button', { name: 'المسافرون' }).click()
+
+  await adminAuth().setCustomUserClaims(assistantUid, { trips: { [TRIP_ID]: true } })
+  const assistantContext = await browser.newContext()
+  const assistantPage = await assistantContext.newPage()
+  await assistantPage.goto(`/?trip=${TRIP_ID}`)
+  await signInWithEmail(assistantPage, ASSISTANT_EMAIL, CREDS.password)
+  await openTripDetailFromHeader(assistantPage)
+  await expect(assistantPage.getByLabel('اسم الرحلة')).toBeVisible()
+  await expect(assistantPage.getByRole('button', { name: 'حذف الرحلة نهائياً' })).toHaveCount(0)
+  await assistantContext.close()
 
   await rowOf(ASSISTANT_EMAIL).getByRole('button', { name: 'إلغاء المساعدة' }).click()
   await expect.poll(async () => (await tripRef.collection('members').doc(assistantUid).get()).data()?.role, { timeout: 15_000 })

@@ -189,12 +189,6 @@ exports.manageTrip = onCall(
 
     const mode = String(request.data?.mode ?? '').trim(); // 'create' | 'delete'
 
-    // 🆕 الحذف يبقى للمسؤول العالمي حصراً — لم يُطلب تغييره، وهو الأخطر
-    // (يُتلف بيانات مالية إن أُسيء استخدامه)، بخلاف الإنشاء الذاتي الجديد.
-    if (mode === 'delete' && !isAdminCaller) {
-      throw new HttpsError('permission-denied', 'حذف الرحلة ليس من صلاحيات منظّم الرحلة.');
-    }
-
     // 🆕 لا رحلة بجلسة مجهولة — نفس المنطق ونفس الرسالة اللذين ترفض بهما
     // joinViaInvite أدناه، ونفس المبرر: منح uid مجهول claim حقيقياً ثم اكتشاف
     // أنه عديم الفائدة عند أول قراءة تجربة أسوأ من رفض واضح فوراً.
@@ -271,6 +265,13 @@ exports.manageTrip = onCall(
     if (mode === 'delete') {
       if (!existing.exists) {
         throw new HttpsError('not-found', `الرحلة "${tripId}" غير موجودة.`);
+      }
+      // 🆕 المسؤول، أو **منشئ الرحلة وحده** (organizerUid — صاحبها الذي تُعرض
+      // بيانات بنكه، وينتقل فقط بتعيين المسؤول). لا المنظّم المساعد: الحذف
+      // نهائي ويمسّ وصول كل المسافرين، فيبقى قرار صاحب الرحلة. شروط الأهلية
+      // أدناه (فارغة، أو منتهية ومسوّاة، أو قديمة) تسري على الجميع بلا استثناء.
+      if (!isAdminCaller && existing.data().organizerUid !== request.auth.uid) {
+        throw new HttpsError('permission-denied', 'حذف الرحلة متاح لمنشئ الرحلة فقط.');
       }
 
       const eligibleForAgePurge = isEligibleForAgePurgeJs(existing.data());

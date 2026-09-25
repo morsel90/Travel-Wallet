@@ -736,7 +736,8 @@ const CALLABLES: CallableCase[] = [
     name: 'deleteTrip',
     run: a => a.deleteTrip('trip-1'),
     success: { toast: [{ text: 'تم حذف الرحلة "trip-1"', type: 'success' }], returns: true },
-    denied: { as: [false, 'trip-1'], toast: [{ text: NOT_ORGANIZER_POWER, type: 'error' }, 3000] },
+    // 🆕 منظّم الرحلة يمرّ محلياً (المنشئ مقابل المساعد يُفصل خادمياً)، فالرفض المحلي لغير المنظّم.
+    denied: { as: [false, null], toast: [{ text: NOT_ORGANIZER_POWER, type: 'error' }, 3000] },
     failure: { errorMs: 4000, returns: false },
   },
   {
