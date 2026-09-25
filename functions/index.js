@@ -453,14 +453,40 @@ exports.manageMember = onCall(
     const callerIsAdmin = request.auth.token.admin === true;
     const memberDocRef = db.collection('trips').doc(tripId).collection('members').doc(uid);
 
-    // ─── تعيين/إلغاء دور المنظّم — المسؤول العالمي حصراً ────────────────────
+    // ─── تعيين/إلغاء دور المنظّم ─────────────────────────────────────────────
     if (mode === 'setRole') {
-      if (!callerIsAdmin) {
-        throw new HttpsError('permission-denied', 'تغيير دور المنظّم ليس من صلاحيات منظّم الرحلة.');
-      }
       const role = String(request.data?.role ?? '').trim();
       if (role !== 'organizer' && role !== 'member') {
         throw new HttpsError('invalid-argument', 'الدور غير معروف.');
+      }
+
+      // 🆕 **منظّم مساعد** — منظّم الرحلة يرقّي مسافراً إلى دوره أو يعيده عضواً،
+      // حتى لا تتوقف الرحلة إن غاب هو (والمسؤول العالمي لا يحضرها أصلاً). الفرق
+      // عن تعيين المسؤول أدناه مقصود: المساعد يملك صلاحيات المنظّم كلها (القواعد
+      // وcallerManagesTrip تقرأ role وحده)، لكن **organizerUid لا يتغيّر** —
+      // بيانات البنك المعروضة تبقى لمن أنشأ الرحلة، ولا يُخفَض أحد، ولا يُمَسّ
+      // organizesTripIds. ولا يغيّر المنظّم دور المنظّم الأصلي ولا دوره هو: نقل
+      // الملكية فعلاً قرار المسؤول وحده.
+      if (!callerIsAdmin) {
+        if (!(await callerManagesTrip(tripId, request.auth))) {
+          throw new HttpsError('permission-denied', 'تغيير الأدوار متاح لمنظّم الرحلة فقط.');
+        }
+        if (uid === request.auth.uid) {
+          throw new HttpsError('failed-precondition', 'لا يمكنك تغيير دورك بنفسك.');
+        }
+        const [targetSnap, tripSnap] = await Promise.all([
+          memberDocRef.get(),
+          db.collection('trips').doc(tripId).get(),
+        ]);
+        if (!targetSnap.exists) {
+          throw new HttpsError('failed-precondition', 'هذا الحساب لم ينضم لهذه الرحلة بعد.');
+        }
+        if (tripSnap.exists && tripSnap.data().organizerUid === uid) {
+          throw new HttpsError('permission-denied', 'لا يمكن تغيير دور منشئ الرحلة.');
+        }
+        await memberDocRef.set({ role }, { merge: true });
+        console.log(`[manageMember] setRole (assistant) ${role} for ${uid} on ${tripId} by ${request.auth.uid}`);
+        return { success: true, uid, tripId, mode: 'setRole', role };
       }
 
       // لا يجوز تعيين من لم ينضم للرحلة أصلاً — لا سطر عضوية له ليُكتب عليه،

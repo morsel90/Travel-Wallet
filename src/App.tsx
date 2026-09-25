@@ -390,6 +390,7 @@ export default function App() {
                 onDeleteTrip: tripEdit.onDeleteTrip,
                 onRemoveMember: tripEdit.onRemoveMember,
                 onSetMemberRole: tripEdit.onSetMemberRole,
+                viewerUid: tripEdit.viewerUid,
                 onLinkTravelerAccount: tripEdit.onLinkTravelerAccount,
                 onExportBackup: tripEdit.onExportBackup,
                 onCreateInvite: tripEdit.onCreateInvite,

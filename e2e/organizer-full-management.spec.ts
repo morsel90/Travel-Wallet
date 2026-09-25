@@ -9,11 +9,12 @@
 //   • حذف مسافر ليّن، و«تراجع» يعيده.
 import { test, expect } from '@playwright/test'
 import { adminFirestore, seedBareUser } from './utils/seed'
-import { signInWithEmail, addTraveler, editExpenseAmount, expenseCard, openFromMoreMenu } from './utils/flows'
+import { signInWithEmail, addTraveler, editExpenseAmount, expenseCard, openFromMoreMenu, openTripDetailFromHeader } from './utils/flows'
 
 const CREDS = { email: 'e2e-organizer-full@test.local', password: 'E2eTestPass!1' }
 const TRIP_ID = 'e2e-organizer-full'
 const PROFILE_NAME = 'سلمان المنظّم'
+const ASSISTANT_EMAIL = 'e2e-organizer-assistant@test.local'
 
 const dataRoot = () => adminFirestore().collection('artifacts').doc(TRIP_ID).collection('public').doc('data')
 
@@ -84,4 +85,33 @@ test('المنظّم يضيف مسافراً بمودَع، يعدّل مصرو�
     const snap = await dataRoot().collection('travelers').where('name', '==', 'فهد المستعجل').get()
     return snap.docs[0]?.data().deletedAt
   }, { timeout: 15_000 }).toBeNull()
+  await page.getByRole('button', { name: 'إغلاق سلة المهملات' }).click()
+
+  // ── منظّم مساعد: المنظّم يرقّي مسافراً منضمّاً، وorganizerUid لا يتغيّر ─────
+  const assistantUid = await seedBareUser(ASSISTANT_EMAIL, CREDS.password)
+  const tripRef = adminFirestore().collection('trips').doc(TRIP_ID)
+  await tripRef.collection('members').doc(assistantUid).set({ joinedAt: Date.now(), email: ASSISTANT_EMAIL })
+  await dataRoot().collection('travelers').doc('9001').set({
+    id: 9001, name: 'نورة المساعدة', shortName: 'نورة', deposited: 0, deletedAt: null, uid: assistantUid,
+  })
+
+  await openTripDetailFromHeader(page)
+  await page.getByRole('button', { name: 'المسافرون' }).click()
+  const rowOf = (text: string) => page.locator('div.rounded-xl.border.p-3').filter({ hasText: text })
+
+  // ⚠️ السالب أولاً (القاعدة ١٨): لا زرّ دور على سطر المنظّم نفسه — دوره لا يتغيّر من هنا.
+  await expect(rowOf(PROFILE_NAME).getByText('منظّم', { exact: true })).toBeVisible()
+  await expect(rowOf(PROFILE_NAME).getByRole('button', { name: /منظّماً|المساعدة|التنظيم/ })).toHaveCount(0)
+
+  await rowOf(ASSISTANT_EMAIL).getByRole('button', { name: 'تعيين منظّماً مساعداً' }).click()
+  await expect.poll(async () => (await tripRef.collection('members').doc(assistantUid).get()).data()?.role, { timeout: 15_000 })
+    .toBe('organizer')
+  // بيانات البنك المعروضة تبقى لمنشئ الرحلة — لا نقل ملكية.
+  expect((await tripRef.get()).data()?.organizerUid).toBe(organizerUid)
+  expect((await tripRef.collection('members').doc(organizerUid).get()).data()?.role).toBe('organizer')
+  await expect(rowOf(ASSISTANT_EMAIL).getByText('منظّم مساعد')).toBeVisible()
+
+  await rowOf(ASSISTANT_EMAIL).getByRole('button', { name: 'إلغاء المساعدة' }).click()
+  await expect.poll(async () => (await tripRef.collection('members').doc(assistantUid).get()).data()?.role, { timeout: 15_000 })
+    .toBe('member')
 })

@@ -50,6 +50,8 @@ interface TripDetailPanelProps {
   onRemoveMember: (tripId: string, uid: string) => Promise<boolean>
   /** 🆕 تعيين/إلغاء دور «منظّم الرحلة» (المرحلة ٣) — المسؤول العالمي حصراً. */
   onSetMemberRole: (tripId: string, uid: string, role: 'organizer' | 'member') => Promise<boolean>
+  /** 🆕 حساب من يفتح اللوحة — لإخفاء زرّ تغيير دوره هو (manageMember يرفضه). */
+  viewerUid?: string
   /** 🆕 ربط مسافر "شبح" (uid == null) بحساب عضو انضمّ فعلاً — نموذج الهوية الهجين. */
   onLinkTravelerAccount: (tripId: string, travelerId: number, targetUid: string) => Promise<boolean>
   /** 🆕 تنزيل نسخة JSON احتياطية — docs/PLAN-backup-recovery.md المرحلة ١. */
@@ -121,7 +123,7 @@ function daysSince(timestamp: number): string {
 
 export default function TripDetailPanel({
   trip, viewerRole, isSaving, onSaveTripName, onSaveItinerary,
-  onSaveTripStatus, onSaveTripType, onDeleteTrip, onRemoveMember, onSetMemberRole, onLinkTravelerAccount,
+  onSaveTripStatus, onSaveTripType, onDeleteTrip, onRemoveMember, onSetMemberRole, viewerUid, onLinkTravelerAccount,
   onExportBackup, onCreateInvite, onRevokeInvite, showToast, onDeleted,
 }: TripDetailPanelProps) {
   const [activeTab, setActiveTab] = useState<DetailTab>('details')
@@ -223,8 +225,18 @@ export default function TripDetailPanel({
     if (ok) refreshMembers()
   }
 
-  // 🆕 تعيين/إلغاء دور منظّم — المسؤول العالمي حصراً (زرّه لا يظهر أصلاً لغيره،
-  // ومنظّم يحاول استدعاءها مباشرة يُرفض خادمياً في manageMember).
+  // 🆕 الأدوار: المسؤول يعيّن «المنظّم» (نقل ملكية: organizerUid وبيانات البنك
+  // تنتقل معه). والمنظّم يعيّن «منظّماً مساعداً» بصلاحياته نفسها، وorganizerUid
+  // لا يتغيّر — فلا يغيّر دور منشئ الرحلة ولا دوره هو (manageMember يرفض الاثنين).
+  const isPrimaryOrganizer = (uid: string) => uid === trip.organizerUid
+  const canChangeRole = (uid: string) =>
+    viewerRole === 'admin' || (uid !== viewerUid && !isPrimaryOrganizer(uid))
+  const roleBadge = (uid: string) => (isPrimaryOrganizer(uid) ? 'منظّم' : 'منظّم مساعد')
+  const roleButtonLabel = (isOrganizerNow: boolean) =>
+    viewerRole === 'admin'
+      ? (isOrganizerNow ? 'إلغاء التنظيم' : 'تعيين منظّماً')
+      : (isOrganizerNow ? 'إلغاء المساعدة' : 'تعيين منظّماً مساعداً')
+
   const submitSetRole = async (uid: string, role: 'organizer' | 'member') => {
     const ok = await onSetMemberRole(trip.id, uid, role)
     if (ok) refreshMembers()
@@ -891,7 +903,7 @@ export default function TripDetailPanel({
                               (منظّم يقرأ السجلّ أيضاً)، وزرّ تغييرها أدناه للمسؤول العالمي وحده. */}
                           {m?.role === 'organizer' ? (
                             <span className="flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shrink-0">
-                              <ShieldCheck className="w-3 h-3" /> منظّم
+                              <ShieldCheck className="w-3 h-3" /> {roleBadge(m.uid)}
                             </span>
                           ) : t.uid ? (
                             <span className="flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shrink-0">
@@ -940,7 +952,7 @@ export default function TripDetailPanel({
                         <div className="flex items-center gap-2 shrink-0">
                           {/* 🆕 تعيين/إلغاء المنظّم — المسؤول العالمي حصراً (viewerRole).
                               functions/index.js يرفض أي استدعاء آخر خادمياً بغضّ النظر. */}
-                          {viewerRole === 'admin' && (
+                          {canChangeRole(m.uid) && (
                             <button
                               type="button"
                               onClick={() => void submitSetRole(m.uid, m.role === 'organizer' ? 'member' : 'organizer')}
@@ -948,9 +960,11 @@ export default function TripDetailPanel({
                               className="flex items-center gap-1.5 text-teal-700 hover:bg-teal-100 border border-teal-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-40"
                             >
                               <ShieldCheck className="w-3.5 h-3.5" />
-                              {m.role === 'organizer' ? 'إلغاء التنظيم' : 'تعيين منظّماً'}
+                              {roleButtonLabel(m.role === 'organizer')}
                             </button>
                           )}
+                          {/* منظّم لا يزيل منظّماً آخر (manageMember يرفض) — يلغي دوره أولاً. */}
+                          {(viewerRole === 'admin' || m.role !== 'organizer') && (
                           <button
                             type="button"
                             onClick={() => setRemovingUid(m.uid)}
@@ -959,6 +973,7 @@ export default function TripDetailPanel({
                           >
                             <UserMinus className="w-3.5 h-3.5" /> إزالة
                           </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1060,7 +1075,7 @@ export default function TripDetailPanel({
                           </span>
                           {m.role === 'organizer' && (
                             <span className="flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-full shrink-0">
-                              <ShieldCheck className="w-3 h-3" /> منظّم
+                              <ShieldCheck className="w-3 h-3" /> {roleBadge(m.uid)}
                             </span>
                           )}
                         </p>
@@ -1074,7 +1089,7 @@ export default function TripDetailPanel({
 
                       {!isConfirming && (
                         <div className="flex items-center gap-2 shrink-0">
-                          {viewerRole === 'admin' && (
+                          {canChangeRole(m.uid) && (
                             <button
                               type="button"
                               onClick={() => void submitSetRole(m.uid, m.role === 'organizer' ? 'member' : 'organizer')}
@@ -1082,9 +1097,11 @@ export default function TripDetailPanel({
                               className="flex items-center gap-1.5 text-teal-700 hover:bg-teal-100 border border-teal-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-40"
                             >
                               <ShieldCheck className="w-3.5 h-3.5" />
-                              {m.role === 'organizer' ? 'إلغاء التنظيم' : 'تعيين منظّماً'}
+                              {roleButtonLabel(m.role === 'organizer')}
                             </button>
                           )}
+                          {/* منظّم لا يزيل منظّماً آخر (manageMember يرفض) — يلغي دوره أولاً. */}
+                          {(viewerRole === 'admin' || m.role !== 'organizer') && (
                           <button
                             type="button"
                             onClick={() => setRemovingUid(m.uid)}
@@ -1093,6 +1110,7 @@ export default function TripDetailPanel({
                           >
                             <UserMinus className="w-3.5 h-3.5" /> إزالة
                           </button>
+                          )}
                         </div>
                       )}
                     </div>

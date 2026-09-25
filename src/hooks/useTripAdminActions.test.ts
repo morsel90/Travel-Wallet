@@ -162,9 +162,20 @@ describe('removeMember — منظّم الرحلة (المرحلة ٣)', () => {
   })
 })
 
-describe('setMemberRole — المسؤول العالمي حصراً', () => {
-  it('منظّم الرحلة نفسه لا يستطيع تعيين دور — لا حتى لرحلته', async () => {
+// 🆕 منظّم الرحلة يعيّن «منظّماً مساعداً» لرحلته (manageMember يحفظ organizerUid
+// ويرفض تغيير دور المنشئ أو دوره هو) — ولا شيء في رحلة لا ينظّمها.
+describe('setMemberRole — المسؤول، أو منظّم هذه الرحلة (منظّم مساعد)', () => {
+  it('منظّم الرحلة يعيّن منظّماً مساعداً لرحلته', async () => {
     const { result } = setup(false, 'trip-1')
+    let ok
+    await act(async () => { ok = await result.current.setMemberRole('trip-1', 'u1', 'organizer') })
+
+    expect(ok).toBe(true)
+    expect(mocks.callable).toHaveBeenCalledWith({ mode: 'setRole', tripId: 'trip-1', uid: 'u1', role: 'organizer' })
+  })
+
+  it('منظّم رحلة أخرى لا يستطيع تعيين دور هنا', async () => {
+    const { result } = setup(false, 'trip-2')
     let ok
     await act(async () => { ok = await result.current.setMemberRole('trip-1', 'u1', 'organizer') })
 
@@ -742,20 +753,14 @@ const CALLABLES: CallableCase[] = [
     name: 'setMemberRole (organizer)',
     run: a => a.setMemberRole('trip-1', 'u1', 'organizer'),
     success: { toast: [{ text: 'صار هذا المسافر منظّماً لهذه الرحلة.', type: 'success' }], returns: true },
-    denied: {
-      as: [false, 'trip-1'],
-      toast: [{ text: 'تغيير دور المنظّم ليس من صلاحيات منظّم الرحلة.', type: 'error' }, 3000],
-    },
+    denied: { as: [false, null], toast: [{ text: ORGANIZER_ONLY, type: 'error' }, 3000] },
     failure: { errorMs: 4000, returns: false },
   },
   {
     name: 'setMemberRole (member)',
     run: a => a.setMemberRole('trip-1', 'u1', 'member'),
     success: { toast: [{ text: 'أُلغي دور المنظّم عن هذا المسافر.', type: 'success' }], returns: true },
-    denied: {
-      as: [false, 'trip-1'],
-      toast: [{ text: 'تغيير دور المنظّم ليس من صلاحيات منظّم الرحلة.', type: 'error' }, 3000],
-    },
+    denied: { as: [false, null], toast: [{ text: ORGANIZER_ONLY, type: 'error' }, 3000] },
     failure: { errorMs: 4000, returns: false },
   },
   {

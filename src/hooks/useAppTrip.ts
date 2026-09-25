@@ -189,6 +189,7 @@ export function useAppTrip({
       onDeleteTrip: tripAdmin.deleteTrip,
       onRemoveMember: tripAdmin.removeMember,
       onSetMemberRole: tripAdmin.setMemberRole,
+      viewerUid: user?.uid,
       onLinkTravelerAccount: tripAdmin.linkTravelerAccount,
       onExportBackup: tripAdmin.exportBackup,
       onCreateInvite: tripAdmin.createInvite,
