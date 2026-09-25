@@ -513,10 +513,8 @@ export default function TripDetailPanel({
           </div>
         </form>
 
-        {/* 🆕 نسخة احتياطية وحذف الرحلة — قسمان للمسؤول العالمي حصراً، لا
-            المنظّم (كانا تبويبين مستقلّين قبل الدمج؛ انظر تعليق ALL_TABS أعلاه).
-            الحماية الحقيقية خادمية بالكامل (manageTrip mode:'delete' وقراءة
-            بيانات النسخة الاحتياطية تشترطان isAdmin())؛ هذا إخفاء واجهة فقط. */}
+        {/* 🆕 نسخة احتياطية — للمسؤول العالمي حصراً (قراءة بيانات النسخة
+            الاحتياطية تشترط isAdmin())؛ هذا إخفاء واجهة فقط. */}
         {viewerRole === 'admin' && (
           <div className="bg-white rounded-2xl shadow-xs border border-slate-200 p-5 space-y-4">
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
@@ -546,7 +544,9 @@ export default function TripDetailPanel({
           </div>
         )}
 
-        {viewerRole === 'admin' && (
+        {/* 🆕 الحذف للمسؤول أو منشئ الرحلة وحده (organizerUid) — لا المنظّم المساعد.
+            الحماية الحقيقية وشروط الأهلية خادمية في manageTrip. */}
+        {(viewerRole === 'admin' || (viewerUid != null && viewerUid === trip.organizerUid)) && (
           <form
             onSubmit={e => { e.preventDefault(); void submitDelete() }}
             className="bg-white rounded-2xl shadow-xs border border-rose-200 p-5 space-y-4"

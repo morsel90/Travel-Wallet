@@ -313,12 +313,15 @@ export function useTripAdminActions({
 
   // الاسم فارغ: الحذف لا يحتاجه، والدالة الخادمية لا تفرضه في هذا الوضع.
   // ورسالة «الرحلة ليست فارغة» تأتي من الخادم وتُعرض كما هي (انظر call).
+  // 🆕 المسؤول أو منشئ الرحلة (organizerUid) — هذا الحارس يسمح لمنظّم الرحلة
+  // عموماً، والتمييز بين المنشئ والمساعد خادمي في manageTrip (والواجهة لا تعرض
+  // القسم إلا للمنشئ — TripDetailPanel).
   const deleteTrip = useCallback(async (tripId: string) =>
     (await call('manageTrip', { mode: 'delete', tripId, name: '' }, {
-      allowed: isAdmin,
+      allowed: canAct(tripId),
       deniedText: NOT_ORGANIZER_POWER,
       onSuccess: () => [{ text: `تم حذف الرحلة "${tripId}"`, type: 'success' }],
-    })) !== null, [call, isAdmin])
+    })) !== null, [call, canAct])
 
   // 🆕 إزالة عضو — رسالة نجاحها مشروطة بما أعادته الدالة، لا نصاً ثابتاً.
   // 🆕 المرحلة ٣: متاحة للمسؤول أو منظّم هذه الرحلة تحديداً — الفحص الحقيقي
