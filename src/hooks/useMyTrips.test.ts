@@ -99,6 +99,29 @@ describe('useMyTrips', () => {
     expect(result.current.error).toBeNull() // نجاح جزئي ليس خطأً
   })
 
+  // 🆕 انحدار حقيقي بعد إتاحة حذف الرحلة لمنشئها: من يحذف رحلته **الوحيدة**
+  // تبقى في claims توكنه حتى يتجدّد (حتى ساعة)، فيجد مستندها غير موجود — وكان
+  // ذلك يُحسب «ولا قراءة نجحت» فتظهر «تحقّق من اتصالك» بلا أي مشكلة اتصال.
+  it('رحلته الوحيدة محذوفة: قائمة فارغة بلا رسالة خطأ — الحذف ليس فشل اتصال', async () => {
+    mocks.getDoc.mockResolvedValue(missingSnap)
+
+    const { result } = renderHook(() => useMyTrips(['deleted-trip'], fakeUser))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.trips).toEqual([])
+    expect(result.current.error).toBeNull()
+  })
+
+  it('رحلة محذوفة وأخرى فشلت قراءتها ولا شيء نجح: يبقى الخطأ ظاهراً', async () => {
+    mocks.getDoc.mockResolvedValueOnce(missingSnap)
+    mocks.getDoc.mockRejectedValueOnce(new Error('offline'))
+
+    const { result } = renderHook(() => useMyTrips(['deleted-trip', 't2'], fakeUser))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.error).toContain('تعذّر جلب رحلاتك')
+  })
+
   it('فشل قراءة رحلة واحدة لا يُسقط بقية القائمة', async () => {
     mocks.getDoc.mockResolvedValueOnce(docSnap('رحلة ناجحة'))
     mocks.getDoc.mockRejectedValueOnce(Object.assign(new Error('denied'), { code: 'permission-denied' }))
