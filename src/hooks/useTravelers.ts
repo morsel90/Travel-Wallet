@@ -1,12 +1,16 @@
 import { useState, useEffect, useCallback, Dispatch, SetStateAction } from 'react'
-import { onSnapshot, query, where, getDocsFromServer } from 'firebase/firestore'
+import { onSnapshot, query, getDocsFromServer } from 'firebase/firestore'
 import type { User }  from 'firebase/auth'
 import { travelersCol } from '../firestore'
 import type { Traveler } from '../types'
 
 // ─── useTravelers ──────────────────────────────────────────────────────────────
 // يملك حالة المسافرين ويشترك في listener فوري (onSnapshot) عند توفّر مستخدم.
-// يستبعد المسافرين المحذوفين منطقياً (deletedAt != null) عند مستوى الـ query.
+// 🆕 يجلب المحذوفين منطقياً أيضاً — useTripWorkspace يقسمهم بنفسه إلى نشطين
+// (كل ما يُعرض ويُحسب، والمتجر لا يستلم غيرهم) ومحذوفين (سلة المهملات). كان
+// الاستبعاد هنا عند مستوى الـ query منذ البداية، فكان تبويب «المسافرون المحذوفون»
+// فارغاً دائماً لكل أحد، و«تراجع»/«استعادة» يبحثان عن المسافر في قائمة لا
+// تحويه فيخرجان بصمت (handleRestoreTraveler في useTravelerActions.ts).
 // يُرجِع المسافرين + setTravelers (يستخدمه App في الـ handlers للتحديث المتفائل).
 export interface UseTravelers {
   travelers: Traveler[]
@@ -31,8 +35,7 @@ export function useTravelers(
     setTravelersLoaded(false)
     setIsSyncing(true)
 
-    // 🆕 استبعاد المسافرين المحذوفين منطقياً عند مستوى الـ query
-    const q = query(travelersCol(), where('deletedAt', '==', null))
+    const q = query(travelersCol())
 
     // 🆕 includeMetadataChanges: true — لعرض/إخفاء شارة "جارٍ المزامنة" لكل
     // مسافر فور تأكيد الخادم لكتابة متفائلة (انظر App.tsx وقسم Optimistic
@@ -59,8 +62,7 @@ export function useTravelers(
 
   const refreshTravelers = useCallback(async () => {
     if (!user) return // وضع محلي بلا Firebase — لا خادم لجلب شيء منه
-    const q = query(travelersCol(), where('deletedAt', '==', null))
-    const snap = await getDocsFromServer(q)
+    const snap = await getDocsFromServer(query(travelersCol()))
     const data = snap.docs
       .map(d => ({
         ...(d.data() as Omit<Traveler, 'id' | '_pending'>),

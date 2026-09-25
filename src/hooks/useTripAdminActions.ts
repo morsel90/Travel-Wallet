@@ -345,17 +345,19 @@ export function useTripAdminActions({
       },
     })) !== null, [call, canAct])
 
-  // 🆕 تعيين/إلغاء دور «منظّم الرحلة» — المسؤول العالمي حصراً (functions/index.js
-  // يفرض هذا خادمياً أيضاً؛ لا يجوز لمنظّم تفويض دوره لآخر — انظر التعليق هناك).
+  // 🆕 تعيين/إلغاء دور المنظّم — المسؤول ينقل الملكية، ومنظّم الرحلة يعيّن
+  // «منظّماً مساعداً» (organizerUid لا يتغيّر). الحدود خادمية في manageMember.
   const setMemberRole = useCallback(async (tripId: string, uid: string, role: 'organizer' | 'member') =>
     (await call('manageMember', { mode: 'setRole', tripId, uid, role }, {
-      allowed: isAdmin,
-      deniedText: 'تغيير دور المنظّم ليس من صلاحيات منظّم الرحلة.',
+      allowed: canAct(tripId),
+      deniedText: ORGANIZER_ONLY,
       onSuccess: () => [{
-        text: role === 'organizer' ? 'صار هذا المسافر منظّماً لهذه الرحلة.' : 'أُلغي دور المنظّم عن هذا المسافر.',
+        text: role === 'organizer'
+          ? (isAdmin ? 'صار هذا المسافر منظّماً لهذه الرحلة.' : 'صار هذا المسافر منظّماً مساعداً.')
+          : 'أُلغي دور المنظّم عن هذا المسافر.',
         type: 'success',
       }],
-    })) !== null, [call, isAdmin])
+    })) !== null, [call, isAdmin, canAct])
 
   // 🆕 رابط دعوة — createInvite يُعيد توكناً يستهلكه المستدعي فوراً (بناء رابط
   // المشاركة)، فلا توست ولا اهتزاز عند نجاحه: المستدعي هو من يُعلن النتيجة.

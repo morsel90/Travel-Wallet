@@ -184,7 +184,8 @@ export default function App() {
                 onOpenItinerary: modals.openItinerary,
                 onOpenLongTerm:  longTerm ? modals.openLongTermPanel : undefined,
                 onOpenTripAdmin: tripEdit.canEdit ? modals.openEditTrip : undefined,
-                onOpenTrashBin: session.isAdmin ? modals.openTrashBin : undefined,
+                // 🆕 ومنظّم الرحلة — الاستعادة deletedAt وحده، وقواعده تسمح له بها.
+                onOpenTrashBin: tripEdit.canEdit ? modals.openTrashBin : undefined,
               }}
               onStatClick={(stat) => {
                 haptic.light()
@@ -294,6 +295,12 @@ export default function App() {
                 <TravelersPanel
                   isInitialLoading={ledger.isInitialLoading}
                   isAdmin={session.isAdmin}
+                  canAddTravelers={tripEdit.canEdit}
+                  invite={tripEdit.canEdit ? {
+                    onShare: () => void tripEdit.invite.share(),
+                    isPreparing: tripEdit.invite.isPreparing,
+                    copied: tripEdit.invite.copied,
+                  } : undefined}
                   activeTravelers={ledger.activeTravelers}
                   balances={ledger.travelersPanelBalances}
                   isAddingTraveler={traveler.isAddingTraveler}
@@ -383,6 +390,7 @@ export default function App() {
                 onDeleteTrip: tripEdit.onDeleteTrip,
                 onRemoveMember: tripEdit.onRemoveMember,
                 onSetMemberRole: tripEdit.onSetMemberRole,
+                viewerUid: tripEdit.viewerUid,
                 onLinkTravelerAccount: tripEdit.onLinkTravelerAccount,
                 onExportBackup: tripEdit.onExportBackup,
                 onCreateInvite: tripEdit.onCreateInvite,

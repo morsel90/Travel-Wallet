@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { Save, Loader2, User, Building2, Smartphone } from '../../icons'
 import { Modal } from '../Modal'
 import type { BankDetails, UserProfile } from '../../types'
+import { looksLikeWallet } from '../../utils/paymentType'
 
 interface UserProfileModalProps {
   profile: UserProfile
@@ -29,6 +30,13 @@ export default function UserProfileModal({ profile, isSaving, onSave, onClose }:
   const [iban, setIban] = useState(profile.bankDetails?.iban ?? '')
   const [walletName, setWalletName] = useState(profile.bankDetails?.walletName ?? '')
   const [walletPhone, setWalletPhone] = useState(profile.bankDetails?.walletPhone ?? '')
+
+  // 🆕 نقل ما كُتب في «اسم البنك» إلى خانة المحفظة بضغطة — انظر utils/paymentType.ts.
+  const moveToWallet = () => {
+    if (!walletName.trim()) setWalletName(bankName.trim())
+    setBankName('')
+    setPaymentType('wallet')
+  }
 
   const submit = async () => {
     await onSave({
@@ -92,6 +100,11 @@ export default function UserProfileModal({ profile, isSaving, onSave, onClose }:
               <Smartphone className="w-3.5 h-3.5" /> محفظة رقمية
             </button>
           </div>
+          <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+            {paymentType === 'bank'
+              ? 'حساب في بنك يُحوَّل إليه برقم آيبان (الراجحي، الأهلي...).'
+              : 'تطبيق يُحوَّل إليه برقم الجوال (برق، stc pay، urpay...).'}
+          </p>
         </div>
 
         {paymentType === 'bank' ? (
@@ -105,6 +118,14 @@ export default function UserProfileModal({ profile, isSaving, onSave, onClose }:
                 onChange={e => setBankName(e.target.value)}
                 className={inputClass}
               />
+              {looksLikeWallet(bankName) && (
+                <div role="status" className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5 leading-relaxed">
+                  يبدو أن «{bankName.trim()}» محفظة رقمية — إن كان التحويل إليها برقم الجوال لا بالآيبان:{' '}
+                  <button type="button" onClick={moveToWallet} className="font-bold underline underline-offset-2">
+                    انقلها إلى «محفظة رقمية»
+                  </button>
+                </div>
+              )}
             </div>
 
             <div>

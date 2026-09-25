@@ -3,7 +3,7 @@ import type { Traveler, TravelerBalance, PeriodKey } from '../types'
 import { TravelerCard, AddTravelerForm, type LongTermExitProps } from './TravelerSection'
 import { TravelerCardSkeleton } from './Skeleton'
 import EmptyState from './EmptyState'
-import { Users, Plus } from '../icons'
+import { Users, Plus, Share2, Check, Loader2 } from '../icons'
 
 /** حقول نموذج إضافة مسافر — مجمّعة لأنها تُمرَّر ككتلة واحدة إلى AddTravelerForm. */
 export interface TravelerFormProps {
@@ -16,9 +16,21 @@ export interface TravelerFormProps {
 }
 
 
+/** 🆕 زرّ «دعوة مسافرين» — مصدره useShareInvite عبر tripEdit.invite. */
+export interface TravelersInviteProps {
+  onShare: () => void
+  isPreparing: boolean
+  copied: boolean
+}
+
 interface TravelersPanelProps {
   isInitialLoading: boolean
   isAdmin: boolean
+  /** 🆕 المسؤول أو منظّم الرحلة. قبلها كان زرّ الإضافة للمسؤول وحده، فمنظّم
+   *  أنشأ رحلته بنفسه لم يجد أي طريقة لإضافة أحد من الشاشة الرئيسية. */
+  canAddTravelers: boolean
+  /** 🆕 undefined لمن لا يملك إنشاء رابط دعوة (manageInvite: منظّم/مسؤول). */
+  invite?: TravelersInviteProps
   activeTravelers: Traveler[]
   balances: TravelerBalance[]
   isAddingTraveler: boolean
@@ -39,7 +51,7 @@ interface TravelersPanelProps {
 // عرضي بالكامل: لا يقرأ سياقاً ولا يكتب إلى Firestore. TravelerCard وحده يقرأ
 // من DataContext/UIActionsContext كما كان — لم يتغيّر شيء في استهلاكه للسياق.
 export const TravelersPanel = ({
-  isInitialLoading, isAdmin, activeTravelers, balances,
+  isInitialLoading, isAdmin, canAddTravelers, invite, activeTravelers, balances,
   isAddingTraveler, onStartAddTraveler, travelerForm, longTermExit, cycleWallets, periods,
 }: TravelersPanelProps) => (
   <section id="travelers-section" className="scroll-mt-24">
@@ -52,15 +64,32 @@ export const TravelersPanel = ({
           </span>
         )}
       </h2>
+      {invite && !isInitialLoading && (
+        <button
+          type="button"
+          onClick={invite.onShare}
+          disabled={invite.isPreparing}
+          className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-colors shadow-xs disabled:opacity-40"
+        >
+          {invite.isPreparing ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : invite.copied ? (
+            <Check className="w-3.5 h-3.5" />
+          ) : (
+            <Share2 className="w-3.5 h-3.5" />
+          )}
+          {invite.isPreparing ? 'جارٍ التجهيز...' : invite.copied ? 'نُسخت الرسالة' : 'دعوة مسافرين'}
+        </button>
+      )}
     </div>
 
     {!isInitialLoading && activeTravelers.length === 0 && !isAddingTraveler ? (
       <EmptyState
         Icon={Users}
         title="لا يوجد مسافرون بعد"
-        actionLabel={isAdmin ? 'إضافة مسافر' : undefined}
-        onAction={isAdmin ? onStartAddTraveler : undefined}
-        ActionIcon={isAdmin ? Plus : undefined}
+        actionLabel={canAddTravelers ? 'إضافة مسافر' : undefined}
+        onAction={canAddTravelers ? onStartAddTraveler : undefined}
+        ActionIcon={canAddTravelers ? Plus : undefined}
       />
     ) : (
       <div className={`grid gap-3 sm:gap-4 ${isAdmin ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`}>
@@ -77,7 +106,7 @@ export const TravelersPanel = ({
             ))
         }
 
-        {isAdmin && !isAddingTraveler && !isInitialLoading && (
+        {canAddTravelers && !isAddingTraveler && !isInitialLoading && (
           <button
             type="button"
             onClick={onStartAddTraveler}
@@ -100,6 +129,7 @@ export const TravelersPanel = ({
         setNewTravelerDeposit={travelerForm.setDeposit}
         onSubmit={travelerForm.onSubmit}
         cancelAddTraveler={travelerForm.onCancel}
+        showDeposit={canAddTravelers}
       />
     )}
   </section>

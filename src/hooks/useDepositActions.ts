@@ -21,10 +21,20 @@ import { db } from '../firebase'
 import { travelerDoc, depositLogsCol } from '../firestore'
 import { haptic } from '../utils/haptics'
 import { applyDepositMode } from '../utils/deposits'
+import { callable } from './callables'
+import { callableMessage } from '../utils/callableErrors'
+import { TRIP_ID } from '../utils/tripId'
 import type { Traveler, DepositMode, ToastMessage } from '../types'
 
 interface UseDepositActionsParams {
   user: User | null
+  /**
+   * 🆕 منظّم الرحلة (لا المسؤول): المودَع يمرّ من recordDeposit الخادمية، التي
+   * تكتب الرصيد وسطر تدقيقه في معاملة واحدة — القواعد لا تسمح له بلمس
+   * `deposited` مباشرة (انظر firestore.rules وdocs/DECISIONS.md). المسؤول يبقى
+   * على الدفعة المحلية لأنها تعمل بلا اتصال.
+   */
+  viaServer: boolean
   setTravelers: Dispatch<SetStateAction<Traveler[]>>
   showToast: (msg: ToastMessage, durationMs?: number) => void
   handleFirestoreError: (err: unknown, fallback: string) => void
@@ -41,11 +51,19 @@ export interface DepositSubmission {
 export interface UseDepositActionsResult {
   /** يعيد true حين قُبل الإدخال وأُرسل — false حين رُفض المبلغ، فيبقى الحقل مفتوحاً. */
   submitDeposit: (traveler: Traveler, submission: DepositSubmission) => boolean
+  /** 🆕 المودَع الابتدائي لمسافر أُنشئ للتوّ بصفر — مسار المنظّم (انظر useTravelerActions). */
+  recordDepositViaServer: (travelerId: number, mode: DepositMode, amount: number, reason: string | null) => Promise<void>
 }
 
 export function useDepositActions({
-  user, setTravelers, showToast, handleFirestoreError,
+  user, viaServer, setTravelers, showToast, handleFirestoreError,
 }: UseDepositActionsParams): UseDepositActionsResult {
+  const recordDepositViaServer = useCallback(async (
+    travelerId: number, mode: DepositMode, amount: number, reason: string | null,
+  ) => {
+    await callable('recordDeposit')({ tripId: TRIP_ID, travelerId, mode, amount, reason })
+  }, [])
+
   const submitDeposit = useCallback((traveler: Traveler, { mode, amount, reason }: DepositSubmission) => {
     // القاعدة ١٩: لا مال يدخل التطبيق بلا تحقّق. نفس الشروط السابقة حرفياً —
     // «تحديد القيمة» يقبل الصفر (تصفير رصيد)، و«إضافة»/«خصم» لا تقبلان صفراً.
@@ -58,6 +76,23 @@ export function useDepositActions({
     // 🆕 المنطق نفسه، مستخرَجاً إلى دالة نقية يشاركها مسار الرصيد الابتدائي —
     // وهو ما يجعل «الرصيد = مجموع الحركات الموثّقة» قابلاً للاختبار أصلاً.
     const newAmount = applyDepositMode(previousDeposited, mode, amount)
+
+    // 🆕 مسار المنظّم: لا تحديث متفائل — الخادم يحسب على آخر رصيد فعلي، والنتيجة
+    // تصل عبر onSnapshot. التنبيه بعد النجاح لا قبله، فلا يُقال «تم» لما رُفض.
+    if (viaServer && user) {
+      recordDepositViaServer(travelerId, mode, amount, reason.trim() || null)
+        .then(() => {
+          haptic.success()
+          showToast({ text: 'تم تحديث الرصيد', type: 'success' })
+        })
+        .catch(err => {
+          haptic.error()
+          const message = callableMessage(err)
+          if (message) showToast({ text: message, type: 'error' }, 6000)
+          else handleFirestoreError(err, 'تعذر تحديث الرصيد.')
+        })
+      return true
+    }
 
     showToast({ text: 'تم تحديث الرصيد', type: 'success' })
     haptic.success()
@@ -82,7 +117,7 @@ export function useDepositActions({
     })
     batch.commit().catch(err => handleFirestoreError(err, 'تعذر تحديث الرصيد.'))
     return true
-  }, [user, setTravelers, showToast, handleFirestoreError])
+  }, [user, viaServer, recordDepositViaServer, setTravelers, showToast, handleFirestoreError])
 
-  return { submitDeposit }
+  return { submitDeposit, recordDepositViaServer }
 }

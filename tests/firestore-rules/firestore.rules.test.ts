@@ -326,6 +326,83 @@ describe('المسافرون — إنشاء وتعديل', () => {
   })
 })
 
+// 🆕 منظّم الرحلة مشرفها الكامل — والمسؤول العالمي للخلاف وحده. كل «ينجح»
+// هنا يقابله «يُرفض» يحرس حدّه: المنظّم يدير الدفتر، لكنه لا يمحو أثراً.
+describe('منظّم الرحلة — إدارة المسافرين والمصاريف', () => {
+  beforeEach(async () => {
+    await seedOrganizer('organizer-1')
+    await seed(db => setDoc(travelerDoc(db, 1), validTraveler({ deposited: 500 })))
+    await seed(db => setDoc(travelerNameDoc(db, 'أحمد'), { travelerId: 1 }))
+    await seed(db => setDoc(expenseDoc(db, 'theirs'), expenseBy('member-1')))
+  })
+
+  it('يحذف مسافراً حذفاً ليّناً ويحرّر اسمه في دفعة واحدة', async () => {
+    const db = organizerDb()
+    const batch = writeBatch(db)
+    batch.update(travelerDoc(db, 1), { deletedAt: Date.now() })
+    batch.delete(travelerNameDoc(db, 'أحمد'))
+    await assertSucceeds(batch.commit())
+  })
+
+  it('يستعيد مسافراً محذوفاً', async () => {
+    await seed(db => updateDoc(travelerDoc(db, 1), { deletedAt: 1 }))
+    await assertSucceeds(updateDoc(travelerDoc(organizerDb(), 1), { deletedAt: null }))
+  })
+
+  // ⚠️ الحدّ الحاكم: الرصيد يمرّ من recordDeposit وحدها (الرصيد وسطره معاً).
+  it('لا يعدّل الرصيد مباشرة — ولا مع الحذف في الكتابة نفسها', async () => {
+    await assertFails(updateDoc(travelerDoc(organizerDb(), 1), { deposited: 9999 }))
+    await assertFails(updateDoc(travelerDoc(organizerDb(), 1), { deletedAt: Date.now(), deposited: 0 }))
+  })
+
+  it('لا يغيّر الاسم ولا ربط الحساب مباشرة', async () => {
+    await assertFails(updateDoc(travelerDoc(organizerDb(), 1), { name: 'اسم آخر' }))
+    await assertFails(updateDoc(travelerDoc(organizerDb(), 1), { uid: 'someone' }))
+  })
+
+  it('لا يكتب سطر إيداع مباشرة', async () => {
+    await assertFails(setDoc(doc(depositLogsCol(organizerDb(), 1)), validDepositLog('organizer-1')))
+  })
+
+  it('منظّم رحلة أخرى لا يحذف مسافراً هنا', async () => {
+    await seedOrganizer('organizer-2', OTHER_TRIP_ID)
+    await assertFails(updateDoc(travelerDoc(organizerDb('organizer-2'), 1), { deletedAt: Date.now() }))
+    await assertFails(deleteDoc(travelerNameDoc(organizerDb('organizer-2'), 'أحمد')))
+  })
+
+  it('يعدّل مصروف غيره ويحذفه — بشرط أن يترك اسمه عليه', async () => {
+    const stamp = { lastEditedByUid: 'organizer-1', lastEditedByName: 'المنظّم', lastEditedAt: Date.now() }
+    await assertSucceeds(updateDoc(expenseDoc(organizerDb(), 'theirs'), { amount: 250, ...stamp }))
+    await assertSucceeds(updateDoc(expenseDoc(organizerDb(), 'theirs'), { deletedAt: Date.now(), ...stamp }))
+  })
+
+  it('تعديله مصروف غيره بلا ختم يُرفض', async () => {
+    await assertFails(updateDoc(expenseDoc(organizerDb(), 'theirs'), { amount: 250 }))
+  })
+
+  it('لا يختم التعديل باسم غيره', async () => {
+    await assertFails(updateDoc(expenseDoc(organizerDb(), 'theirs'),
+      { amount: 250, lastEditedByUid: 'member-1', lastEditedAt: Date.now() }))
+  })
+
+  it('ولا أحد يزوّر الختم — لا صاحب المصروف ولا المسؤول', async () => {
+    await assertFails(updateDoc(expenseDoc(memberDb('member-1'), 'theirs'),
+      { amount: 1, lastEditedByUid: 'organizer-1', lastEditedAt: Date.now() }))
+    await assertFails(updateDoc(expenseDoc(adminDb('admin-1'), 'theirs'),
+      { amount: 1, lastEditedByUid: 'organizer-1', lastEditedAt: Date.now() }))
+  })
+
+  it('صاحب المصروف يعدّله بلا ختم، ويبقى ختم المنظّم السابق كما هو', async () => {
+    await seed(db => updateDoc(expenseDoc(db, 'theirs'), { lastEditedByUid: 'organizer-1', lastEditedAt: 1 }))
+    await assertSucceeds(updateDoc(expenseDoc(memberDb('member-1'), 'theirs'), { amount: 120 }))
+  })
+
+  it('عضو عادي ما زال لا يعدّل مصروف غيره حتى مع ختم باسمه', async () => {
+    await assertFails(updateDoc(expenseDoc(memberDb('member-2'), 'theirs'),
+      { amount: 1, lastEditedByUid: 'member-2', lastEditedAt: Date.now() }))
+  })
+})
+
 // 🆕 نموذج الهوية الهجين: uid/joinedAt اختياريان — هذه الاختبارات تثبّت أن
 // isValidTraveler تقبل شكلهما الصحيح (نص أو null لـ uid، رقم لـ joinedAt) وترفض
 // أي شكل آخر، تماماً كأي حقل اختياري آخر في هذا النوع. الكتابة الفعلية لهذين

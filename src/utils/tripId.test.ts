@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isValidTripId, TRIP_ID, HAS_EXPLICIT_TRIP_ID, INVITE_TOKEN } from './tripId'
+import { isValidTripId, suggestTripId, randomTripSuffix, TRIP_ID, HAS_EXPLICIT_TRIP_ID, INVITE_TOKEN } from './tripId'
 
 // ⚠️ هذه الصيغة مكرّرة عمداً في ثلاثة أماكن: هنا، وfunctions/index.js
 // (TRIP_ID_PATTERN)، وscripts/create-trip.mjs. الفحص الخادمي هو الحاجز الفعلي؛
@@ -75,5 +75,36 @@ describe('TRIP_ID / HAS_EXPLICIT_TRIP_ID', () => {
 describe('INVITE_TOKEN', () => {
   it('null حين لا يذكر الرابط دعوة', () => {
     expect(INVITE_TOKEN).toBeNull()
+  })
+})
+
+describe('suggestTripId', () => {
+  it('يحرفن الاسم العربي ويضيف اللاحقة', () => {
+    expect(suggestTripId('رحلة الرياض ٢٠٢٧', 'k3f9')).toBe('rhla-alryad-2027-k3f9')
+  })
+
+  it('يحافظ على الإنجليزي ويصغّره', () => {
+    expect(suggestTripId('Riyadh Trip 2027', 'ab12')).toBe('riyadh-trip-2027-ab12')
+  })
+
+  it('يُسقط التشكيل والرموز', () => {
+    expect(suggestTripId('رِحْلَة!! 🌴 جدة', 'x1y2')).toBe('rhla-jda-x1y2')
+  })
+
+  it('يعود إلى trip حين لا يبقى شيء من الاسم', () => {
+    expect(suggestTripId('', 'aaaa')).toBe('trip-aaaa')
+    expect(suggestTripId('🌴✈️', 'aaaa')).toBe('trip-aaaa')
+  })
+
+  it('ينتج معرّفاً صالحاً دائماً حتى لاسم طويل جداً', () => {
+    const id = suggestTripId('رحلة '.repeat(50), randomTripSuffix())
+    expect(isValidTripId(id)).toBe(true)
+    expect(id.length).toBeLessThanOrEqual(45)
+  })
+})
+
+describe('randomTripSuffix', () => {
+  it('أربعة أحرف صغيرة/أرقام', () => {
+    expect(randomTripSuffix()).toMatch(/^[a-z0-9]{4}$/)
   })
 })

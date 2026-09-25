@@ -52,6 +52,7 @@ function setup(overrides: Partial<Params> = {}) {
     activeTravelers,
     user: null,
     isAdmin: false,
+    editorName: 'محمد',
     setExpenses,
     showToast,
     handleFirestoreError,
@@ -316,13 +317,17 @@ describe('useExpenseActions — الكتابة عبر Firestore (مستخدم م
     nowSpy.mockRestore()
   })
 
+  // 🆕 الحذف والاستعادة يختمان «عدّله فلان» — القواعد تشترطه على منظّم الرحلة
+  // حين يحذف مصروف غيره، ويجب أن يحمل هوية الكاتب الفعلي وحده.
+  const stamp = { lastEditedByUid: 'user-1', lastEditedByName: 'محمد', lastEditedAt: expect.any(Number) }
+
   it('حذف عبر Firestore يستدعي updateDoc بـ deletedAt، والاستعادة تعيده لـ null', () => {
     const { result } = setup({ user: fakeUser })
     act(() => result.current.requestDeleteExpense('e1'))
-    expect(mocks.updateDoc).toHaveBeenCalledWith({ __expenseDoc: 'e1' }, { deletedAt: expect.any(Number) })
+    expect(mocks.updateDoc).toHaveBeenCalledWith({ __expenseDoc: 'e1' }, { deletedAt: expect.any(Number), ...stamp })
 
     act(() => result.current.handleRestoreExpense('e1'))
-    expect(mocks.updateDoc).toHaveBeenCalledWith({ __expenseDoc: 'e1' }, { deletedAt: null })
+    expect(mocks.updateDoc).toHaveBeenCalledWith({ __expenseDoc: 'e1' }, { deletedAt: null, ...stamp })
   })
 
   it('فشل حذف عبر Firestore يستدعي handleFirestoreError برسالة واضحة', async () => {

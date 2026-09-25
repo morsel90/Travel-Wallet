@@ -5,6 +5,7 @@ import {
   useTripConfig, useOrganizerBankDetails, useMyTripRole, useTripAdminActions,
   useAllTrips, useMyTrips, useTripStats,
 } from './index'
+import { useShareInvite } from './useShareInvite'
 import { TRIP_ID, HAS_EXPLICIT_TRIP_ID } from '../utils/tripId'
 import { acceptsExpenses, closedTripNotice } from '../utils/tripStatus'
 
@@ -76,6 +77,11 @@ export function useAppTrip({
   }), [tripName, organizerUid, itinerary, itineraryRev, tripStatus, statusChangedAt, tripType])
 
   const tripAdmin = useTripAdminActions({ isAdmin, organizerTripId, showToast, handleFirestoreError })
+  // 🆕 زرّ «دعوة مسافرين» في قسم المسافرين بالشاشة الرئيسية — لا يُعرض إلا
+  // حين tripEdit.canEdit (الخادم يقصر manageInvite على المنظّم والمسؤول).
+  const invite = useShareInvite({
+    tripId: TRIP_ID, tripName: tripName ?? TRIP_ID, onCreateInvite: tripAdmin.createInvite, showToast,
+  })
 
   // ─── شاشة «رحلاتي» ────────────────────────────────────────────────────────
   // 🆕 المسؤول يرى كل الرحلات (استعلام القائمة يرضيه isAdmin وحده)، والعضو
@@ -183,10 +189,12 @@ export function useAppTrip({
       onDeleteTrip: tripAdmin.deleteTrip,
       onRemoveMember: tripAdmin.removeMember,
       onSetMemberRole: tripAdmin.setMemberRole,
+      viewerUid: user?.uid,
       onLinkTravelerAccount: tripAdmin.linkTravelerAccount,
       onExportBackup: tripAdmin.exportBackup,
       onCreateInvite: tripAdmin.createInvite,
       onRevokeInvite: tripAdmin.revokeInvite,
+      invite,
     },
   }
 }
