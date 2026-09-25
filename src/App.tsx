@@ -294,6 +294,12 @@ export default function App() {
                 <TravelersPanel
                   isInitialLoading={ledger.isInitialLoading}
                   isAdmin={session.isAdmin}
+                  canAddTravelers={tripEdit.canEdit}
+                  invite={tripEdit.canEdit ? {
+                    onShare: () => void tripEdit.invite.share(),
+                    isPreparing: tripEdit.invite.isPreparing,
+                    copied: tripEdit.invite.copied,
+                  } : undefined}
                   activeTravelers={ledger.activeTravelers}
                   balances={ledger.travelersPanelBalances}
                   isAddingTraveler={traveler.isAddingTraveler}

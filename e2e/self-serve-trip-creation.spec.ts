@@ -73,7 +73,13 @@ test('عضو بلا أي رحلة سابقة يملأ بروفايله، يُن�
   // «مسافر جديد» — حساب بريد/كلمة مرور لا يملك اسم عرض على Auth نفسه، فلولا
   // قراءة getProfileDisplayName لسقط للاسم الافتراضي رغم أن البروفايل مُسمّى.
   await expect(page.getByText(PROFILE_NAME)).toBeVisible()
-  await expect(page.getByText('مسافر جديد')).not.toBeVisible()
+  // exact: زرّ «إضافة مسافر جديد» يظهر الآن للمنظّم ويحوي النصّ نفسه.
+  await expect(page.getByText('مسافر جديد', { exact: true })).not.toBeVisible()
+
+  // 🆕 المنظّم يضيف مسافرين من الشاشة الرئيسية مباشرة — أول منظّم حقيقي لم
+  // يجد أي طريقة لذلك حين كانت الدعوة مدفونة في «إدارة الرحلة» وحدها.
+  await expect(page.getByRole('button', { name: 'دعوة مسافرين' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'إضافة مسافر جديد' })).toBeVisible()
 
   // ── يظهر كمنظّم فوراً: اسم الرحلة في الهيدر قابل للضغط بلا أي تدخّل من
   // مسؤول — الهيدر نفسه لا يُعرَض إلا بعد الانضمام لرحلة، وهذا أول ظهور له.

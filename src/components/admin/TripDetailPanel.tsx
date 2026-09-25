@@ -14,6 +14,7 @@ import {
 } from '../../icons'
 import { useTripMembers } from '../../hooks/useTripMembers'
 import { useTripTravelers } from '../../hooks/useTripTravelers'
+import { useShareInvite } from '../../hooks/useShareInvite'
 import SegmentForm from './SegmentForm'
 import EmptyState from '../EmptyState'
 import {
@@ -141,12 +142,9 @@ export default function TripDetailPanel({
   // المختار فيها. سطر واحد يُفتح في كل مرة (نفس فكرة removingUid أعلاه).
   const [linkingTravelerId, setLinkingTravelerId] = useState<number | null>(null)
   const [linkTargetUid, setLinkTargetUid] = useState('')
-  // 🆕 رابط دعوة بنقرة واحدة — توكن هذه الجلسة فقط (لا قراءة من الخادم لمعرفة
-  // رابط نشط سابق؛ العقد الوحيد المتاح هو create/revoke — انظر manageInvite في
-  // functions/index.js). null يعني «لم نطلب رابطاً بعد في هذه الجلسة».
-  const [inviteToken, setInviteToken] = useState<string | null>(null)
-  const [isPreparingInvite, setIsPreparingInvite] = useState(false)
-  const [inviteMsgCopied, setInviteMsgCopied] = useState(false)
+  // 🆕 رابط دعوة بنقرة واحدة — نفس الخطّاف الذي يستعمله قسم المسافرين في
+  // الشاشة الرئيسية (انظر useShareInvite.ts).
+  const invite = useShareInvite({ tripId: trip.id, tripName: trip.name, onCreateInvite, showToast })
 
   const [nameForm, setNameForm] = useState(trip.name)
   const [workingItinerary, setWorkingItinerary] = useState(trip.itinerary)
@@ -176,9 +174,6 @@ export default function TripDetailPanel({
     setDraftError(null)
     setDeleteConfirm('')
     setActiveTab('details')
-    // 🆕 توكن الجلسة السابقة يخصّ رحلة أخرى — لا معنى لمشاركته هنا.
-    setInviteToken(null)
-    setInviteMsgCopied(false)
     setLinkingTravelerId(null)
     setLinkTargetUid('')
     setConfirmingTypeDowngrade(false)
@@ -215,53 +210,9 @@ export default function TripDetailPanel({
 
   const saveName = () => onSaveTripName(trip.id, nameForm)
 
-  // 🆕 رابط الدخول المباشر (?invite=TOKEN) — طريقة الانضمام الوحيدة لرحلة (لا رمز رحلة بعد الآن).
-  const directJoinUrl = (token: string) =>
-    `${window.location.origin}${window.location.pathname}?invite=${token}`
-
-  const inviteShareMessage = (token: string) =>
-    `أهلاً! أدعوك للانضمام إلى رحلتنا ✈️ ${trip.name}. انقر على الرابط التالي للدخول مباشرة: ${directJoinUrl(token)}`
-
-  // 🆕 مشاركة بنقرة واحدة — Web Share API إن دعمها الجهاز، وإلا نسخ الرسالة
-  // كاملة للحافظة. ⚠️ لا await قبل navigator.share() إن كان لدينا توكن مسبقاً:
-  // بعض المتصفحات (Safari تحديداً) ترفض استدعاء share() بعد فجوة زمنية طويلة
-  // منذ ضغطة المستخدم (انتهاء "user activation") — لذا الزر يبقى معطّلاً
-  // (isPreparingInvite) حتى يجهز التوكن، فلا حاجة لانتظار شبكة داخل هذه الدالة
-  // في الحالة الشائعة (توكن جاهز مسبقاً من ضغطة سابقة أو من نفس الجلسة).
-  const handleShareInvite = async () => {
-    let token = inviteToken
-    if (!token) {
-      setIsPreparingInvite(true)
-      token = await onCreateInvite(trip.id)
-      setIsPreparingInvite(false)
-      if (!token) return // توست الخطأ عُرض بالفعل من onCreateInvite
-      setInviteToken(token)
-    }
-
-    const message = inviteShareMessage(token)
-
-    if (navigator.share) {
-      try {
-        await navigator.share({ text: message })
-      } catch {
-        // المستخدم ألغى صفحة المشاركة، أو فشلت لسبب لا يستحق تنبيهاً
-      }
-      return
-    }
-
-    try {
-      await navigator.clipboard.writeText(message)
-      setInviteMsgCopied(true)
-      showToast({ text: 'نُسخت رسالة الدعوة — الصقها لمن تريد دعوته.', type: 'success' })
-      window.setTimeout(() => setInviteMsgCopied(false), 2000)
-    } catch {
-      // نادر: تعذّر الوصول للحافظة (صلاحيات المتصفح)
-    }
-  }
-
   const handleRevokeInvite = async () => {
     const ok = await onRevokeInvite(trip.id)
-    if (ok) setInviteToken(null)
+    if (ok) invite.forget()
   }
 
   const submitRemoveMember = async (uid: string) => {
@@ -834,18 +785,18 @@ export default function TripDetailPanel({
             <div className="flex gap-2 flex-wrap">
               <button
                 type="button"
-                onClick={() => void handleShareInvite()}
-                disabled={isPreparingInvite}
+                onClick={() => void invite.share()}
+                disabled={invite.isPreparing}
                 className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-colors shadow-xs disabled:opacity-40"
               >
-                {isPreparingInvite ? (
+                {invite.isPreparing ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : inviteMsgCopied ? (
+                ) : invite.copied ? (
                   <Check className="w-3.5 h-3.5" />
                 ) : (
                   <Share2 className="w-3.5 h-3.5" />
                 )}
-                {isPreparingInvite ? 'جارٍ التجهيز...' : inviteMsgCopied ? 'نُسخت الرسالة' : 'مشاركة رابط الدعوة'}
+                {invite.isPreparing ? 'جارٍ التجهيز...' : invite.copied ? 'نُسخت الرسالة' : 'مشاركة رابط الدعوة'}
               </button>
               <button
                 type="button"

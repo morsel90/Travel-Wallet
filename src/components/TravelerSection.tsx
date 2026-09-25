@@ -241,13 +241,17 @@ interface AddTravelerFormProps {
   setNewTravelerDeposit: (v: string) => void
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void
   cancelAddTraveler: () => void
+  /** 🆕 حقل «المودَع» للمسؤول وحده: قيد الإيداع (depositLogs) وتعديل الرصيد
+   *  كلاهما isAdmin() في القواعد، فمنظّم يكتب مبلغاً هنا يُنشئ المسافر ثم
+   *  تُرفض دفعة الإيداع. المنظّم يُضيف الاسم فقط. */
+  showDeposit?: boolean
 }
 
 // مكوّن نموذج تفاصيل إضافة المسافر الجديد
 export const AddTravelerForm = memo(({
   newTravelerName, setNewTravelerName,
   newTravelerDeposit, setNewTravelerDeposit,
-  onSubmit, cancelAddTraveler
+  onSubmit, cancelAddTraveler, showDeposit = true
 }: AddTravelerFormProps) => {
   
   const handleDepositChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -270,7 +274,7 @@ export const AddTravelerForm = memo(({
 
       <form onSubmit={onSubmit} className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 items-end">
-          <div className="sm:col-span-2">
+          <div className={showDeposit ? 'sm:col-span-2' : 'sm:col-span-3'}>
             <label className="block text-xs font-bold text-slate-500 mb-1.5 ms-1">اسم المسافر الجديد</label>
             <input
               type="text" 
@@ -282,7 +286,8 @@ export const AddTravelerForm = memo(({
               placeholder="مثال: سعد الغامدي"
             />
           </div>
-          
+
+          {showDeposit && (
           <div className="relative">
             <label className="block text-xs font-bold text-slate-500 mb-1.5 ms-1">المودَع (اختياري)</label>
             <div className="relative">
@@ -298,7 +303,14 @@ export const AddTravelerForm = memo(({
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">﷼</span>
             </div>
           </div>
+          )}
         </div>
+        {!showDeposit && (
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            لمن لا يملك حساباً في التطبيق. من يملك حساباً أرسل له «دعوة مسافرين» بدلاً من ذلك
+            لينضمّ بنفسه — ويمكن ربط هذا الملف بحسابه لاحقاً من «إدارة الرحلة».
+          </p>
+        )}
 
         <button
           type="submit"

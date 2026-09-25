@@ -26,6 +26,46 @@ export function isValidTripId(candidate: string): boolean {
   return TRIP_ID_PATTERN.test(candidate.trim())
 }
 
+// 🆕 معرّف مقترح من اسم الرحلة — أول منظّم حقيقي كتب اسم رحلته بالعربية في
+// حقل المعرّف فرُفض، واضطُرّ لمن يشرح له أن الرابط لا يقبل العربية. الآن يكتب
+// الاسم بأي لغة، ويُشتقّ المعرّف منه تلقائياً (حرفنة تقريبية) مع لاحقة عشوائية
+// قصيرة: قائمة «رحلاتي» لا ترى رحلات غيره، فبلا اللاحقة يصطدم «رحلة-الرياض»
+// برحلة شخص آخر ولا يعرف السبب. الحرفنة للقراءة فقط لا للدقة اللغوية.
+const ARABIC_TO_LATIN: Record<string, string> = {
+  'ا': 'a', 'أ': 'a', 'إ': 'e', 'آ': 'a', 'ب': 'b', 'ت': 't', 'ث': 'th', 'ج': 'j',
+  'ح': 'h', 'خ': 'kh', 'د': 'd', 'ذ': 'th', 'ر': 'r', 'ز': 'z', 'س': 's', 'ش': 'sh',
+  'ص': 's', 'ض': 'd', 'ط': 't', 'ظ': 'z', 'ع': 'a', 'غ': 'gh', 'ف': 'f', 'ق': 'q',
+  'ك': 'k', 'ل': 'l', 'م': 'm', 'ن': 'n', 'ه': 'h', 'و': 'w', 'ي': 'y', 'ى': 'a',
+  'ة': 'a', 'ؤ': 'o', 'ئ': 'e', 'ء': '',
+  '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4', '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
+}
+
+/** لاحقة عشوائية من 4 أحرف [a-z0-9] — تُولَّد مرة واحدة لكل نموذج. */
+export function randomTripSuffix(): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  let out = ''
+  for (let i = 0; i < 4; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)]
+  return out
+}
+
+/**
+ * يحوّل اسم رحلة (عربي/إنجليزي/مختلط) إلى معرّف صالح لـ isValidTripId دائماً:
+ * «رحلة الرياض ٢٠٢٧» + «k3f9» ← «rhla-alryad-2027-k3f9». اسم بلا أي حرف قابل
+ * للتحويل (فارغ، رموز فقط) ← «trip-k3f9».
+ */
+export function suggestTripId(name: string, suffix: string): string {
+  // التشكيل والتطويل (ـ) يُحذفان قبل الحرفنة، وإلا صار كل منها شرطة: «r-h-l-a».
+  const slug = Array.from(name.normalize('NFKC').replace(/[\u064B-\u065F\u0670\u0640]/g, ''))
+    .map(ch => ARABIC_TO_LATIN[ch] ?? ch)
+    .join('')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/, '')
+  return `${slug || 'trip'}-${suffix}`
+}
+
 /** رابط فتح رحلة بمعرّفها — التبديل يتطلب إعادة تحميل كاملة (انظر أدناه). */
 export function tripUrl(tripId: string): string {
   return `${window.location.origin}${window.location.pathname}?trip=${encodeURIComponent(tripId)}`

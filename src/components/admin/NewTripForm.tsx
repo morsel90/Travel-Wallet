@@ -4,7 +4,7 @@
 // عند الإنشاء. انظر docs/DECISIONS.md.
 import { useState } from 'react'
 import { X, Save, Loader2 } from '../../icons'
-import { isValidTripId } from '../../utils/tripId'
+import { isValidTripId, suggestTripId, randomTripSuffix } from '../../utils/tripId'
 
 interface NewTripFormProps {
   existingIds: string[]
@@ -18,11 +18,20 @@ const inputClass =
 const labelClass = 'block text-xs font-bold text-slate-500 mb-1.5'
 
 export default function NewTripForm({ existingIds, isSaving, onCreate, onCancel }: NewTripFormProps) {
-  const [tripId, setTripId] = useState('')
   const [name, setName] = useState('')
+  // 🆕 الاسم أولاً وبأي لغة، والمعرّف يُشتقّ منه تلقائياً (suggestTripId) — لا
+  // يُطلب من المنظّم أن يعرف أن الرابط لا يقبل العربية. customId يبقى null حتى
+  // يلمس المستخدم حقل المعرّف بنفسه؛ بعدها لا يعود الاسم يكتب فوقه.
+  const [suffix] = useState(randomTripSuffix)
+  const [customId, setCustomId] = useState<string | null>(null)
+  const tripId = customId ?? suggestTripId(name, suffix)
   const [error, setError] = useState<string | null>(null)
 
   const submit = async () => {
+    if (!name.trim()) {
+      setError('اكتب اسم الرحلة.')
+      return
+    }
     const id = tripId.trim()
     if (!isValidTripId(id)) {
       setError('المعرّف غير صالح — إنجليزي/أرقام وشرطة (-) وشرطة سفلية (_) فقط، بطول 1-64 حرفاً.')
@@ -56,22 +65,6 @@ export default function NewTripForm({ existingIds, isSaving, onCreate, onCancel 
       </div>
 
       <div>
-        <label className={labelClass} htmlFor="new-trip-id">معرّف الرحلة</label>
-        <input
-          id="new-trip-id"
-          type="text"
-          dir="ltr"
-          value={tripId}
-          onChange={e => setTripId(e.target.value)}
-          placeholder="riyadh-2027"
-          className={`${inputClass} text-right`}
-        />
-        <p className="text-[11px] text-slate-400 mt-1.5">
-          يظهر في رابط الرحلة (‎?trip=…) ولا يمكن تغييره لاحقاً.
-        </p>
-      </div>
-
-      <div>
         <label className={labelClass} htmlFor="new-trip-name">اسم الرحلة</label>
         <input
           id="new-trip-name"
@@ -79,15 +72,34 @@ export default function NewTripForm({ existingIds, isSaving, onCreate, onCancel 
           value={name}
           onChange={e => setName(e.target.value)}
           placeholder="رحلة الرياض ٢٠٢٧"
+          required
+          autoFocus
           className={inputClass}
         />
-        <p className="text-[11px] text-slate-400 mt-1.5">إن تركته فارغاً سيُستخدم المعرّف اسماً.</p>
+        <p className="text-[11px] text-slate-400 mt-1.5">بالعربية أو بأي لغة — يمكنك تغييره لاحقاً.</p>
+      </div>
+
+      <div>
+        <label className={labelClass} htmlFor="new-trip-id">معرّف الرحلة</label>
+        <input
+          id="new-trip-id"
+          type="text"
+          dir="ltr"
+          value={tripId}
+          onChange={e => setCustomId(e.target.value)}
+          placeholder="riyadh-2027"
+          className={`${inputClass} text-right`}
+        />
+        <p className="text-[11px] text-slate-400 mt-1.5">
+          يُولَّد تلقائياً من الاسم ولا حاجة لتعديله. يظهر في رابط الرحلة (‎?trip=…)
+          ولا يمكن تغييره لاحقاً — إن عدّلته فبأحرف إنجليزية وأرقام وشرطة (-) فقط.
+        </p>
       </div>
 
       <p className="text-[11px] text-teal-800 bg-teal-50 border border-teal-200 rounded-lg p-2.5 leading-relaxed">
-        ستصبح منظّم هذه الرحلة تلقائياً — بيانات البنك التي تظهر لأعضائها تُقرأ
-        من بروفايلك، عدّلها من هناك في أي وقت. بعد الإنشاء، ادعُ المسافرين عبر
-        رابط دعوة من تبويب «المسافرون» داخل تفاصيل الرحلة.
+        ستصبح منظّم هذه الرحلة تلقائياً — بيانات البنك التي تظهر للمسافرين تُقرأ
+        من بروفايلك، عدّلها من هناك في أي وقت. بعد الإنشاء، أضف المسافرين بزرّ
+        «دعوة مسافرين» في قسم المسافرين أسفل الشاشة الرئيسية.
       </p>
 
       {error && (
