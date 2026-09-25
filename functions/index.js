@@ -654,6 +654,7 @@ function isValidExpenseJs(d) {
   if (!hasOnlyKeys(d, [
     'id', 'date', 'description', 'amount', 'originalAmount', 'currency', 'exchangeRate',
     'participants', 'createdAt', 'deletedAt', 'createdByUid', 'category', 'shares', 'paidBy',
+    'lastEditedByUid', 'lastEditedByName', 'lastEditedAt',
   ])) return false;
   if (typeof d.id !== 'string' || !d.id) return false;
   if (typeof d.date !== 'string' || d.date.length > 10) return false;
@@ -671,6 +672,9 @@ function isValidExpenseJs(d) {
   if ('shares' in d && !isValidSharesJs(d.shares, d.participants)) return false;
   // 🆕 موازٍ لـ isValidExpense في firestore.rules — انظر تعليقها هناك.
   if ('paidBy' in d && d.paidBy !== 'fund' && typeof d.paidBy !== 'number') return false;
+  if ('lastEditedByUid' in d && typeof d.lastEditedByUid !== 'string') return false;
+  if ('lastEditedByName' in d && (typeof d.lastEditedByName !== 'string' || d.lastEditedByName.length > 100)) return false;
+  if ('lastEditedAt' in d && typeof d.lastEditedAt !== 'number') return false;
   return true;
 }
 
@@ -2277,5 +2281,91 @@ exports.recordSettlement = onCall(
     console.log(`[recordSettlement] ${tripId}: ${fromId} (${names.fromName}) → ${toId} (${names.toName}) بمبلغ ${transfer}`);
 
     return { success: true, tripId, fromId, toId, amount: transfer, repaymentId: repaymentRef.id };
+  }),
+);
+
+/**
+ * 🆕 recordDeposit — تعديل «المودَع» لمسافر (إضافة/خصم/تحديد) مع سطر تدقيقه،
+ * **في معاملة واحدة**. متاحة لمنظّم الرحلة أو المسؤول (callerManagesTrip).
+ *
+ * ⚠️ لماذا دالة لا توسيع قاعدة `travelers.update` للمنظّم: القاعدة لا تستطيع
+ * أن تشترط وجود سطر في depositLogs مع كل تغيير في `deposited` (معرّف السطر
+ * عشوائي)، فالمنظّم كان سيملك تعديل الرصيد بلا أثر — والأثر هو بالضبط ما
+ * يرجع إليه المسؤول وقت الخلاف. هنا الرصيد وسطره لا ينفصلان أبداً، و`changedByUid`
+ * هو المستدعي الفعلي لا ما يدّعيه العميل. المسؤول يبقى على مساره القديم من
+ * المتصفح (useDepositActions) لأنه يعمل بلا اتصال.
+ *
+ * نفس شروط العميل (القاعدة ١٩): المبلغ منتهٍ؛ «تحديد» يقبل الصفر، و«إضافة»/«خصم»
+ * لا. ونفس شرط tripAcceptsWrites في القواعد: الرحلة المؤرشفة وحدها ترفض.
+ */
+exports.recordDeposit = onCall(
+  { region: 'us-central1', maxInstances: 5, secrets: [SENTRY_DSN] },
+  withSentry('recordDeposit', async (request) => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'يجب تسجيل الدخول أولاً.');
+    }
+
+    const tripId = String(request.data?.tripId ?? '').trim();
+    const travelerId = Number(request.data?.travelerId);
+    const mode = String(request.data?.mode ?? '');
+    const amount = Number(request.data?.amount);
+    const rawReason = request.data?.reason;
+
+    if (!tripId || !TRIP_ID_PATTERN.test(tripId)) {
+      throw new HttpsError('invalid-argument', 'معرّف الرحلة غير صالح.');
+    }
+    if (!Number.isInteger(travelerId)) {
+      throw new HttpsError('invalid-argument', 'معرّف المسافر غير صالح.');
+    }
+    if (mode !== 'add' && mode !== 'subtract' && mode !== 'set') {
+      throw new HttpsError('invalid-argument', 'نوع التعديل غير معروف.');
+    }
+    if (!Number.isFinite(amount) || amount < 0 || (mode !== 'set' && amount === 0)) {
+      throw new HttpsError('invalid-argument', 'المبلغ غير صالح.');
+    }
+    if (rawReason != null && (typeof rawReason !== 'string' || rawReason.length > 300)) {
+      throw new HttpsError('invalid-argument', 'السبب طويل جداً (300 حرف كحدّ أقصى).');
+    }
+    const reason = typeof rawReason === 'string' && rawReason.trim() ? rawReason.trim() : null;
+
+    if (!(await callerManagesTrip(tripId, request.auth))) {
+      throw new HttpsError('permission-denied', 'تعديل المودَع متاح لمنظّم الرحلة أو المسؤول فقط.');
+    }
+
+    const tripSnap = await db.collection('trips').doc(tripId).get();
+    if (!tripSnap.exists) {
+      throw new HttpsError('not-found', `الرحلة "${tripId}" غير موجودة.`);
+    }
+    if ((tripSnap.data().status || 'active') === 'archived') {
+      throw new HttpsError('failed-precondition', 'الرحلة مؤرشفة — لا يمكن تعديل الأرصدة فيها.');
+    }
+
+    const travelerRef = tripDataRoot(tripId).collection('travelers').doc(String(travelerId));
+    const logRef = travelerRef.collection('depositLogs').doc();
+    const actor = { uid: request.auth.uid, email: request.auth.token.email };
+
+    // القراءة داخل المعاملة: ضغطتا «إضافة» متلاحقتان تُحسبان على آخر رصيد فعلي،
+    // و`previousDeposited` في السطر هو ما كان فعلاً لا ما رآه العميل.
+    const result = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(travelerRef);
+      if (!snap.exists || snap.data().deletedAt) {
+        throw new HttpsError('not-found', 'المسافر غير موجود في الرحلة (أو محذوف).');
+      }
+      const stored = Number(snap.data().deposited);
+      const previous = Number.isFinite(stored) ? stored : 0;
+      // ⚠️ نسخة حرفية من applyDepositMode (src/utils/deposits.ts): الخصم يُقصَر
+      // عند الصفر، ولا تقريب — وإلا اختلف الرصيد بحسب من سجّله (مسؤول من
+      // المتصفح أو منظّم من هنا) ونكسر replayDepositLogs.
+      const next = mode === 'set' ? amount : mode === 'add' ? previous + amount : Math.max(0, previous - amount);
+      if (!Number.isFinite(next)) {
+        throw new HttpsError('invalid-argument', 'المبلغ غير صالح.');
+      }
+      tx.update(travelerRef, { deposited: next });
+      tx.set(logRef, buildDepositLog(travelerId, previous, next, reason, actor, mode));
+      return { previous, next };
+    });
+
+    console.log(`[recordDeposit] ${tripId}: ${travelerId} ${mode} ${amount} (${result.previous} → ${result.next}) by ${request.auth.uid}`);
+    return { success: true, tripId, travelerId, previousDeposited: result.previous, newDeposited: result.next };
   }),
 );

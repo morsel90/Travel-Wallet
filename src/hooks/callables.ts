@@ -13,7 +13,7 @@
 // أنواع لا يخصّ هذه الدالة.
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '../firebase'
-import type { PeriodKey, RolloverResult } from '../types'
+import type { DepositMode, PeriodKey, RolloverResult } from '../types'
 
 // ── إدارة الرحلات (useTripAdminActions) ─────────────────────────────────────
 
@@ -94,6 +94,22 @@ export interface RecordSettlementResponse {
   amount: number
 }
 
+/** 🆕 يطابق ما تقرأه recordDeposit في functions/index.js — مسار المنظّم للمودَع. */
+export interface RecordDepositRequest {
+  tripId: string
+  travelerId: number
+  mode: DepositMode
+  amount: number
+  reason: string | null
+}
+export interface RecordDepositResponse {
+  success: boolean
+  tripId: string
+  travelerId: number
+  previousDeposited: number
+  newDeposited: number
+}
+
 export interface CloseMonthRequest { tripId: string; period: PeriodKey }
 
 export interface ExitTravelerRequest { tripId: string; travelerId: number; settle: boolean }
@@ -118,6 +134,7 @@ export interface CallableContracts {
   joinViaInvite: [JoinViaInviteRequest, JoinViaInviteResponse]
   updateMyTravelerName: [UpdateMyTravelerNameRequest, UpdateMyTravelerNameResponse]
   recordSettlement: [RecordSettlementRequest, RecordSettlementResponse]
+  recordDeposit: [RecordDepositRequest, RecordDepositResponse]
   closeMonth: [CloseMonthRequest, RolloverResult]
   exitTraveler: [ExitTravelerRequest, ExitTravelerResponse]
 }

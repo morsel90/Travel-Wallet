@@ -15,6 +15,8 @@ interface UseExpenseActionsParams {
   activeTravelers: Traveler[]
   user: User | null
   isAdmin: boolean
+  /** 🆕 الاسم الذي يُكتب في «عدّله فلان» — اسمه مسافراً في هذه الرحلة إن وُجد. */
+  editorName: string
   setExpenses: Dispatch<SetStateAction<Expense[]>>
   showToast: (msg: ToastMessage, durationMs?: number) => void
   handleFirestoreError: (err: unknown, fallback: string) => void
@@ -44,8 +46,15 @@ export interface UseExpenseActionsResult {
 }
 
 export function useExpenseActions({
-  activeTravelers, user, isAdmin, setExpenses, showToast, handleFirestoreError, setSyncError, isFirstExpense,
+  activeTravelers, user, isAdmin, editorName, setExpenses, showToast, handleFirestoreError, setSyncError, isFirstExpense,
 }: UseExpenseActionsParams): UseExpenseActionsResult {
+  // 🆕 ختم «عدّله فلان» — على كل تعديل/حذف/استعادة، لا على الإنشاء. يُكتب دائماً
+  // (لا فقط حين يعدّل المرء مصروف غيره) لأن ذلك أبسط وصادق، والعرض وحده يقرّر
+  // إظهاره. القواعد تشترطه على المنظّم حين يعدّل مصروف غيره.
+  const editorStamp = useCallback((): Pick<Expense, 'lastEditedByUid' | 'lastEditedByName' | 'lastEditedAt'> =>
+    user ? { lastEditedByUid: user.uid, lastEditedByName: editorName.slice(0, 100), lastEditedAt: Date.now() } : {},
+  [user, editorName])
+
   const [isAddingExpense, setIsAddingExpense] = useState(false)
   const [editingExpense,  setEditingExpense]  = useState<Expense | null>(null)
   // 🆕 يتزايد فقط عند نجاح إضافة مصروف جديد فعلياً (لا عند التعديل ولا الإلغاء)
@@ -153,6 +162,7 @@ export function useExpenseActions({
       paidBy:         newExpense.paidBy,
       createdAt:      editingExpense?.createdAt ?? now,
       createdByUid:   editingExpense?.createdByUid ?? user?.uid,
+      ...(editingExpense ? editorStamp() : {}),
     }
 
     if (newExpense.splitMode === 'custom' && newExpense.participants.length > 0) {
@@ -228,7 +238,7 @@ export function useExpenseActions({
     }
     // الكتابة صدرت وطُبِّقت على الكاش المحلي — لا ننتظر تأكيد الخادم لتحرير القفل
     releaseSubmitLock()
-  }, [newExpense, editingExpense, user, isAdmin, emptyExpenseForm, setExpenses, showToast, setSyncError, isFirstExpense, releaseSubmitLock])
+  }, [newExpense, editingExpense, user, isAdmin, editorStamp, emptyExpenseForm, setExpenses, showToast, setSyncError, isFirstExpense, releaseSubmitLock])
 
   const handleQuickAddExpense = useCallback((description: string, amount: number): string | null => {
     if (isSubmittingExpenseRef.current) return 'جارٍ معالجة طلب سابق، حاول بعد لحظة.'
@@ -336,9 +346,9 @@ export function useExpenseActions({
   const handleRestoreExpense = useCallback((id: string) => {
     if (!user) return
     showToast({ text: 'تم استعادة المصروف وتحديث الحسابات', type: 'success' })
-    updateDoc(expenseDoc(id), { deletedAt: null })
+    updateDoc(expenseDoc(id), { deletedAt: null, ...editorStamp() })
       .catch(err => handleFirestoreError(err, 'تعذر استعادة المصروف.'))
-  }, [user, showToast, handleFirestoreError])
+  }, [user, showToast, handleFirestoreError, editorStamp])
 
   // ⚠️ **لا نافذة تأكيد قبل هذا الفعل، عن قصد.** الحذف ليّن (`deletedAt`) ولا
   // شيء يُفقد: التنبيه أدناه يحمل «تراجع» لخمس ثوانٍ، والمصروف يبقى في سلة
@@ -357,9 +367,9 @@ export function useExpenseActions({
       setExpenses(prev => prev.filter(e => e.id !== id))
       return
     }
-    updateDoc(expenseDoc(id), { deletedAt: Date.now() })
+    updateDoc(expenseDoc(id), { deletedAt: Date.now(), ...editorStamp() })
       .catch(err => handleFirestoreError(err, 'تعذر حذف المصروف.'))
-  }, [user, setExpenses, handleFirestoreError, showToast, handleRestoreExpense])
+  }, [user, setExpenses, handleFirestoreError, showToast, handleRestoreExpense, editorStamp])
 
   // تم التعديل هنا لاستقبال البيانات ونقلها للنموذج الكامل
   const openExpenseForm = useCallback((initialDesc = '', initialAmount = '') => {

@@ -184,7 +184,8 @@ export default function App() {
                 onOpenItinerary: modals.openItinerary,
                 onOpenLongTerm:  longTerm ? modals.openLongTermPanel : undefined,
                 onOpenTripAdmin: tripEdit.canEdit ? modals.openEditTrip : undefined,
-                onOpenTrashBin: session.isAdmin ? modals.openTrashBin : undefined,
+                // 🆕 ومنظّم الرحلة — الاستعادة deletedAt وحده، وقواعده تسمح له بها.
+                onOpenTrashBin: tripEdit.canEdit ? modals.openTrashBin : undefined,
               }}
               onStatClick={(stat) => {
                 haptic.light()

@@ -10,6 +10,7 @@ import {
 import { useFilteredExpenses } from './useFilteredExpenses'
 import { calculateBalances, calculateSettlements, calculateCategoryTotals, calculateSpendingTrend } from '../utils/calculations'
 import { TRIP_ID } from '../utils/tripId'
+import { INITIAL_DEPOSIT_REASON } from '../utils/deposits'
 import { isLongTerm } from '../utils/tripType'
 import { formatPeriodLabel, listPeriods } from '../utils/period'
 import { planRollover, describeExitBlock, filterCycleExpenses, calculateCycleWallet } from '../utils/longTerm'
@@ -210,18 +211,36 @@ export function useTripWorkspace({
   // المكتب أصلاً، وتتطلب أن يشكّ المستخدم في البيانات ليسحبها.
   useSyncRecovery(hasAccess && !hasUnconfirmedWrites, refreshFromServer)
 
+  // 🆕 اسم الكاتب في «عدّله فلان»: اسمه مسافراً هنا أولاً (ما يعرفه به الآخرون
+  // في هذه الرحلة)، ثم اسم بروفايله، ثم اسم حسابه.
+  const editorName =
+    activeTravelers.find(t => t.uid != null && t.uid === user?.uid)?.name
+    ?? profileDisplayName ?? user?.displayName ?? ''
+
   const expense = useExpenseActions({
-    activeTravelers, user, isAdmin, setExpenses, showToast, handleFirestoreError, setSyncError,
+    activeTravelers, user, isAdmin, editorName, setExpenses, showToast, handleFirestoreError, setSyncError,
     isFirstExpense: activeExpenses.length === 0,
   })
+
+  // 🆕 منظّم الرحلة (لا المسؤول) يسجّل المودَع عبر recordDeposit الخادمية —
+  // القواعد لا تسمح له بكتابة الرصيد مباشرة. انظر useDepositActions.ts.
+  const depositViaServer = isOrganizer && !isAdmin
+  const deposit = useDepositActions({ user, viaServer: depositViaServer, setTravelers, showToast, handleFirestoreError })
+  const { recordDepositViaServer } = deposit
+  const recordInitialDeposit = useMemo(
+    () => depositViaServer
+      ? (travelerId: number, amount: number) =>
+          recordDepositViaServer(travelerId, 'set', amount, INITIAL_DEPOSIT_REASON)
+      : undefined,
+    [depositViaServer, recordDepositViaServer],
+  )
 
   const traveler = useTravelerActions({
     travelers, activeTravelers, user, setTravelers, showToast, handleFirestoreError, setSyncError,
     closeModal,
     describeExitBlockFor,
+    recordInitialDeposit,
   })
-
-  const deposit = useDepositActions({ user, setTravelers, showToast, handleFirestoreError })
 
   // 🆕 استدعاءات الرحلة الطويلة (closeMonth/exitTraveler) — لا كتابة Firestore
   // هنا إطلاقاً؛ انظر تعليق الملف في hooks/useLongTermActions.ts.

@@ -45,6 +45,12 @@ interface UseTravelerActionsParams {
    * يعرف السبب قبل أن ينتظر رحلة ذهاب وإياب للخادم.
    */
   describeExitBlockFor?: (travelerId: number) => string | null
+  /**
+   * 🆕 مسار المنظّم للرصيد الابتدائي — recordDeposit الخادمية بدل الدفعة الثانية
+   * أدناه، لأن القواعد تمنع المنظّم من كتابة `deposited` وdepositLogs مباشرة.
+   * غيابه (المسؤول) يُبقي المسار القديم حرفياً.
+   */
+  recordInitialDeposit?: (travelerId: number, amount: number) => Promise<void>
 }
 
 export interface UseTravelerActionsResult {
@@ -62,7 +68,7 @@ export interface UseTravelerActionsResult {
 
 export function useTravelerActions({
   travelers, activeTravelers, user, setTravelers, showToast, handleFirestoreError, setSyncError, closeModal,
-  describeExitBlockFor,
+  describeExitBlockFor, recordInitialDeposit,
 }: UseTravelerActionsParams): UseTravelerActionsResult {
   const [isAddingTraveler,   setIsAddingTraveler]   = useState(false)
   const [newTravelerName,    setNewTravelerName]    = useState('')
@@ -185,6 +191,7 @@ export function useTravelerActions({
     // الاتجاه المعاكس — سطر بلا رصيد — يستحيل لأن السطر والتحديث معاً.
     created
       .then(() => {
+        if (recordInitialDeposit) return recordInitialDeposit(id, deposited)
         const depositBatch = writeBatch(db)
         // ⚠️ `changedByUid` يجب أن يطابق المنفِّذ فعلاً — القاعدة تفرضه، وهو ما
         // يمنع نسبة الحركة لغير صاحبها (نفس مبدأ createdByUid على المصاريف).
@@ -208,7 +215,7 @@ export function useTravelerActions({
         // وحده لم يُسجَّل — وهو ما يحدّد للمسؤول ما عليه فعله.
         `أُضيف المسافر، لكن لم يُسجَّل رصيده الابتدائي. عدّل رصيده من زر «تعديل الرصيد».`,
       ))
-  }, [newTravelerName, newTravelerDeposit, activeTravelers, user, setTravelers, handleFirestoreError, setSyncError])
+  }, [newTravelerName, newTravelerDeposit, activeTravelers, user, setTravelers, handleFirestoreError, setSyncError, recordInitialDeposit])
 
   const confirmDeleteTraveler = useCallback((id: number) => {
     // 🆕 حارس الرحلات طويلة المدى — لا شيء يتغيّر حين لا يُمرَّر (الرحلة

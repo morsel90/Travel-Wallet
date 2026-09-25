@@ -129,7 +129,7 @@ export const TravelersPanel = ({
         setNewTravelerDeposit={travelerForm.setDeposit}
         onSubmit={travelerForm.onSubmit}
         cancelAddTraveler={travelerForm.onCancel}
-        showDeposit={isAdmin}
+        showDeposit={canAddTravelers}
       />
     )}
   </section>

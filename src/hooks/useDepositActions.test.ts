@@ -35,7 +35,7 @@ function setup(overrides: Partial<Params> = {}) {
   const setTravelers = vi.fn()
   const showToast = vi.fn()
   const handleFirestoreError = vi.fn()
-  const params: Params = { user: null, setTravelers, showToast, handleFirestoreError, ...overrides }
+  const params: Params = { user: null, viaServer: false, setTravelers, showToast, handleFirestoreError, ...overrides }
   const view = renderHook((p: Params) => useDepositActions(p), { initialProps: params })
   return { ...view, setTravelers, showToast, handleFirestoreError }
 }
@@ -131,7 +131,7 @@ describe('useDepositActions', () => {
   // إعادة الرسم **بنفس الاعتماديات حرفياً** يجب أن تُعيد نفس المرجع.
   it('مرجع submitDeposit ثابت عبر إعادة الرسم بنفس الاعتماديات', () => {
     const params: Params = {
-      user: fakeUser, setTravelers: vi.fn(), showToast: vi.fn(), handleFirestoreError: vi.fn(),
+      user: fakeUser, viaServer: false, setTravelers: vi.fn(), showToast: vi.fn(), handleFirestoreError: vi.fn(),
     }
     const { result, rerender } = renderHook((p: Params) => useDepositActions(p), { initialProps: params })
     const first = result.current.submitDeposit

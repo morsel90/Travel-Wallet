@@ -669,11 +669,12 @@ const SWIPE_TRIGGER_PX = 60
 
 // 2️⃣ مكوّن عرض كارت بطاقة المصروف المنفرد في السجل
 export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
-  const { isAdmin, currencies, travelers, user } = useTripData()
+  const { isAdmin, isOrganizer, currencies, travelers, user } = useTripData()
   // ⚠️ الإجراءات وحدها عمداً — هذا المكوّن يتكرر لكل صف في القائمة، واستهلاكه
   // لمفتاح النموذج كان يعيد رسم كل الصفوف المعروضة مع كل ضغطة مفتاح.
   const { startEditExpense, requestDeleteExpense } = useTripActions()
-  const canManage = isAdmin || (user?.uid != null && expense.createdByUid === user.uid)
+  // 🆕 ومنظّم الرحلة أيضاً — يُختم تعديله بـ«عدّله فلان» (editedByLabel أدناه).
+  const canManage = isAdmin || isOrganizer || (user?.uid != null && expense.createdByUid === user.uid)
 
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
   const axisRef = useRef<'x' | 'y' | null>(null)
@@ -745,6 +746,12 @@ export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
     const payer = travelers.find(t => t.id === expense.paidBy)
     return payer ? `دفعها: ${payer.shortName}` : null
   }, [expense.paidBy, travelers]);
+
+  // 🆕 «عدّله فلان» — ظاهر للجميع، وفقط حين عدّله غير كاتبه: الأثر الوحيد
+  // لتعديل المنظّم مصروف غيره، وما يرجع إليه المسؤول وقت الخلاف.
+  const editedByLabel = expense.lastEditedByUid && expense.lastEditedByUid !== expense.createdByUid
+    ? (expense.lastEditedByName ? `عدّله: ${expense.lastEditedByName}` : 'عُدِّل بعد تسجيله')
+    : null
 
   const shareData = useMemo(() => {
     const names = toDisplayNames(expense.participants, travelers)
@@ -837,6 +844,12 @@ export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
               {paidByLabel && (
                 <span className="text-[10px] font-bold text-violet-600 bg-violet-50/60 px-1.5 py-0.5 rounded-md border border-violet-100/70">
                   {paidByLabel}
+                </span>
+              )}
+
+              {editedByLabel && (
+                <span className="text-[10px] font-bold text-amber-700 bg-amber-50/60 px-1.5 py-0.5 rounded-md border border-amber-100/70">
+                  {editedByLabel}
                 </span>
               )}
 

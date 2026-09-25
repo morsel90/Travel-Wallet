@@ -108,7 +108,8 @@ service cloud.firestore {
     function isValidExpense(d) {
       return d.keys().hasOnly([
                'date', 'description', 'amount', 'originalAmount',
-               'currency', 'exchangeRate', 'participants', 'createdAt', 'deletedAt', 'createdByUid', 'category', 'shares', 'paidBy'
+               'currency', 'exchangeRate', 'participants', 'createdAt', 'deletedAt', 'createdByUid', 'category', 'shares', 'paidBy',
+               'lastEditedByUid', 'lastEditedByName', 'lastEditedAt'
              ])
         && d.date is string           && d.date.size() <= 10
         && d.description is string     && d.description.size() > 0 && d.description.size() <= 200
@@ -124,7 +125,25 @@ service cloud.firestore {
         && (!('shares' in d) || isValidShares(d.shares, d.participants))
         // 🆕 من دفع المصروف فعلياً: 'fund' (الصندوق المشترك) أو رقم (Traveler.id
         // دفعها من جيبه). غياب الحقل = 'fund' — كل المصاريف القديمة تبقى صالحة.
-        && (!('paidBy' in d) || d.paidBy == 'fund' || d.paidBy is number);
+        && (!('paidBy' in d) || d.paidBy == 'fund' || d.paidBy is number)
+        // 🆕 «عدّله فلان» — انظر stampsEditor أدناه لمن يُلزَم بها.
+        && (!('lastEditedByUid' in d) || d.lastEditedByUid is string)
+        && (!('lastEditedByName' in d) || (d.lastEditedByName is string && d.lastEditedByName.size() <= 100))
+        && (!('lastEditedAt' in d) || d.lastEditedAt is number);
+    }
+    // 🆕 من يعدّل مصروف غيره يترك اسمه عليه. التعديل بلا أثر لم يكن مشكلة حين
+    // كان المسؤول وحده يملكه؛ صار مشكلة حين صار منظّم الرحلة يملكه، والمسؤول
+    // لا يحضر الرحلة ويُستدعى وقت الخلاف. الحقل لا يُفرض على صاحب المصروف،
+    // ولكن **إن وُجد فلا يحمل إلا هوية الكاتب الفعلي**، فلا يُنسب التعديل لغيره.
+    function stampsEditor(incoming) {
+      return 'lastEditedByUid' in incoming
+        && incoming.lastEditedByUid == request.auth.uid
+        && 'lastEditedAt' in incoming;
+    }
+    function editorStampIsHonest(incoming) {
+      return !('lastEditedByUid' in incoming)
+        || incoming.lastEditedByUid == request.auth.uid
+        || incoming.lastEditedByUid == resource.data.get('lastEditedByUid', null);
     }
 
     // 🆕 تقسيم غير متساوٍ (اختياري): خريطة { [participantId]: وزن } لا يجب أن
@@ -482,12 +501,19 @@ service cloud.firestore {
         // يُسمح بالتعديل (ويشمل الحذف اللين عبر تحديث deletedAt) للمسؤول دائماً،
         // أو لصاحب المصروف نفسه. 🆕 وثبات createdByUid صار شرطاً مشتركاً على
         // المسارين — كان مربوطاً بمسار المالك وحده، فكان المسؤول يستطيع تغييره.
+        //
+        // 🆕 ومنظّم الرحلة أيضاً: هو المشرف على دفترها، والمسؤول العالمي لا
+        // يحضر الرحلة ليصحّح مصروفاً أُدخل خطأً — لكن بشرط أن يترك اسمه عليه
+        // (stampsEditor). isOrganizer() آخر الشروط كي لا يُدفع ثمن get() إلا حين
+        // لا يكون الكاتب صاحب المصروف.
         allow update: if isValidExpense(request.resource.data)
                         && preservesCreator(resource, request.resource.data)
+                        && editorStampIsHonest(request.resource.data)
                         && tripAcceptsExpenses(appId)
                         && (
                              isAdmin()
                              || isExpenseOwner(resource, appId)
+                             || (isOrganizer(appId) && stampsEditor(request.resource.data))
                            );
         allow delete: if false; // 🚫 حظر الحذف الصلب نهائياً لإجبار استخدام الـ Soft Delete
       }
@@ -534,8 +560,19 @@ service cloud.firestore {
         allow create: if (isMember(appId) || isAdmin()) && isValidTraveler(request.resource.data)
                         && request.resource.data.deposited == 0
                         && tripAcceptsWrites(appId);
-        allow update: if isAdmin()    && isValidTraveler(request.resource.data)
-                        && tripAcceptsWrites(appId);
+        //
+        // 🆕 منظّم الرحلة يحذف المسافر حذفاً ليّناً ويستعيده — **deletedAt وحده**.
+        // لا يلمس الرصيد مباشرة: تعديل `deposited` بلا سطر في depositLogs هو
+        // بالضبط ما يُفقد المسؤول دليله وقت الخلاف، فالإيداع للمنظّم يمرّ من
+        // recordDeposit (functions/index.js) التي تكتب الرصيد وسطره معاً. ولا
+        // الاسم ولا uid: الربط بحساب له دالته (linkTravelerAccount).
+        allow update: if isValidTraveler(request.resource.data)
+                        && tripAcceptsWrites(appId)
+                        && (
+                             isAdmin()
+                             || (isOrganizer(appId)
+                                 && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deletedAt']))
+                           );
         allow delete: if false; // 🚫 حظر الحذف الصلب نهائياً لحماية سجل الأرصدة التراكمي
 
         // سجل تدقيق تعديلات الرصيد — غير قابل للتعديل أو الحذف نهائياً بعد
@@ -576,7 +613,8 @@ service cloud.firestore {
         allow create: if (isMember(appId) || isAdmin()) && isValidNameClaim(request.resource.data)
                         && tripAcceptsWrites(appId);
         allow update: if false; // 🚫 هذا السطر تحديداً هو ما يفرض التفرّد
-        allow delete: if isAdmin() && tripAcceptsWrites(appId);
+        // 🆕 والمنظّم أيضاً — حذف المسافر ليّناً يُحرّر اسمه في الدفعة نفسها.
+        allow delete: if (isAdmin() || isOrganizer(appId)) && tripAcceptsWrites(appId);
       }
 
       // مستند تتبّع حد المعدّل (Rate Limiting) لكل مستخدم في هذه الرحلة — لا
