@@ -62,13 +62,16 @@ export function useMyTrips(tripIds: string[], user: User | null): UseMyTripsResu
 
     setLoading(true)
     setError(null)
+    // 🆕 عدد القراءات التي *فشلت* فعلاً — لا الرحلات المحذوفة. انظر أدناه.
+    let failures = 0
     try {
       const results = await Promise.all(ids.map(async (id): Promise<MyTrip | null> => {
         try {
           const snap = await getDoc(tripDocById(id))
-          // رحلة في claims المستخدم لكن مستندها غير موجود = رحلة حُذفت من
-          // قاعدة البيانات بعد انضمامه (الحذف ممنوع من الواجهة لكنه ممكن
-          // بـ Admin SDK). نُسقطها بصمت بدل عرض صف مكسور لا يفتح شيئاً.
+          // رحلة في claims المستخدم لكن مستندها غير موجود = رحلة حُذفت بعد
+          // انضمامه. 🆕 وهذا صار مساراً عادياً لا استثناءً: منشئ الرحلة يحذفها
+          // من الواجهة، وتبقى في claims توكنه حتى يتجدّد (حتى ساعة). نُسقطها
+          // بصمت — وهي قراءة *نجحت* لا فشلت.
           if (!snap.exists()) return null
           const data = snap.data() as { name?: unknown; status?: unknown }
           return {
@@ -79,6 +82,7 @@ export function useMyTrips(tripIds: string[], user: User | null): UseMyTripsResu
         } catch {
           // فشل قراءة رحلة واحدة (صلاحية سُحبت، أو انقطاع لحظي) يجب ألا
           // يُسقط بقية القائمة — نعرض ما نجح ونتجاهل ما فشل.
+          failures += 1
           return null
         }
       }))
@@ -86,9 +90,11 @@ export function useMyTrips(tripIds: string[], user: User | null): UseMyTripsResu
       const list = results.filter((t): t is MyTrip => t !== null)
       list.sort((a, b) => a.name.localeCompare(b.name, 'ar'))
       setTrips(list)
-      // لم تنجح ولا رحلة واحدة رغم وجود معرّفات = مشكلة عامة (اتصال/صلاحيات)
-      // لا حالة فردية، وحينها الصمت يترك المستخدم أمام شاشة فارغة بلا تفسير.
-      setError(list.length === 0 ? 'تعذّر جلب رحلاتك — تحقّق من اتصالك وحاول مجدداً.' : null)
+      // لا رحلة تُعرض *وقراءةٌ فشلت فعلاً* = مشكلة عامة (اتصال/صلاحيات)، وحينها
+      // الصمت يترك المستخدم أمام شاشة فارغة بلا تفسير. ⚠️ `failures` لا
+      // `list.length` وحده: رحلة محذوفة ليست فشلاً — كان حذف منشئٍ لرحلته
+      // الوحيدة يُظهر «تحقّق من اتصالك» بلا أي مشكلة اتصال.
+      setError(list.length === 0 && failures > 0 ? 'تعذّر جلب رحلاتك — تحقّق من اتصالك وحاول مجدداً.' : null)
     } finally {
       setLoading(false)
     }
