@@ -4,38 +4,24 @@ import { useStore } from 'zustand'
 import type { Traveler, Expense, Repayment, CurrencyMap, AppUser } from '../types'
 import type { DepositSubmission } from '../hooks/useDepositActions'
 
-// ─── مخزن Zustand بدل ثلاث React Contexts ────────────────────────────────────
+// ─── مخزن Zustand للمكوّنات المتكرّرة ────────────────────────────────────────
 //
-// ⚠️ هذا الملف بديل مباشر لـ context/DataContext.ts + context/UIContext.ts —
-// نفس الأنواع الثلاثة حرفياً، بمفاتيح علوية بدل Context منفصل لكل واحد.
-// اقرأ التعليق الطويل الذي كان في context/UIContext.ts (والآن docs/DECISIONS.md)
-// قبل تعديل أي شيء هنا: الفصل بين المفاتيح الثلاثة **حِمل أداء حقيقي** —
-// انكساره لا يُنتج خطأً ولا عطلاً ظاهراً، فقط إعادة رسم كل صف مصروف وكل بطاقة
-// مسافر مع كل ضغطة مفتاح في نموذج المصروف.
+// ⚠️ الفصل بين الشريحتين حِمل أداء (DECISIONS.md): انكساره لا يُظهر عطلاً، فقط
+// يعيد رسم كل صفّ وكل بطاقة مع كل ضغطة مفتاح. القاعدة ١٦.
 //
-// القاعدة عند إضافة حقل: **ضعه بحسب تقلّبه لا بحسب موضوعه.**
-//   • data    — بيانات للقراءة فقط، تتغير مع Firestore/المصادقة/الأسعار.
-//   • actions — دوال ثابتة الهوية عملياً (useCallback بلا اعتماديات غالباً)،
-//     تتغير فقط حين تتغير قائمة المسافرين النشطين (نادر).
-//
-// 🆕 **وقبلها سؤال: هل يحتاج الحقل أن يكون هنا أصلاً؟** المتجر لمكوّنات
-// *متكرّرة* — صفوف ExpenseListItem داخل Virtuoso وبطاقات TravelerCard — لا
-// يصحّ تمرير الخصائص إليها عبر القائمة، ويجب ألا تُعاد رسمها مع كل حرف. ما له
-// مستهلك واحد يرسمه App.tsx مباشرةً يُمرَّر خاصيةً. هكذا خرجت شريحة `form`
-// الثالثة كلها (مستهلكها الوحيد ExpenseForm)، ومعها cancelExpenseForm
-// وratesUpdatedAt — انظر docs/DECISIONS.md. فلا حالة تتغيّر مع كل حرف هنا بعد
-// اليوم، وهذا بالضبط ما تحرسه القاعدة ١٦.
+// عند إضافة حقل: هل له مستهلك متكرّر (ExpenseListItem، TravelerCard)؟ إن لا،
+// مرّره خاصيةً من App.tsx. وإن نعم، ضعه بحسب تقلّبه لا موضوعه:
+//   • data    — للقراءة، تتغيّر مع Firestore/المصادقة/الأسعار.
+//   • actions — دوال ثابتة الهوية عملياً.
 
 export interface TripDataSlice {
   travelers: Traveler[]
   expenses: Expense[]
-  /** 🆕 قيود السداد غير المحذوفة — لكشف حساب كل مسافر (TravelerProfileModal). */
+  /** قيود السداد غير المحذوفة — لكشف حساب كل مسافر. */
   repayments: Repayment[]
   user: AppUser | null
   isAdmin: boolean
-  /** 🆕 منظّم الرحلة الحالية (docs/PLAN-member-management.md المرحلة ٣) —
-   *  محسوبة أصلاً في useAppCoordinator، تُضاف هنا لتصل TravelerSection/
-   *  TravelerProfileModal (قراءة سجل تعديلات الرصيد — انظر firestore.rules). */
+  /** منظّم الرحلة الحالية — يفتح سجلّ تعديلات الرصيد في ملف المسافر. */
   isOrganizer: boolean
   currencies: CurrencyMap
 }
@@ -44,8 +30,7 @@ export interface TripActionsSlice {
   startEditExpense: (expense: Expense) => void
   requestDeleteExpense: (id: string) => void
   requestDeleteTraveler: (traveler: Traveler) => void
-  /** 🆕 تعديل رصيد مسافر — فعلٌ واحد يُستدعى من `DepositEditor` المضمَّن داخل
-   *  ملف المسافر، لا فتحُ نافذة. يعيد false حين يرفض المبلغ. */
+  /** تعديل رصيد من `DepositEditor` داخل ملف المسافر. false = مبلغ مرفوض. */
   submitDeposit: (traveler: Traveler, submission: DepositSubmission) => boolean
 }
 
@@ -56,21 +41,12 @@ export interface TripStoreState {
 
 export type TripStore = ReturnType<typeof createTripStore>
 
-/**
- * نسخة جديدة لكل استدعاء — عمداً لا Singleton عالمي واحد. `TripStoreProvider`
- * ينشئ واحدة بـ useRef لكل تركيب. راجع docs/DECISIONS.md لسبب هذا القرار
- * (صفحات Storybook تعرض عدة قصص لنفس المكوّن ببيانات مختلفة في آن واحد).
- */
+/** نسخة لكل استدعاء، لا Singleton — Storybook يعرض عدة قصص ببيانات مختلفة معاً. */
 export function createTripStore(initial: TripStoreState) {
   return createStore<TripStoreState>()(() => initial)
 }
 
-// ─── Context + selectors ──────────────────────────────────────────────────────
-//
-// في ملف منفصل عن TripStoreProvider.tsx عمداً: ملف يُصدّر مكوّناً وخطافات معاً
-// يُعطّل Fast Refresh (react-refresh/only-export-components) — نفس السبب الذي
-// كان يبقي useData/useUIActions/useUIForm في context/*.ts منفصلة عن
-// components/AppProviders.tsx القديم.
+// ─── Context + selectors — منفصلة عن المزوّد كي لا يتعطّل Fast Refresh ──────
 
 export const TripStoreContext = createContext<TripStore | null>(null)
 

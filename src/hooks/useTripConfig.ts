@@ -9,56 +9,34 @@ import { normalizePeriodKey, isValidPeriodKey } from '../utils/period'
 import type { ItinerarySegment, PeriodKey, TripStatus, TripType } from '../types'
 
 // ─── useTripConfig ──────────────────────────────────────────────────────────
-// 🆕 دعم رحلات متعددة: اسم الرحلة ومسارها لم يعودا ثابتَين بالكود لكل الرحلات
-// — تُقرأان من مستند trips/{TRIP_ID} في Firestore (انظر firestore.ts).
-//
-// 🆕 لا bankDetails هنا بعد اليوم — بيانات البنك مصدرها الوحيد بروفايل المنظّم
-// (users/{organizerUid}، عبر useOrganizerBankDetails)، لا نسخة محلية على مستند
-// الرحلة. organizerUid وحده ما تحتاجه هذه الواجهة لبناء ذلك المسار.
-//
-// 🆕 صار الاشتراك حيّاً (onSnapshot) بدل قراءة واحدة (getDoc): واجهة إدارة
-// الرحلة تعدّل هذا المستند من داخل التطبيق، وبالقراءة الواحدة كان المسؤول يحفظ
-// تعديلاً ولا يراه في ويدجت المقطع القادم حتى يعيد تحميل الصفحة. الاستماع
-// يجعل كل الشاشات تتحدّث فوراً بلا أي تحديث يدوي.
+// اشتراك حيّ في trips/{TRIP_ID} — تعديلات لوحة الإدارة تظهر فوراً.
+// ⚠️ لا bankDetails هنا: مصدرها الوحيد بروفايل المنظّم (useOrganizerBankDetails).
 
 export interface TripConfig {
   tripName: string | null
   /**
-   * 🆕 الخادم أكّد أن مستند الرحلة غير موجود — حُذفت، أو المعرّف لم يوجد قط.
+   * الخادم أكّد أن مستند الرحلة غير موجود.
    *
-   * ⚠️ **من الخادم وحده، لا من الكاش المحلي** (`!snap.metadata.fromCache`): أول
-   * لقطة بلا اتصال قد تأتي من كاش لم يحمل المستند بعد، فتبدو رحلةٌ حقيقية
-   * «محذوفة» لحظةً. خطأٌ في هذا الاتجاه يطرد المستخدم من رحلته، وخطأٌ في الاتجاه
-   * الآخر يُبقي شاشة تحميل — والثاني أهون بكثير.
+   * ⚠️ من الخادم وحده لا الكاش: كاش لم يحمل المستند بعد يطرد المستخدم من رحلة
+   * حقيقية، أما الخطأ المعاكس فيُبقي شاشة تحميل فقط.
    */
   deleted: boolean
-  /** 🆕 uid منظّم الرحلة الحالي — غيابه يعني رحلة قديمة بلا منظّم معروف بعد. */
+  /** غيابه = رحلة قديمة بلا منظّم معروف. */
   organizerUid?: string
   itinerary?: ItinerarySegment[]
-  /** 🆕 نسخة المسار للقفل التفاؤلي عند الحفظ — غياب الحقل = 0. انظر utils/itinerary.ts. */
+  /** نسخة المسار للقفل التفاؤلي — الغياب = 0. */
   itineraryRev: number
-  /** 🆕 حالة دورة الحياة — غياب الحقل يُعامَل كـ active (انظر utils/tripStatus.ts). */
+  /** الغياب = active. */
   status: TripStatus
-  /**
-   * 🆕 متى تغيّرت status آخر مرة — يدوياً أو عبر advanceTripLifecycle
-   * (functions/index.js). غيابه يعني "غير معروف" لا "الآن"؛ لا افتراض
-   * رجعي لرحلة لم تُلمَس منذ هذه الميزة (نفس فلسفة organizerUid/createdByUid).
-   */
+  /** آخر تغيّر في status. الغياب = «غير معروف» لا «الآن». */
   statusChangedAt?: number
-  /**
-   * 🆕 نمط الرحلة — غيابه يعني `standard` (انظر utils/tripType.ts). هذا الحقل
-   * وحده هو ما يفتح مكوّنات components/longterm/؛ لا شرط آخر في الواجهة.
-   */
+  /** الغياب = standard. ⚠️ الشرط الوحيد الذي يفتح مكوّنات components/longterm/. */
   tripType: TripType
-  /**
-   * 🆕 الشهر المحاسبي المفتوح حالياً (`YYYY-MM`) — للرحلات الطويلة وحدها.
-   * غيابه يُطبَّع إلى الشهر الميلادي الجاري، فرحلة حُوِّلت للتو إلى long_term
-   * تعمل فوراً بلا أي كتابة تمهيدية. لا معنى له في الرحلة القياسية ولا يُقرأ فيها.
-   */
+  /** الشهر المفتوح (الرحلات الطويلة وحدها). الغياب = الشهر الجاري. */
   currentPeriod: PeriodKey
-  /** 🆕 آخر شهر أُغلق فعلاً — غيابه يعني «لم يُغلق أي شهر بعد»، لا شهراً بعينه. */
+  /** الغياب = «لم يُغلق أي شهر بعد». */
   lastClosedPeriod?: PeriodKey
-  /** 🆕 متى نُفِّذ آخر إغلاق. غيابه «غير معروف» لا «الآن» — نفس مبدأ statusChangedAt. */
+  /** الغياب = «غير معروف». */
   lastClosedAt?: number
 }
 
@@ -72,11 +50,8 @@ const FALLBACK_CONFIG: TripConfig = {
   currentPeriod: normalizePeriodKey(undefined),
 }
 
-// 🆕 مرّر hasAccess ? user : null من App.tsx (تماماً كما مع useTravelers/
-// useExpenses) — وليس user مباشرة. وإلا فمحاولة القراءة الأولى (قبل التحقق من
-// رمز الرحلة) سترفض بصلاحيات "denied"، ولن تُعاد تلقائياً بعد نجاح التحقق
-// لاحقاً لأن مرجع user لا يتغيّر عند تحديث التوكن فقط (نفس السبب الموثّق في
-// App.tsx بخصوص hasAccess).
+// ⚠️ مرّر `hasAccess ? user : null` لا user: قراءة قبل الصلاحية تُرفض ولا تُعاد
+// تلقائياً، لأن مرجع user لا يتغيّر عند تحديث التوكن.
 export function useTripConfig(user: User | null): TripConfig {
   const [config, setConfig] = useState<TripConfig>(FALLBACK_CONFIG)
 
@@ -93,8 +68,6 @@ export function useTripConfig(user: User | null): TripConfig {
       tripConfigDoc(),
       { includeMetadataChanges: true },
       snap => {
-        // 🆕 لا يوجد مستند إعدادات لهذه الرحلة بعد — نستمر بالقيم الافتراضية
-        // بصمت (متوقّع تماماً للرحلة الافتراضية قبل تشغيل سكربت الترحيل)
         if (!snap.exists()) {
           setConfig(snap.metadata.fromCache ? FALLBACK_CONFIG : { ...FALLBACK_CONFIG, deleted: true })
           return
@@ -127,9 +100,7 @@ export function useTripConfig(user: User | null): TripConfig {
           statusChangedAt: typeof data.statusChangedAt === 'number' ? data.statusChangedAt : undefined,
           tripType: normalizeTripType(data.tripType),
           currentPeriod: normalizePeriodKey(data.currentPeriod),
-          // ⚠️ لا تطبيع بالسقوط للشهر الجاري هنا: «لم يُغلق شيء بعد» معلومة
-          // حقيقية مختلفة تماماً عن «أُغلق الشهر الجاري»، والخلط بينهما يجعل
-          // زرّ الإغلاق يبدو منفَّذاً في رحلة لم تُغلق شهراً قط.
+          // ⚠️ لا سقوط للشهر الجاري: «لم يُغلق شيء» غير «أُغلق الجاري».
           lastClosedPeriod: isValidPeriodKey(data.lastClosedPeriod) ? data.lastClosedPeriod : undefined,
           lastClosedAt: typeof data.lastClosedAt === 'number' ? data.lastClosedAt : undefined,
         })

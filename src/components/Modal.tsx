@@ -7,54 +7,19 @@ interface ModalProps {
   children: ReactNode
   maxWidth?: string
   onClose: () => void
-  /**
-   * 🆕 اسم النافذة لقارئ الشاشة — **مطلوب**.
-   *
-   * ⚠️ لا يُشتقّ من العنوان الظاهر تلقائياً: كل نافذة ترسم عنوانها داخل
-   * `children` بشكل مختلف، فربطه بـ aria-labelledby يفرض على كل نافذة أن تعرف
-   * معرّفاً تولّده هذه. جعله خاصية صريحة أوضح وأقلّ هشاشة — وكونه إلزامياً
-   * يمنع نافذة جديدة من الوصول بلا اسم، وهي الحالة التي يسمعها المستخدم
-   * «مربع حوار» بلا أي سياق.
-   */
+  /** اسم النافذة لقارئ الشاشة. إلزامي كي لا تصل نافذة جديدة بلا اسم. */
   label: string
 }
 
 // ─── Modal / Bottom Sheet ───────────────────────────────────────────────────
-// 🆕 Bottom Sheet: تنبثق كل النوافذ من الأسفل على الجوال (نمط تطبيقات الجوال
-// الأصلية) بدل نافذة مركزية تقليدية — من عرض sm فأكبر (شاشات أوسع) تبقى
-// نافذة مركزية عادية بزوايا كاملة الاستدارة (لا فائدة من Bottom Sheet على
-// شاشة عريضة). motion (motion.div + drag="y") يوفّر حركة دخول/خروج
-// طبيعية بفيزياء حركة حقيقية (spring)، وسحب لأسفل بما يكفي (أو بسرعة كافية)
-// يُغلق النافذة كما في تطبيقات الجوال المعتادة. ⚠️ السحب-للإغلاق مقصور على
-// المقبض العلوي وحده (dragListener={false} + dragControls) لا اللوحة كلها —
-// وإلا يتعارض مع تمرير محتوى طويل (overflow-y-auto) داخلها، انظر التعليق
-// عند المقبض أسفله.
+// Bottom Sheet على الجوال، ونافذة مركزية من sm فأكبر. onClose من الخلفية أو
+// السحب لأسفل أو أزرار الإغلاق داخل كل نافذة.
 //
-// onClose يُستدعى من ثلاث طرق: الضغط خلف النافذة (الخلفية الداكنة)، السحب
-// لأسفل بما يكفي (offset.y > 120px أو سرعة > 500px/ث)، أو أي زر إغلاق صريح
-// (X/إلغاء) داخل كل نافذة على حدة كما كان سابقاً — كلها تستدعي نفس onClose.
-//
-// ⚠️ يجب إحاطة أي استخدام لهذا المكوّن (أو النوافذ التي تبنى عليه) بـ
-// <AnimatePresence> في نقطة العرض الشرطي في App.tsx (مثال:
-// <AnimatePresence>{condition && <DepositModal .../>}</AnimatePresence>)
-// حتى تُشغَّل حركة الخروج (exit) قبل إزالة العنصر من الشجرة فعلياً — بدونها
-// يختفي بلا أي حركة إغلاق (نفس مبدأ AnimatePresence في أي React app).
-//
-// 🆕 createPortal إلى document.body — لا رسم في مكانه الطبيعي داخل شجرة
-// المكوّنات. رغم fixed inset-0، أي سلف (ancestor) بقيمة transform/translate/
-// rotate/scale ليست none (حتى لو بلا أثر بصري كـ translateY(0px)) يُنشئ
-// containing block جديداً حسب مواصفة CSS، فيُحسَب موضع fixed نسبةً لصندوق ذلك
-// السلف لا نسبةً لإطار العرض الفعلي — هذا بالضبط ما كان يُخفي ExpenseForm خارج
-// نطاق الرؤية على الجوال حين أصبح Modal-based، لأن PullToRefresh.tsx يُغلِّف
-// <main> بأكمله بـ transform دائم (لازم لتأثير السحب المطاطي). portal إلى
-// document.body يحلّ التعارض جذرياً: Modal لم يعد سليلاً لأي عنصر متحوّل
-// إطلاقاً، بصرف النظر عمّا يتغيّر مستقبلاً في أسلافه — لا حاجة لتتبّع كل سلف
-// محتمل بحثاً عن transform. z-9999 يبقى كافياً للطبقة العليا فوق أي محتوى.
-// (انظر أيضاً ExpensesPanel.tsx: نداء scrollTo لقائمة react-virtuoso، مطلوب
-// بصرف النظر عن هذا التغيير — انظر docs/DECISIONS.md للتفاصيل الكاملة.)
+// ⚠️ أحِط موضع العرض الشرطي بـ <AnimatePresence> وإلا لا حركة خروج.
+// ⚠️ createPortal إلى body: سلف بـ transform (PullToRefresh دائماً) يجعل
+// `fixed` نسبياً له لا لإطار العرض — DECISIONS.md.
 export const Modal = ({ children, maxWidth = 'max-w-sm', onClose, label }: ModalProps) => {
   const panelRef = useRef<HTMLDivElement>(null)
-  // Escape، وحصر التركيز، ودخوله وعودته — انظر hooks/useDialogA11y.ts
   useDialogA11y(panelRef, onClose)
   const dragControls = useDragControls()
 
@@ -68,20 +33,13 @@ export const Modal = ({ children, maxWidth = 'max-w-sm', onClose, label }: Modal
   >
     <motion.div
       ref={panelRef}
-      // ⚠️ الثلاثة معاً لا واحد منها: role يقول إنه حوار، وaria-modal يخبر قارئ
-      // الشاشة أن ما خلفه غير متاح (وإلا تجوّل فيه رغم حصر التركيز البصري)،
-      // وtabIndex={-1} يجعل الحاوية نفسها قابلة للتركيز البرمجي حين لا يوجد
-      // داخلها أي عنصر تفاعلي.
+      // ⚠️ الثلاثة معاً: aria-modal يمنع قارئ الشاشة من التجوّل خلفها، وtabIndex
+      // يجعل الحاوية قابلة للتركيز حين لا عنصر تفاعلياً فيها.
       role="dialog"
       aria-modal="true"
       aria-label={label}
       tabIndex={-1}
-      // 🆕 92dvh لا 92vh: الغلاف أعلاه `fixed inset-0`، وعلى iOS Safari يُقاس
-      // ذلك بالمساحة *المرئية* (فوق شريط العنوان) بينما `vh` يُقاس بالشاشة
-      // *الكبيرة* (بعد اختفائه). فلوحة طويلة بـ 92vh تصير أطول من غلافها،
-      // ومع `items-end` يفيض الفائض من الأعلى — أي يخرج المقبض وعنوان النافذة
-      // خارج الشاشة، ولا يُنقذهما overflow-y-auto لأنه يمرّر داخل اللوحة لا
-      // يعيدها إلى الإطار. dvh يقيس ما يقيسه الغلاف نفسه فينتفي التعارض.
+      // ⚠️ dvh لا vh: على iOS تصير اللوحة أطول من غلافها فيخرج رأسها من الشاشة (DECISIONS.md).
       className={`bg-white rounded-t-3xl sm:rounded-2xl p-6 pt-3 sm:pt-6 w-full ${maxWidth} relative max-h-[92dvh] overflow-y-auto outline-hidden`}
       onClick={(e) => e.stopPropagation()}
       initial={{ y: '100%' }}
@@ -97,17 +55,8 @@ export const Modal = ({ children, maxWidth = 'max-w-sm', onClose, label }: Modal
         if (info.offset.y > 120 || info.velocity.y > 500) onClose()
       }}
     >
-      {/* 🆕 مقبض السحب المرئي — إشارة بصرية أن النافذة قابلة للسحب لأسفل
-          لإغلاقها؛ يظهر فقط على الجوال (sm:hidden) حيث لا معنى له في نافذة مركزية.
-          ⚠️ dragListener={false} + dragControls أعلاه، وonPointerDown هنا فقط —
-          لا drag="y" مُطلَق على اللوحة كلها كما كان سابقاً. بلا هذا، أي سحب
-          رأسي بالإصبع في أي مكان من محتوى النافذة (بطاقات المسافرين، الحقول،
-          ...) كان يُفسَّر كسحب للوحة نفسها (لإغلاقها) لا كتمرير لمحتواها —
-          فيتعطّل overflow-y-auto عملياً ولا يستطيع المستخدم النزول لرؤية
-          محتوى يتجاوز ارتفاع الشاشة (بلاغ مستخدم فعلي بعد توسيع قسم التقسيم
-          في ExpenseForm). حصر بدء السحب على هذا المقبض وحده يفصل الحركتين
-          تماماً: التمرير العادي يعمل في أي مكان آخر، والسحب-للإغلاق يعمل من
-          المقبض فقط — تماماً كسلوك Bottom Sheet في تطبيقات الجوال الأصلية. */}
+      {/* ⚠️ السحب-للإغلاق يبدأ من المقبض وحده (dragListener={false}): السحب من
+          اللوحة كلها كان يلتهم تمرير المحتوى الطويل (بلاغ مستخدم). */}
       <div
         className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-200 sm:hidden touch-none cursor-grab active:cursor-grabbing"
         onPointerDown={(e) => dragControls.start(e)}
@@ -139,8 +88,7 @@ export const ConfirmModal = ({
     <h3 className={`font-bold ${message ? 'mb-2' : 'mb-4'}`}>{title}</h3>
     {message && <p className="text-xs text-slate-500 mb-4">{message}</p>}
     <div className="flex gap-3">
-      {/* ⚠️ type="button" صراحةً: الافتراضي في HTML هو submit، وهذه النافذة قد
-          تُعرض يوماً داخل <form> فيصير «إلغاء» إرسالاً صامتاً للنموذج. */}
+      {/* type="button": الافتراضي submit لو عُرضت يوماً داخل <form>. */}
       <button type="button" onClick={onConfirm} className="flex-1 bg-rose-600 text-white py-2 rounded-xl font-bold">{confirmLabel}</button>
       <button type="button" onClick={onCancel}  className="flex-1 bg-slate-100 text-slate-700 py-2 rounded-xl font-bold">إلغاء</button>
     </div>

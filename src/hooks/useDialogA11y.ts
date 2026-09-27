@@ -1,19 +1,5 @@
-// 🆕 سلوك لوحة المفاتيح والتركيز لأي نافذة حوارية.
-//
-// **ما كان ينقص قبل هذا:** كل نوافذ التطبيق — الإيداع، سلة المهملات، ملف
-// المسافر، دخول المسؤول، وتأكيدات الحذف — لم تكن قابلة للاستخدام بلوحة المفاتيح
-// إطلاقاً. الإغلاق كان بالنقر على الخلفية أو السحب لأسفل، وكلاهما يحتاج مؤشراً.
-// من يستخدم لوحة المفاتيح وحدها كان يفتح نافذة **ولا يستطيع الخروج منها**.
-//
-// وأربعة سلوكيات هنا لا واحد، وكلٌّ منها يعالج عطلاً مستقلاً:
-//
-//   ١. Escape يُغلق      — المخرج الوحيد المتاح بلوحة المفاتيح.
-//   ٢. حصر التركيز       — Tab لا يخرج خلف النافذة إلى عناصر مغطّاة بصرياً.
-//   ٣. التركيز الابتدائي — يدخل النافذة عند فتحها، وإلا بقي على الزر خلفها فبدا
-//                          Tab وكأنه يتنقّل في مكان عشوائي.
-//   ٤. إعادة التركيز     — يعود إلى العنصر الذي فتح النافذة عند إغلاقها، فلا
-//                          يسقط إلى <body> ويضطر المستخدم لبدء التنقّل من أول
-//                          الصفحة في كل مرة.
+// سلوك لوحة المفاتيح والتركيز لأي نافذة حوارية — أربعة لا واحد (DECISIONS.md):
+// Escape يُغلق، حصر Tab داخلها، تركيز ابتدائي داخلها، وإعادة التركيز لمن فتحها.
 import { useEffect, type RefObject } from 'react'
 
 /** ما يمكن الوصول إليه بـ Tab داخل النافذة. */
@@ -21,9 +7,7 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 export function useDialogA11y(
-  // 🆕 `| null` مطلوب منذ React 19: صار `useRef<T>(null)` يُنتج
-  // `RefObject<T | null>` بدل `RefObject<T>`، فالمستدعي لم يعد يطابق التوقيع
-  // القديم. الجسم يفحص `if (!container) return` أصلاً، فلا تغيير في السلوك.
+  // `| null`: في React 19 يُنتج useRef<T>(null) النوع RefObject<T | null>.
   containerRef: RefObject<HTMLElement | null>,
   onClose: () => void,
 ): void {
@@ -35,16 +19,8 @@ export function useDialogA11y(
     // النافذة نفسها، فتُفقد الإشارة إلى ما فتحها.
     const previouslyFocused = document.activeElement as HTMLElement | null
 
-    // ⚠️ **لا تستعمل offsetParent للتحقق من الظهور هنا.** كانت أول صياغة
-    // `el.offsetParent !== null`، وهي خاطئة لسببين معاً:
-    //
-    //   • `offsetParent` يعود null لكل عنصر `position: fixed` — والنافذة داخل
-    //     غلاف `fixed inset-0`. فبحسب بنية الصفحة قد يُفرَّغ المُرشِّح في متصفح
-    //     حقيقي، فيصير الحصر معطّلاً **بلا أي عرَض ظاهر**.
-    //   • وفي jsdom يعود null دائماً (لا تخطيط)، فلا يمكن اختبار الحصر أصلاً.
-    //
-    // والفحص الصحيح لما يهمّ فعلاً هو `hidden` و`aria-hidden` — وكلاهما يعمل في
-    // البيئتين. أما المحدِّد نفسه فيستبعد `[disabled]` و`tabindex="-1"` أصلاً.
+    // ⚠️ لا offsetParent للتحقق من الظهور: null لكل عنصر داخل `position: fixed`
+    // (فيتعطّل الحصر بصمت) ودائماً في jsdom.
     const focusables = () =>
       Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE))
         .filter(el => !el.hasAttribute('hidden') && el.getAttribute('aria-hidden') !== 'true')
@@ -72,8 +48,7 @@ export function useDialogA11y(
       const lastItem  = items[items.length - 1]
       const active    = document.activeElement
 
-      // الالتفاف في الطرفين هو ما يجعل الحصر حصراً — بدونه يقفز التركيز إلى
-      // شريط عنوان المتصفح ثم إلى الصفحة المغطّاة خلف النافذة.
+      // الالتفاف في الطرفين هو الحصر نفسه.
       if (!e.shiftKey && active === lastItem) {
         e.preventDefault()
         firstItem.focus()
@@ -86,15 +61,9 @@ export function useDialogA11y(
     document.addEventListener('keydown', onKeyDown)
     return () => {
       document.removeEventListener('keydown', onKeyDown)
-      // ⚠️ الفحص لازم: قد يكون العنصر أُزيل من الشجرة بينما كانت النافذة مفتوحة
-      // (حُذف مسافر مثلاً)، فاستدعاء focus() على عنصر يتيم يرمي في بعض المتصفحات.
-      //
-      // ⚠️ 🆕 preventScroll: إعادة التركيز واجبٌ وصولي (يعود المستخدم إلى حيث
-      // كان في ترتيب التنقّل)، أما تحريك الصفحة فليس جزءاً منه — والمتصفح
-      // يفعله افتراضياً. رُصد الأثر فعلياً: زرّ فتح نموذج المصروف يقع في شريط
-      // الإدخال الثابت أسفل الشاشة، فإعادة التركيز إليه بعد الحفظ كانت تجرّ
-      // الصفحة إلى الأسفل وتُلغي تمريرها إلى سجلّ المصاريف (الذي صار أول
-      // أقسام الشاشة) — فيُسجَّل المصروف ولا يراه صاحبه.
+      // ⚠️ isConnected: قد يكون المُطلِق أُزيل أثناء فتح النافذة.
+      // ⚠️ preventScroll: التركيز على زرّ الشريط السفلي كان يجرّ الصفحة ويُلغي
+      // التمرير إلى سجلّ المصاريف بعد الحفظ (DECISIONS.md).
       if (previouslyFocused?.isConnected) previouslyFocused.focus({ preventScroll: true })
     }
   }, [containerRef, onClose])
