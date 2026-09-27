@@ -773,12 +773,13 @@ export const ExpenseListItem = memo(({ expense }: ExpenseListItemProps) => {
   }, [expense.participants, expense.shares, travelers]);
 
   return (
-    // 🆕 بطاقة عائمة (rounded-2xl + shadow-xs + mb-3) بدل صفّ مقسَّم بخط سفلي —
+    // 🆕 بطاقة عائمة (rounded-2xl + shadow-xs) بدل صفّ مقسَّم بخط سفلي —
+    // ⚠️ لا margin هنا: المسافة بين البطاقات pb-3 في ExpensesPanel (انظر هناك).
     // overflow-hidden يبقى ضرورياً: هو ما يقصّ لوحتي الحذف/التعديل الملوّنتين
     // (أسفله) على شكل البطاقة المدوّرة أثناء السحب، لا مجرد قصّ قائمة قديم.
     // بلا خلفية هنا عمداً: البطاقة البيضاء الداخلية (أسفل) تغطيها بالكامل عند
     // السكون؛ فقط أثناء السحب تظهر لوحتا الحذف/التعديل من تحتها.
-    <div className="relative overflow-hidden group rounded-2xl shadow-xs mb-3">
+    <div className="relative overflow-hidden group rounded-2xl shadow-xs">
 
       {/* خلفية الألوان أثناء السحب على الجوال */}
       {canManage && (

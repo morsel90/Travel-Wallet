@@ -122,6 +122,12 @@ export interface SeedTripOptions {
 export async function seedTrip({ tripId, memberEmail, memberPassword, adminEmail, adminPassword }: SeedTripOptions): Promise<void> {
   const db = getFirestore(adminApp())
 
+  // ⚠️ بداية نظيفة في كل مرة: إعادة المحاولة في CI (retries: 1) تشغّل beforeAll
+  // من جديد على المحاكي نفسه، فكانت تجد مسافري المحاولة الأولى فيُرفض الاسم
+  // المكرّر وتفشل لسبب لا علاقة له بالعطل الأصلي.
+  await db.recursiveDelete(db.collection('artifacts').doc(tripId))
+  await db.recursiveDelete(db.collection('trips').doc(tripId))
+
   await db.collection('trips').doc(tripId).set({
     name: `رحلة اختبار E2E — ${tripId}`,
     itinerary: [],
