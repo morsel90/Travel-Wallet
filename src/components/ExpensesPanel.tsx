@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import type { Expense, SortOrder } from '../types'
 import ErrorBoundary from './ErrorBoundary'
@@ -6,7 +6,7 @@ import EmptyState from './EmptyState'
 import { ExpenseListItem } from './ExpenseSection'
 import { ExpenseListItemSkeleton } from './Skeleton'
 import { ExpenseListErrorFallback } from './AppErrorFallback'
-import { Receipt, Search, Plus } from '../icons'
+import { Receipt, Search, Plus, ChevronDown } from '../icons'
 
 interface ExpensesPanelProps {
   isInitialLoading: boolean
@@ -32,6 +32,17 @@ interface ExpensesPanelProps {
    */
   scrollToSignal?: number
 }
+
+/**
+ * 🆕 عدد المصاريف الظاهرة قبل «عرض الكل».
+ *
+ * ⚠️ لماذا يُقصّ السجلّ: هو أول أقسام الشاشة، والأرصدة والمسافرون تحته. سجلّ
+ * كامل بعشرات المصاريف كان يدفع «أرصدة المسافرين» إلى قاع صفحة طويلة، فصار
+ * تسجيل إيداع لمسافر يتطلّب تمريراً طويلاً في كل مرة — شكا منه صاحب الحساب.
+ * القصّ يُبقي الأقسام الثلاثة قريبة بلا أي عنصر ثابت جديد على الشاشة (يحفظ
+ * قرار تقليل الحمل البصري). البحث يتجاوز القصّ دائماً: من يبحث يريد كل النتائج.
+ */
+const RECENT_LIMIT = 10
 
 // ─── سجل المصاريف ─────────────────────────────────────────────────────────────
 // شريط الأدوات + البحث + القائمة الافتراضية. ExpenseListItem وحده يقرأ السياق.
@@ -60,6 +71,9 @@ export const ExpensesPanel = ({
 }: ExpensesPanelProps) => {
   const virtuosoRef = useRef<VirtuosoHandle>(null)
   const sectionRef = useRef<HTMLElement>(null)
+  const [showAll, setShowAll] = useState(false)
+  const isTruncatable = !searchQuery && filteredExpenses.length > RECENT_LIMIT
+  const visibleExpenses = isTruncatable && !showAll ? filteredExpenses.slice(0, RECENT_LIMIT) : filteredExpenses
   const isShowingList = !isInitialLoading && activeExpenses.length > 0 && filteredExpenses.length > 0
   // ⚠️ رُصد أن Virtuoso (useWindowScroll) قد يقيس نطاق النافذة خطأً — إما عند
   // أول تركيب له (انتقال من EmptyState إليه، إن سبقه تسلسل نوافذ/تنقّلات
@@ -76,7 +90,7 @@ export const ExpensesPanel = ({
       virtuosoRef.current?.scrollTo({ top: window.scrollY })
     })
     return () => cancelAnimationFrame(id)
-  }, [isShowingList, filteredExpenses.length])
+  }, [isShowingList, visibleExpenses.length])
 
 
   // 🆕 التمرير إلى السجلّ بعد كل تسجيل ناجح — انظر scrollToSignal أعلاه.
@@ -188,7 +202,7 @@ export const ExpensesPanel = ({
         <Virtuoso
           ref={virtuosoRef}
           useWindowScroll
-          data={filteredExpenses}
+          data={visibleExpenses}
           itemContent={(_index, exp) => <ExpenseListItem expense={exp} />}
           scrollSeekConfiguration={{
             enter: velocity => Math.abs(velocity) > 900,
@@ -200,6 +214,23 @@ export const ExpensesPanel = ({
         />
       )}
     </ErrorBoundary>
+
+    {isShowingList && isTruncatable && (
+      <button
+        type="button"
+        onClick={() => {
+          // عند الطيّ يكون المستخدم في قاع قائمة طويلة — نعيده إلى رأس القسم
+          // وإلا وجد نفسه فجأة في منتصف قسم آخر بلا سياق.
+          if (showAll) sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          setShowAll(v => !v)
+        }}
+        aria-expanded={showAll}
+        className="w-full mt-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 transition-colors"
+      >
+        {showAll ? 'عرض أقل' : `عرض كل المصاريف (${filteredExpenses.length})`}
+        <ChevronDown className={`w-4 h-4 transition-transform ${showAll ? 'rotate-180' : ''}`} />
+      </button>
+    )}
 
     {searchQuery && filteredExpenses.length > 0 && (
       <p className="text-xs text-slate-400 mt-2 px-1">

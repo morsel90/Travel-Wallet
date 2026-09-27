@@ -44,3 +44,30 @@ describe('ExpensesPanel — نقاط الدخول', () => {
     expect(screen.queryByRole('button', { name: /إضافة مصروف/ })).not.toBeInTheDocument()
   })
 })
+
+// 🆕 السجلّ يُقصّ إلى آخر المصاريف كي لا يدفع «أرصدة المسافرين» إلى قاع الصفحة.
+// (react-virtuoso لا يرسم صفوفاً في jsdom، فالمُختبَر هو زرّ القصّ وحده.)
+describe('ExpensesPanel — قصّ السجلّ', () => {
+  const makeExpenses = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ id: `e${i}` })) as unknown as typeof baseProps.activeExpenses
+
+  it('أكثر من 10 مصاريف: زرّ «عرض الكل» بالعدد، ويتبدّل إلى «عرض أقل»', async () => {
+    const list = makeExpenses(15)
+    render(<ExpensesPanel {...baseProps} activeExpenses={list} filteredExpenses={list} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /عرض كل المصاريف \(15\)/ }))
+    expect(screen.getByRole('button', { name: /عرض أقل/ })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('10 مصاريف أو أقل: لا زرّ', () => {
+    const list = makeExpenses(10)
+    render(<ExpensesPanel {...baseProps} activeExpenses={list} filteredExpenses={list} />)
+    expect(screen.queryByRole('button', { name: /عرض كل المصاريف/ })).not.toBeInTheDocument()
+  })
+
+  it('البحث يتجاوز القصّ — من يبحث يريد كل النتائج', () => {
+    const list = makeExpenses(15)
+    render(<ExpensesPanel {...baseProps} activeExpenses={list} filteredExpenses={list} searchQuery="قهوة" />)
+    expect(screen.queryByRole('button', { name: /عرض كل المصاريف/ })).not.toBeInTheDocument()
+  })
+})
