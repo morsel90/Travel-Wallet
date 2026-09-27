@@ -138,6 +138,10 @@ export async function addTraveler(page: Page, name: string, deposit?: string): P
   await page.getByPlaceholder('مثال: سعد الغامدي').fill(name)
   if (deposit) await page.getByPlaceholder('0.00').first().fill(deposit)
   await page.getByRole('button', { name: 'اعتماد المسافر الجديد' }).click()
+  // ⚠️ انتظار ظهور البطاقة واجب: نموذج المصروف يحدّد مشاركيه من القائمة لحظة
+  // فتحه، فمصروف يُفتح قبل وصول المسافر يُقسَم على من سبقه وحدهم — السبب
+  // الفعلي لتقلّب balances-math وsettlement-record في CI.
+  await expect(page.locator('#travelers-section div.group').filter({ hasText: name })).toBeVisible()
 }
 
 export interface AddExpenseOptions {
@@ -168,6 +172,9 @@ export async function addExpense(page: Page, opts: AddExpenseOptions): Promise<v
     }
   }
   await page.getByRole('button', { name: 'اعتماد المصروف' }).click()
+  // انتظار إغلاق النموذج وظهور المصروف — وإلا فتح الاستدعاء التالي نموذجاً فوق نموذج يُغلَق.
+  await expect(amountInput).toBeHidden()
+  await expect(expenseCard(page, opts.description).first()).toBeVisible()
 }
 
 /** يعثر على بطاقة مصروف بوصفه الظاهر — نطاق ضيق يكفي لتمييز أزرار تعديله/حذفه عن بقية القائمة. */

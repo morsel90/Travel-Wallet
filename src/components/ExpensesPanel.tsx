@@ -203,7 +203,9 @@ export const ExpensesPanel = ({
           ref={virtuosoRef}
           useWindowScroll
           data={visibleExpenses}
-          itemContent={(_index, exp) => <ExpenseListItem expense={exp} />}
+          // ⚠️ المسافة padding لا margin: react-virtuoso لا يقيس الـmargin، فكانت
+          // آخر بطاقة تفيض 12px خارج القائمة فوق زرّ «عرض كل المصاريف».
+          itemContent={(_index, exp) => <div className="pb-3"><ExpenseListItem expense={exp} /></div>}
           scrollSeekConfiguration={{
             enter: velocity => Math.abs(velocity) > 900,
             exit: velocity => Math.abs(velocity) < 30,
