@@ -1,19 +1,7 @@
-// 🆕 ردود فعل لمسية (Haptic Feedback) خفيفة للأجهزة المحمولة التي تدعم الاهتزاز.
-// Web Vibration API متاح فقط على متصفحات الجوال (Android/Chrome غالباً)؛ نتحقق
-// من وجوده أولاً حتى لا يفشل الاستدعاء على أجهزة سطح المكتب أو iOS Safari
-// (الذي لا يدعم navigator.vibrate). كل الدوال آمنة وتُتجاهل بصمت عند عدم الدعم.
+// ردود فعل لمسية عبر Web Vibration API — تُتجاهل بصمت حيث لا دعم (سطح المكتب، iOS).
 //
-// أنماط الاهتزاز:
-//   light   → نقرة خفيفة جداً (اختيار/تنقّل)         10ms
-//   medium  → تأكيد أوضح (حذف/إجراء متوسط)           20ms
-//   success → نبضتان متتاليتان (نجاح عملية)          [50, 30, 50]
-//   error   → نبضتان قويتان (فشل/تحذير)              [100, 50, 100]
-//
-// ⚠️ ملاحظة تصميم: success() لا تُطلق الومضة البصرية تلقائياً — كانت في تجربة
-// أولى تُطلَق مع كل haptic.success() (أي كل مصروف يُضاف)، فبدت مزعجة ومتكررة.
-// الومضة الآن صريحة عبر haptic.flash() وتُستدعى فقط عند لحظات "احتفالية"
-// فعلية: أول مصروف يُسجَّل في الرحلة، نجاح المشاركة، ونجاح النسخ. أما error()
-// فتبقى تُطلق الومضة تلقائياً لأن الأخطاء أندر ويستحق التنبيه البصري لها دوماً.
+// ⚠️ success() بلا ومضة عمداً (مع كل مصروف كانت مزعجة)؛ الومضة صريحة عبر
+// flash() للحظات النادرة. error() تومض دائماً لأن الأخطاء أندر.
 
 const canVibrate = (): boolean =>
   typeof navigator !== 'undefined' && 'vibrate' in navigator
@@ -23,14 +11,11 @@ export const haptic = {
   medium:  () => { if (canVibrate()) navigator.vibrate(20) },
   success: () => { if (canVibrate()) navigator.vibrate([50, 30, 50]) },
   error:   () => { if (canVibrate()) navigator.vibrate([100, 50, 100]); triggerVisualPulse('error') },
-  // 🆕 ومضة بصرية صريحة — استدعِها فقط عند لحظة تستحق الاحتفاء بها
-  // (أول مصروف، نجاح مشاركة، نجاح نسخ)، وليس مع كل نجاح روتيني.
+  // لحظات نادرة فقط (أول مصروف، نجاح مشاركة/نسخ) — لا مع كل نجاح.
   flash: (type: 'success' | 'error' = 'success') => triggerVisualPulse(type),
 }
 
-// 🆕 بديل بصري خفيف لأجهزة لا تدعم الاهتزاز (أبرزها iOS Safari): ومضة لون سريعة
-// تغطي الشاشة لِلحظة عند النجاح/الخطأ. نحترم تفضيل تقليل الحركة
-// (prefers-reduced-motion) فلا نُظهر الومضة لمن فعّله — لأنها بطبيعتها وميض.
+// بديل بصري للاهتزاز (iOS). يحترم prefers-reduced-motion لأنها وميض بطبيعتها.
 function triggerVisualPulse(type: 'success' | 'error') {
   if (typeof document === 'undefined' || typeof window === 'undefined') return
   if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) return

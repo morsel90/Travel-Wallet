@@ -1,6 +1,4 @@
-// 🆕 أدوات مسار الرحلة — دوال بحتة (بلا React ولا Firestore) تدعم محرّر المسار
-// في لوحة تفاصيل الرحلة (components/admin/TripDetailPanel.tsx). قابلة للاختبار بالكامل
-// عبر Vitest — انظر itinerary.test.ts.
+// أدوات مسار الرحلة — دوال نقية لمحرّر المسار وعرضه.
 
 import type { ItinerarySegment, TransportMode, TripType } from '../types'
 
@@ -16,21 +14,16 @@ export const TRANSPORT_LABEL: Record<TransportMode, string> = {
 /** الحد الأعلى لعدد المقاطع — يطابق isValidTripConfig في firestore.rules. */
 export const MAX_SEGMENTS = 50
 
-// ─── مسوّدة النموذج ─────────────────────────────────────────────────────────
-// النموذج يتعامل مع نصوص فقط (قيم <input>)، والتحويل لـ ItinerarySegment يحدث
-// عند الحفظ بعد التحقق — نفس نمط ExpenseFormData مقابل Expense.
-//
-// 🆕 identifier/reference/arrivalTime لم يعد لها حقل في SegmentForm.tsx
-// المبسّط، لكنها تبقى هنا لسبب واحد: مقطع قديم فيه قيمة لأحدها يُحرَّر عبر
-// segmentToDraft ثم draftToSegment بلا لمس، فتُحفَظ كما هي بدل أن يمحوها
-// النموذج المبسّط بصمت. مقطع جديد (emptySegmentDraft) يبدأ بها فارغة، فتُحذف
-// عند البناء (انظر draftToSegment) بدل أن تُكتب كنصوص فارغة.
+// ─── مسوّدة النموذج (نصوص <input>، تُحوَّل عند الحفظ) ─────────────────────────
+// ⚠️ identifier/reference/arrivalTime بلا حقل في النموذج المبسّط لكنها باقية
+// هنا عمداً: قيمة قديمة تمرّ عبر المسوّدة كما هي بدل أن تُمحى بصمت، والفارغة
+// لا تُكتب.
 export interface SegmentDraft {
   id: string
   mode: TransportMode
   identifier: string
   reference: string
-  /** 🆕 حقل نصي حرّ اختياري — بديل الحقول المحذوفة لأي تفصيل إضافي. */
+  /** نص حرّ اختياري لأي تفصيل إضافي. */
   notes: string
   departureLocation: string
   departureTime: string // قيمة <input type="datetime-local"> — "YYYY-MM-DDTHH:mm"
@@ -38,21 +31,14 @@ export interface SegmentDraft {
   arrivalTime: string
 }
 
-/**
- * معرّف عشوائي للمقطع. يطابق شكل ما تكتبه السكربتات
- * (randomBytes(8).toString('hex')) أي 16 محرفاً ست عشرياً.
- */
+/** 16 محرفاً ست عشرياً — يطابق ما تكتبه السكربتات. */
 export function newSegmentId(): string {
   const bytes = new Uint8Array(8)
   crypto.getRandomValues(bytes)
   return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
 }
 
-/**
- * @param prefilledDepartureLocation 🆕 وجهة وصول آخر مقطع مسجَّل في المسار، إن
- * وُجدت — تُملأ بها "من" تلقائياً بدل تركها فارغة، على افتراض أن المقطع
- * التالي غالباً يبدأ من حيث انتهى السابق.
- */
+/** @param prefilledDepartureLocation وصول آخر مقطع — التالي يبدأ غالباً من حيث انتهى. */
 export function emptySegmentDraft(prefilledDepartureLocation = ''): SegmentDraft {
   return {
     id: newSegmentId(),
@@ -68,10 +54,8 @@ export function emptySegmentDraft(prefilledDepartureLocation = ''): SegmentDraft
 }
 
 /**
- * يحوّل قيمة حقل datetime-local ("2026-07-21T22:30") إلى الصيغة المخزَّنة
- * ("2026-07-21T22:30:00"). المخزون تاريخ محلي بلا منطقة زمنية عمداً — نفس ما
- * تكتبه السكربتات، وهو ما تتوقّعه شاشات العرض عند استدعاء new Date(...).
- * إضافة Z أو إزاحة هنا كانت ستُزحزح كل الأوقات المعروضة بمقدار فارق التوقيت.
+ * datetime-local ← الصيغة المخزَّنة ("…T22:30:00").
+ * ⚠️ وقت محلي بلا منطقة زمنية عمداً — Z أو إزاحة تُزحزح كل الأوقات المعروضة.
  */
 export function toStoredTime(inputValue: string): string {
   if (!inputValue) return ''
@@ -99,14 +83,7 @@ export function segmentToDraft(segment: ItinerarySegment): SegmentDraft {
   }
 }
 
-/**
- * يتحقق من مسوّدة مقطع ويُرجع أول رسالة خطأ بالعربية، أو null إن كانت صالحة.
- * يُستدعى قبل الحفظ وقبل بناء ItinerarySegment.
- *
- * 🆕 لا يتحقق من identifier/reference/arrivalTime — لا حقل لها في النموذج
- * المبسّط ليُخطئ فيه المستخدم أصلاً. قيمها (إن وُجدت من تعديل مقطع قديم) تمرّ
- * كما هي بلا فحص، لأنها كانت صالحة أصلاً حين حُفظت أول مرة ولم يلمسها أحد هنا.
- */
+/** أول رسالة خطأ، أو null. الحقول بلا خانة في النموذج تمرّ بلا فحص. */
 export function validateDraft(draft: SegmentDraft): string | null {
   if (!TRANSPORT_MODES.includes(draft.mode)) return 'اختر وسيلة تنقل صحيحة.'
   if (draft.notes.trim().length > 200) return 'الملاحظات طويلة جداً (200 حرف كحد أقصى).'
@@ -120,12 +97,7 @@ export function validateDraft(draft: SegmentDraft): string | null {
   return null
 }
 
-/**
- * يبني مقطعاً مخزَّناً من مسوّدة صالحة. لا يكتب identifier/reference/notes/
- * وقت الوصول إن كانت فارغة — 🆕 هذا ما يجعل مقطعاً جديداً (بلا هذه القيم أصلاً
- * في المسوّدة) يُحفظ بلا الحقول المحذوفة تماماً، بينما مقطع قديم يُحرَّر بقيمة
- * موجودة لأحدها (مررت بلا تغيير من segmentToDraft) يحتفظ بها كما هي.
- */
+/** مقطع مخزَّن من مسوّدة صالحة. الحقول الاختيارية الفارغة لا تُكتب. */
 export function draftToSegment(draft: SegmentDraft): ItinerarySegment {
   const identifier = draft.identifier.trim()
   const reference = draft.reference.trim()
@@ -148,12 +120,7 @@ export function draftToSegment(draft: SegmentDraft): ItinerarySegment {
   }
 }
 
-/**
- * حارس دفاعي عند القراءة: firestore.rules تتحقق من أن itinerary قائمة بحدّ أقصى
- * 50 عنصراً فقط، ولا تفحص بنية كل مقطع (قيد لغة القواعد — موثّق هناك). أي مقطع
- * تالف مكتوب مباشرة عبر Firestore SDK كان سيُسقط الواجهة عند قراءة
- * segment.departure.time، فنُصفّيه هنا بدل ذلك.
- */
+/** ⚠️ القواعد لا تفحص بنية المقاطع، فمقطع تالف يُصفّى هنا بدل أن يُسقط الواجهة. */
 export function isRenderableSegment(value: unknown): value is ItinerarySegment {
   if (typeof value !== 'object' || value === null) return false
   const s = value as Partial<ItinerarySegment>
@@ -161,13 +128,10 @@ export function isRenderableSegment(value: unknown): value is ItinerarySegment {
     typeof s.id === 'string' &&
     typeof s.mode === 'string' &&
     TRANSPORT_MODES.includes(s.mode as TransportMode) &&
-    // 🆕 identifier اختياري الآن (النموذج المبسّط لا يجمعه لمقطع جديد) — لا
-    // يُرفض غيابه، فقط نوعه إن وُجد.
     (s.identifier === undefined || typeof s.identifier === 'string') &&
     typeof s.departure?.location === 'string' &&
     typeof s.departure?.time === 'string' &&
     typeof s.arrival?.location === 'string' &&
-    // 🆕 نفس الشيء لوقت الوصول — اختياري، فلا يُرفض المقطع لغيابه.
     (s.arrival?.time === undefined || typeof s.arrival.time === 'string')
   )
 }
@@ -182,14 +146,8 @@ export function normalizeItinerary(raw: unknown): ItinerarySegment[] {
 }
 
 /**
- * 🆕 نسخة المسار المقروءة من مستند الرحلة — أساس القفل التفاؤلي الذي تفرضه
- * `itineraryRevIsBumped` في firestore.rules.
- *
- * ⚠️ **كل ما ليس عدداً صحيحاً موجباً يُقرأ صفراً**، لا فقط الحقل الغائب: رحلة
- * أُنشئت قبل هذه الميزة لا تحمل الحقل إطلاقاً (نفس مبدأ غياب `status` = active)،
- * وقيمة تالفة كُتبت مباشرة عبر SDK لا يجوز أن تُسقط الواجهة ولا أن تنتج
- * `NaN + 1` فيُرفض كل حفظ لاحق بلا سبب مفهوم. الصفر يعيد الرحلة إلى بداية
- * البروتوكول: أول حفظ يكتب 1، وتستمر من هناك.
+ * نسخة المسار — أساس القفل التفاؤلي (itineraryRevIsBumped في القواعد).
+ * ⚠️ كل ما ليس صحيحاً موجباً = 0، وإلا أنتج `NaN + 1` رفضاً دائماً لكل حفظ.
  */
 export function normalizeItineraryRev(raw: unknown): number {
   return typeof raw === 'number' && Number.isInteger(raw) && raw >= 0 ? raw : 0
@@ -204,26 +162,16 @@ export function findNextSegment(
 }
 
 /**
- * 🆕 وقت وصول آخر مقطع في المسار — "متى انتهت الرحلة فعلياً"، تستخدمه دورة
- * الحياة التلقائية (advanceTripLifecycle في functions/index.js) لتقرير متى
- * تنتقل رحلة من `active` إلى `completed`. `itinerary` يُمرَّر خاماً (غير
- * مرتَّب بالضرورة)، فيُمرَّر أولاً عبر normalizeItinerary — نفس ما تفعله كل
- * دالة أخرى هنا. مسار فارغ أو بلا مقاطع صالحة يُعيد `null`: لا إشارة صادقة
- * لـ"متى انتهت" رحلة بلا مسار، فتبقى خارج الانتقال التلقائي بالكامل (قرار
- * نطاق، لا نقص — انظر docs/DECISIONS.md).
+ * «متى انتهت الرحلة» (وصول آخر مقطع) لدورة الحياة التلقائية. بلا مسار = null،
+ * فتبقى الرحلة خارج الانتقال التلقائي عمداً.
  *
- * ⚠️ **نسخة مطابقة خادمياً**: `tripEndTimeJs` في functions/index.js — الدالة
- * المجدولة تعمل في بيئة Node منفصلة بلا حزمة مشتركة مع هذا الملف، فتُعاد
- * كتابتها هناك يدوياً بنفس المنطق بالضبط، على نمط isValidNameKeyJs/
- * deriveShortNameJs الموجود أصلاً لنفس السبب.
+ * ⚠️ نسخة مطابقة يدوياً في functions/index.js (tripEndTimeJs) — غيّرهما معاً.
  */
 export function tripEndTime(itinerary: unknown): number | null {
   const normalized = normalizeItinerary(itinerary)
   if (normalized.length === 0) return null
   const last = normalized[normalized.length - 1]
-  // 🆕 وقت الوصول اختياري الآن (النموذج المبسّط لا يجمعه) — نسقط لوقت
-  // الانطلاق كأفضل تقدير معروف بدل NaN. نفس المنطق في tripEndTimeJs
-  // (functions/index.js) يجب أن يبقى مطابقاً — انظر تعليقها هناك.
+  // وقت الوصول اختياري — الانطلاق أفضل تقدير بدل NaN.
   return new Date(last.arrival.time ?? last.departure.time).getTime()
 }
 
@@ -236,12 +184,7 @@ export interface TripRouteSummary {
   toLocation: string
 }
 
-/**
- * 🆕 ملخّص المسار (أول انطلاق ← آخر وصول) لعرضه في قوائم الرحلات (TripPicker)
- * دون تكرار محرّر المسار الكامل هناك. `itinerary` يُمرَّر خاماً كما في
- * tripEndTime أعلاه — يمرّ أولاً عبر normalizeItinerary. مسار فارغ أو بلا
- * مقاطع صالحة يُعيد null: لا مسار لعرضه.
- */
+/** أول انطلاق ← آخر وصول، أو null بلا مسار صالح. */
 export function tripRouteSummary(itinerary: unknown): TripRouteSummary | null {
   const normalized = normalizeItinerary(itinerary)
   if (normalized.length === 0) return null
@@ -249,7 +192,6 @@ export function tripRouteSummary(itinerary: unknown): TripRouteSummary | null {
   const last = normalized[normalized.length - 1]
   return {
     start: first.departure.time,
-    // 🆕 نفس سقوط tripEndTime أعلاه لوقت الانطلاق حين يغيب وقت الوصول.
     end: last.arrival.time ?? last.departure.time,
     fromLocation: first.departure.location,
     toLocation: last.arrival.location,
@@ -260,15 +202,10 @@ export function tripRouteSummary(itinerary: unknown): TripRouteSummary | null {
 export const LONG_TERM_THRESHOLD_DAYS = 14
 
 /**
- * 🆕 يقترح نوع الرحلة بعد حفظ مسار جديد — بديل الاختيار اليدوي (والسكربت
- * الإداري القديم) لتحديد long_term: يُشتَق تلقائياً من مدّة المسار نفسه بدل
- * إزعاج من ينشئ الرحلة بخيار تقني إضافي.
+ * نوع الرحلة من مدّة مسارها، بدل سؤال المنشئ.
  *
- * ⚠️ اتجاه واحد فقط — يُرقّي standard← long_term عند تجاوز الحدّ، ولا يُخفِّض
- * رحلة long_term قائمة إلى standard أبداً حتى لو قصُر مسارها لاحقاً (حُذف
- * مقطع، أو عُدِّل بالخطأ). التخفيض يبقى قراراً بشرياً صريحاً وحده
- * (scripts/set-trip-type.mjs) لأن الرجوع لا يُلغي أثر أي شهر أُغلق فعلياً على
- * الرحلة — انظر docs/DECISIONS.md.
+ * ⚠️ ترقية فقط، لا تخفيض أبداً: الرجوع لا يُلغي أثر شهر أُغلق — قرار بشري عبر
+ * scripts/set-trip-type.mjs.
  */
 export function deriveTripType(currentType: TripType, itinerary: unknown): TripType {
   if (currentType === 'long_term') return 'long_term'
@@ -288,24 +225,16 @@ function startOfDay(timestamp: number): number {
 }
 
 /**
- * 🆕 نص العدّ التنازلي حتى وقت الانطلاق، يعرضه NextSegmentWidget.
+ * نص العدّ التنازلي، أو null لوقت غير صالح أو مضى.
  *
- * التدرّج **باليوم التقويمي لا بعدد الساعات**: رحلة الغد الساعة 8 صباحاً تبقى
- * «غداً» حين ينظر إليها المسافر الساعة 11 ليلاً، ولا تصير «بعد 9 ساعات» —
- * الأخيرة أدقّ عددياً لكن «غداً» هي ما يفكّر به المسافر فعلاً. وحين يحلّ اليوم
- * نفسه تتحول للساعات، ثم للدقائق في الساعة الأخيرة حيث يصير كل ربع ساعة مهماً.
- *
- * يُرجع null لوقت غير صالح أو لانطلاق مضى — لا نص عدّ لشيء فات.
- *
- * ⚠️ الأرقام لاتينية (الافتراضي في JS) عمداً، مطابقةً لقرار العرض في
- * ItinerarySection.tsx: تقويم ميلادي وأرقام لاتينية أوضح للمسافر.
+ * باليوم التقويمي لا الساعات: رحلة الثامنة صباحاً «غداً» في الحادية عشرة ليلاً.
+ * ثم ساعات في اليوم نفسه، ثم دقائق في الساعة الأخيرة. أرقام لاتينية عمداً.
  */
 export function formatCountdown(departureTime: string, now: number = Date.now()): string | null {
   const departure = new Date(departureTime).getTime()
   if (Number.isNaN(departure) || departure <= now) return null
 
-  // Math.round لا floor: فارق اليومين يُحسب بين بدايتَي يومين، وقد يكون 23 أو
-  // 25 ساعة عند تغيّر التوقيت الصيفي، فيكسر القسمة الصحيحة.
+  // round لا floor: يوم التوقيت الصيفي 23 أو 25 ساعة.
   const days = Math.round((startOfDay(departure) - startOfDay(now)) / 86_400_000)
   if (days === 1) return 'غداً'
   if (days === 2) return 'بعد يومين'

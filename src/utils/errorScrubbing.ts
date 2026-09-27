@@ -1,18 +1,9 @@
 import type { ErrorEvent, Breadcrumb } from '@sentry/react'
 
-// 🆕 تنقية بيانات Sentry من الحقول الحساسة — دوال بحتة (انظر
-// errorScrubbing.test.ts).
+// تنقية أحداث Sentry من البيانات الحساسة (IBAN، البريد، الأسماء، وصف المصروف) —
+// حزام أمان فوق `sendDefaultPii: false`.
 //
-// هذا تطبيق مالي حقيقي: IBAN كامل واسم مستفيد (BankDetails)، بريد واسم
-// عرض حقيقيين (User)، نص وصف مصروف حر (Expense.description). الافتراضات
-// الجاهزة لأي أداة تتبع أخطاء (breadcrumbs من console/XHR/fetch، سياق
-// المستخدم) قد تلتقط أياً من هذا دون قصد. `sendDefaultPii: false` في إعداد
-// Sentry يمنع أغلبه، وهذا حزام أمان إضافي يعمل على أي بيانات تصل فعلياً
-// عبر extra/breadcrumbs.
-//
-// ⚠️ القائمة أسماء حقول لا مسارات — أي حقل بهذا الاسم يُحذَف أينما ظهر
-// متداخلاً، عمداً: أبسط من تتبع كل مسار محتمل، وأكثر أماناً حين يُضاف حقل
-// جديد بنفس الاسم في مكان لم يُتوقَّع.
+// ⚠️ أسماء حقول لا مسارات عمداً: تُحذف أينما ظهرت، حتى في مكان جديد لم يُتوقَّع.
 const SENSITIVE_KEYS = new Set([
   'iban', 'bankName', 'beneficiary', 'bankDetails', 'walletName', 'walletPhone',
   'email', 'displayName', 'changedByEmail',

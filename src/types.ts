@@ -6,22 +6,12 @@ export interface Traveler {
   shortName: string   // ★ مفتاح الربط مع Expense.participants — لا يتغير بعد الإنشاء
   deposited: number   // إجمالي الدفع المسبق بالريال
   deletedAt?: number | null   // Unix timestamp | null — حذف ليّن (Soft Delete)
-  // 🆕 حقل مؤقت (client-only) لا يُكتب لـ Firestore أبداً — مشتق من
-  // snapshot.metadata.hasPendingWrites في useTravelers لعرض شارة "جارٍ المزامنة"
-  // على العنصر أثناء التحديث المتفائل (Optimistic Update)، قبل تأكيد الخادم.
+  // client-only، لا يُكتب أبداً — من hasPendingWrites لشارة «جارٍ المزامنة».
   _pending?: boolean
-  // 🆕 نموذج الهوية الهجين: ربط بروفايل الدفتر (Traveler.id، الرقمي، يبقى مصدر
-  // كل حساب في calculations.ts دون تغيير) بحساب Firebase Auth الذي يديره
-  // (uid). قيمتان ممكنتان لملف "غير مربوط": الحقل غائب تماماً (كل المسافرين
-  // قبل هذا التحديث) أو null (مسافر "شبح" أنشأه المنظّم يدوياً لشخص لم ينضمّ
-  // بعد). يُملأ تلقائياً عند الانضمام عبر رابط الدعوة (joinViaInvite) إن لم
-  // يوجد ملف بهذا uid أصلاً، أو يدوياً عبر linkTravelerAccount (منظّم/مسؤول
-  // يربط ملفاً شبحاً بحساب انضمّ فعلاً). انظر functions/index.js.
+  // الحساب المرتبط بالملف (الحسابات تبقى على Traveler.id). غائب أو null =
+  // غير مربوط (قديم، أو «شبح» أنشأه المنظّم). يُملأ عبر joinViaInvite أو linkTravelerAccount.
   uid?: string | null
-  // 🆕 متى انضمّ صاحب هذا الملف فعلياً — يُكتب فقط مع الإنشاء التلقائي عبر
-  // joinViaInvite، لا عند linkTravelerAccount (ربط ملف موجود بحساب لاحقاً لا
-  // يُعيد تعريف "متى انضم"). غيابه لا يعني خطأً — كل المسافرين قبل هذا
-  // التحديث، وكل الملفات "الشبح" التي لم تُربَط بعد، بلا هذا الحقل تماماً.
+  // يُكتب مع joinViaInvite وحده، لا عند الربط اللاحق. غيابه ليس خطأً.
   joinedAt?: number
 }
 
@@ -40,32 +30,20 @@ export interface Expense {
   exchangeRate: number
   participants: number[]   // معرّفات المسافرين المشاركين (Traveler.id)
   createdAt: number     // Unix timestamp (ms)
-  // 🆕 uid الجلسة/الجهاز اللي أضاف المصروف أصلاً (مسجّل الدخول المجهول أو المسؤول).
-  // يُستخدم للسماح لصاحب المصروف بتعديله أو حذفه بنفسه لاحقاً دون انتظار المسؤول.
-  // اختياري لأن المصاريف القديمة (قبل هذا التعديل) لا تملكه — تبقى تلك admin-only.
+  // كاتب المصروف — يملك تعديله وحذفه. غائب في القديمة فتبقى للمسؤول وحده.
   createdByUid?: string
   deletedAt?: number | null   // Unix timestamp | null — حذف ليّن (Soft Delete)
-  // 🆕 حقل مؤقت (client-only) لا يُكتب لـ Firestore أبداً — مشتق من
-  // snapshot.metadata.hasPendingWrites في useExpenses لعرض شارة "جارٍ المزامنة"
-  // على العنصر أثناء التحديث المتفائل (Optimistic Update)، قبل تأكيد الخادم.
+  // client-only، لا يُكتب أبداً — من hasPendingWrites لشارة «جارٍ المزامنة».
   _pending?: boolean
-  // 🆕 فئة المصروف (من EXPENSE_CATEGORIES في constants.ts) — اختياري لأن
-  // المصاريف القديمة (قبل هذا التعديل) لا تملكه؛ تُصنَّف "أخرى" في الرسم البياني.
+  // غيابه = «أخرى».
   category?: string
-  // 🆕 تقسيم غير متساوٍ (اختياري) — وزن/حصة نسبية لكل مشارك (المفتاح: id
-  // المسافر كنص، لأن مفاتيح الخرائط في Firestore نصوص دائماً). أي مشارك غير
-  // مذكور هنا يُعامَل بوزن 1 (حصة عادية) — وغياب هذا الحقل بالكامل = تقسيم
-  // بالتساوي التام كما كان قبل هذا التحديث؛ كل المصاريف القديمة تعمل دون أي
-  // حاجة لترحيل بيانات. انظر splitByShares في utils/calculations.ts.
+  // أوزان التقسيم؛ المفتاح id نصّاً (مفاتيح Firestore نصوص). غير المذكور = 1،
+  // والغياب = تساوٍ تام.
   shares?: Record<string, number>
-  // 🆕 من دفع المصروف فعلياً: رقم = Traveler.id دفعها من جيبه (يُقيَّد لحسابه في
-  // calculateBalances قبل خصم نصيبه)، أو 'fund' = من الصندوق المشترك كالمعتاد.
-  // غياب الحقل بالكامل (كل المصاريف قبل هذا التحديث) يُعامَل كـ 'fund' — لا حاجة
-  // لترحيل بيانات. انظر calculateBalances في utils/calculations.ts.
+  // Traveler.id = دفعه من جيبه، 'fund' أو الغياب = من الصندوق.
   paidBy?: number | 'fund'
-  // 🆕 آخر من عدّل المصروف أو حذفه أو استعاده — يُكتب مع كل تعديل، ويُعرض
-  // «عدّله فلان» حين يختلف عن كاتبه. القواعد تُلزم به منظّم الرحلة حين يعدّل
-  // مصروف غيره، وتمنع أن يحمل هوية غير هوية الكاتب (انظر stampsEditor).
+  // آخر من عدّل/حذف/استعاد. ⚠️ القواعد تُلزم به المنظّم في مصروف غيره وتمنع
+  // انتحال هوية (stampsEditor).
   lastEditedByUid?: string
   lastEditedByName?: string
   lastEditedAt?: number
@@ -81,15 +59,10 @@ export interface ExpenseFormData {
   currency: string
   exchangeRate: string
   participants: number[]   // معرّفات المسافرين المختارين (Traveler.id)
-  category: string         // 🆕 من EXPENSE_CATEGORIES — دائماً له قيمة افتراضية في النموذج
-  // 🆕 تقسيم غير متساوٍ — 'equal' افتراضياً (كما كان الحال دائماً)؛ 'custom' عند
-  // الضغط على زر "تخصيص التقسيم" في ExpenseForm. shares يُملأ فقط في حالة
-  // 'custom' (المفتاح: id المسافر رقماً هنا في النموذج، ويُحفظ كنص في Firestore
-  // تلقائياً). عند الحفظ بوضع 'equal' يُهمَل shares تماماً (لا يُكتب لـ Firestore).
+  category: string
+  // shares لا يُكتب إلا في 'custom'.
   splitMode: 'equal' | 'custom'
   shares: Record<number, number>
-  // 🆕 دائماً له قيمة افتراضية ('fund') في النموذج، تماماً كـ category — انظر
-  // Expense.paidBy لدلالة القيم.
   paidBy: number | 'fund'
 }
 
@@ -107,9 +80,7 @@ export type CurrencyMap = Record<string, CurrencyInfo>
 export type DepositMode = 'add' | 'subtract' | 'set'
 
 // ─── سجل تدقيق تعديلات الرصيد ────────────────────────────────────────────────
-// 🆕 سجل غير قابل للتعديل أو الحذف (immutable) يُنشأ تلقائيًا عند كل تعديل لرصيد
-// مسافر — يوثّق من غيّره، متى، القيمة السابقة/الجديدة، والسبب (اختياري) لتفادي
-// نزاعات لاحقة حول "لماذا تغيّر رصيدي؟". مرئي للمسؤول فقط.
+// سطر غير قابل للتعديل أو الحذف مع كل تعديل رصيد — جواب «لماذا تغيّر رصيدي؟».
 export interface DepositLogEntry {
   id: string
   travelerId: number
@@ -123,17 +94,9 @@ export interface DepositLogEntry {
   createdAt: number   // Unix timestamp (ms)
 }
 
-// 🆕 سداد بين مسافرَين — القيد الثالث في الدفتر، لا إيداع ولا مصروف.
-//
-// «الدرويش حوّل لمحمد 170.5 بنكياً» حركةٌ بين طرفَين: رصيد الدافع يرتفع ورصيد
-// المستلم ينخفض بالمبلغ نفسه، ولا يدخل الصندوق ريال ولا يُنفَق ريال.
-//
-// ⚠️ كان يُسجَّل تعديلاً على `deposited` للطرفَين (recordSettlement، #106)،
-// فانكسر حين أتى رصيد المستلم من مصاريف دفعها **من جيبه**: خصم التحويل من
-// «مودَع» لم يودِعه أنزله تحت الصفر (Bh26: ‎-170.5). ولا يصلح مصروفاً أيضاً:
-// كان سيُضخّم «إجمالي المصروف» ويظهر كعشاء لم يُؤكل. انظر docs/DECISIONS.md.
-//
-// يكتبه الخادم وحده (recordSettlement)، وحذفه ليّن كالمصروف (deletedAt).
+// سداد بين مسافرَين — القيد الثالث: رصيد الدافع يرتفع والمستلم ينخفض، ولا يدخل
+// الصندوق ريال ولا يُنفَق. ⚠️ لا تُعِده إيداعاً ولا مصروفاً — DECISIONS.md.
+// يكتبه recordSettlement وحده، وحذفه ليّن.
 export interface Repayment {
   id: string
   /** من سدّد — رصيده يرتفع بالمبلغ. */
@@ -149,17 +112,9 @@ export interface Repayment {
   _pending?: boolean
 }
 
-// ─── تصوّر بياني للأرصدة ─────────────────────────────────────────────────────
-// 🆕 أنواع بيانات مشتقة (derived) تُبنى من travelers/expenses الموجودة أصلاً —
-// لا تُخزَّن في Firestore ولا تُقرأ منه مباشرة، بل تُحسب محلياً عبر دوال نقية في
-// utils/calculations.ts (calculateSettlements/calculateCategoryTotals/
-// calculateSpendingTrend) وتُغذّي مكوّنات src/components/charts/.
+// ─── أنواع مشتقة — تُحسب محلياً في utils/calculations.ts ولا تُخزَّن ──────────
 
-/**
- * تحويل مقترح لتسوية الحسابات بين عضوين — ليس تحويلاً بنكياً فعلياً، بل اقتراح
- * محسوب محلياً (خوارزمية جشعة/Greedy) لتصفير أرصدة remaining بأقل عدد ممكن من
- * الخطوات تقريباً. انظر calculateSettlements.
- */
+/** تحويل مقترح (لا بنكي فعلي) — انظر calculateSettlements. */
 export interface Settlement {
   fromId: number
   fromName: string
@@ -188,38 +143,25 @@ export type ToastType = 'new' | 'edit' | 'success' | 'error'
 export interface ToastMessage {
   text: string
   type: ToastType
-  // 🆕 عند وجودها، يعرض مكوّن Toast زر "تراجع" بجانب الرسالة — يُستخدم مع
-  // الحذف الليّن (Undo للحذف: مصروف أو مسافر) لإتاحة تراجع فوري خلال نافذة
-  // زمنية قصيرة (انظر App.tsx: confirmDelete/confirmDeleteTraveler، مهلة 5
-  // ثوانٍ) دون الحاجة لفتح سلة المهملات. دالة client-only بحتة — لا تُخزَّن
-  // ولا تُقارَن مع أي حالة، فقط تُستدعى عند الضغط.
+  // زرّ «تراجع» بعد الحذف الليّن.
   onUndo?: () => void
-  // 🆕 عند وجودها، يعرض مكوّن Toast زر "إعادة المحاولة" بجانب الرسالة — يُستخدم
-  // عند فشل حفظ المصروف (غالباً انقطاع الشبكة) لإعادة استدعاء نفس عملية الكتابة
-  // (انظر handleAddExpense/handleQuickAddExpense في hooks/useExpenseActions.ts).
-  // client-only بحتة كـ onUndo — لا تُخزَّن ولا تُقارَن، فقط تُستدعى عند الضغط.
+  // زرّ «إعادة المحاولة» بعد فشل حفظ مصروف.
   onRetry?: () => void
 }
-// ─── إعدادات الرحلة ومسار التنقل (ميزة جديدة) ──────────────────────────────────
+// ─── مسار الرحلة ─────────────────────────────────────────────────────────────
 
-// 🆕 تحديد أنواع التنقل المدعومة في التطبيق
 export type TransportMode = 'flight' | 'car' | 'train' | 'bus'
 
 export interface ItinerarySegment {
   id: string
   mode: TransportMode
 
-  // 🆕 يمثل رقم الرحلة للطيران (QR 1155) أو وصف المركبة (مثال: سيارة يوكن، قطار الحرمين).
-  // ⚠️ لم يعد نموذج المسار المبسّط (SegmentForm.tsx) يجمعه — اختياري لتوافق
-  // البيانات القديمة فقط. مقطع جديد يُحفظ بلا هذا الحقل إطلاقاً.
+  // ⚠️ identifier (رقم الرحلة/المركبة) وreference (PNR): بيانات قديمة فقط، لا يجمعهما النموذج.
   identifier?: string
 
-  // 🆕 رقم الحجز (PNR) للطيران، أو رقم حجز الإيجار للسيارة/القطار (اختياري).
-  // ⚠️ نفس ملاحظة identifier أعلاه — بيانات قديمة فقط، لا يُجمع من النموذج الحالي.
   reference?: string
 
-  // 🆕 ملاحظات حرّة اختيارية — بديل الحقول المحذوفة أعلاه لأي تفصيل يريد
-  // المستخدم تدوينه (رقم رحلة، رقم حجز، وصف مركبة، أو أي شيء آخر).
+  // نص حرّ بديل الحقلين أعلاه.
   notes?: string
 
   departure: {
@@ -228,86 +170,53 @@ export interface ItinerarySegment {
   }
   arrival: {
     location: string // اسم المطار أو مدينة الوصول
-    // 🆕 اختياري — النموذج المبسّط يجمع وقت الانطلاق فقط. غيابه يُعامَل كمساوٍ
-    // لوقت الانطلاق أينما احتاجت الحسابات (tripEndTime/tripRouteSummary) قيمة،
-    // ولا يُعرض إطلاقاً في شاشات العرض حين يكون غائباً.
+    // اختياري — غيابه = وقت الانطلاق في الحسابات، ولا يُعرض.
     time?: string    // ISO timestamp
   }
 }
 
-// ─── دورة حياة الرحلة ────────────────────────────────────────────────────────
-// 🆕 حالة الرحلة — مخزَّنة في trips/{tripId}.status ومفروضة في firestore.rules
-// (انظر tripAcceptsExpenses/tripAcceptsWrites هناك) لا في الواجهة وحدها.
-//
+// ─── دورة حياة الرحلة — مفروضة في firestore.rules ────────────────────────────
 //   active    → كل شيء مسموح
-//   completed → لا مصاريف جديدة، لكن تعديل المسافرين والإيداعات يبقى متاحاً
-//               لتسوية الحسابات بعد انتهاء الرحلة
-//   archived  → لا كتابة إطلاقاً، وتختفي من القوائم افتراضياً
-//
-// ⚠️ غياب الحقل = active. كل الرحلات المنشأة قبل هذه الميزة بلا `status`، ولو
-// عُوملت كغير نشطة لتجمّدت جميعها. لا ترحيل مطلوب — لا في القواعد ولا هنا.
+//   completed → لا مصاريف جديدة؛ المسافرون والإيداعات متاحة للتسوية
+//   archived  → لا كتابة إطلاقاً
+// ⚠️ الغياب = active (الرحلات السابقة للحقل).
 export type TripStatus = 'active' | 'completed' | 'archived'
 
-/** ترتيب دلالي للتقييد: كل حالة تشمل قيود ما قبلها. مفيد للمقارنات في الواجهة. */
 export const TRIP_STATUS_LABEL: Record<TripStatus, string> = {
   active:    'نشطة',
   completed: 'منتهية',
   archived:  'مؤرشفة',
 }
 
-// ─── سجلّ عضوية الرحلة ───────────────────────────────────────────────────────
-// 🆕 مستند لكل من انضمّ للرحلة، في trips/{tripId}/members/{uid}. تكتبه
-// joinViaInvite عند الانضمام، ولا يكتبه أي عميل إطلاقاً.
-//
-// ⚠️ **فهرس إداري لا مصدر صلاحية.** الوصول يُقرأ من الـ claim في التوكن، وهذا
-// السجلّ موجود لأن Firebase Auth لا يقبل استعلاماً على الـ claims — فبدونه لا
-// جواب أصلاً لسؤال «من في هذه الرحلة؟».
+// ─── سجلّ عضوية الرحلة (trips/{tripId}/members/{uid}) — تكتبه الدوال وحدها ──
+// ⚠️ فهرس إداري لا مصدر صلاحية: الوصول من claims التوكن، والسجلّ موجود لأن
+// Auth لا يقبل استعلاماً عليها.
 export interface TripMember {
   /** معرّف حساب Firebase — هو معرّف المستند نفسه. */
   uid: string
-  /**
-   * ⚠️ **اختياري، وغيابه ليس خطأً.** السطور التي بناها
-   * scripts/backfill-member-roster.mjs لمن انضمّ قبل وجود السجلّ لا تعرف تاريخ
-   * الانضمام — ولا مكان يحفظه. الغياب يعني «غير معروف»، ويجب أن يُعرض كذلك؛
-   * أي سقوط إلى 0 أو إلى تاريخ الحساب يخترع معلومة لا يمكن تمييزها لاحقاً.
-   */
+  /** ⚠️ الغياب = «غير معروف» (سطور الترحيل) — لا تُسقطه إلى 0 أو تاريخ آخر. */
   joinedAt?: number
-  /** آخر مرة أدخل فيها رمز الرحلة — يُحدَّث في كل تحقّق، بخلاف joinedAt. */
+  /** آخر تسجيل عضوية (recordMembership) — يُحدَّث في كل مرة، بخلاف joinedAt. */
   lastVerifiedAt?: number
-  /** للحسابات الدائمة فقط؛ الجلسة المجهولة بلا بريد ولا اسم. */
   email?: string
   displayName?: string
-  /** uid الجلسة المجهولة التي نُقلت منها العضوية — يربط سطرين لشخص واحد. */
+  /** إرث: uid الجلسة المجهولة التي نُقلت منها العضوية. */
   mergedFrom?: string
   /** وُجد بالترحيل لا بالانضمام؛ ملازم لغياب joinedAt. */
   backfilledAt?: number
-  /**
-   * 🆕 دور الرحلة (docs/PLAN-member-management.md المرحلة ٣) — منفصل تماماً عن
-   * admin: true العالمي. غيابه يعني 'member' (نفس مبدأ غياب `status` = active).
-   * تكتبه manageMember (mode: 'setRole') وحدها؛ لا كتابة من أي عميل مهما كان.
-   */
+  /** دور الرحلة، منفصل عن admin العالمي. الغياب = member. تكتبه manageMember وحدها. */
   role?: 'organizer' | 'member'
 }
 
-// ─── دعوة الرحلة (رابط دخول بنقرة واحدة) ─────────────────────────────────────
-// 🆕 tripInvites/{token} — يكتبه manageInvite (Cloud Function) حصراً، `read,
-// write: if false` في firestore.rules لأي عميل. لا يُقرأ من الواجهة مباشرةً
-// إطلاقاً (لا صلاحية لذلك)؛ الشكل موثَّق هنا كمرجع فقط.
+// ─── tripInvites/{token} — خادمي بالكامل، مرجع للشكل فقط ────────────────────
 export interface TripInvite {
   tripId: string
   createdAt: number
   createdByUid: string
 }
 
-// 🆕 تفاصيل الحساب البنكي — كانت مُعرَّفة محلياً في useTripConfig.ts وMisc.tsx
-// معاً؛ وُحِّدت هنا لأن واجهة إدارة الرحلة تحتاج نفس النوع للنموذج.
-//
-// 🆕 paymentType يفصل بين حساب بنكي ومحفظة رقمية/رقم جوال (stc pay، برق، بنفت...).
-// غيابه = 'bank'، بنفس مبدأ غياب tripType/status في types أخرى — كل الحسابات
-// القديمة لا تحمل هذا الحقل ولا تحتاج ترحيلاً. bankName/beneficiary/iban تبقى
-// إلزامية شكلياً (تُملأ بسلاسل فارغة افتراضياً في useUserProfile) للحفاظ على
-// التوافق مع كل مستهلكي النوع الحاليين؛ walletName/walletPhone اختياريان لأنهما
-// جديدان ولم تكن أي بيانات قديمة لتحملهما.
+// paymentType: بنك أو محفظة رقمية (stc pay…)، الغياب = bank. حقول البنك إلزامية
+// شكلياً (سلاسل فارغة افتراضياً) توافقاً مع المستهلكين القائمين.
 export interface BankDetails {
   paymentType?: 'bank' | 'wallet'
   bankName: string
@@ -317,46 +226,23 @@ export interface BankDetails {
   walletPhone?: string
 }
 
-// ملاحظة: واجهة إعدادات الرحلة الكاملة (TripConfig) معرّفة ومُصدَّرة من
-// hooks/useTripConfig.ts — وهي الشكل الفعلي الذي يُرجعه الـ hook
-// (tripName + organizerUid + itinerary). لا تُكرَّر هنا لتفادي التعارض.
+// TripConfig في hooks/useTripConfig.ts — لا تُكرَّر هنا.
 
-// 🆕 بروفايل المستخدم العام users/{uid} — مستقل عن أي رحلة، وهو **المصدر
-// الوحيد** لبيانات بنك المستخدم. أي رحلة ينظّمها هذا الحساب تقرأ bankDetails
-// حيّة من هنا مباشرة (لا نسخة محلية على مستند الرحلة) — انظر docs/DECISIONS.md.
-// كل الحقول اختيارية لأن الكتابة تتم بـ merge (نفس مبدأ isValidTripConfig).
+// users/{uid} — المصدر الوحيد لبيانات بنك المستخدم (لا نسخة على الرحلة).
+// كل الحقول اختيارية لأن الكتابة بـ merge.
 export interface UserProfile {
   displayName?: string
   bankDetails?: BankDetails
   /** خادمي فقط — يكتبه manageTrip حصراً لحدّ إساءة الإنشاء الذاتي للرحلات. */
   lastTripCreatedAt?: number
-  /**
-   * خادمي فقط — معرّفات الرحلات التي هذا الحساب منظّمها حالياً (يكتبها
-   * manageTrip عند الإنشاء وmanageMember عند setRole). تُستهلك في
-   * firestore.rules (organizesSharedTrip) لفتح قراءة هذا البروفايل لأعضاء
-   * تلك الرحلات تحديداً — لا استهلاك لها في الواجهة مباشرة.
-   */
+  /** خادمي فقط — يفتح قراءة البروفايل لأعضاء رحلاته (organizesSharedTrip في القواعد). */
   organizesTripIds?: string[]
 }
-// ─── نوع الرحلة: قياسية أم طويلة المدى ───────────────────────────────────────
-// 🆕 مخزَّن في trips/{tripId}.tripType ومسموح به في firestore.rules
-// (isValidTripConfig). يفصل بين نمطين مختلفين جوهرياً:
-//
-//   standard  → رحلة قصيرة لها بداية ونهاية. الدفتر كله فترة واحدة، وينتهي
-//               بتسوية واحدة. هذا سلوك التطبيق منذ البداية وكل الرحلات القائمة.
-//   long_term → انتداب/إقامة طويلة بلا نهاية معروفة. الدفتر مستمر، ويُقسَّم
-//               إلى **شهور** تُغلق واحداً تلو الآخر بترحيل الرصيد (انظر
-//               utils/longTerm.ts وcloseMonth في functions/index.js).
-//
-// ⚠️ غياب الحقل = standard، تماماً كغياب `status` = active وغياب `role` =
-// member. كل رحلة أُنشئت قبل هذه الميزة بلا الحقل، ولو عُوملت كطويلة المدى
-// لظهرت لكل مسافريها واجهة إغلاق شهر لا معنى لها. **لا ترحيل بيانات مطلوب** —
-// لا هنا ولا في القواعد.
-//
-// ⚠️ وهذا الحقل **ليس صلاحية ولا قيداً أمنياً** — هو وصف لنمط الرحلة. ما يفرضه
-// فعلاً: أن دوال الترحيل (closeMonth/exitTraveler) ترفض العمل على رحلة قياسية،
-// وأن الواجهة تفتح مكوّنات مستقلة كلياً (components/longterm/) بدل تكديس شروط
-// داخل مكوّنات الرحلة القياسية الناضجة.
+// ─── نوع الرحلة ─────────────────────────────────────────────────────────────
+//   standard  → بداية ونهاية، فترة واحدة وتسوية واحدة.
+//   long_term → بلا نهاية معروفة، شهور تُغلق بترحيل الرصيد (utils/longTerm.ts).
+// ⚠️ الغياب = standard. وهو وصف لا صلاحية: يفتح components/longterm/، ودوال
+// الترحيل ترفض الرحلة القياسية.
 export type TripType = 'standard' | 'long_term'
 
 export const TRIP_TYPE_LABEL: Record<TripType, string> = {
@@ -364,20 +250,10 @@ export const TRIP_TYPE_LABEL: Record<TripType, string> = {
   long_term: 'انتداب طويل المدى',
 }
 
-/**
- * 🆕 مفتاح الشهر المحاسبي بصيغة `YYYY-MM` — الوحدة التي تُغلق ويُرحَّل رصيدها.
- * نص لا كائن تاريخ عمداً: يُقارن ويُرتَّب معجمياً، ويُطابق بادئة `Expense.date`
- * (‏`YYYY-MM-DD`) مباشرةً بلا أي تحويل منطقة زمنية. انظر utils/period.ts.
- */
+/** شهر محاسبي `YYYY-MM` — نص لا تاريخ عمداً (انظر utils/period.ts). */
 export type PeriodKey = string
 
-/**
- * 🆕 حركة واحدة ضمن خطة ترحيل شهر — ما سيحدث لمسافر واحد عند الإغلاق.
- *
- * ⚠️ هذه **معاينة (preview) لا أمر تنفيذ**. الخطة الفعلية تُحسب من جديد داخل
- * closeMonth (functions/index.js) على بيانات الخادم لحظة التنفيذ، ولا تُرسَل
- * من العميل إطلاقاً — وإلا لأصبح المتصفح قادراً على إملاء حركات مالية.
- */
+/** حركة مسافر واحد عند إغلاق الشهر. ⚠️ معاينة لا أمر — closeMonth يعيد الحساب ولا يستلمها. */
 export interface RolloverMovement {
   travelerId: number
   travelerName: string
@@ -393,7 +269,7 @@ export interface RolloverMovement {
   direction: 'credit' | 'debt' | 'settled'
 }
 
-/** 🆕 ناتج استدعاء closeMonth — ما نُفِّذ فعلاً، لا ما كان مُتوقَّعاً. */
+/** ما نفّذه closeMonth فعلاً. */
 export interface RolloverResult {
   success: boolean
   tripId: string
@@ -405,13 +281,8 @@ export interface RolloverResult {
 }
 
 /**
- * 🆕 المستخدم كما تراه الواجهة — لا كما يراه Firebase Auth.
- *
- * المخزن والمكوّنات لا تقرأ من الحساب إلا `uid` (مقارنته بـ Traveler.uid
- * وExpense.createdByUid)، فهذا كل ما يُعلَن هنا. كائن `User` من Firebase يطابق
- * هذا الشكل بنيوياً فيمرّ كما هو من useAuth دون تحويل. الغرض أن يبقى نوع
- * Firebase داخل src/hooks/ وحدها — القاعدة المفروضة في eslint.config.js.
- * أضف حقلاً هنا حين يحتاجه مستهلك فعلي، لا قبل ذلك.
+ * المستخدم كما تراه الواجهة. ⚠️ يبقي نوع Firebase داخل src/hooks/ (قاعدة
+ * eslint.config.js)؛ `User` يطابقه بنيوياً. أضف حقلاً حين يحتاجه مستهلك فعلي.
  */
 export interface AppUser {
   uid: string
