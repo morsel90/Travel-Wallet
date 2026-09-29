@@ -9,16 +9,20 @@
 //
 // ⚠️ ترمي BackupNotPortableError (من buildTripBackup) إن حوت الرحلة قيمة لن
 // تنجو من JSON — المستدعي يعرض مسارها. انظر utils/backup.ts.
-import { getDocs } from 'firebase/firestore'
+import { getDoc, getDocs } from 'firebase/firestore'
 import {
   expensesColByTrip, travelersColByTrip, travelerNamesColByTrip, depositLogsColByTrip, repaymentsColByTrip,
+  tripDocById,
 } from '../firestore'
-import { buildTripBackup, type TripBackup } from '../utils/backup'
+import { buildTripBackup, pickLongTermConfig, type TripBackup } from '../utils/backup'
 import type { DepositLogEntry, Expense, Repayment, Traveler } from '../types'
 import type { TripSummary } from './useAllTrips'
 
 export async function readTripBackup(trip: TripSummary): Promise<TripBackup> {
-  const [travelersSnap, expensesSnap, travelerNamesSnap, repaymentsSnap] = await Promise.all([
+  // 🆕 مستند الرحلة نفسه لا TripSummary: حقول الأشهر (آخر إغلاق تحديداً) تُقرأ
+  // لحظة النسخ، لا من قائمة قد تكون قديمة. انظر pickLongTermConfig.
+  const [tripSnap, travelersSnap, expensesSnap, travelerNamesSnap, repaymentsSnap] = await Promise.all([
+    getDoc(tripDocById(trip.id)),
     getDocs(travelersColByTrip(trip.id)),
     getDocs(expensesColByTrip(trip.id)),
     getDocs(travelerNamesColByTrip(trip.id)),
@@ -42,7 +46,7 @@ export async function readTripBackup(trip: TripSummary): Promise<TripBackup> {
 
   return buildTripBackup({
     tripId: trip.id,
-    trip: { name: trip.name, itinerary: trip.itinerary, status: trip.status },
+    trip: { name: trip.name, itinerary: trip.itinerary, status: trip.status, ...pickLongTermConfig(tripSnap.data()) },
     travelers, expenses, depositLogs, travelerNames, repayments,
   })
 }

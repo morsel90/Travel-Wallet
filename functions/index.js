@@ -1281,6 +1281,36 @@ exports.linkTravelerAccount = onCall(
   })
 );
 
+/**
+ * 🆕 حقول الرحلة الطويلة من نسخة احتياطية، أو {} لرحلة قياسية. ترمي عند أي قيمة
+ * غير صالحة — لا تُسقط حقلاً بصمت: نصف الحقول أخطر من غيابها كلها. ولا يُستعاد
+ * long_term بلا lastClosedPeriod صحيح: رحلة تنسى آخر إغلاق تقبل إغلاق شهر مغلق
+ * مرة ثانية، فيتضاعف رصيد كل عضو. انظر TripBackupLongTerm في src/utils/backup.ts.
+ */
+function readBackupLongTermJs(trip) {
+  if (trip.tripType === undefined || trip.tripType === 'standard') return {};
+  const invalid = (what) => new HttpsError('invalid-argument', `${what} داخل النسخة غير صالح.`);
+  if (trip.tripType !== 'long_term') throw invalid('نوع الرحلة');
+  if (!isValidPeriodKeyJs(trip.currentPeriod)) throw invalid('الشهر المفتوح');
+
+  const out = { tripType: 'long_term', currentPeriod: trip.currentPeriod };
+  if (trip.lastClosedPeriod !== undefined) {
+    if (!isValidPeriodKeyJs(trip.lastClosedPeriod) || trip.lastClosedPeriod >= trip.currentPeriod) {
+      throw invalid('آخر شهر مغلق');
+    }
+    out.lastClosedPeriod = trip.lastClosedPeriod;
+  }
+  if (trip.lastClosedAt !== undefined) {
+    if (typeof trip.lastClosedAt !== 'number' || !Number.isFinite(trip.lastClosedAt)) throw invalid('تاريخ آخر إغلاق');
+    out.lastClosedAt = trip.lastClosedAt;
+  }
+  if (trip.cycleStartDay !== undefined) {
+    if (normalizeCycleStartDayJs(trip.cycleStartDay) !== trip.cycleStartDay) throw invalid('يوم بداية الشهر');
+    out.cycleStartDay = trip.cycleStartDay;
+  }
+  return out;
+}
+
 exports.restoreTrip = onCall(
   { region: 'us-central1', maxInstances: 2, timeoutSeconds: 120, secrets: [SENTRY_DSN] },
   withSentry('restoreTrip', async (request) => {
@@ -1324,6 +1354,7 @@ exports.restoreTrip = onCall(
     if (!['active', 'completed', 'archived'].includes(trip.status)) {
       throw new HttpsError('invalid-argument', 'حالة الرحلة داخل النسخة غير صالحة.');
     }
+    const longTerm = readBackupLongTermJs(trip);
 
     const travelers = Array.isArray(backup.travelers) ? backup.travelers : [];
     const expenses = Array.isArray(backup.expenses) ? backup.expenses : [];
@@ -1389,7 +1420,7 @@ exports.restoreTrip = onCall(
       // تركه غائباً (=0) يعني أن محرّراً مفتوحاً على النسخة السابقة يستطيع
       // الحفظ بـ 1 فيمحو المستعاد بكتابة شرعية تماماً. والاستعادة لا تقع إلا
       // على رحلة فارغة أو غير موجودة، فالبدء من 1 لا يتخطّى عدّاداً قائماً.
-      data: { name: trip.name || tripId, itinerary: trip.itinerary, status: trip.status, organizerUid: request.auth.uid, itineraryRev: 1 },
+      data: { name: trip.name || tripId, itinerary: trip.itinerary, status: trip.status, organizerUid: request.auth.uid, itineraryRev: 1, ...longTerm },
     });
     for (const t of travelers) {
       ops.push({ ref: dataRoot.collection('travelers').doc(String(t.id)), data: t });
