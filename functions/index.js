@@ -1611,26 +1611,40 @@ function isValidPeriodKeyJs(value) {
   return typeof value === 'string' && PERIOD_KEY_PATTERN.test(value);
 }
 
+/** نظير normalizeCycleStartDay في src/utils/period.ts — الغياب أو التالف = 1. */
+function normalizeCycleStartDayJs(value) {
+  return Number.isInteger(value) && value >= 1 && value <= 28 ? value : 1;
+}
+
 /** نظير currentPeriodKey في src/utils/period.ts — انظر تعليقه عن التوقيت المحلي. */
-function currentPeriodKeyJs(now = new Date()) {
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+function currentPeriodKeyJs(now = new Date(), startDay = 1) {
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  return startDay > 1 && now.getDate() >= startDay ? nextPeriodJs(month) : month;
 }
 
 /** نظير shiftPeriod/nextPeriod — حساب صحيح على فهرس شهري مطلق، بلا كائن Date. */
 function nextPeriodJs(key) {
+  return shiftPeriodJs(key, 1);
+}
+
+function shiftPeriodJs(key, months) {
   const year = Number(key.slice(0, 4));
   const month = Number(key.slice(5, 7));
-  const absolute = year * 12 + (month - 1) + 1;
+  const absolute = year * 12 + (month - 1) + months;
   const newYear = Math.floor(absolute / 12);
   const newMonth = absolute - newYear * 12 + 1;
   return `${String(newYear).padStart(4, '0')}-${String(newMonth).padStart(2, '0')}`;
 }
 
-function periodStartDateJs(key) {
+// 🆕 بيوم بداية غير 1 يمتد الشهر من ذلك اليوم في الشهر السابق إلى ما قبله في
+// شهره — «أكتوبر» بيوم 27 = 27 سبتمبر..26 أكتوبر. انظر رأس src/utils/period.ts.
+function periodStartDateJs(key, startDay = 1) {
+  if (startDay > 1) return `${shiftPeriodJs(key, -1)}-${String(startDay).padStart(2, '0')}`;
   return `${key}-01`;
 }
 
-function periodEndDateJs(key) {
+function periodEndDateJs(key, startDay = 1) {
+  if (startDay > 1) return `${key}-${String(startDay - 1).padStart(2, '0')}`;
   const year = Number(key.slice(0, 4));
   const month = Number(key.slice(5, 7));
   return `${key}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
@@ -1912,7 +1926,8 @@ exports.closeMonth = onCall(
     const { tripRef, trip } = await requireManagedLongTermTrip(tripId, request.auth);
 
     const lastClosedPeriod = isValidPeriodKeyJs(trip.lastClosedPeriod) ? trip.lastClosedPeriod : null;
-    const currentPeriod = isValidPeriodKeyJs(trip.currentPeriod) ? trip.currentPeriod : currentPeriodKeyJs();
+    const startDay = normalizeCycleStartDayJs(trip.cycleStartDay);
+    const currentPeriod = isValidPeriodKeyJs(trip.currentPeriod) ? trip.currentPeriod : currentPeriodKeyJs(new Date(), startDay);
 
     if (lastClosedPeriod && period <= lastClosedPeriod) {
       throw new HttpsError(
@@ -1939,8 +1954,8 @@ exports.closeMonth = onCall(
     }
 
     const openedPeriod = nextPeriodJs(period);
-    const closingDate = periodEndDateJs(period);
-    const openingDate = periodStartDateJs(openedPeriod);
+    const closingDate = periodEndDateJs(period, startDay);
+    const openingDate = periodStartDateJs(openedPeriod, startDay);
     const closingLabel = formatPeriodLabelJs(period);
     const openingLabel = formatPeriodLabelJs(openedPeriod);
     const actor = { uid: request.auth.uid, email: request.auth.token.email || '' };

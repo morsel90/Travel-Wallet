@@ -96,7 +96,7 @@ function setup(overrides: Partial<Omit<Args, 'modals'>> & { tripType?: 'standard
       const modals = useModals()
       const workspace = useTripWorkspace({
         user: me, isAdmin: false, hasAccess: true, profileDisplayName: undefined,
-        config: { tripType, currentPeriod: '2026-08', lastClosedPeriod: undefined, organizerUid: 'org' },
+        config: { tripType, currentPeriod: '2026-08', lastClosedPeriod: undefined, organizerUid: 'org', cycleStartDay: 1 },
         isOrganizer: false, modals, showToast, handleFirestoreError, setSyncError,
         ...rest, ...props,
       })

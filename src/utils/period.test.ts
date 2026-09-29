@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import {
   isValidPeriodKey, normalizePeriodKey, currentPeriodKey, shiftPeriod,
   nextPeriod, previousPeriod, periodStartDate, periodEndDate, isInPeriod, formatPeriodLabel,
-  listPeriods,
+  listPeriods, periodForDate, normalizeCycleStartDay,
 } from './period'
 import type { Expense } from '../types'
 
@@ -132,5 +132,55 @@ describe('listPeriods', () => {
 
   it('يعيد مصفوفة فارغة لـ currentPeriod غير صالح بدل اختراع شهر', () => {
     expect(listPeriods([expense('2026-08-01')], 'غير صالح')).toEqual([])
+  })
+})
+
+// 🆕 يوم بداية الشهر — من الراتب إلى الراتب. «أكتوبر» بيوم 27 = 27 سبتمبر..26 أكتوبر.
+describe('cycleStartDay', () => {
+  it('normalizeCycleStartDay: 1..28 صحيحة، وما عداها = 1', () => {
+    expect(normalizeCycleStartDay(27)).toBe(27)
+    expect(normalizeCycleStartDay(28)).toBe(28)
+    for (const bad of [undefined, null, 0, 29, 27.5, '27', NaN]) {
+      expect(normalizeCycleStartDay(bad)).toBe(1)
+    }
+  })
+
+  it('periodForDate: من يوم البداية فصاعداً = الشهر التالي، وقبله = الشهر نفسه', () => {
+    expect(periodForDate('2026-09-26', 27)).toBe('2026-09')
+    expect(periodForDate('2026-09-27', 27)).toBe('2026-10')
+    expect(periodForDate('2026-09-30', 27)).toBe('2026-10')
+    expect(periodForDate('2026-12-27', 27)).toBe('2027-01')
+    expect(periodForDate('2026-09-30')).toBe('2026-09')
+    expect(periodForDate('تالف', 27)).toBeNull()
+  })
+
+  it('حدود الشهر تتصل بلا فجوة ولا تداخل — بما فيها عبور السنة', () => {
+    expect(periodStartDate('2026-10', 27)).toBe('2026-09-27')
+    expect(periodEndDate('2026-10', 27)).toBe('2026-10-26')
+    expect(periodStartDate('2027-01', 27)).toBe('2026-12-27')
+    expect(periodEndDate('2026-12', 27)).toBe('2026-12-26')
+  })
+
+  it('isInPeriod يتبع الحدود الجديدة', () => {
+    expect(isInPeriod('2026-09-28', '2026-10', 27)).toBe(true)
+    expect(isInPeriod('2026-09-28', '2026-09', 27)).toBe(false)
+    expect(isInPeriod('2026-10-26', '2026-10', 27)).toBe(true)
+    expect(isInPeriod('2026-10-27', '2026-10', 27)).toBe(false)
+  })
+
+  it('currentPeriodKey: يوم 27 سبتمبر يفتح أكتوبر، و26 منه ما زال سبتمبر', () => {
+    expect(currentPeriodKey(new Date(2026, 8, 26, 23, 0), 27)).toBe('2026-09')
+    expect(currentPeriodKey(new Date(2026, 8, 27, 0, 5), 27)).toBe('2026-10')
+    expect(currentPeriodKey(new Date(2026, 11, 27, 9, 0), 27)).toBe('2027-01')
+  })
+
+  it('listPeriods يبدأ من شهر أول مصروف بالحدود الجديدة', () => {
+    expect(listPeriods([expense('2026-08-28')], '2026-10', 27)).toEqual(['2026-09', '2026-10'])
+  })
+
+  it('بيوم 1 لا يتغيّر شيء عمّا كان', () => {
+    expect(periodStartDate('2026-02', 1)).toBe('2026-02-01')
+    expect(periodEndDate('2026-02', 1)).toBe('2026-02-28')
+    expect(currentPeriodKey(new Date(2026, 8, 30), 1)).toBe('2026-09')
   })
 })

@@ -992,6 +992,37 @@ describe('إدارة الرحلات — trips/{tripId}', () => {
       await assertFails(setDoc(tripConfigDoc(organizerDb()), { lastClosedPeriod: '2026-07' }, { merge: true }))
     })
 
+    // 🆕 يوم بداية الشهر يعيد رسم حدود كل الأشهر السابقة — سكربت إداري لا واجهة.
+    describe('cycleStartDay', () => {
+      it('رحلة تحمله تُعدَّل كالعادة (الحقل في hasOnly)', async () => {
+        await seed(db => setDoc(tripConfigDoc(db), { name: 'انتداب', tripType: 'long_term', cycleStartDay: 27 }))
+        await assertSucceeds(setDoc(tripConfigDoc(adminDb()), { name: 'اسم جديد' }, { merge: true }))
+
+        await seedOrganizer('organizer-1')
+        await assertSucceeds(setDoc(tripConfigDoc(organizerDb()), { name: 'اسم أحدث' }, { merge: true }))
+      })
+
+      it('لا يغيّره عميل — لا المسؤول ولا المنظّم', async () => {
+        await seed(db => setDoc(tripConfigDoc(db), { name: 'انتداب', tripType: 'long_term', cycleStartDay: 27 }))
+        await assertFails(setDoc(tripConfigDoc(adminDb()), { cycleStartDay: 1 }, { merge: true }))
+
+        await seedOrganizer('organizer-1')
+        await assertFails(setDoc(tripConfigDoc(organizerDb()), { cycleStartDay: 25 }, { merge: true }))
+      })
+
+      it('ولا يضيفه عميل لرحلة لا تحمله', async () => {
+        await seed(db => setDoc(tripConfigDoc(db), { name: 'انتداب', tripType: 'long_term' }))
+        await assertFails(setDoc(tripConfigDoc(adminDb()), { cycleStartDay: 27 }, { merge: true }))
+      })
+
+      it('قيمة خارج 1..28 أو غير صحيحة تُرفض حتى عند الإنشاء', async () => {
+        await assertFails(setDoc(tripConfigDoc(adminDb(), 'trip-new-1'), { name: 'س', cycleStartDay: 29 }))
+        await assertFails(setDoc(tripConfigDoc(adminDb(), 'trip-new-2'), { name: 'س', cycleStartDay: 0 }))
+        await assertFails(setDoc(tripConfigDoc(adminDb(), 'trip-new-3'), { name: 'س', cycleStartDay: 27.5 }))
+        await assertSucceeds(setDoc(tripConfigDoc(adminDb(), 'trip-new-4'), { name: 'س', cycleStartDay: 27 }))
+      })
+    })
+
     it('لا يمكن تحريك currentPeriod ولا lastClosedAt من العميل — closeMonth وحدها تكتبهما', async () => {
       await seed(db => setDoc(tripConfigDoc(db), {
         name: 'انتداب', tripType: 'long_term',

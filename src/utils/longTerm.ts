@@ -48,8 +48,9 @@ export function countRolloverMovements(movements: RolloverMovement[]): number {
 export function filterCycleExpenses<T extends Pick<Expense, 'date' | 'category'>>(
   expenses: T[],
   period: PeriodKey,
+  startDay = 1,
 ): T[] {
-  return expenses.filter(e => e.category !== ROLLOVER_CATEGORY && isInPeriod(e.date, period))
+  return expenses.filter(e => e.category !== ROLLOVER_CATEGORY && isInPeriod(e.date, period, startDay))
 }
 
 /**
@@ -75,14 +76,15 @@ export function boundaryRolloverAmount(
   expenses: Pick<Expense, 'date' | 'category' | 'participants' | 'amount'>[],
   before: PeriodKey,
   after: PeriodKey,
+  startDay = 1,
 ): number | null {
   const isOwnRollover = (e: typeof expenses[number]): boolean =>
     e.category === ROLLOVER_CATEGORY && e.participants.length === 1 && e.participants[0] === travelerId
 
-  const closingEntry = expenses.find(e => isOwnRollover(e) && e.date === periodEndDate(before))
+  const closingEntry = expenses.find(e => isOwnRollover(e) && e.date === periodEndDate(before, startDay))
   if (closingEntry) return Number.isFinite(closingEntry.amount) ? closingEntry.amount : 0
 
-  const openingEntry = expenses.find(e => isOwnRollover(e) && e.date === periodStartDate(after))
+  const openingEntry = expenses.find(e => isOwnRollover(e) && e.date === periodStartDate(after, startDay))
   if (openingEntry) return -(Number.isFinite(openingEntry.amount) ? openingEntry.amount : 0)
 
   return null
@@ -100,9 +102,10 @@ export function periodOpeningBalance(
   expenses: Pick<Expense, 'date' | 'category' | 'participants' | 'amount'>[],
   period: PeriodKey,
   lastClosedPeriod: PeriodKey | null,
+  startDay = 1,
 ): number | null {
   const before = previousPeriod(period)
-  const boundary = boundaryRolloverAmount(travelerId, expenses, before, period)
+  const boundary = boundaryRolloverAmount(travelerId, expenses, before, period, startDay)
   if (boundary !== null) return boundary
   return lastClosedPeriod !== null && lastClosedPeriod >= before ? 0 : null
 }
@@ -113,8 +116,9 @@ export function periodClosingBalance(
   expenses: Pick<Expense, 'date' | 'category' | 'participants' | 'amount'>[],
   period: PeriodKey,
   lastClosedPeriod: PeriodKey | null,
+  startDay = 1,
 ): number | null {
-  const boundary = boundaryRolloverAmount(travelerId, expenses, period, nextPeriod(period))
+  const boundary = boundaryRolloverAmount(travelerId, expenses, period, nextPeriod(period), startDay)
   if (boundary !== null) return boundary
   return lastClosedPeriod !== null && lastClosedPeriod >= period ? 0 : null
 }

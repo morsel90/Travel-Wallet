@@ -68,7 +68,7 @@ interface ModalManagerProps {
   closeModal: () => void
   // التقارير — بيانات العرض فقط (onClose يُدار داخلياً)
   reports: Pick<ComponentProps<typeof ReportsView>,
-    'travelers' | 'expenses' | 'balances' | 'settlements' | 'categoryTotals' | 'itinerary' | 'periods' | 'repayments'>
+    'travelers' | 'expenses' | 'balances' | 'settlements' | 'categoryTotals' | 'itinerary' | 'periods' | 'cycleStartDay' | 'repayments'>
   // سلة المهملات
   trash: Pick<ComponentProps<typeof TrashBinModal>,
     'deletedExpenses' | 'deletedTravelers' | 'onRestoreExpense' | 'onRestoreTraveler'

@@ -30,10 +30,12 @@ interface TravelerCardProps {
   cycleWallet?: number
   /** 🆕 الفترات المتاحة في ملف المسافر — انظر تعليقها في TravelerProfileModal.tsx. */
   periods?: PeriodKey[]
+  /** 🆕 يوم بداية الشهر — يرافق periods أينما ذهبت (utils/period.ts). الغياب = 1. */
+  cycleStartDay?: number
 }
 
 // مكوّن عرض بطاقة رصيد المسافر المنفرد (Traveler Card)
-export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods }: TravelerCardProps) => {
+export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods, cycleStartDay }: TravelerCardProps) => {
   // جلبنا settlements و travelers لدعم بيانات النافذة المنبثقة
   const { isAdmin, isOrganizer, expenses, repayments, travelers, user } = useTripData()
   // 🆕 نموذج الهوية الهجين: تمييز بطاقة المستخدم نفسه بين بطاقات بقية المسافرين
@@ -210,6 +212,7 @@ export const TravelerCard = memo(({ traveler, longTermExit, cycleWallet, periods
           repayments={repayments}
           settlements={[]}
           periods={periods}
+          cycleStartDay={cycleStartDay}
           allTravelers={travelers}
           isAdmin={isAdmin}
           isOrganizer={isOrganizer}

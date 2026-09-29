@@ -329,6 +329,7 @@ export default function App() {
                   } : undefined}
                   cycleWallets={longTerm?.cycleWallets}
                   periods={longTerm?.periods}
+                  cycleStartDay={longTerm?.cycleStartDay}
                 />
               </main>
             </PullToRefresh>
@@ -351,6 +352,7 @@ export default function App() {
                 categoryTotals: ledger.categoryTotals,
                 itinerary: trip.itinerary,
                 periods: longTerm?.periods,
+                cycleStartDay: longTerm?.cycleStartDay,
                 repayments: ledger.activeRepayments,
               }}
               // 🆕 أقسام انتقلت من تدفّق الشاشة إلى نوافذ خلف «المزيد».

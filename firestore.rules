@@ -303,7 +303,8 @@ service cloud.firestore {
     function isValidTripConfig(d) {
       return d.keys().hasOnly([
                'name', 'itinerary', 'status', 'statusChangedAt', 'createdByUid', 'organizerUid', 'bankDetails',
-               'tripType', 'currentPeriod', 'lastClosedPeriod', 'lastClosedAt', 'itineraryRev'
+               'tripType', 'currentPeriod', 'lastClosedPeriod', 'lastClosedAt', 'itineraryRev',
+               'cycleStartDay'
              ])
         && (!('name' in d) || (d.name is string && d.name.size() <= 100))
         && (!('itinerary' in d) || (d.itinerary is list && d.itinerary.size() <= 50))
@@ -318,7 +319,9 @@ service cloud.firestore {
         && (!('tripType' in d) || d.tripType in ['standard', 'long_term'])
         && (!('currentPeriod' in d) || isValidPeriodKey(d.currentPeriod))
         && (!('lastClosedPeriod' in d) || isValidPeriodKey(d.lastClosedPeriod))
-        && (!('lastClosedAt' in d) || d.lastClosedAt is number);
+        && (!('lastClosedAt' in d) || d.lastClosedAt is number)
+        // 🆕 يوم بداية الشهر — الغياب = 1 (الشهر التقويمي). السقف 28 لأجل فبراير.
+        && (!('cycleStartDay' in d) || (d.cycleStartDay is int && d.cycleStartDay >= 1 && d.cycleStartDay <= 28));
     }
 
     // 🆕 نسخة المسار الحالية — غياب الحقل يساوي صفراً، فرحلة أُنشئت قبل هذه
@@ -672,7 +675,13 @@ service cloud.firestore {
         && (!('lastClosedPeriod' in resource.data)
             || (('lastClosedPeriod' in request.resource.data) && request.resource.data.lastClosedPeriod == resource.data.lastClosedPeriod))
         && (!('lastClosedAt' in resource.data)
-            || (('lastClosedAt' in request.resource.data) && request.resource.data.lastClosedAt == resource.data.lastClosedAt));
+            || (('lastClosedAt' in request.resource.data) && request.resource.data.lastClosedAt == resource.data.lastClosedAt))
+        // 🆕 ويوم بداية الشهر كذلك: تغييره يعيد رسم حدود كل الأشهر السابقة، فيُكتب
+        // بسكربت إداري (Admin SDK) لا من الواجهة. الإنشاء بلا الحقل والإضافة
+        // اللاحقة ممنوعان على العميل معاً: القيمة الجديدة يجب أن تطابق الغياب.
+        && (('cycleStartDay' in request.resource.data) == ('cycleStartDay' in resource.data))
+        && (!('cycleStartDay' in resource.data)
+            || request.resource.data.cycleStartDay == resource.data.cycleStartDay);
       allow delete: if false;
 
       // ─── 🆕 سجلّ عضوية الرحلة ───────────────────────────────────────────────

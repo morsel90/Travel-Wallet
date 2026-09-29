@@ -5,7 +5,7 @@ import { tripConfigDoc } from '../firestore'
 import { normalizeItinerary, normalizeItineraryRev } from '../utils/itinerary'
 import { normalizeTripStatus } from '../utils/tripStatus'
 import { normalizeTripType } from '../utils/tripType'
-import { normalizePeriodKey, isValidPeriodKey } from '../utils/period'
+import { normalizePeriodKey, isValidPeriodKey, normalizeCycleStartDay } from '../utils/period'
 import type { ItinerarySegment, PeriodKey, TripStatus, TripType } from '../types'
 
 // ─── useTripConfig ──────────────────────────────────────────────────────────
@@ -38,6 +38,11 @@ export interface TripConfig {
   lastClosedPeriod?: PeriodKey
   /** الغياب = «غير معروف». */
   lastClosedAt?: number
+  /**
+   * 🆕 يوم بداية الشهر (1..28) — الغياب = 1، الشهر التقويمي. انظر utils/period.ts.
+   * يكتبه المسؤول بسكربت لا الواجهة: تغييره يعيد رسم حدود كل الأشهر السابقة.
+   */
+  cycleStartDay: number
 }
 
 const FALLBACK_CONFIG: TripConfig = {
@@ -48,6 +53,7 @@ const FALLBACK_CONFIG: TripConfig = {
   // ⚠️ رحلة بلا مستند إعدادات هي رحلة قياسية بالتعريف — لا واجهة ترحيل لها.
   tripType: 'standard',
   currentPeriod: normalizePeriodKey(undefined),
+  cycleStartDay: 1,
 }
 
 // ⚠️ مرّر `hasAccess ? user : null` لا user: قراءة قبل الصلاحية تُرفض ولا تُعاد
@@ -84,11 +90,13 @@ export function useTripConfig(user: User | null): TripConfig {
           currentPeriod?: unknown
           lastClosedPeriod?: unknown
           lastClosedAt?: unknown
+          cycleStartDay?: unknown
         }
 
         // normalizeItinerary تُسقط أي مقطع تالف وترتّب الباقي زمنياً — القواعد
         // لا تستطيع التحقق من بنية عناصر القائمة (موثّق في firestore.rules).
         const itinerary = normalizeItinerary(data.itinerary)
+        const cycleStartDay = normalizeCycleStartDay(data.cycleStartDay)
 
         setConfig({
           tripName: typeof data.name === 'string' ? data.name : null,
@@ -99,10 +107,11 @@ export function useTripConfig(user: User | null): TripConfig {
           status: normalizeTripStatus(data.status),
           statusChangedAt: typeof data.statusChangedAt === 'number' ? data.statusChangedAt : undefined,
           tripType: normalizeTripType(data.tripType),
-          currentPeriod: normalizePeriodKey(data.currentPeriod),
+          currentPeriod: normalizePeriodKey(data.currentPeriod, undefined, cycleStartDay),
           // ⚠️ لا سقوط للشهر الجاري: «لم يُغلق شيء» غير «أُغلق الجاري».
           lastClosedPeriod: isValidPeriodKey(data.lastClosedPeriod) ? data.lastClosedPeriod : undefined,
           lastClosedAt: typeof data.lastClosedAt === 'number' ? data.lastClosedAt : undefined,
+          cycleStartDay,
         })
       },
       err => {
