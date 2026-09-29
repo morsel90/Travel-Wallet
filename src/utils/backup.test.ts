@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { buildTripBackup, backupFilename, findNonPortableValue, BackupNotPortableError, BACKUP_SCHEMA_VERSION } from './backup'
+import { buildTripBackup, backupFilename, findNonPortableValue, BackupNotPortableError, BACKUP_SCHEMA_VERSION, pickLongTermConfig } from './backup'
 import { calculateBalances, calculateSettlements } from './calculations'
 import type { Traveler, Expense, DepositLogEntry, Repayment } from '../types'
 
@@ -133,6 +133,41 @@ describe('buildTripBackup — السداد', () => {
 
   it('غياب السداد يُنتج قائمة فارغة لا حقلاً غائباً', () => {
     expect(buildTripBackup(base).repayments).toEqual([])
+  })
+})
+
+// 🆕 حقول الرحلة الطويلة — كانت تسقط من النسخة فتُستعاد الرحلة قياسية.
+describe('pickLongTermConfig', () => {
+  it('ينسخ حقول الرحلة الطويلة الصالحة كلها', () => {
+    expect(pickLongTermConfig({
+      name: 'انتداب', tripType: 'long_term', currentPeriod: '2026-10',
+      lastClosedPeriod: '2026-09', lastClosedAt: 123, cycleStartDay: 27, organizerUid: 'x',
+    })).toEqual({
+      tripType: 'long_term', currentPeriod: '2026-10', lastClosedPeriod: '2026-09', lastClosedAt: 123, cycleStartDay: 27,
+    })
+  })
+
+  it('رحلة قياسية أو مستند غائب = لا شيء، فتبقى النسخة كما كانت', () => {
+    expect(pickLongTermConfig({ name: 'رحلة', tripType: 'standard', currentPeriod: '2026-10' })).toEqual({})
+    expect(pickLongTermConfig(undefined)).toEqual({})
+  })
+
+  it('رحلة طويلة بلا شهر مفتوح صالح = لا شيء، لا نصف حقول', () => {
+    expect(pickLongTermConfig({ tripType: 'long_term', lastClosedPeriod: '2026-09' })).toEqual({})
+  })
+
+  it('يُسقط القيم التالفة، ولا يكتب يوم البداية 1 لأن غيابه يعنيه', () => {
+    expect(pickLongTermConfig({
+      tripType: 'long_term', currentPeriod: '2026-10', lastClosedPeriod: 'سبتمبر', cycleStartDay: 1,
+    })).toEqual({ tripType: 'long_term', currentPeriod: '2026-10' })
+  })
+
+  it('ينجو من JSON داخل النسخة الكاملة', () => {
+    const backup = buildTripBackup({
+      tripId: 't', trip: { name: 'ا', itinerary: [], status: 'active', ...pickLongTermConfig({ tripType: 'long_term', currentPeriod: '2026-10' }) },
+      travelers: [], expenses: [], depositLogs: [], travelerNames: [],
+    })
+    expect(JSON.parse(JSON.stringify(backup)).trip).toMatchObject({ tripType: 'long_term', currentPeriod: '2026-10' })
   })
 })
 

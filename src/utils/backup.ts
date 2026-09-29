@@ -10,7 +10,8 @@
 //   - rateLimits — حالة تشغيلية عابرة، لا بيانات
 //   - trips/{tripId}/members — فهرس إداري لا مصدر صلاحية؛ استعادته لا تُعيد
 //     لأحد وصوله (العضوية الفعلية في custom claims حساب كل عضو لا Firestore)
-import type { DepositLogEntry, Expense, ItinerarySegment, Repayment, Traveler, TripStatus } from '../types'
+import type { DepositLogEntry, Expense, ItinerarySegment, PeriodKey, Repayment, Traveler, TripStatus } from '../types'
+import { isValidPeriodKey, normalizeCycleStartDay } from './period'
 
 // 🆕 الملف مستقل عن Firestore — وهذا شرط يُفحَص عند التصدير، لا افتراض.
 //
@@ -76,6 +77,24 @@ export const BACKUP_SCHEMA_VERSION = 1 as const
 // المنظّم (users/{organizerUid})، لا مستند الرحلة، فلا معنى لنسخها احتياطياً
 // ضمنه. استعادة رحلة قديمة (schemaVersion=1 من قبل هذا التغيير) تتجاهل حقل
 // bankDetails في الملف إن وُجد — انظر functions/index.js: restoreTrip.
+/**
+ * 🆕 حقول الرحلة طويلة المدى — كلها معاً أو لا شيء. كانت النسخة لا تحملها،
+ * فتُستعاد رحلة الانتداب رحلةً عادية بأشهر تقويمية: تختفي «هذا الشهر»،
+ * وتنكسر حدود الأشهر المغلقة في التقارير. و`lastClosedPeriod` تحديداً ليس
+ * تفصيلاً: رحلة مستعادة بلا آخر إغلاق تسمح بإغلاق شهر مغلق مرة ثانية، فيتضاعف
+ * رصيد كل عضو (انظر «The double-rollover guard» في docs/DECISIONS.md).
+ *
+ * اختيارية في الملف، وschemaVersion يبقى 1 — نفس سابقة repayments: النسخ القديمة
+ * تُستعاد كما كانت (رحلة قياسية)، ولا شيء يكسر قراءتها.
+ */
+export interface TripBackupLongTerm {
+  tripType: 'long_term'
+  currentPeriod: PeriodKey
+  lastClosedPeriod?: PeriodKey
+  lastClosedAt?: number
+  cycleStartDay?: number
+}
+
 export interface TripBackup {
   schemaVersion: typeof BACKUP_SCHEMA_VERSION
   exportedAt: string
@@ -84,7 +103,7 @@ export interface TripBackup {
     name: string
     itinerary: ItinerarySegment[]
     status: TripStatus
-  }
+  } & Partial<TripBackupLongTerm>
   travelers: Traveler[]
   expenses: Expense[]
   depositLogs: DepositLogEntry[]
@@ -100,12 +119,31 @@ export interface TripBackup {
 
 export interface BuildTripBackupParams {
   tripId: string
-  trip: { name: string; itinerary: ItinerarySegment[]; status: TripStatus }
+  trip: { name: string; itinerary: ItinerarySegment[]; status: TripStatus } & Partial<TripBackupLongTerm>
   travelers: Traveler[]
   expenses: Expense[]
   depositLogs: DepositLogEntry[]
   travelerNames: Array<{ shortName: string; travelerId: number }>
   repayments?: Repayment[]
+}
+
+/**
+ * حقول الرحلة الطويلة من مستند trips/{tripId} الخام، أو {} لرحلة قياسية.
+ * ⚠️ رحلة طويلة بلا currentPeriod صالح تُعاد {} لا نصف حقول: الاستعادة ترفض
+ * long_term بلا شهر مفتوح، والأفضل نسخة تُستعاد قياسية من نسخة لا تُستعاد.
+ * وما تبقّى يُنسخ فقط إن كان صالحاً — القيم التالفة تُسقط لا تُصحَّح.
+ */
+export function pickLongTermConfig(data: unknown): Partial<TripBackupLongTerm> {
+  if (typeof data !== 'object' || data === null) return {}
+  const d = data as Record<string, unknown>
+  if (d.tripType !== 'long_term' || !isValidPeriodKey(d.currentPeriod)) return {}
+  const picked: TripBackupLongTerm = { tripType: 'long_term', currentPeriod: d.currentPeriod }
+  if (isValidPeriodKey(d.lastClosedPeriod)) picked.lastClosedPeriod = d.lastClosedPeriod
+  if (typeof d.lastClosedAt === 'number' && Number.isFinite(d.lastClosedAt)) picked.lastClosedAt = d.lastClosedAt
+  // الغياب = 1، فلا يُكتب 1 صراحةً: الرحلة المستعادة تطابق الأصل حرفاً بحرف.
+  const startDay = normalizeCycleStartDay(d.cycleStartDay)
+  if (startDay > 1) picked.cycleStartDay = startDay
+  return picked
 }
 
 /** دالة نقية — لا قراءة Firestore هنا، فقط تجميع الشكل النهائي. ترمي
