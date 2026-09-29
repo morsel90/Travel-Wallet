@@ -85,7 +85,7 @@ interface ModalManagerProps {
    * عمداً**: الرحلة القياسية لا تمرّره إطلاقاً، فلا تُفتح ولو تسلّلت حالة
    * مودال بطريقة ما. غيابه هو التعطيل، لا شرطٌ في مكان بعيد.
    */
-  longTermPanel?: Omit<ComponentProps<typeof LongTermModal>, 'onClose'>
+  longTermPanel?: Omit<ComponentProps<typeof LongTermModal>, 'onClose' | 'startAtConfirm'>
 }
 
 export default function ModalManager({
@@ -138,7 +138,7 @@ export default function ModalManager({
       <AnimatePresence>
         {longTermPanel && modal.type === 'longTermPanel' && (
           <Suspense key="long-term-panel" fallback={<ModalFallback />}>
-            <LongTermModal {...longTermPanel} onClose={closeModal} />
+            <LongTermModal {...longTermPanel} startAtConfirm={modal.startAtConfirm} onClose={closeModal} />
           </Suspense>
         )}
       </AnimatePresence>

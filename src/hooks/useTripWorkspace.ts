@@ -12,7 +12,7 @@ import { calculateBalances, calculateSettlements, calculateCategoryTotals, calcu
 import { TRIP_ID } from '../utils/tripId'
 import { INITIAL_DEPOSIT_REASON } from '../utils/deposits'
 import { isLongTerm } from '../utils/tripType'
-import { formatPeriodLabel, listPeriods } from '../utils/period'
+import { currentPeriodKey, formatPeriodLabel, listPeriods } from '../utils/period'
 import { planRollover, describeExitBlock, filterCycleExpenses, calculateCycleWallet } from '../utils/longTerm'
 
 // ─── مساحة العمل: ما بداخل الرحلة المفتوحة ─────────────────────────────────────
@@ -353,6 +353,11 @@ export function useTripWorkspace({
       periods,
       movements: rolloverPlan,
       canManage: canManageLongTerm,
+      // 🆕 الشهر المفتوح انتهى بتقويم الجهاز — يُظهر شريط الإغلاق للمنظّم على
+      // الشاشة الرئيسية (MonthDueBanner). مقارنة `YYYY-MM` نصياً = زمنياً
+      // (utils/period.ts). تُحسب في كل رسم لا في useMemo: مدخلها الوحيد المتغيّر
+      // هو الساعة، ولا شيء في المصفوفة يتغيّر بتغيّرها.
+      isMonthDue: canManageLongTerm && currentPeriodKey() > currentPeriod,
       isClosingMonth: longTermActions.isClosingMonth,
       isExitingTraveler: longTermActions.isExitingTraveler,
       organizerUid,

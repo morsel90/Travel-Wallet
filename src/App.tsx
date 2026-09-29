@@ -23,6 +23,7 @@ import SmartInputBar        from './components/SmartInputBar'
 import { TripStoreProvider } from './store/TripStoreProvider'
 import { AppErrorFallback } from './components/AppErrorFallback'
 import { StatusBanners }    from './components/StatusBanners'
+import { MonthDueBanner }   from './components/longterm/MonthDueBanner'
 import { TravelersPanel }   from './components/TravelersPanel'
 import { SettlementsPanel } from './components/SettlementsPanel'
 import { ExpensesPanel }    from './components/ExpensesPanel'
@@ -211,6 +212,15 @@ export default function App() {
                   isOnline={session.isOnline}
                   syncError={status.syncError}
                 />
+
+                {/* 🆕 الطريق القصير لإغلاق الشهر — للمنظّم وحين ينتهي الشهر وحدهما.
+                    يفتح التأكيد مباشرةً؛ انظر MonthDueBanner.tsx. */}
+                {longTerm?.isMonthDue && trip.canAddExpenses && ledger.activeTravelers.length > 0 && (
+                  <MonthDueBanner
+                    isBusy={longTerm.isClosingMonth || longTerm.isExitingTraveler}
+                    onCloseMonth={modals.openMonthClose}
+                  />
+                )}
 
                 {/* ─── الشاشة الرئيسية: ثلاثة أقسام لا أكثر ───────────────────
                     المصاريف ← الأرصدة ← المسافرون، بهذا الترتيب تحديداً: ما

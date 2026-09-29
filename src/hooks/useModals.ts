@@ -36,7 +36,12 @@ export type ModalState =
   // هذا الاتحاد يعني أن فتح أيّها يُغلق ما قبله تلقائياً بلا شرط إضافي.
   | { type: 'charts' }
   | { type: 'itinerary' }
-  | { type: 'longTermPanel' }
+  /**
+   * 🆕 `startAtConfirm`: فُتحت من شريط «انتهى الشهر» على الشاشة الرئيسية، فتبدأ
+   * بخطوة التأكيد مباشرةً — من ضغط «إغلاق الشهر» هناك لا يحتاج أن يرى زرّاً
+   * ثانياً بالمعنى نفسه قبل التأكيد. من «المزيد» تبدأ بالعرض كما كانت.
+   */
+  | { type: 'longTermPanel'; startAtConfirm: boolean }
 
 type ModalAction =
   | { type: 'OPEN_REPORTS' }
@@ -45,7 +50,7 @@ type ModalAction =
   | { type: 'OPEN_EDIT_TRIP' }
   | { type: 'OPEN_CHARTS' }
   | { type: 'OPEN_ITINERARY' }
-  | { type: 'OPEN_LONG_TERM_PANEL' }
+  | { type: 'OPEN_LONG_TERM_PANEL'; startAtConfirm: boolean }
   | { type: 'CLOSE' }
 
 const CLOSED: ModalState = { type: 'none' }
@@ -58,7 +63,7 @@ function modalReducer(state: ModalState, action: ModalAction): ModalState {
     case 'OPEN_EDIT_TRIP':       return { type: 'editTrip' }
     case 'OPEN_CHARTS':          return { type: 'charts' }
     case 'OPEN_ITINERARY':       return { type: 'itinerary' }
-    case 'OPEN_LONG_TERM_PANEL': return { type: 'longTermPanel' }
+    case 'OPEN_LONG_TERM_PANEL': return { type: 'longTermPanel', startAtConfirm: action.startAtConfirm }
     case 'CLOSE':                return CLOSED
     default:                     return state
   }
@@ -73,7 +78,8 @@ export function useModals() {
   const openEditTrip       = useCallback(() => dispatch({ type: 'OPEN_EDIT_TRIP' }), [])
   const openCharts         = useCallback(() => dispatch({ type: 'OPEN_CHARTS' }), [])
   const openItinerary      = useCallback(() => dispatch({ type: 'OPEN_ITINERARY' }), [])
-  const openLongTermPanel  = useCallback(() => dispatch({ type: 'OPEN_LONG_TERM_PANEL' }), [])
+  const openLongTermPanel  = useCallback(() => dispatch({ type: 'OPEN_LONG_TERM_PANEL', startAtConfirm: false }), [])
+  const openMonthClose     = useCallback(() => dispatch({ type: 'OPEN_LONG_TERM_PANEL', startAtConfirm: true }), [])
   const closeModal         = useCallback(() => dispatch({ type: 'CLOSE' }), [])
 
   return {
@@ -85,6 +91,7 @@ export function useModals() {
     openCharts,
     openItinerary,
     openLongTermPanel,
+    openMonthClose,
     closeModal,
   }
 }
