@@ -31,6 +31,8 @@ interface ReportsViewProps {
    * (commit c3acfbf) — الخلاصة للدورة الحالية دوماً، والتفصيلي تراكمي دوماً.
    */
   periods?: PeriodKey[]
+  /** 🆕 يوم بداية الشهر — يرافق periods أينما ذهبت (utils/period.ts). الغياب = 1. */
+  cycleStartDay?: number
   /** 🆕 قيود السداد غير المحذوفة — قسم في الملخص وورقة في Excel. */
   repayments?: Repayment[]
   onClose: () => void
@@ -43,7 +45,7 @@ const fmt = (n: number): string => n.toFixed(2)
 // مرجع ثابت — انظر NO_REPAYMENTS في TravelerProfileModal.
 const NO_REPAYMENTS: Repayment[] = []
 
-function ReportsView({ travelers, expenses, balances, settlements, categoryTotals, itinerary, periods, repayments = NO_REPAYMENTS, onClose }: ReportsViewProps) {
+function ReportsView({ travelers, expenses, balances, settlements, categoryTotals, itinerary, periods, cycleStartDay = 1, repayments = NO_REPAYMENTS, onClose }: ReportsViewProps) {
   const hasPeriods = !!periods && periods.length > 0
   // 🆕 آخر عنصر في periods هو الدورة الحالية (المفتوحة) دائماً — نفس مبدأ
   // TravelerProfileModal (ثابتة من بناء listPeriods، تنتهي القائمة عند
@@ -79,8 +81,8 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
   // commit 974db32). صيغة TravelerBalance المُعادة متوافقة تماماً (deposited/
   // totalExpenses/remaining) فتُستهلك في التسويات والفئات كأي أرصدة عادية.
   const currentPeriodExpenses = useMemo(
-    () => (hasPeriods ? filterCycleExpenses(expenses, currentPeriod!) : []),
-    [hasPeriods, expenses, currentPeriod],
+    () => (hasPeriods ? filterCycleExpenses(expenses, currentPeriod!, cycleStartDay) : []),
+    [hasPeriods, expenses, currentPeriod, cycleStartDay],
   )
   // 🆕 اسم طرف السداد — بالاسم الكامل كبقية التقرير (s.fromName).
   const nameOf = useMemo(() => {
@@ -89,12 +91,12 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
   }, [travelers])
   const currentPeriodBalances = useMemo<TravelerBalance[]>(() => {
     if (!hasPeriods) return []
-    const summaries = buildCurrentPeriodTravelerSummaries(travelers, balances, expenses, currentPeriod!, repayments)
+    const summaries = buildCurrentPeriodTravelerSummaries(travelers, balances, expenses, currentPeriod!, repayments, cycleStartDay)
     return summaries.map(s => {
       const traveler = travelers.find(t => t.id === s.id)
       return { ...(traveler as Traveler), deposited: s.opening, totalExpenses: s.spent, remaining: s.closing }
     })
-  }, [hasPeriods, travelers, balances, expenses, currentPeriod, repayments])
+  }, [hasPeriods, travelers, balances, expenses, currentPeriod, repayments, cycleStartDay])
   const currentSettlements = useMemo(
     () => (hasPeriods ? calculateSettlements(currentPeriodBalances) : []),
     [hasPeriods, currentPeriodBalances],
@@ -120,7 +122,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
   const daily = useMemo(() => buildDailySummary(expenses), [expenses])
   // 🆕 ملخّص كل دورة عبر الرحلة كلها — جزء من «تفصيل كامل الرحلة»، بديل
   // «الملخص اليومي» غير المفيد لرحلة تمتد أشهراً.
-  const periodOverview = useMemo(() => (hasPeriods ? buildPeriodOverview(expenses, periods!) : []), [hasPeriods, expenses, periods])
+  const periodOverview = useMemo(() => (hasPeriods ? buildPeriodOverview(expenses, periods!, cycleStartDay) : []), [hasPeriods, expenses, periods, cycleStartDay])
   const generatedAt = new Date().toLocaleString('ar-SA', { dateStyle: 'medium', timeStyle: 'short' })
 
   // تمت إعادة دالة الطباعة لتتوافق مع iOS
@@ -169,7 +171,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
 
             <button
               type="button"
-              onClick={() => exportTripToExcel({ expenses, travelers, balances, settlements, periods, repayments })}
+              onClick={() => exportTripToExcel({ expenses, travelers, balances, settlements, periods, cycleStartDay, repayments })}
               disabled={expenses.length === 0}
               className="flex items-center gap-1.5 bg-teal-800/60 hover:bg-teal-800 text-teal-50 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-40"
             >
@@ -214,7 +216,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
             caption={`${formatPeriodLabel(currentPeriod!)} · ${currentPeriodExpenses.length} مصروف · ${travelers.length} مسافر · ${currentTotals.days} يوم`}
             settlements={currentSettlements}
             categoryTotals={currentCategoryTotals}
-            repayments={repayments.filter(r => isInPeriod(r.date, currentPeriod!))}
+            repayments={repayments.filter(r => isInPeriod(r.date, currentPeriod!, cycleStartDay))}
             nameOf={nameOf}
           />
         )}
@@ -347,6 +349,7 @@ function ReportsView({ travelers, expenses, balances, settlements, categoryTotal
               categoryTotals={categoryTotals}
               itinerary={itinerary}
               periods={periods}
+              cycleStartDay={cycleStartDay}
             />
           </div>
         </div>,

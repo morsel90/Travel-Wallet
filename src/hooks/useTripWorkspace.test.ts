@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import type { User } from 'firebase/auth'
 import type { Expense, Traveler, Repayment } from '../types'
@@ -96,7 +96,7 @@ function setup(overrides: Partial<Omit<Args, 'modals'>> & { tripType?: 'standard
       const modals = useModals()
       const workspace = useTripWorkspace({
         user: me, isAdmin: false, hasAccess: true, profileDisplayName: undefined,
-        config: { tripType, currentPeriod: '2026-08', lastClosedPeriod: undefined, organizerUid: 'org' },
+        config: { tripType, currentPeriod: '2026-08', lastClosedPeriod: undefined, organizerUid: 'org', cycleStartDay: 1 },
         isOrganizer: false, modals, showToast, handleFirestoreError, setSyncError,
         ...rest, ...props,
       })
@@ -219,6 +219,39 @@ describe('useTripWorkspace — الرحلة القياسية مقابل الطو
     h.closeMonth.mockResolvedValue({ ok: true })
     await act(() => result.current.workspace.longTerm!.onConfirmRollover())
     expect(result.current.modals.modal.type).toBe('none')
+  })
+
+  // 🆕 شريط «انتهى الشهر» (MonthDueBanner) — للمنظّم، وبعد انتهاء الشهر المفتوح وحده.
+  describe('isMonthDue', () => {
+    afterEach(() => { vi.useRealTimers() })
+    const at = (iso: string) => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(iso)) }
+
+    it('يظهر للمنظّم حين يتجاوز تقويم الجهاز الشهر المفتوح', () => {
+      at('2026-09-01T09:00:00')
+      const { result } = setup({ tripType: 'long_term', isOrganizer: true })
+      expect(result.current.workspace.longTerm!.isMonthDue).toBe(true)
+    })
+
+    it('لا يظهر والشهر لم ينتهِ بعد — ولو في يومه الأخير', () => {
+      at('2026-08-31T23:30:00')
+      const { result } = setup({ tripType: 'long_term', isOrganizer: true })
+      expect(result.current.workspace.longTerm!.isMonthDue).toBe(false)
+    })
+
+    it('لا يظهر لعضو ليس منظّماً ولا مسؤولاً — الإغلاق ليس له', () => {
+      at('2026-09-01T09:00:00')
+      const { result } = setup({ tripType: 'long_term' })
+      expect(result.current.workspace.longTerm!.isMonthDue).toBe(false)
+    })
+  })
+
+  it('«إغلاق الشهر» من الشريط يفتح نافذة الشهر على خطوة التأكيد مباشرةً', () => {
+    const { result } = setup({ tripType: 'long_term', isOrganizer: true })
+    act(() => result.current.modals.openMonthClose())
+    expect(result.current.modals.modal).toEqual({ type: 'longTermPanel', startAtConfirm: true })
+
+    act(() => result.current.modals.openLongTermPanel())
+    expect(result.current.modals.modal).toEqual({ type: 'longTermPanel', startAtConfirm: false })
   })
 })
 

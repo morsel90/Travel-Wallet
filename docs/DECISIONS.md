@@ -403,6 +403,18 @@ Guard 3 was verified by deleting it and confirming exactly one test out of 119 f
 
 ⚠️ And all four rollover fields sit in `isValidTripConfig`'s `hasOnly` list even though the client writes only `tripType`. This is the same trap already documented for `createdByUid`, `organizerUid`, and `bankDetails`: a `merge: true` write is evaluated against the **complete resulting document**, so omitting them would not block rollover — it would block **every later edit** to any trip that has ever closed a month.
 
+### 🆕 A month can start on any day 1..28 — because the real month runs salary to salary
+
+The first long-term trip in production closed September on **27 September**, the day salaries land, then kept recording expenses dated 28–29 September. Under calendar months those fell inside the *closed* September and vanished from «هذا الشهر». The app was wrong about what a month is for these users, not they about how to use it.
+
+`trips/{tripId}.cycleStartDay` (absent = 1 = calendar month) moves the boundary: with 27, **«October» runs 27 Sep → 26 Oct — a month is named for the month it ends in.** Every function in `utils/period.ts` takes the day as a trailing parameter defaulting to 1, so every existing call and every standard trip computes exactly what it did before; `closeMonth` writes the closing entry on the 26th and the opening entry on the 27th.
+
+- **Capped at 28**, because February has no 29th every year and no 30th ever.
+- **Not editable from the app, by rule, for admin and organizer alike** — same treatment as `lastClosedPeriod`. Changing it redraws the boundaries of every past month, so it is set by `scripts/set-cycle-start-day.mjs`, which also moves the dates of past rollover entries in the same batch. Without that move, `boundaryRolloverAmount` (which matches the boundary date exactly) cannot find past boundaries and opening balances in reports come out wrong. Amounts are never touched, nor real expenses, nor exit settlements.
+- **One day for the whole history, not "from month X onward."** An effective-from date would keep one old calendar month intact at the cost of a second boundary rule forever. The script moves the old boundaries instead.
+- ⚠️ It sits in `isValidTripConfig`'s `hasOnly` for the same reason as the other rollover fields: a `merge: true` edit is evaluated against the whole resulting document.
+- ⚠️ **Deploy order:** rules and functions (and the client) before running the script. Old rules without the field in `hasOnly` would reject every later edit to that trip.
+
 ### 🆕 Exit blocking lives in the function; the client check is an optional parameter, not a condition
 
 `exitTraveler` recomputes the balance server-side and refuses a non-settled exit, naming the amount and direction. The client's `describeExitBlockFor` is an **optional** parameter of `useTravelerActions` — passed only by long-term trips. Its absence *is* standard-trip behaviour, which is why all 25 pre-existing traveler tests pass unmodified.

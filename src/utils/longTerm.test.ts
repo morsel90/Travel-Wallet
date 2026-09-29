@@ -233,3 +233,24 @@ describe('describeOrganizerExitBlock', () => {
     expect(describeOrganizerExitBlock('uid-1', null, 'سعد')).toBeNull()
   })
 })
+
+// 🆕 بيوم بداية 27: قيود الإغلاق بتاريخ 26 والافتتاح بتاريخ 27 (closeMonth).
+describe('يوم بداية الشهر في حدود الإغلاق', () => {
+  const roll = (date: string, amount: number): Pick<Expense, 'date' | 'category' | 'participants' | 'amount'> =>
+    ({ date, category: ROLLOVER_CATEGORY, participants: [1], amount })
+
+  it('يقرأ قيد الإغلاق بتاريخ 26 وقيد الافتتاح بتاريخ 27', () => {
+    expect(boundaryRolloverAmount(1, [roll('2026-09-26', 50)], '2026-09', '2026-10', 27)).toBe(50)
+    expect(boundaryRolloverAmount(1, [roll('2026-09-27', 5)], '2026-09', '2026-10', 27)).toBe(-5)
+    // قيد بالتاريخ التقويمي القديم لا يُقرأ حدّاً بيوم 27 — لذلك تُنقل تواريخ القيود القديمة.
+    expect(boundaryRolloverAmount(1, [roll('2026-09-30', 50)], '2026-09', '2026-10', 27)).toBeNull()
+  })
+
+  it('periodOpeningBalance وfilterCycleExpenses يمرّران اليوم', () => {
+    expect(periodOpeningBalance(1, [roll('2026-09-26', 50)], '2026-10', '2026-09', 27)).toBe(50)
+    const spent = { date: '2026-09-28', category: 'طعام وشراب' }
+    expect(filterCycleExpenses([spent], '2026-10', 27)).toEqual([spent])
+    expect(filterCycleExpenses([spent], '2026-09', 27)).toEqual([])
+  })
+})
+

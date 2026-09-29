@@ -64,16 +64,18 @@ interface TripReportProps {
   /** 🆕 الفترات المتاحة (تصاعدياً) — الرحلة الطويلة فقط. حضورها يستبدل قسم
    *  «الملخص اليومي» بقسم «ملخص الفترة»، مطابقةً للشاشة — انظر ReportsView.tsx. */
   periods?: PeriodKey[]
+  /** 🆕 يوم بداية الشهر — يرافق periods أينما ذهبت (utils/period.ts). الغياب = 1. */
+  cycleStartDay?: number
 }
 
-export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses, balances, settlements, categoryTotals, itinerary, periods }: TripReportProps) => {
+export const PrintableTripReport = ({ tripName, generatedAt, travelers, expenses, balances, settlements, categoryTotals, itinerary, periods, cycleStartDay = 1 }: TripReportProps) => {
   const deposited = balances.reduce((s, b) => s + b.deposited, 0)
   const spent = balances.reduce((s, b) => s + b.totalExpenses, 0)
   const remaining = balances.reduce((s, b) => s + b.remaining, 0)
   const days = new Set(expenses.map(e => e.date)).size
   const hasPeriods = !!periods && periods.length > 0
   const daily = hasPeriods ? [] : buildDailySummary(expenses)
-  const periodOverview = hasPeriods ? buildPeriodOverview(expenses, periods!) : []
+  const periodOverview = hasPeriods ? buildPeriodOverview(expenses, periods!, cycleStartDay) : []
   const catTotal = categoryTotals.reduce((s, c) => s + c.total, 0)
 
   return (

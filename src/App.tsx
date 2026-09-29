@@ -23,6 +23,7 @@ import SmartInputBar        from './components/SmartInputBar'
 import { TripStoreProvider } from './store/TripStoreProvider'
 import { AppErrorFallback } from './components/AppErrorFallback'
 import { StatusBanners }    from './components/StatusBanners'
+import { MonthDueBanner }   from './components/longterm/MonthDueBanner'
 import { TravelersPanel }   from './components/TravelersPanel'
 import { SettlementsPanel } from './components/SettlementsPanel'
 import { ExpensesPanel }    from './components/ExpensesPanel'
@@ -212,6 +213,15 @@ export default function App() {
                   syncError={status.syncError}
                 />
 
+                {/* 🆕 الطريق القصير لإغلاق الشهر — للمنظّم وحين ينتهي الشهر وحدهما.
+                    يفتح التأكيد مباشرةً؛ انظر MonthDueBanner.tsx. */}
+                {longTerm?.isMonthDue && trip.canAddExpenses && ledger.activeTravelers.length > 0 && (
+                  <MonthDueBanner
+                    isBusy={longTerm.isClosingMonth || longTerm.isExitingTraveler}
+                    onCloseMonth={modals.openMonthClose}
+                  />
+                )}
+
                 {/* ─── الشاشة الرئيسية: ثلاثة أقسام لا أكثر ───────────────────
                     المصاريف ← الأرصدة ← المسافرون، بهذا الترتيب تحديداً: ما
                     يُفعل يومياً، ثم ما يُسأل عنه عند التصفية، ثم من يخصّهم.
@@ -319,6 +329,7 @@ export default function App() {
                   } : undefined}
                   cycleWallets={longTerm?.cycleWallets}
                   periods={longTerm?.periods}
+                  cycleStartDay={longTerm?.cycleStartDay}
                 />
               </main>
             </PullToRefresh>
@@ -341,6 +352,7 @@ export default function App() {
                 categoryTotals: ledger.categoryTotals,
                 itinerary: trip.itinerary,
                 periods: longTerm?.periods,
+                cycleStartDay: longTerm?.cycleStartDay,
                 repayments: ledger.activeRepayments,
               }}
               // 🆕 أقسام انتقلت من تدفّق الشاشة إلى نوافذ خلف «المزيد».

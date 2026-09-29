@@ -12,7 +12,7 @@ import { calculateBalances, calculateSettlements, calculateCategoryTotals, calcu
 import { TRIP_ID } from '../utils/tripId'
 import { INITIAL_DEPOSIT_REASON } from '../utils/deposits'
 import { isLongTerm } from '../utils/tripType'
-import { formatPeriodLabel, listPeriods } from '../utils/period'
+import { currentPeriodKey, formatPeriodLabel, listPeriods } from '../utils/period'
 import { planRollover, describeExitBlock, filterCycleExpenses, calculateCycleWallet } from '../utils/longTerm'
 
 // ─── مساحة العمل: ما بداخل الرحلة المفتوحة ─────────────────────────────────────
@@ -32,7 +32,7 @@ interface UseTripWorkspaceArgs {
   /** من useAppSession — اسم البروفايل الذي يُزامَن إلى بطاقة مسافري. */
   profileDisplayName: string | undefined
   /** من useAppTrip. */
-  config: Pick<TripConfig, 'tripType' | 'currentPeriod' | 'lastClosedPeriod' | 'organizerUid'>
+  config: Pick<TripConfig, 'tripType' | 'currentPeriod' | 'lastClosedPeriod' | 'organizerUid' | 'cycleStartDay'>
   isOrganizer: boolean
   modals: ReturnType<typeof useModals>
   showToast: (msg: ToastMessage, durationMs?: number) => void
@@ -44,7 +44,7 @@ export function useTripWorkspace({
   user, isAdmin, hasAccess, profileDisplayName, config, isOrganizer, modals,
   showToast, handleFirestoreError, setSyncError,
 }: UseTripWorkspaceArgs) {
-  const { tripType, currentPeriod, lastClosedPeriod, organizerUid } = config
+  const { tripType, currentPeriod, lastClosedPeriod, organizerUid, cycleStartDay } = config
   // ⚠️ مُفكَّكة لا `modals.closeModal`: كل دالة في useModals ثابتة (useCallback
   // بلا اعتماديات)، لكن كائن `modals` نفسه يُبنى من جديد في كل رسمة، فوضعه في
   // قائمة اعتماديات يُفقد ما يعتمد عليه ثباته. انظر useTripWorkspace.test.ts.
@@ -112,8 +112,8 @@ export function useTripWorkspace({
   const canManageLongTerm = isLongTermTrip && (isAdmin || isOrganizer)
 
   const periodExpenses = useMemo(
-    () => (isLongTermTrip ? filterCycleExpenses(activeExpenses, currentPeriod) : []),
-    [isLongTermTrip, activeExpenses, currentPeriod],
+    () => (isLongTermTrip ? filterCycleExpenses(activeExpenses, currentPeriod, cycleStartDay) : []),
+    [isLongTermTrip, activeExpenses, currentPeriod, cycleStartDay],
   )
   const periodTotal = useMemo(
     () => periodExpenses.reduce((sum, e) => sum + (Number.isFinite(e.amount) ? e.amount : 0), 0),
@@ -126,8 +126,8 @@ export function useTripWorkspace({
   // 🆕 قائمة الفترات لمُصفّي الدورة في التقارير/كشف الحساب — تصاعدياً، من أول
   // نشاط حتى الشهر المفتوح حالياً (انظر listPeriods في utils/period.ts).
   const periods = useMemo(
-    () => (isLongTermTrip ? listPeriods(activeExpenses, currentPeriod) : []),
-    [isLongTermTrip, activeExpenses, currentPeriod],
+    () => (isLongTermTrip ? listPeriods(activeExpenses, currentPeriod, cycleStartDay) : []),
+    [isLongTermTrip, activeExpenses, currentPeriod, cycleStartDay],
   )
 
   // 🆕 محفظة الدورة الحالية — للهيدر ولبطاقة كل مسافر. **لا حساب مالي جديد**:
@@ -353,6 +353,13 @@ export function useTripWorkspace({
       periods,
       movements: rolloverPlan,
       canManage: canManageLongTerm,
+      // 🆕 الشهر المفتوح انتهى بتقويم الجهاز — يُظهر شريط الإغلاق للمنظّم على
+      // الشاشة الرئيسية (MonthDueBanner). مقارنة `YYYY-MM` نصياً = زمنياً
+      // (utils/period.ts). تُحسب في كل رسم لا في useMemo: مدخلها الوحيد المتغيّر
+      // هو الساعة، ولا شيء في المصفوفة يتغيّر بتغيّرها.
+      isMonthDue: canManageLongTerm && currentPeriodKey(new Date(), cycleStartDay) > currentPeriod,
+      // 🆕 يوم بداية الشهر — لكل من يصفّي بالشهر خارج هذا الملف (التقارير، ملف المسافر).
+      cycleStartDay,
       isClosingMonth: longTermActions.isClosingMonth,
       isExitingTraveler: longTermActions.isExitingTraveler,
       organizerUid,

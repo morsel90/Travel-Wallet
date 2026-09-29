@@ -84,9 +84,9 @@ export function buildDailyRows(expenses: Expense[]): XlsxCell[][] {
 
 /** ورقة "ملخص الفترة": بديل «الملخص اليومي» في الرحلات طويلة المدى — انظر
  *  تعليق buildPeriodOverview في reportData.ts لماذا التجميع بالدورة لا باليوم. */
-export function buildPeriodRows(expenses: Expense[], periods: PeriodKey[]): XlsxCell[][] {
+export function buildPeriodRows(expenses: Expense[], periods: PeriodKey[], startDay = 1): XlsxCell[][] {
   const header: XlsxCell[] = ['الشهر', 'عدد المصاريف', 'الإجمالي (ريال)']
-  const rows: XlsxCell[][] = buildPeriodOverview(expenses, periods).map(r => [r.label, r.count, money(r.spent)])
+  const rows: XlsxCell[][] = buildPeriodOverview(expenses, periods, startDay).map(r => [r.label, r.count, money(r.spent)])
   return [header, ...rows]
 }
 
@@ -104,6 +104,8 @@ export interface TripExcelParams {
    *  «الملخص اليومي» بورقة «ملخص الفترة» (buildPeriodRows)، مطابقةً لتبويب
    *  التقرير على الشاشة — انظر ReportsView.tsx. */
   periods?: PeriodKey[]
+  /** 🆕 يوم بداية الشهر — يرافق periods أينما ذهبت (utils/period.ts). الغياب = 1. */
+  cycleStartDay?: number
   /** 🆕 قيود السداد غير المحذوفة — ورقة «السداد» حين توجد. */
   repayments?: Repayment[]
 }
@@ -120,7 +122,7 @@ export function buildRepaymentRows(repayments: Repayment[], travelers: Traveler[
 /** يجمّع كل الأوراق ويُنزّل مصنّف Excel واحداً للرحلة — تراكمي دائماً (لا
  *  تصفية بدورة، انظر ReportsView.tsx: زرّا PDF/Excel يصدّران تفصيل الرحلة
  *  الكامل دوماً بصرف النظر عن التبويب المفتوح). */
-export function exportTripToExcel({ expenses, travelers, balances, settlements, periods, repayments = [] }: TripExcelParams): void {
+export function exportTripToExcel({ expenses, travelers, balances, settlements, periods, cycleStartDay = 1, repayments = [] }: TripExcelParams): void {
   const hasPeriods = !!periods && periods.length > 0
   const sheets: XlsxSheet[] = [
     { name: 'المصاريف', rows: buildExpenseRows(expenses, travelers), rtl: true },
@@ -128,7 +130,7 @@ export function exportTripToExcel({ expenses, travelers, balances, settlements, 
     { name: 'التسويات', rows: buildSettlementRows(settlements), rtl: true },
     ...(repayments.length > 0 ? [{ name: 'السداد', rows: buildRepaymentRows(repayments, travelers), rtl: true }] : []),
     hasPeriods
-      ? { name: 'الأشهر', rows: buildPeriodRows(expenses, periods!), rtl: true }
+      ? { name: 'الأشهر', rows: buildPeriodRows(expenses, periods!, cycleStartDay), rtl: true }
       : { name: 'الملخص اليومي', rows: buildDailyRows(expenses), rtl: true },
   ]
   downloadXlsx(`تقرير_الرحلة_${todayStr()}.xlsx`, sheets)

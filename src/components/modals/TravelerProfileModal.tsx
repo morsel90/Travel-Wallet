@@ -70,6 +70,8 @@ interface TravelerProfileModalProps {
    *  الحالية دوماً (انظر currentPeriod أدناه)، وهي الوحيدة المعروضة الآن —
    *  لا مُصفّي يدوي بعد الآن، انظر ReportsView.tsx لعرض دورة سابقة بعينها. */
   periods?: PeriodKey[]
+  /** 🆕 يوم بداية الشهر — يرافق periods أينما ذهبت (utils/period.ts). الغياب = 1. */
+  cycleStartDay?: number
   /** 🆕 قيود السداد غير المحذوفة — تدخل كشف الحساب ورصيده الجاري. */
   repayments?: Repayment[]
 }
@@ -101,6 +103,7 @@ export default function TravelerProfileModal({
   longTermExit,
   onSubmitDeposit,
   periods,
+  cycleStartDay = 1,
   repayments = NO_REPAYMENTS,
 }: TravelerProfileModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab)
@@ -133,8 +136,8 @@ export default function TravelerProfileModal({
   // واحد بعد في تلك الدورة). لا حاجة لتمرير الدورة الحالية كخاصية منفصلة.
   const currentPeriod: PeriodKey | null = hasPeriods ? periods![periods!.length - 1] : null
   const displayExpenses = useMemo(
-    () => (hasPeriods ? filterCycleExpenses(expenses, currentPeriod!) : expenses),
-    [hasPeriods, expenses, currentPeriod],
+    () => (hasPeriods ? filterCycleExpenses(expenses, currentPeriod!, cycleStartDay) : expenses),
+    [hasPeriods, expenses, currentPeriod, cycleStartDay],
   )
 
   const travelerReport = useMemo(() => buildTravelerReport(traveler, displayExpenses), [traveler, displayExpenses])
@@ -163,8 +166,8 @@ export default function TravelerProfileModal({
   // 🆕 سداد هذه الدورة وحدها — السداد في دورة سابقة مُضمَّن أصلاً في المبلغ
   // المُرحَّل (closeMonth يقرأ الرصيد من readLedger، والسداد جزء منه).
   const displayRepayments = useMemo(
-    () => (hasPeriods ? repayments.filter(r => isInPeriod(r.date, currentPeriod!)) : repayments),
-    [hasPeriods, repayments, currentPeriod],
+    () => (hasPeriods ? repayments.filter(r => isInPeriod(r.date, currentPeriod!, cycleStartDay)) : repayments),
+    [hasPeriods, repayments, currentPeriod, cycleStartDay],
   )
   const periodPocketAndShare = useMemo(
     () => buildAccountStatement(0, traveler, displayExpenses, displayRepayments, nameOf),

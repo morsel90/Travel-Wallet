@@ -45,6 +45,8 @@ interface TravelersPanelProps {
   cycleWallets?: Record<number, number>
   /** 🆕 الفترات المتاحة في ملف كل مسافر — انظر تعليقها في TravelerProfileModal.tsx. */
   periods?: PeriodKey[]
+  /** 🆕 يوم بداية الشهر — يرافق periods أينما ذهبت (utils/period.ts). الغياب = 1. */
+  cycleStartDay?: number
 }
 
 // ─── قسم أرصدة المسافرين ──────────────────────────────────────────────────────
@@ -52,7 +54,7 @@ interface TravelersPanelProps {
 // من DataContext/UIActionsContext كما كان — لم يتغيّر شيء في استهلاكه للسياق.
 export const TravelersPanel = ({
   isInitialLoading, isAdmin, canAddTravelers, invite, activeTravelers, balances,
-  isAddingTraveler, onStartAddTraveler, travelerForm, longTermExit, cycleWallets, periods,
+  isAddingTraveler, onStartAddTraveler, travelerForm, longTermExit, cycleWallets, periods, cycleStartDay,
 }: TravelersPanelProps) => (
   <section id="travelers-section" className="scroll-mt-24">
     <div className="flex justify-between items-center mb-4 px-1">
@@ -102,6 +104,7 @@ export const TravelersPanel = ({
                 longTermExit={longTermExit}
                 cycleWallet={cycleWallets?.[traveler.id]}
                 periods={periods}
+                cycleStartDay={cycleStartDay}
               />
             ))
         }

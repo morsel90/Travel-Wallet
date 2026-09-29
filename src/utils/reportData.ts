@@ -369,10 +369,11 @@ export function buildCurrentPeriodTravelerSummaries(
   allExpenses: Expense[],
   period: PeriodKey,
   allRepayments: Repayment[] = [],
+  startDay = 1,
 ): PeriodTravelerSummary[] {
-  const periodExpenses = filterCycleExpenses(allExpenses, period)
+  const periodExpenses = filterCycleExpenses(allExpenses, period, startDay)
   // 🆕 سداد هذه الدورة وحدها — ما سبقها مُضمَّن في المبلغ المُرحَّل أصلاً.
-  const periodRepayments = allRepayments.filter(r => isInPeriod(r.date, period))
+  const periodRepayments = allRepayments.filter(r => isInPeriod(r.date, period, startDay))
   return travelers.map(t => {
     const remaining = liveBalances.find(b => b.id === t.id)?.remaining ?? 0
     // opening=0 هنا وسيط حسابي بحت (لا معنى مالياً له وحده) — نصيبه ودفعه من
@@ -409,9 +410,9 @@ export interface PeriodOverviewRow {
  * أحد يتابعه: من يهمّه الأمر يريد كم دفع *هذه* الدورة تحديداً، ثم يبدأ من
  * جديد مع الدورة التالية.
  */
-export function buildPeriodOverview(expenses: Expense[], periods: PeriodKey[]): PeriodOverviewRow[] {
+export function buildPeriodOverview(expenses: Expense[], periods: PeriodKey[], startDay = 1): PeriodOverviewRow[] {
   return periods.map(period => {
-    const periodExpenses = filterCycleExpenses(expenses, period)
+    const periodExpenses = filterCycleExpenses(expenses, period, startDay)
     const spent = periodExpenses.reduce((s, e) => s + (Number.isFinite(e.amount) ? e.amount : 0), 0)
     return { period, label: formatPeriodLabel(period), count: periodExpenses.length, spent }
   })

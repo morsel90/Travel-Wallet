@@ -9,6 +9,12 @@
 // ModalState لا يفتحها شيء سوى هذا الزرّ. الآن يتبدّل المحتوى وحده: العرض ←
 // التأكيد ← (إلغاء: عودة للعرض | نجاح: تُغلق النافذة من onConfirmRollover في
 // useTripWorkspace، وعند الفشل تبقى على التأكيد مع رسالة السبب).
+//
+// 🆕 **ومن شريط «انتهى الشهر» تبدأ بالتأكيد نفسه** (`startAtConfirm`): المسار
+// كان أربع ضغطات — اسم الرحلة ← «هذا الشهر» ← «إغلاق…» ← «تأكيد» — لعملية
+// تتكرّر كل شهر. الشريط يختصرها إلى ضغطتين، والتأكيد باقٍ لأن الإغلاق لا
+// يُتراجع عنه. والإلغاء هنا يُغلق النافذة لا يعود للعرض: من جاء من الشاشة
+// الرئيسية يعود إليها، لا إلى شاشة لم يطلبها.
 import { useState } from 'react'
 import type { ComponentProps } from 'react'
 import { X } from '../../icons'
@@ -25,11 +31,13 @@ interface LongTermModalProps extends Omit<ComponentProps<typeof LongTermPanel>, 
     isClosingMonth: boolean
     onConfirm: () => void
   }
+  /** 🆕 تبدأ بخطوة التأكيد — من شريط «انتهى الشهر» (MonthDueBanner). */
+  startAtConfirm?: boolean
   onClose: () => void
 }
 
-export default function LongTermModal({ onClose, rollover, ...panel }: LongTermModalProps) {
-  const [confirming, setConfirming] = useState(false)
+export default function LongTermModal({ onClose, rollover, startAtConfirm = false, ...panel }: LongTermModalProps) {
+  const [confirming, setConfirming] = useState(startAtConfirm)
 
   return (
     <Modal
@@ -54,7 +62,7 @@ export default function LongTermModal({ onClose, rollover, ...panel }: LongTermM
           movements={rollover.movements}
           isSubmitting={rollover.isClosingMonth}
           onConfirm={rollover.onConfirm}
-          onCancel={() => setConfirming(false)}
+          onCancel={startAtConfirm ? onClose : () => setConfirming(false)}
         />
       ) : (
         <LongTermPanel {...panel} onCloseMonth={() => setConfirming(true)} />

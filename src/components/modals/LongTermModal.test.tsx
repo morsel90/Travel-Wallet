@@ -5,7 +5,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import LongTermModal from './LongTermModal'
 
-function renderModal() {
+function renderModal(startAtConfirm?: boolean) {
   const onConfirm = vi.fn()
   const onClose = vi.fn()
   render(
@@ -17,6 +17,7 @@ function renderModal() {
         isClosingMonth: false,
         onConfirm,
       }}
+      startAtConfirm={startAtConfirm}
       onClose={onClose}
     />,
   )
@@ -44,5 +45,18 @@ describe('LongTermModal — تأكيد الإغلاق خطوة داخلية', ()
     fireEvent.click(screen.getByRole('button', { name: /إغلاق أغسطس 2026/ }))
     fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإغلاق' }))
     expect(onConfirm).toHaveBeenCalledTimes(1)
+  })
+
+  // 🆕 من شريط «انتهى الشهر» (MonthDueBanner): ضغطتان بدل أربع.
+  it('startAtConfirm يبدأ بالتأكيد، والإلغاء منه يُغلق النافذة لا يعود للعرض', () => {
+    const { onConfirm, onClose } = renderModal(true)
+    expect(screen.getByText('+800.00')).toBeInTheDocument()
+    expect(document.getElementById('long-term-section')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'تأكيد الإغلاق' }))
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'إلغاء' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })
