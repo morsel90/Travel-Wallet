@@ -14,6 +14,12 @@ const CREDS = {
   adminPassword: 'E2eTestPass!1',
 }
 
+// ⚠️ تسلسلي لا متوازٍ: seedTrip في beforeAll يمحو الرحلة ويعيد إنشاءها، وbeforeAll
+// يعمل مرة لكل عامل — فاختبار يقع على عامل آخر (fullyParallel) يمحو بيانات
+// اختبار يعمل الآن. رُصد في settlement-record: «منى» اختفت بين إضافتها وأول
+// مصروف. انظر long-term-rollover.spec.ts للحالة الأولى.
+test.describe.configure({ mode: 'serial' })
+
 test.beforeAll(async () => {
   await seedTrip(CREDS)
   const base = adminFirestore().collection('artifacts').doc(CREDS.tripId).collection('public').doc('data')
