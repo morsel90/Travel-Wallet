@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Info, X } from '../icons'
 
 // ─── OnboardingBanner ─────────────────────────────────────────────────────────
@@ -8,15 +8,14 @@ import { Info, X } from '../icons'
 const STORAGE_KEY = 'travelapp_onboarding_dismissed_v1'
 
 const OnboardingBanner = () => {
-  const [show, setShow] = useState(false)
-
-  useEffect(() => {
+  const [show, setShow] = useState(() => {
     try {
-      if (!window.localStorage.getItem(STORAGE_KEY)) setShow(true)
+      return !window.localStorage.getItem(STORAGE_KEY)
     } catch {
       // localStorage غير متاح (وضع خاص أو صلاحيات متصفح)، لا داعي لإظهار الشريط حينها
+      return false
     }
-  }, [])
+  })
 
   const dismiss = () => {
     setShow(false)

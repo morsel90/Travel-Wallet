@@ -334,11 +334,16 @@ export default function App() {
               </main>
             </PullToRefresh>
   
+            {/* ⚠️ key يُفرِّغ المسودة بعد نجاح الإضافة من نموذج التفاصيل الكامل
+                (لا الإلغاء ولا التعديل — العدّاد لا يتغيّر فيهما). «إضافة تفاصيل»
+                لا يُفرِّغ الحقول لحظتها كي تبقى المسودة لو أُلغي النموذج؛ وبلا هذا
+                كانت الحقول تبقى معبّأة بعد إرسال ناجح، فضغطة عرضية على الإرسال
+                السريع تُنشئ مصروفاً مكرراً بصمت. */}
             <SmartInputBar
+              key={expense.expenseAddedSignal}
               visible={!ledger.isInitialLoading && !expense.isAddingExpense && trip.canAddExpenses}
               onQuickAdd={expense.handleQuickAddExpense}
               onExpand={expense.openExpenseForm}
-              clearSignal={expense.expenseAddedSignal}
             />
   
             <ModalManager

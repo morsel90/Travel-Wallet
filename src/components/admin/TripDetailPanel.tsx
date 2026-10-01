@@ -164,22 +164,9 @@ export default function TripDetailPanel({
   // بالخطأ على رحلة خاطئة أسهل مما ينبغي في قائمة رحلات متشابهة الأسماء.
   const [deleteConfirm, setDeleteConfirm] = useState('')
 
-  // القائمة حيّة (onSnapshot): إعادة تهيئة النماذج عند تبديل الرحلة المختارة
-  // حتى لا تُعرض بيانات الرحلة السابقة في حقول الرحلة الجديدة.
-  useEffect(() => {
-    setNameForm(trip.name)
-    setWorkingItinerary(trip.itinerary)
-    setBaseItinerary(trip.itinerary)
-    setBaseRev(trip.itineraryRev)
-    setDraft(null)
-    setEditingId(null)
-    setDraftError(null)
-    setDeleteConfirm('')
-    setActiveTab('details')
-    setLinkingTravelerId(null)
-    setLinkTargetUid('')
-    setConfirmingTypeDowngrade(false)
-  }, [trip.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  // ⚠️ لا تصفير للنماذج عند تغيّر trip.id: اللوحة لا تُفتح إلا للرحلة الحالية
+  // (EditTripModal)، وTRIP_ID لا يتغيّر دون إعادة تحميل. كان هنا effect من زمن
+  // قائمة كل الرحلات — إن عادت اللوحة لقائمة، فالتصفير هو key={trip.id} عند الأب.
 
   const nameDirty = nameForm !== trip.name
 
