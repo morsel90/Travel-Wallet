@@ -8,6 +8,14 @@
 
 ## آخر تحديث: 2026-10-02
 
+### What changed on 2026-10-02 (٢) — رفض الدوال المقصود لا يذهب لـ Sentry، ومعالجة واحدة لأخطائها
+
+- 🐛 **كل رفض مقصود من دالة سحابية كان يُرسَل لـ Sentry وينتظر `flush` حتى ثانيتين قبل أن تصل رسالته.** «الرحلة غير مسوّاة»، «رابط الدعوة غير صالح» وأمثالها ليست أعطالاً — والـ 105 رمية `HttpsError` في `functions/index.js` كلها من هذا النوع، لا واحدة منها تغلّف عطلاً. `withSentry` صار يتجاوز `HttpsError` (يبقى في `console.error` لـ Cloud Logging)، والأعطال الحقيقية تصل أخطاءً عادية فتبقى ملتقطة. ⚠️ يحتاج نشر الدوال: `firebase deploy --only functions`.
+- **`showCallableError` في `hooks/callables.ts`** بدل أربع نسخ من الكتلة نفسها (`useTripAdminActions`، `useSettlementActions`، `useLongTermActions`، `useDepositActions`): رسالة الخادم كما هي، وإلا فمعالج Firestore بالنص الاحتياطي. المدد بقيت كما كانت (4 ثوانٍ لإدارة الرحلة، 6 للبقية).
+- مستمع المصاريف يميّز رفض الصلاحيات بـ`writeErrorCode` لا بالبحث عن «permission» في نص الرسالة.
+- **لم يُحذف `getIdToken(true)` قبل الاستدعاءات** رغم أنه كان مقترحاً: `callerManagesTrip` يقرأ `admin` من التوكن، واختبارات `useTripAdminActions.test.ts` توثّق السبب (مسؤول مُنح صلاحيته للتوّ يحمل توكناً بلا `admin`).
+- التحقّق: tsc وESLint نظيفان؛ 898 اختباراً وحدوياً؛ E2E كاملة 46 من 46.
+
 ### What changed on 2026-10-02 — سببا تقلّب E2E، وثلاثة effects لم تعد لازمة
 
 - 🐛 **`settlement-record` كان يفشل في نحو ثلث التشغيلات، وسببه الاختبارات لا التطبيق.** لقطة الفشل أظهرت «منى» غائبة تماماً: أُضيفت وظهرت ثم اختفت قبل أول مصروف. `seedTrip` يبدأ بـ`recursiveDelete` للرحلة، و`beforeAll` يعمل مرة **لكل عامل**؛ فمع `fullyParallel` يقع الاختبار الثاني في الملف على عامل آخر ويمحو رحلة الأول وهو يعمل. أُضيف `test.describe.configure({ mode: 'serial' })` للملفات السبعة التي تجمع `seedTrip` في `beforeAll` مع أكثر من اختبار — نفس علاج `long-term-rollover.spec.ts` لنفس العَرَض.

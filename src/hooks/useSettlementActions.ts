@@ -11,9 +11,8 @@
 // يُكتب. المستمعون الحيّون (onSnapshot) يُحدّثون الشاشة بعد النجاح بلا عمل هنا.
 import { useState, useCallback } from 'react'
 import { auth } from '../firebase'
-import { callable } from './callables'
+import { callable, showCallableError } from './callables'
 import { haptic } from '../utils/haptics'
-import { callableMessage } from '../utils/callableErrors'
 import type { ToastMessage } from '../types'
 
 interface UseSettlementActionsParams {
@@ -52,16 +51,8 @@ export function useSettlementActions({
       showToast({ text: `سُجّل تحويل ${data.amount.toFixed(2)} ريال إلى ${toName}`, type: 'success' }, 5000)
       return true
     } catch (err) {
-      // رسائل الخادم عربية ومحدّدة السبب (ليس مديناً، تجاوز السقف، رحلة غير
-      // نشطة) — تُعرض كما هي. نفس معالجة useLongTermActions ولنفس السبب:
-      // الخادم وحده يعرف *لماذا* رُفض التحويل.
-      haptic.error()
-      const message = callableMessage(err)
-      if (message) {
-        showToast({ text: message, type: 'error' }, 6000)
-      } else {
-        handleFirestoreError(err, 'تعذّر تسجيل التحويل — تحقّق من اتصالك.')
-      }
+      // رسالة الخادم تسمّي السبب: ليس مديناً، تجاوز السقف، رحلة غير نشطة.
+      showCallableError(err, 'تعذّر تسجيل التحويل — تحقّق من اتصالك.', { showToast, handleFirestoreError })
       return false
     } finally {
       setRecordingKey(null)

@@ -50,6 +50,10 @@ function initSentryOnce() {
 // الكود الذي يصل العميل. لا يُضاف لالتقاطات best-effort الداخلية (مثال:
 // [recordMembership] تعذّر تسجيل...) — تلك فشل مُحتوى عمداً لا يُفشل الطلب
 // كاملاً، Cloud Logging يلتقطها بصرف النظر عن Sentry.
+//
+// ⚠️ HttpsError لا يُرسل لـ Sentry: كل الـ HttpsError هنا رفضٌ مقصود (رحلة غير
+// مسوّاة، رابط غير صالح…) لا عطل — وكان كل رفض ينتظر flush حتى ثانيتين قبل أن
+// تصل رسالته للمستخدم. الأعطال الحقيقية تصل كأخطاء عادية، فتبقى ملتقطة.
 function withSentry(fnName, handler) {
   return async (...args) => {
     initSentryOnce();
@@ -57,6 +61,7 @@ function withSentry(fnName, handler) {
       return await handler(...args);
     } catch (err) {
       console.error(`[${fnName}]`, err);
+      if (err instanceof HttpsError) throw err;
       Sentry.captureException(err, { tags: { function: fnName } });
       await Sentry.flush(2000);
       throw err;

@@ -13,7 +13,9 @@
 // أنواع لا يخصّ هذه الدالة.
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '../firebase'
-import type { DepositMode, PeriodKey, RolloverResult } from '../types'
+import { haptic } from '../utils/haptics'
+import { callableMessage } from '../utils/callableErrors'
+import type { DepositMode, PeriodKey, RolloverResult, ToastMessage } from '../types'
 
 // ── إدارة الرحلات (useTripAdminActions) ─────────────────────────────────────
 
@@ -146,4 +148,27 @@ export type CallableResponse<N extends CallableName> = CallableContracts[N][1]
 /** دالة سحابية جاهزة للاستدعاء، بطلبها وردّها من السجلّ أعلاه. */
 export function callable<N extends CallableName>(name: N) {
   return httpsCallable<CallableRequest<N>, CallableResponse<N>>(functions, name)
+}
+
+export interface CallableErrorReporters {
+  showToast: (msg: ToastMessage, durationMs?: number) => void
+  handleFirestoreError: (err: unknown, fallback: string) => void
+}
+
+/**
+ * فشل استدعاء دالة سحابية، بمعالجة واحدة لكل المستدعين: رسالة الخادم العربية
+ * تُعرض كما هي — هو وحده يعرف *لماذا* رُفضت العملية، وأي إعادة صياغة هنا تُفقد
+ * السبب. وما ليس من الدالة (شبكة، بلا مستخدم) يمرّ لمعالج Firestore بالنص
+ * الاحتياطي. كانت هذه الكتلة منسوخة في أربعة خطافات.
+ */
+export function showCallableError(
+  err: unknown,
+  fallback: string,
+  { showToast, handleFirestoreError }: CallableErrorReporters,
+  durationMs = 6000,
+): void {
+  haptic.error()
+  const message = callableMessage(err)
+  if (message) showToast({ text: message, type: 'error' }, durationMs)
+  else handleFirestoreError(err, fallback)
 }
