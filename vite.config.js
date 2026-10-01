@@ -5,76 +5,46 @@ import { sentryVitePlugin } from '@sentry/vite-plugin'
 import tailwindcss     from '@tailwindcss/vite'
 
 export default defineConfig(({ mode }) => {
-  // تحميل كافة المتغيرات المضافة في Vercel أو .env
+  // متغيرات VITE_* يقرؤها Vite بنفسه (من .env* ومن بيئة البناء على Vercel) —
+  // لا حاجة لحقنها. هذا للمتغيرات بلا البادئة وحدها: SENTRY_* وVERCEL_*.
   const env = loadEnv(mode, process.cwd(), '');
   const pick = (key) => env[key] || process.env[key];
-  // 🔴 وضع اختبارات E2E (Playwright) فقط — انظر playwright.config.ts الذي يشغّل
-  // `vite --mode e2e`. لا يُفعَّل أبداً بأي أمر آخر (dev/build العاديين).
-  const isE2E = mode === 'e2e';
   // 🆕 بلا هذا التوكن، @sentry/vite-plugin لن يرفع خرائط المصدر ولن يحذفها —
   // فتوليدها أصلاً معطَّل في هذه الحالة (CI، أو قبل ضبط Sentry) بدل أن تبقى
   // خرائط .map غير مُنظَّفة في dist/ ومتاحة للجمهور بلا داعٍ.
   const hasSentryToken = Boolean(pick('SENTRY_AUTH_TOKEN'));
 
   return {
-    resolve: {
-      extensions: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.json'],
-    },
-
-    // حقن المتغيرات صراحة وقت البناء لضمان وصولها للمتصفح عند البناء على Vercel
     define: {
-      'import.meta.env.VITE_FIREBASE_API_KEY': JSON.stringify(pick('VITE_FIREBASE_API_KEY')),
-      'import.meta.env.VITE_FIREBASE_AUTH_DOMAIN': JSON.stringify(pick('VITE_FIREBASE_AUTH_DOMAIN')),
-      'import.meta.env.VITE_FIREBASE_PROJECT_ID': JSON.stringify(pick('VITE_FIREBASE_PROJECT_ID')),
-      'import.meta.env.VITE_FIREBASE_STORAGE_BUCKET': JSON.stringify(pick('VITE_FIREBASE_STORAGE_BUCKET')),
-      'import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID': JSON.stringify(pick('VITE_FIREBASE_MESSAGING_SENDER_ID')),
-      'import.meta.env.VITE_FIREBASE_APP_ID': JSON.stringify(pick('VITE_FIREBASE_APP_ID')),
-      // 🔴 E2E فقط — انظر src/firebase.ts (connectAuthEmulator/connectFirestoreEmulator)
-      'import.meta.env.VITE_USE_FIREBASE_EMULATORS': JSON.stringify(pick('VITE_USE_FIREBASE_EMULATORS')),
-      // 🆕 اختياري — انظر src/sentry.ts. غيابه لا يمنع البناء ولا التشغيل.
-      'import.meta.env.VITE_SENTRY_DSN': JSON.stringify(pick('VITE_SENTRY_DSN')),
       // 🆕 العنوان الأساسي للتطبيق — انظر src/utils/canonicalUrl.ts. تجاوز يدوي
       // أولاً (لبيئة staging مثلاً)، ثم متغيّر النظام الذي يوفّره Vercel لكل
       // بناء. غيابهما محلياً يعني سلسلة فارغة: لا تنبيه عنوان ولا رابط.
       'import.meta.env.VITE_APP_PRODUCTION_HOST': JSON.stringify(pick('VITE_APP_PRODUCTION_HOST') || pick('VERCEL_PROJECT_PRODUCTION_URL') || ''),
     },
 
-    // 🗑️ لا حاجة لأي وسيط `/api/*` بعد الآن: العميل يستدعي الدوال عبر
-    // httpsCallable من SDK فايربيس، والرابط يُشتق من معرّف المشروع تلقائياً
-    // (انظر src/firebase.ts وhooks/useAuth.ts). زال معه أيضاً سببُ إعادة التوجيه
-    // في vercel.json — وهو ما كان يربط كل بناء بمشروع Firebase واحد ويمنع
-    // قيام بيئة staging.
-
-
-    // إعدادات البناء وتقسيم الحزم (Code Splitting)
     build: {
       // 🆕 مطلوب حتى يجد @sentry/vite-plugin خرائط لرفعها — تُحذَف بعد الرفع
       // (filesToDeleteAfterUpload أدناه)، فلا تصل النسخة المنشورة أبداً. مُقيَّد
       // بنفس شرط تفعيل الإضافة (hasSentryToken): توليد خرائط لا تُرفَع ولا
       // تُحذَف يعني شحنها للجمهور في dist/ بلا فائدة — أسوأ من عدم توليدها.
       sourcemap: hasSentryToken,
-      chunkSizeWarningLimit: 600,
-      rollupOptions: {
+      rolldownOptions: {
         output: {
-          manualChunks(id) {
-            if (id.includes('node_modules')) {
-              if (id.includes('firebase') || id.includes('@firebase')) {
-                return 'firebase-sdk';
-              }
-              // ⚠️ الترتيب هنا جزء من المنطق لا تجميل: الفحص يمرّ بالمسار
-              // الكامل للوحدة، و`id.includes('react')` يلتقط `react-virtuoso`
-              // و`motion/dist/es/react.mjs` معاً — فلو سبق ui-vendor لابتلعهما
-              // react-vendor وبقي سطر ui-vendor ميتاً (وهو ما كان يحدث فعلاً).
-              if (id.includes('motion') || id.includes('lucide-react') || id.includes('react-virtuoso')) {
-                return 'ui-vendor';
-              }
-              if (id.includes('react') || id.includes('react-dom')) {
-                return 'react-vendor';
-              }
-            }
-          }
-        }
-      }
+          // حزم البائعين منفصلة لتبقى مخزّنة بين النشرات. التعبير يطابق اسم
+          // الحزمة نفسه بعد node_modules/ — لا نصّاً في أي موضع من المسار،
+          // فـ`react-virtuoso` و`motion/dist/es/react.mjs` لا يقعان في react.
+          //
+          // ⚠️ react-vendor قبل ui-vendor: المجموعة تسحب معها اعتماديات ما
+          // تلتقطه، وmotion يعتمد على react — فلو سبقت ui-vendor لابتلعت react.
+          codeSplitting: {
+            groups: [
+              { name: 'firebase-sdk', test: /[\\/]node_modules[\\/]@?firebase[\\/]/ },
+              { name: 'react-vendor', test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
+              { name: 'ui-vendor',    test: /[\\/]node_modules[\\/](motion|framer-motion|motion-dom|motion-utils|lucide-react|react-virtuoso)[\\/]/ },
+            ],
+          },
+        },
+      },
     },
 
     plugins: [

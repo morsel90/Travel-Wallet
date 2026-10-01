@@ -1,28 +1,25 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
-import { loadEnv } from 'vite'
 
-export default defineConfig(({ mode }) => {
-  // تحميل كافة المتغيرات المضافة في Vercel أو .env
-  const env = loadEnv(mode, process.cwd(), '');
-
+export default defineConfig(() => {
   return {
     plugins: [react()],
-    
-    // حقن المتغيرات صراحة وقت البناء لضمان وصولها للمتصفح في Node 22
-    define: {
-      'import.meta.env.VITE_FIREBASE_API_KEY': JSON.stringify(env.VITE_FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY),
-      'import.meta.env.VITE_FIREBASE_AUTH_DOMAIN': JSON.stringify(env.VITE_FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN),
-      'import.meta.env.VITE_FIREBASE_PROJECT_ID': JSON.stringify(env.VITE_FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID),
-      'import.meta.env.VITE_FIREBASE_STORAGE_BUCKET': JSON.stringify(env.VITE_FIREBASE_STORAGE_BUCKET || process.env.VITE_FIREBASE_STORAGE_BUCKET),
-      'import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID': JSON.stringify(env.VITE_FIREBASE_MESSAGING_SENDER_ID || process.env.VITE_FIREBASE_MESSAGING_SENDER_ID),
-      'import.meta.env.VITE_FIREBASE_APP_ID': JSON.stringify(env.VITE_FIREBASE_APP_ID || process.env.VITE_FIREBASE_APP_ID),
-      // 🆕 VITE_SENTRY_DSN عمداً غير موجودة هنا: initSentry() (src/sentry.ts)
-      // تتجاوز نفسها بصمت حين تكون undefined، فالاختبارات لا تُهيّئ Sentry
-      // إطلاقاً — وهذا هو السلوك المطلوب، لا سهواً.
-    },
 
     test: {
+      // إعداد Firebase وهمي صريح — نفس قيم وظيفة build في CI. بعض الاختبارات
+      // تستورد src/firebase.ts الحقيقي، وحارسه يرمي إن غاب متغير. كان define
+      // يحقنها من البيئة، وفي CI (بلا بيئة) كانت تصل النصّ "undefined"
+      // فيمرّ الحارس مصادفةً.
+      // ⚠️ VITE_SENTRY_DSN غائبة عمداً: initSentry() تتجاوز نفسها بلاها.
+      env: {
+        VITE_FIREBASE_API_KEY: 'test-placeholder',
+        VITE_FIREBASE_AUTH_DOMAIN: 'test-placeholder.firebaseapp.com',
+        VITE_FIREBASE_PROJECT_ID: 'test-placeholder',
+        VITE_FIREBASE_STORAGE_BUCKET: 'test-placeholder.firebasestorage.app',
+        VITE_FIREBASE_MESSAGING_SENDER_ID: '000000000000',
+        VITE_FIREBASE_APP_ID: '1:000000000000:web:testplaceholder',
+      },
+
       // jsdom هي البيئة الافتراضية عمداً — الافتراض الآمن أن الملف قد يلمس
       // DOM. الملفات المنطقية البحتة تعلن `@vitest-environment node` في أعلاها
       // فتتخطّى إنشاء jsdom (18 ملفاً، ~21% من زمن التشغيل).

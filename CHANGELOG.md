@@ -8,6 +8,14 @@
 
 ## آخر تحديث: 2026-10-02
 
+### What changed on 2026-10-02 (٣) — إعداد Vite أصغر: ما بقي من إصدارات سابقة
+
+- **حُذفت كتلة `define` التي تحقن ثمانية متغيرات `VITE_*` يدوياً** (`vite.config.js` و`vitest.config.ts`). Vite يقرأ `VITE_*` بنفسه من `.env*` ومن بيئة البناء. تحقّق بقيمة تجريبية وصلت الحزمة، وبـE2E (Playwright يمرّرها عبر البيئة). بقي `VITE_APP_PRODUCTION_HOST` وحده لأنه مشتقّ من `VERCEL_PROJECT_PRODUCTION_URL`.
+- 🐛 **واكتُشف بها أن حارس «إعداد Firebase ناقص» كان يُتجاوز في اختبارات CI.** `define` يحوّل المتغير الغائب إلى النصّ `"undefined"` داخل Vitest، وهو غير فارغ فيمرّ الحارس — فكان `TravelerProfileModal.test.tsx` (يستورد `firebase.ts` الحقيقي) ينجح مصادفةً. صار `test.env` في `vitest.config.ts` يحمل قيماً وهمية صريحة، نفس قيم وظيفة build في CI. بناء الإنتاج لم يتأثر: هناك تصير `void 0` والحارس يعمل.
+- **`build.rollupOptions.output.manualChunks` ← `build.rolldownOptions.output.codeSplitting.groups`** — كلاهما `@deprecated` في Vite 8/Rolldown. التقسيم مطابق حزمةً بحزمة (قيس بتوزيع الحزم لا بالأحجام)، عدا `zustand` (0.5 kB) عاد إلى `index`. ⚠️ الترتيب انعكس: `react-vendor` قبل `ui-vendor` — انظر `docs/DECISIONS.md`. `tests/build/manualChunks.test.ts` ← `codeSplitting.test.ts` بنفس الضمانات واختبار للترتيب.
+- حُذف أيضاً: `resolve.extensions` (يعيد ترتيب افتراضي Vite بلا اسم ملف مكرّر بامتدادين يحتاجه)، و`chunkSizeWarningLimit: 600` (لم يُسكت التحذير — `firebase-sdk` 635 kB)، و`isE2E` (غير مستخدَم)، و`tsconfig.node.json` مع `references` (بقايا قالب Vite القديم: يضمّ `vite.config.js` وحده بلا `allowJs`، ولا يشغّله `tsc -b` في أي مكان).
+- التحقّق: tsc (الثلاثة) وESLint نظيفان؛ 899 اختباراً وحدوياً هنا **وفي نسخة نظيفة بلا `.env.local`** (كـCI)؛ E2E 46 من 46؛ البناء وStorybook يُبنيان.
+
 ### What changed on 2026-10-02 (٢) — رفض الدوال المقصود لا يذهب لـ Sentry، ومعالجة واحدة لأخطائها
 
 - 🐛 **كل رفض مقصود من دالة سحابية كان يُرسَل لـ Sentry وينتظر `flush` حتى ثانيتين قبل أن تصل رسالته.** «الرحلة غير مسوّاة»، «رابط الدعوة غير صالح» وأمثالها ليست أعطالاً — والـ 105 رمية `HttpsError` في `functions/index.js` كلها من هذا النوع، لا واحدة منها تغلّف عطلاً. `withSentry` صار يتجاوز `HttpsError` (يبقى في `console.error` لـ Cloud Logging)، والأعطال الحقيقية تصل أخطاءً عادية فتبقى ملتقطة. ⚠️ يحتاج نشر الدوال: `firebase deploy --only functions`.
