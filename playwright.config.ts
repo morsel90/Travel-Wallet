@@ -12,6 +12,7 @@ const BASE_URL = `http://127.0.0.1:${PORT}`
 
 export default defineConfig({
   testDir: './e2e',
+  globalSetup: './e2e/global-setup.ts',
   // 🆕 45s لا 30s: كل مسار إداري في الاختبارات صار يمرّ بورقة «المزيد» قبل
   // وجهته (اسم الرحلة ← الورقة ← إدارة الرحلة/التقارير/…) بدل ضغطة واحدة —
   // أي نافذة إضافية بحركة زنبركية في كل نداء، و`openTripDetailFromHeader`

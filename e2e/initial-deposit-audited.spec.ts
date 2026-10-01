@@ -45,6 +45,12 @@ const baseCreds = {
 const creds1 = { ...baseCreds, tripId: 'e2e-initial-deposit-1' }
 const creds2 = { ...baseCreds, tripId: 'e2e-initial-deposit-2' }
 
+// ⚠️ تسلسلي لا متوازٍ: seedTrip في beforeAll يمحو الرحلة ويعيد إنشاءها، وbeforeAll
+// يعمل مرة لكل عامل — فاختبار يقع على عامل آخر (fullyParallel) يمحو بيانات
+// اختبار يعمل الآن. رُصد في settlement-record: «منى» اختفت بين إضافتها وأول
+// مصروف. انظر long-term-rollover.spec.ts للحالة الأولى.
+test.describe.configure({ mode: 'serial' })
+
 test.beforeAll(async () => {
   await seedTrip(creds1)
   await seedTrip(creds2)
