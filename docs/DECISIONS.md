@@ -124,6 +124,8 @@ Decisions that look like oversights but are not. Read this before "fixing" them.
 
 ⚠️ **الترتيب نفسه هو الإصلاح، لا نصّ الشرط.** الفحص يمرّ بالمسار الكامل للوحدة، فأي فرع يذكر «react» كنصّ فرعي يجب أن يأتي **بعد** `ui-vendor`، لا قبله. تعليق صريح يحرس هذا في `vite.config.js` — ومن يعكس الترتيب مستقبلاً سيعيد الخلل صامتاً بلا أي اختبار ساقط، لأن البناء ينجح في الحالتين.
 
+🆕 **(2026-10-02) `manualChunks` صار `codeSplitting.groups`، و`react-vendor` صارت قبل `ui-vendor` — والترتيب انعكس عن قصد.** في Vite 8 صار `build.rollupOptions` وكذلك `output.manualChunks` كلاهما `@deprecated`، والبديل `build.rolldownOptions.output.codeSplitting.groups`. التعبير صار يطابق اسم الحزمة بعد `node_modules/` (`[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]`) لا نصّاً في أي موضع، فزال سبب الترتيب القديم من أصله. لكن ظهر سبب جديد معاكس: **المجموعة تسحب معها اعتماديات ما تلتقطه** (`includeDependenciesRecursively`، افتراضيه `true`)، و`motion` يعتمد على `react` — فحين سبقت `ui-vendor` سحبت React نفسها إليها، وقُسمت `react-dom` بين حزمتين. رُصد ذلك بمقارنة توزيع الحزم على الحزم المبنية بين الإعدادين لا بالأحجام وحدها. الحارس انتقل إلى `tests/build/codeSplitting.test.ts` ومعه اختبار للترتيب. الفرق الوحيد عن التقسيم القديم: `zustand` (0.5 kB) عاد إلى `index` — كان في `react-vendor` مصادفةً لأن مساره `zustand/esm/react.mjs`.
+
 ### 🆕 بيئة الاختبار: `node` للمنطق البحت — وتحذير Vitest عن jsdom لا يُتّبع حرفياً
 
 يطبع Vitest بعد كل تشغيل أن «jsdom أُنشئ 56 مرة، 46.69 ثانية، 64% من الزمن المتتبَّع» ويقترح `pool: 'vmThreads'` أو `isolate: false`. الرقم صحيح، والاقتراحان **جُرِّبا فعلاً وكلاهما يكسر المجموعة**:
