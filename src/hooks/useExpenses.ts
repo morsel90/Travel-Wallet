@@ -3,6 +3,7 @@ import { onSnapshot, getDocsFromServer } from 'firebase/firestore'
 import type { User }  from 'firebase/auth'
 import { expensesCol } from '../firestore'
 import type { Expense } from '../types'
+import { writeErrorCode } from '../utils/writeErrors'
 
 // ─── useExpenses ──────────────────────────────────────────────────────────────
 // يملك حالة المصاريف ويشترك في listener فوري (onSnapshot) عند توفّر مستخدم.
@@ -53,7 +54,7 @@ export function useExpenses(user: User | null, reporters: UseExpensesReporters):
 
     const handleErr = (err: Error) => {
       setSyncError(
-        err.message?.includes('permission')
+        writeErrorCode(err) === 'permission-denied'
           ? 'خطأ في الصلاحيات: يرجى مراجعة Firestore Rules.'
           : 'تعذر الاتصال بقاعدة البيانات. تحقق من اتصالك بالإنترنت.'
       )

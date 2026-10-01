@@ -14,10 +14,9 @@
 // أي عمل إضافي هنا.
 import { useState, useCallback } from 'react'
 import { auth } from '../firebase'
-import { callable } from './callables'
+import { callable, showCallableError } from './callables'
 import { haptic } from '../utils/haptics'
 import { formatPeriodLabel } from '../utils/period'
-import { callableMessage } from '../utils/callableErrors'
 import type { PeriodKey, RolloverResult, ToastMessage } from '../types'
 
 interface UseLongTermActionsParams {
@@ -35,25 +34,6 @@ export interface UseLongTermActionsResult {
    * ورسالة الرفض هي الإرشاد نفسه. `settle: true` يُسوّي ثم يُخرج في معاملة واحدة.
    */
   exitTraveler: (tripId: string, travelerId: number, settle: boolean) => Promise<boolean>
-}
-
-/**
- * الدالتان ترسلان رسائل عربية مفهومة في `message` ضمن FunctionsError — نعرضها
- * كما هي بدل رسالة عامة. نفس معالجة callManageTrip في useTripAdminActions.ts
- * بالضبط، ولنفس السبب: الخادم وحده يعرف *لماذا* رُفضت العملية (شهر مُغلق
- * سلفاً، رصيد غير مسوّى، رحلة قياسية)، وأي إعادة صياغة هنا تُفقد ذلك السبب.
- */
-function showCallableError(
-  err: unknown,
-  fallback: string,
-  showToast: UseLongTermActionsParams['showToast'],
-  handleFirestoreError: UseLongTermActionsParams['handleFirestoreError'],
-): void {
-  haptic.error()
-  const message = callableMessage(err)
-
-  if (message) showToast({ text: message, type: 'error' }, 6000)
-  else handleFirestoreError(err, fallback)
 }
 
 export function useLongTermActions({
@@ -82,7 +62,8 @@ export function useLongTermActions({
       }, 5000)
       return data
     } catch (err) {
-      showCallableError(err, 'تعذّر إغلاق الشهر — تحقّق من اتصالك.', showToast, handleFirestoreError)
+      // رسالة الخادم تسمّي السبب: شهر مُغلق سلفاً، رصيد غير مسوّى، رحلة قياسية.
+      showCallableError(err, 'تعذّر إغلاق الشهر — تحقّق من اتصالك.', { showToast, handleFirestoreError })
       return null
     } finally {
       setIsClosingMonth(false)
@@ -110,7 +91,7 @@ export function useLongTermActions({
       }, 4000)
       return true
     } catch (err) {
-      showCallableError(err, 'تعذّر إخراج المسافر — تحقّق من اتصالك.', showToast, handleFirestoreError)
+      showCallableError(err, 'تعذّر إخراج المسافر — تحقّق من اتصالك.', { showToast, handleFirestoreError })
       return false
     } finally {
       setIsExitingTraveler(false)

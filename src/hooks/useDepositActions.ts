@@ -21,8 +21,7 @@ import { db } from '../firebase'
 import { travelerDoc, depositLogsCol } from '../firestore'
 import { haptic } from '../utils/haptics'
 import { applyDepositMode } from '../utils/deposits'
-import { callable } from './callables'
-import { callableMessage } from '../utils/callableErrors'
+import { callable, showCallableError } from './callables'
 import { TRIP_ID } from '../utils/tripId'
 import type { Traveler, DepositMode, ToastMessage } from '../types'
 
@@ -85,12 +84,7 @@ export function useDepositActions({
           haptic.success()
           showToast({ text: 'تم تحديث الرصيد', type: 'success' })
         })
-        .catch(err => {
-          haptic.error()
-          const message = callableMessage(err)
-          if (message) showToast({ text: message, type: 'error' }, 6000)
-          else handleFirestoreError(err, 'تعذر تحديث الرصيد.')
-        })
+        .catch(err => showCallableError(err, 'تعذر تحديث الرصيد.', { showToast, handleFirestoreError }))
       return true
     }
 

@@ -32,9 +32,8 @@ import { downloadTripBackup, BackupNotPortableError } from '../utils/backup'
 import { TRIP_STATUS_LABEL } from '../types'
 import type { ItinerarySegment, ToastMessage, TripStatus, TripType } from '../types'
 import type { TripSummary } from './useAllTrips'
-import { callableMessage } from '../utils/callableErrors'
 import { readTripBackup } from './readTripBackup'
-import { callable, type CallableName, type CallableRequest, type CallableResponse } from './callables'
+import { callable, showCallableError, type CallableName, type CallableRequest, type CallableResponse } from './callables'
 
 // 🆕 نصّا الرفض المحلي — مختلفان عمداً (القاعدة ٢٤): الأول لما يملكه المنظّم في
 // رحلته لكن ليس في هذه، والثاني لما ليس من صلاحيات المنظّم أصلاً.
@@ -282,12 +281,8 @@ export function useTripAdminActions({
       }
       return { data }
     } catch (err) {
-      haptic.error()
-      // الدوال ترسل رسائل عربية مفهومة (معرّف مكرر، رحلة غير فارغة، مسافر
-      // مربوط بالفعل…) وتصل في message ضمن FunctionsError — نعرضها كما هي.
-      const message = callableMessage(err)
-      if (message) showToast({ text: message, type: 'error' }, opts.errorMs ?? 4000)
-      else handleFirestoreError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.')
+      // رسالة الخادم تسمّي السبب: معرّف مكرر، رحلة غير فارغة، مسافر مربوط بالفعل.
+      showCallableError(err, 'تعذّر الاتصال بالخادم — تحقّق من اتصالك.', { showToast, handleFirestoreError }, opts.errorMs ?? 4000)
       return null
     } finally {
       setIsSaving(false)
